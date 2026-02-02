@@ -1,4 +1,4 @@
-# Open Plan AI
+# Open Plan AI testing code rabbit
 
 A modern project management application built with React, TypeScript, and a feature-based architecture.
 
