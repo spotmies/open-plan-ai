@@ -39,7 +39,13 @@ export function ConversationList({ conversations, loading, onSelect, onConversat
   const [isCreatingDM, setIsCreatingDM] = useState(false);
 
   const filtered = useMemo(() => {
-    let list: Conversation[] = [...conversations];
+    // A DM only counts as "started" once a message has actually been sent —
+    // hide empty ones (created just by clicking a search result) from the
+    // sidebar list. The currently open conversation stays visible even while
+    // empty so the user isn't kicked out of the thread they're about to type in.
+    let list: Conversation[] = conversations.filter(
+      (c) => c.type !== 'dm' || !!c.lastMessage || c.id === activeConversationId
+    );
     if (conversationFilter === 'dms') list = list.filter((c) => c.type === 'dm');
     if (conversationFilter === 'groups') list = list.filter((c) => c.type === 'group');
     if (searchQuery.trim()) {
@@ -50,7 +56,7 @@ export function ConversationList({ conversations, loading, onSelect, onConversat
       );
     }
     return list.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
-  }, [conversations, conversationFilter, searchQuery]);
+  }, [conversations, conversationFilter, searchQuery, activeConversationId]);
 
   const filteredPeople = useMemo(() => {
     if (!searchQuery.trim() || conversationFilter === 'groups') return [];

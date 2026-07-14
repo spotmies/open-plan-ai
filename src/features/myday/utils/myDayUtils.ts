@@ -265,7 +265,7 @@ export function categorizeMyDayTasks(tasks: MyDayTask[]): {
       task.isOverdue ||
       task.isDueToday ||
       task.priority === 'critical' ||
-      task.priority === 'high' ||
+      task.priority === 'major' ||
       task.isBlockingOthers;
 
     // Check if task is blocked
@@ -282,7 +282,7 @@ export function categorizeMyDayTasks(tasks: MyDayTask[]): {
 
   // Sort by priority and due date
   const sortTasks = (a: MyDayTask, b: MyDayTask) => {
-    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    const priorityOrder = { critical: 0, major: 1, minor: 2, trivial: 3 };
     const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
     if (priorityDiff !== 0) return priorityDiff;
 
@@ -324,8 +324,7 @@ export function categorizeMyDayItems(items: MyDayItem[]): {
       item.isOverdue ||
       item.isDueToday ||
       item.priority === 'critical' ||
-      item.priority === 'high' ||
-      item.priority === 'major' || // Issue severity
+      item.priority === 'major' ||
       item.isBlockingOthers;
 
     // Check if item is blocked
@@ -344,15 +343,12 @@ export function categorizeMyDayItems(items: MyDayItem[]): {
   const sortItems = (a: MyDayItem, b: MyDayItem) => {
     const priorityOrder: Record<string, number> = {
       critical: 0,
-      high: 1,
-      major: 1, // Issue severity
-      medium: 2,
-      minor: 2, // Issue severity
-      low: 3,
-      trivial: 3, // Issue severity
+      major: 1,
+      minor: 2,
+      trivial: 3,
     };
-    const aPriority = a.priority || 'low';
-    const bPriority = b.priority || 'low';
+    const aPriority = a.priority || 'trivial';
+    const bPriority = b.priority || 'trivial';
     const priorityDiff = (priorityOrder[aPriority] || 3) - (priorityOrder[bPriority] || 3);
     if (priorityDiff !== 0) return priorityDiff;
 
@@ -622,17 +618,15 @@ export function groupTasksByPriority(items: MyDayTask[] | MyDayItem[]): {
   };
 
   for (const item of items) {
-    const priority = item.priority || 'low';
+    const priority = item.priority || 'trivial';
     switch (priority) {
       case 'critical':
         groups.urgent.push(item);
         break;
-      case 'high':
-      case 'major': // Issue severity
+      case 'major':
         groups.important.push(item);
         break;
-      case 'medium':
-      case 'minor': // Issue severity
+      case 'minor':
         groups.medium.push(item);
         break;
       default:

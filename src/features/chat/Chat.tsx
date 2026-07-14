@@ -38,7 +38,7 @@ export default function Chat() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { user } = useAuth();
-  const { activeConversationId, setActiveConversation, isDetailPanelOpen, isMessageSearchOpen } = useChatStore();
+  const { activeConversationId, lastActiveConversationId, setActiveConversation, isDetailPanelOpen, isMessageSearchOpen } = useChatStore();
 
   const { conversations, loading: convsLoading, refetch } = useConversations();
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -68,6 +68,15 @@ export default function Chat() {
   useEffect(() => {
     setReplyingTo(null);
   }, [activeId]);
+
+  // Landing on bare /chat (e.g. via the sidebar nav icon) after previously having
+  // a conversation open should restore it, rather than showing the empty state.
+  useEffect(() => {
+    if (conversationId || isMobile || convsLoading || !lastActiveConversationId) return;
+    if (conversations.some((c) => c.id === lastActiveConversationId)) {
+      navigate(`/chat/${lastActiveConversationId}`, { replace: true });
+    }
+  }, [conversationId, isMobile, convsLoading, lastActiveConversationId, conversations, navigate]);
 
   useEffect(() => {
     if (!conversationId || convsLoading) return;

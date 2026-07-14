@@ -62,7 +62,7 @@ function toCreatePayload(task: Partial<Task>): Record<string, unknown> {
     description: task.description || undefined,
     descriptionBlocks: task.descriptionBlocks ?? undefined,
     status: normalizeStatus(task.status),
-    priority: task.priority ?? 'medium',
+    priority: task.priority ?? 'minor',
     milestoneId: task.milestoneId ?? task.milestone?.id ?? undefined,
     dueDate: task.dueDate ?? undefined,
     startDate: task.startDate ?? undefined,

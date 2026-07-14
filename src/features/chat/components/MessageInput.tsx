@@ -17,7 +17,6 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { WifiOff, Clock } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { logger } from '@/services/monitoring/logger';
-import { useProjects } from '@/hooks/useProjects';
 import { useProjectTasks } from '@/hooks/useTasks';
 import { useProjectIssues } from '@/hooks/useIssues';
 import { useProjectMilestones } from '@/hooks/useMilestones';
@@ -157,7 +156,14 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     staleTime: 5 * 60 * 1000,
   });
 
-  const projectsQuery = useProjects();
+  // Only projects every active conversation member belongs to — a tagged entity
+  // must be openable by whoever receives it, not just by the sender.
+  const projectsQuery = useQuery({
+    queryKey: ['chat', 'mutualProjects', conversationId],
+    queryFn: () => chatService.getMutualProjects(conversationId),
+    enabled: !!conversationId,
+    staleTime: 45 * 1000,
+  });
   const { data: projectsList } = projectsQuery;
 
   const itemStageActive = slashStage === 'item';
@@ -177,7 +183,10 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
   const projectOptions = useMemo(() => {
     if (slashStage !== 'project') return [];
     const q = slashItemSearch.toLowerCase();
-    return (projectsList ?? []).filter((p) => p.name.toLowerCase().includes(q)).slice(0, 30);
+    return (projectsList ?? [])
+      .filter((p) => !!p.myRole)
+      .filter((p) => p.name.toLowerCase().includes(q))
+      .slice(0, 30);
   }, [slashStage, slashItemSearch, projectsList]);
 
   const isProjectOptionsLoading = slashStage === 'project' && projectsQuery.isLoading;
@@ -240,6 +249,15 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     slashStartRef.current = -1;
     setSlashIndex(0);
   }, []);
+
+  // Close any open "@" mention / "/" entity picker when switching conversations —
+  // their trigger position and match list refer to the previous conversation.
+  useEffect(() => {
+    setMentionQuery(null);
+    mentionStartRef.current = -1;
+    setMentionIndex(0);
+    cancelSlash();
+  }, [conversationId, cancelSlash]);
 
   const selectEntityType = (type: ChatEntityType) => {
     const start = slashStartRef.current;

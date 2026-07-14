@@ -728,8 +728,8 @@ const NewProject = () => {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "critical": return "bg-priority-critical/10 text-priority-critical border-priority-critical/20";
-      case "high": return "bg-priority-high/10 text-priority-high border-priority-high/20";
-      case "medium": return "bg-priority-medium/10 text-priority-medium border-priority-medium/20";
+      case "major": return "bg-priority-high/10 text-priority-high border-priority-high/20";
+      case "minor": return "bg-priority-medium/10 text-priority-medium border-priority-medium/20";
       default: return "bg-priority-low/10 text-priority-low border-priority-low/20";
     }
   };
@@ -1446,7 +1446,7 @@ const NewProject = () => {
         </Card> */}
 
         {/* Section 6: Storage */}
-        {/*<Card>
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Paperclip className="h-5 w-5 text-primary" />
@@ -1455,7 +1455,7 @@ const NewProject = () => {
             <CardDescription>Manage project documents, files, and external links</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            
+
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-medium">Files & Documents</Label>
@@ -1464,7 +1464,6 @@ const NewProject = () => {
                 )}
               </div>
 
-              
               <input
                 type="file"
                 ref={fileInputRef}
@@ -1474,7 +1473,6 @@ const NewProject = () => {
                 className="hidden"
               />
 
-             
               <div
                 onClick={handleUploadClick}
                 onDragOver={handleDragOver}
@@ -1531,7 +1529,6 @@ const NewProject = () => {
 
             <Separator />
 
-            
             <div className="space-y-4">
               <Label className="text-base font-medium">Project Links</Label>
               <div className="flex gap-3">
@@ -1592,7 +1589,7 @@ const NewProject = () => {
               )}
             </div>
           </CardContent>
-        </Card>*/}
+        </Card>
 
         {/* Section 5: Task Import */}
         {/* <Card>

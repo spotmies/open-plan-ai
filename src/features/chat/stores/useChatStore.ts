@@ -16,6 +16,10 @@ interface MessagesCacheEntry {
 interface ChatState {
   // ── UI state ──────────────────────────────────────────────────────────
   activeConversationId: string | null;
+  /** Last non-null activeConversationId, kept across unmount so returning to
+   *  bare /chat can restore it — unlike activeConversationId, which is
+   *  deliberately cleared on unmount so notifications resume for it. */
+  lastActiveConversationId: string | null;
   conversationFilter: ConversationFilter;
   searchQuery: string;
   isDetailPanelOpen: boolean;
@@ -74,6 +78,7 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       // ── UI state defaults ─────────────────────────────────────────────
       activeConversationId: null,
+      lastActiveConversationId: null,
       conversationFilter: 'all',
       searchQuery: '',
       isDetailPanelOpen: false,
@@ -96,7 +101,10 @@ export const useChatStore = create<ChatState>()(
 
       // ── UI actions ────────────────────────────────────────────────────
       setActiveConversation: (id) => {
-        set({ activeConversationId: id });
+        set((state) => ({
+          activeConversationId: id,
+          lastActiveConversationId: id ?? state.lastActiveConversationId,
+        }));
         if (id) {
           set((state) => ({
             unreadCounts: { ...state.unreadCounts, [id]: 0 },

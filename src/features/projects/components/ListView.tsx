@@ -38,9 +38,9 @@ const statusColors = {
 
 const priorityColors = {
   critical: 'bg-priority-critical/20 text-priority-critical',
-  high: 'bg-priority-high/20 text-priority-high',
-  medium: 'bg-priority-medium/20 text-priority-medium',
-  low: 'bg-priority-low/20 text-priority-low',
+  major: 'bg-priority-high/20 text-priority-high',
+  minor: 'bg-priority-medium/20 text-priority-medium',
+  trivial: 'bg-priority-low/20 text-priority-low',
 };
 
 type SortField = 'title' | 'status' | 'priority' | 'module' | 'dueDate' | 'assignee';
@@ -142,7 +142,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
     title: '',
     description: '',
     status: 'todo',
-    priority: 'medium',
+    priority: 'minor',
     module: '' as ModuleType,
     blockedBy: [],
     tags: [],

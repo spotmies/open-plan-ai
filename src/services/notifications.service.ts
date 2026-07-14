@@ -11,9 +11,37 @@ export interface Notification {
   createdAt: string;
 }
 
+export interface NotificationListParams {
+  page?: number;
+  limit?: number;
+  unreadOnly?: boolean;
+  type?: string;
+}
+
+export interface NotificationPaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface NotificationStats {
+  total: number;
+  unread: number;
+  issues: number;
+  tasks: number;
+}
+
 export const notificationsService = {
-  async getAll(): Promise<Notification[]> {
-    return apiClient.get<Notification[]>(ENDPOINTS.NOTIFICATIONS.LIST);
+  async getAll(params: NotificationListParams = {}): Promise<{ data: Notification[]; meta: NotificationPaginationMeta }> {
+    const res = await apiClient.raw.get(ENDPOINTS.NOTIFICATIONS.LIST, { params });
+    return { data: res.data.data, meta: res.data.meta };
+  },
+
+  async getStats(): Promise<NotificationStats> {
+    return apiClient.get<NotificationStats>(ENDPOINTS.NOTIFICATIONS.STATS);
   },
 
   async getUnreadCount(): Promise<number> {
@@ -31,5 +59,9 @@ export const notificationsService = {
 
   async delete(id: string): Promise<void> {
     await apiClient.delete(ENDPOINTS.NOTIFICATIONS.DELETE(id));
+  },
+
+  async clearRead(): Promise<void> {
+    await apiClient.delete(ENDPOINTS.NOTIFICATIONS.CLEAR_READ);
   },
 };

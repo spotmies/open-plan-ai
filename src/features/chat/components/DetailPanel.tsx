@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
+import { FilePreviewDialog, FilePreviewTarget } from '@/components/FilePreviewDialog';
 import { logger } from '@/services/monitoring/logger';
 
 interface SharedFile {
@@ -78,6 +79,10 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<FilePreviewTarget | null>(null);
+  const previewableFiles: FilePreviewTarget[] = sharedFiles
+    .filter((f) => !!f.url)
+    .map((f) => ({ url: f.url as string, fileName: f.fileName, mimeType: f.mimeType }));
 
   // Add member dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -337,6 +342,14 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
     }
   };
 
+  const handlePreviewSharedFile = (file: SharedFile) => {
+    if (!file.url) {
+      handleDownloadSharedFile(file);
+      return;
+    }
+    setPreviewFile({ url: file.url, fileName: file.fileName, mimeType: file.mimeType });
+  };
+
   const handleMakeAdmin = async (userId: string) => {
     try {
       await chatService.updateMemberRole(conversation.id, userId, 'admin');
@@ -468,32 +481,47 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
     const fileKey = `${file.fileName}-${file.createdAt}`;
     const isDownloading = downloadingFile === fileKey;
     return (
-      <button
+      <div
         key={key}
-        type="button"
-        onClick={() => handleDownloadSharedFile(file)}
-        disabled={isDownloading}
-        className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors text-left disabled:opacity-70"
+        className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors"
       >
-        {isImage ? (
-          <Image className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium truncate">{file.fileName}</p>
-          <p className="text-[10px] text-muted-foreground truncate">
-            {[file.senderName, formatShortDate(file.createdAt), formatFileSize(file.fileSize)]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-        </div>
-        {isDownloading ? (
-          <Loader2 className="h-3 w-3 text-muted-foreground shrink-0 animate-spin" />
-        ) : (
-          <Download className="h-3 w-3 text-muted-foreground shrink-0" />
-        )}
-      </button>
+        <button
+          type="button"
+          onClick={() => handlePreviewSharedFile(file)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+          title={`Preview ${file.fileName}`}
+        >
+          {isImage ? (
+            <Image className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium truncate">{file.fileName}</p>
+            <p className="text-[10px] text-muted-foreground truncate">
+              {[file.senderName, formatShortDate(file.createdAt), formatFileSize(file.fileSize)]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDownloadSharedFile(file);
+          }}
+          disabled={isDownloading}
+          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background disabled:opacity-70"
+          title={`Download ${file.fileName}`}
+        >
+          {isDownloading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
     );
   };
 
@@ -914,6 +942,12 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
         description={`Are you sure you want to delete "${conversation.name}"? This will permanently remove the group and all its messages for every member. This cannot be undone.`}
         confirmText={isDeletingGroup ? 'Deleting...' : 'Delete'}
         variant="destructive"
+      />
+
+      <FilePreviewDialog
+        file={previewFile}
+        files={previewableFiles}
+        onClose={() => setPreviewFile(null)}
       />
 
     </div>

@@ -125,7 +125,7 @@ export function IssueDetailModal({
 
   if (!editedIssue) return null;
 
-  const hasValidCategory = editedIssue.category !== 'other' || !!editedIssue.categoryOther?.trim();
+  const hasValidCategory = !!editedIssue.category && (editedIssue.category !== 'other' || !!editedIssue.categoryOther?.trim());
 
   const isDirty =
     pendingFiles.length > 0 ||

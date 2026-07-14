@@ -41,9 +41,9 @@ const statusLabels: Record<string, { label: string; className: string }> = {
 
 const priorityLabels: Record<string, { label: string; className: string }> = {
   'critical': { label: 'Critical', className: 'bg-destructive/10 text-destructive' },
-  'high': { label: 'High', className: 'bg-orange-500/10 text-orange-600' },
-  'medium': { label: 'Medium', className: 'bg-yellow-500/10 text-yellow-600' },
-  'low': { label: 'Low', className: 'bg-muted text-muted-foreground' },
+  'major': { label: 'Major', className: 'bg-orange-500/10 text-orange-600' },
+  'minor': { label: 'Minor', className: 'bg-yellow-500/10 text-yellow-600' },
+  'trivial': { label: 'Trivial', className: 'bg-muted text-muted-foreground' },
 };
 
 export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({

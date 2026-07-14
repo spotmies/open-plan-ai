@@ -30,9 +30,9 @@ const statusOptions: { value: TaskStatus; label: string }[] = [
 
 const priorityOptions: { value: Priority; label: string }[] = [
   { value: 'critical', label: 'Critical' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
+  { value: 'major', label: 'Major' },
+  { value: 'minor', label: 'Minor' },
+  { value: 'trivial', label: 'Trivial' },
 ];
 
 const entityTypeOptions: { value: 'task' | 'milestone' | 'issue'; label: string }[] = [

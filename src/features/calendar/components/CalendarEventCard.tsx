@@ -22,7 +22,7 @@ const statusColors: Record<string, string> = {
 
 const priorityBadgeVariants: Record<string, string> = {
   'critical': 'bg-destructive/10 text-destructive border-destructive/20',
-  'high': 'bg-orange-500/10 text-orange-600 border-orange-500/20',
+  'major': 'bg-orange-500/10 text-orange-600 border-orange-500/20',
 };
 
 const severityColors: Record<string, string> = {
@@ -104,7 +104,7 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
         {event.title}
       </span>
 
-      {!isCompact && (event.priority === 'critical' || event.priority === 'high') && (
+      {!isCompact && (event.priority === 'critical' || event.priority === 'major') && (
         <Badge 
           variant="outline" 
           className={cn('text-[10px] h-4 px-1', priorityBadgeVariants[event.priority])}

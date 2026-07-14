@@ -4,6 +4,7 @@ A modern project management application built with React, TypeScript, and a feat
 
 ## 🚀 Quick Start
 
+
 ```bash
 # Install dependencies
 npm install

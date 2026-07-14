@@ -1,7 +1,12 @@
 import { useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { notificationsService, Notification } from '@/services/notifications.service';
+import {
+  notificationsService,
+  Notification,
+  NotificationListParams,
+  NotificationPaginationMeta,
+} from '@/services/notifications.service';
 import { formatDistanceToNow } from 'date-fns';
 import { chatTransport } from '@/features/chat/transport';
 
@@ -12,20 +17,28 @@ export interface AppNotification extends Notification {
   initials: string;
 }
 
-export function useNotifications() {
+export function useNotifications(params: NotificationListParams = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id;
+  const { page = 1, limit = 10, unreadOnly, type } = params;
 
-  const { data: rawNotifications = [], isLoading, error } = useQuery({
-    queryKey: ['notifications', userId],
-    queryFn: () => notificationsService.getAll(),
+  const { data: listResult, isLoading, isFetching, error } = useQuery({
+    queryKey: ['notifications', userId, page, limit, unreadOnly, type],
+    queryFn: () => notificationsService.getAll({ page, limit, unreadOnly, type }),
     enabled: !!userId,
+    placeholderData: keepPreviousData,
   });
 
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['notifications-count', userId],
     queryFn: () => notificationsService.getUnreadCount(),
+    enabled: !!userId,
+  });
+
+  const { data: stats } = useQuery({
+    queryKey: ['notifications-stats', userId],
+    queryFn: () => notificationsService.getStats(),
     enabled: !!userId,
   });
 
@@ -38,11 +51,15 @@ export function useNotifications() {
     const handler = () => {
       queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
       queryClient.invalidateQueries({ queryKey: ['notifications-count', userId] });
+      queryClient.invalidateQueries({ queryKey: ['notifications-stats', userId] });
     };
 
     socket.on('notification:created', handler);
     return () => { socket.off('notification:created', handler); };
   }, [userId, queryClient]);
+
+  const rawNotifications = listResult?.data ?? [];
+  const meta: NotificationPaginationMeta | undefined = listResult?.meta;
 
   const notifications: AppNotification[] = rawNotifications.map((n: Notification) => ({
     ...n,
@@ -59,6 +76,7 @@ export function useNotifications() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
     queryClient.invalidateQueries({ queryKey: ['notifications-count', userId] });
+    queryClient.invalidateQueries({ queryKey: ['notifications-stats', userId] });
   };
 
   const markAsRead = useMutation({
@@ -76,13 +94,22 @@ export function useNotifications() {
     onSuccess: invalidate,
   });
 
+  const clearReadNotifications = useMutation({
+    mutationFn: () => notificationsService.clearRead(),
+    onSuccess: invalidate,
+  });
+
   return {
     notifications,
+    meta,
     unreadCount,
+    stats,
     isLoading,
+    isFetching,
     error,
     markAsRead,
     markAllAsRead,
     deleteNotification,
+    clearReadNotifications,
   };
 }

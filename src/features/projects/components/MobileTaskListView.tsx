@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Check, CheckSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AttachmentBadges } from '@/components/shared/AttachmentBadges';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { getFallbackTagColor } from '@/lib/tagColors';
 import { formatModuleType } from '../utils/projectUtils';
@@ -31,9 +32,9 @@ interface MobileTaskListViewProps {
 
 const priorityColors: Record<string, string> = {
   critical: 'bg-priority-critical/20 text-priority-critical',
-  high: 'bg-priority-high/20 text-priority-high',
-  medium: 'bg-priority-medium/20 text-priority-medium',
-  low: 'bg-priority-low/20 text-priority-low',
+  major: 'bg-priority-high/20 text-priority-high',
+  minor: 'bg-priority-medium/20 text-priority-medium',
+  trivial: 'bg-priority-low/20 text-priority-low',
 };
 
 const moduleTextColors: Record<string, string> = {
@@ -277,6 +278,10 @@ export function MobileTaskListView({
                               )}
                               {checklist.length > 0 && dateRange && <span>&middot;</span>}
                               {dateRange && <span>{dateRange}</span>}
+                              <AttachmentBadges
+                                attachmentCounts={task.attachmentCounts}
+                                videoLinksCount={task.videoLinks?.length ?? 0}
+                              />
                             </div>
                             {primaryAssignee && (
                               <Avatar className="h-6 w-6 shrink-0">

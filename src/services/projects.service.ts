@@ -89,6 +89,7 @@ function fromApiIssue(raw: Record<string, unknown>): Issue {
     checklist: (raw.checklist as Issue['checklist']) ?? [],
     descriptionBlocks: (raw.descriptionBlocks as Issue['descriptionBlocks']) ?? [],
     videoLinks: (raw.videoLinks as Issue['videoLinks']) ?? [],
+    attachmentCounts: raw.attachmentCounts as Issue['attachmentCounts'],
   } as Issue;
 }
 

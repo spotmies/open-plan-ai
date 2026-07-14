@@ -63,6 +63,7 @@ import {
   User,
   Tag,
   AlertCircle,
+  AlertTriangle,
   Pencil,
   Check,
   Loader2,
@@ -100,6 +101,7 @@ import { getFallbackTagColor } from '@/lib/tagColors';
 import { Switch } from '@/components/ui/switch';
 import { SlashBlockEditor } from '@/components/ui/SlashBlockEditor';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import { ISSUE_SEVERITY_OPTIONS, ISSUE_SEVERITY_DISPLAY } from './issueSeverity';
 
 // Utility function to convert Date to YYYY-MM-DD format (date-only, no timezone shift)
 const toDateOnly = (date: Date | undefined | null): string | undefined => {
@@ -148,12 +150,6 @@ const DEFAULT_STATUS_OPTIONS: { value: string; label: string; color: string }[] 
   { value: 'done',         label: 'Done',         color: 'bg-[#10b981]' },
 ];
 
-const priorityOptions: { value: Priority; label: string; color: string }[] = [
-  { value: 'critical', label: 'Critical', color: 'bg-priority-critical text-white' },
-  { value: 'high', label: 'High', color: 'bg-priority-high text-white' },
-  { value: 'medium', label: 'Medium', color: 'bg-priority-medium text-white' },
-  { value: 'low', label: 'Low', color: 'bg-priority-low text-white' },
-];
 
 const getFileIcon = (fileType: string) => {
   if (fileType.startsWith('image/')) return ImageIcon;
@@ -233,7 +229,7 @@ export const TaskDetailModal = ({
     title: '',
     description: '',
     status: 'todo',
-    priority: 'medium',
+    priority: 'minor',
     module: '' as ModuleType,
     assignees: [],
     tags: [],
@@ -487,7 +483,7 @@ export const TaskDetailModal = ({
       title: '',
       description: '',
       status: 'todo' as const,
-      priority: 'medium' as const,
+      priority: 'minor' as const,
       module: '' as ModuleType,
       assignees: [],
       tags: [],
@@ -1632,7 +1628,11 @@ export const TaskDetailModal = ({
 
                 {/* Priority */}
                 <div className="space-y-1.5">
-                  <Label className={cn('text-xs text-muted-foreground', showMobileHeader && 'uppercase tracking-wider font-medium')}>
+                  <Label className={cn(
+                    'text-xs text-muted-foreground flex items-center gap-1.5',
+                    showMobileHeader && 'uppercase tracking-wider font-medium'
+                  )}>
+                    {!showMobileHeader && <AlertTriangle className="h-3 w-3" />}
                     Priority {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
                   </Label>
                   <Select
@@ -1651,15 +1651,22 @@ export const TaskDetailModal = ({
                       title={canEditTaskFields ? undefined : editLockTitle}
                     >
                       <SelectValue>
-                        <Badge className={cn('text-xs', priorityOptions.find(p => p.value === editedTask.priority)?.color)}>
-                          {priorityOptions.find(p => p.value === editedTask.priority)?.label}
+                        <Badge className={cn('text-xs gap-1', ISSUE_SEVERITY_DISPLAY[editedTask.priority].color)}>
+                          {(() => {
+                            const PriorityIcon = ISSUE_SEVERITY_DISPLAY[editedTask.priority].icon;
+                            return <PriorityIcon className="h-3 w-3" />;
+                          })()}
+                          {ISSUE_SEVERITY_DISPLAY[editedTask.priority].label}
                         </Badge>
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {priorityOptions.map((option) => (
+                      {ISSUE_SEVERITY_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
-                          <Badge className={cn('text-xs', option.color)}>{option.label}</Badge>
+                          <Badge className={cn('text-xs gap-1', option.color)}>
+                            <option.icon className="h-3 w-3" />
+                            {option.label}
+                          </Badge>
                         </SelectItem>
                       ))}
                     </SelectContent>

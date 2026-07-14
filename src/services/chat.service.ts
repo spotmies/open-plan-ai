@@ -2,6 +2,7 @@ import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
 import type { Conversation, ChatMessage, ReachableUser, MessageReaction, EntityTagRef } from '@/features/chat/types';
 import { resolveFileUrl } from '@/utils/fileUrl';
+import type { Project } from '@/types';
 
 /** Map backend MessageResponse (camelCase) to frontend ChatMessage (flat senderId). */
 function mapChatMessage(raw: any): ChatMessage {
@@ -166,6 +167,11 @@ export const chatService = {
 
   async getMembers(conversationId: string): Promise<unknown[]> {
     return apiClient.get(ENDPOINTS.CONVERSATIONS.MEMBERS(conversationId));
+  },
+
+  /** Projects every active member of this conversation belongs to — used to scope the "/" entity-tag picker. */
+  async getMutualProjects(conversationId: string): Promise<Project[]> {
+    return apiClient.get<Project[]>(ENDPOINTS.CONVERSATIONS.MUTUAL_PROJECTS(conversationId));
   },
 
   async addMemberToGroup(conversationId: string, userId: string): Promise<void> {

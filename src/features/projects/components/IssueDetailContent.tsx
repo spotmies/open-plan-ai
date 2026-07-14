@@ -350,16 +350,44 @@ export function IssueDetailContent({
         setIsDragging(false);
     };
 
+    const isDuplicateFile = (file: File, existing: { name: string; size: number }[]) =>
+        existing.some(f => f.name === file.name && f.size === file.size);
+
+    const dedupeIncomingFiles = (files: File[], existing: { name: string; size: number }[]) => {
+        const unique: File[] = [];
+        const seen = [...existing];
+        let skipped = 0;
+        for (const file of files) {
+            if (isDuplicateFile(file, seen)) {
+                skipped++;
+                continue;
+            }
+            unique.push(file);
+            seen.push({ name: file.name, size: file.size });
+        }
+        if (skipped > 0) {
+            toast.warning(`Skipped ${skipped} duplicate file${skipped > 1 ? 's' : ''}`);
+        }
+        return unique;
+    };
+
     const processFiles = async (files: FileList | null) => {
         if (!files || files.length === 0) return;
         if (mode === 'create') {
-            setPendingFiles(prev => [...prev, ...Array.from(files)]);
+            const newFiles = dedupeIncomingFiles(Array.from(files), pendingFiles);
+            if (newFiles.length === 0) return;
+            setPendingFiles(prev => [...prev, ...newFiles]);
             return;
         }
+        const newFiles = dedupeIncomingFiles(
+            Array.from(files),
+            attachments.map(a => ({ name: a.filename, size: a.fileSize }))
+        );
+        if (newFiles.length === 0) return;
         setIsUploading(true);
         try {
             const results = await Promise.all(
-                Array.from(files).map(file =>
+                newFiles.map(file =>
                     attachmentsService.upload({
                         entityId: editedIssue.id,
                         entityType: 'issue',
@@ -990,14 +1018,15 @@ export function IssueDetailContent({
                                     aria-required="true"
                                     title={canEditIssueFields ? undefined : editLockTitle}
                                 >
-                                    <SelectValue>
+                                    <SelectValue placeholder="All Categories">
                                         {(() => {
                                             const cat = categoryOptions.find(c => c.value === editedIssue.category);
-                                            const Icon = cat?.icon || Info;
+                                            if (!cat) return undefined;
+                                            const Icon = cat.icon;
                                             return (
                                                 <div className={cn('flex items-center gap-2', isMobileLayout && 'font-bold text-sm text-foreground')}>
                                                     {!isMobileLayout && <Icon className="h-4 w-4" />}
-                                                    {cat?.label}
+                                                    {cat.label}
                                                 </div>
                                             );
                                         })()}

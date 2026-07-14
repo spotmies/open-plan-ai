@@ -17,6 +17,19 @@ function refreshConversations() {
     .catch((err) => logger.error('Failed to refresh conversations:', err));
 }
 
+function escapeRegExp(str: string) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Matches the mention format MessageInput inserts ("@Full Name" / "@everyone")
+// so group toasts only fire when the current user is actually addressed.
+function mentionsUser(content: string, userName: string): boolean {
+  if (/@everyone(?=\s|$|[.,!?])/i.test(content)) return true;
+  if (!userName) return false;
+  const regex = new RegExp(`@${escapeRegExp(userName)}(?=\\s|$|[.,!?])`, 'i');
+  return regex.test(content);
+}
+
 /**
  * Mounted once near the app root (inside the router, wrapping every route).
  * Keeps chat unread counts and conversation previews fresh app-wide — not just
@@ -82,9 +95,17 @@ export function ChatNotificationsProvider() {
 
         if (convId !== activeId && !isOwnMessage) {
           const conv = nextConversations.find((c) => c.id === convId);
+          const content = raw.content ?? '';
+
+          // Group chats only notify when the user is @mentioned or @everyone is used —
+          // otherwise every message in a busy group would notify all members.
+          if (conv?.type === 'group' && !mentionsUser(content, user.name)) {
+            return;
+          }
+
           const senderName = raw.sender?.name ?? raw.senderName ?? 'Someone';
           const heading = conv?.type === 'group' && conv.name ? `${senderName} in ${conv.name}` : `${senderName} sent you a message`;
-          const preview = (raw.content ?? '').slice(0, 80);
+          const preview = content.slice(0, 80);
 
           toast.custom((toastId) => (
             <button

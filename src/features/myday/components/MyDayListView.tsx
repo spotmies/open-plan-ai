@@ -317,7 +317,7 @@ export function MyDayListView({
                   <div className="min-w-0">
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <p className="font-medium line-clamp-2 cursor-pointer">{task.title}</p>
+                        <p className="font-medium truncate max-w-[260px] cursor-pointer">{task.title}</p>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs">
                         {task.title}

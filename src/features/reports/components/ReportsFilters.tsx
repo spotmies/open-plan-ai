@@ -45,7 +45,7 @@ const timeRangeOptions: { value: ReportTimeRange; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-const priorityOptions: Priority[] = ['critical', 'high', 'medium', 'low'];
+const priorityOptions: Priority[] = ['critical', 'major', 'minor', 'trivial'];
 const statusOptions: TaskStatus[] = ['todo', 'in-progress', 'review', 'done', 'blocked'];
 
 export function ReportsFilters({

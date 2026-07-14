@@ -27,9 +27,9 @@ const statusOptions: { value: TaskStatus; label: string; color: string }[] = [
 
 const priorityOptions: { value: Priority; label: string; color: string }[] = [
   { value: 'critical', label: 'Critical', color: 'bg-priority-critical' },
-  { value: 'high', label: 'High', color: 'bg-priority-high' },
-  { value: 'medium', label: 'Medium', color: 'bg-priority-medium' },
-  { value: 'low', label: 'Low', color: 'bg-priority-low' },
+  { value: 'major', label: 'Major', color: 'bg-priority-high' },
+  { value: 'minor', label: 'Minor', color: 'bg-priority-medium' },
+  { value: 'trivial', label: 'Trivial', color: 'bg-priority-low' },
 ];
 
 const dueDateOptions = [
