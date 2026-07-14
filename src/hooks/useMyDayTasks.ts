@@ -8,7 +8,6 @@ import { queryKeys } from '@/lib/queryClient';
 import { getDueDateStatus, isCompletedToday, isBlockingOthers, hasUnresolvedDependencies } from '@/features/myday/utils/myDayUtils';
 import type { MyDayItem, DueDateStatus } from '@/features/myday/utils/myDayUtils';
 import { useProjects } from './useProjects';
-import { getUserItems } from '@/features/myday/utils/myDayUtils';
 import type { MyDayFilter } from '@/types';
 
 function matchesFilter(status: DueDateStatus, filter: MyDayFilter): boolean {
@@ -87,12 +86,17 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
         } as MyDayItem;
       });
 
-    // Resolved/wont-fix issues never belong here — only open/in-progress, matching the active filter.
+    // Wont-fix issues never belong here. Resolved issues are excluded too,
+    // unless they were resolved today (mirrors the `task.status !== 'done'`
+    // carve-out above) — otherwise "Completed Today" has nothing to count.
     const issueItems: MyDayItem[] = rawIssues
       .filter(({ issue }) => {
         const isAssignedToUser = issue.assignees?.some(a => a.id === user.id) ?? false;
-        const isUnresolved = issue.status !== 'resolved' && issue.status !== 'wont-fix';
-        return isUnresolved && isAssignedToUser && matchesFilter(getDueDateStatus(issue.dueDate), filter);
+        if (issue.status === 'wont-fix') return false;
+        const isUnresolved = issue.status !== 'resolved';
+        return isAssignedToUser &&
+          (isUnresolved || isCompletedToday(issue)) &&
+          matchesFilter(getDueDateStatus(issue.dueDate), filter);
       })
       .map(({ issue, projectName }) => {
         const dueDateStatus = getDueDateStatus(issue.dueDate);
@@ -121,20 +125,21 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
 }
 
 /**
- * Get count of tasks completed/resolved today
+ * Get count of tasks completed/resolved today.
+ * Reuses the same 'all' item set as useMyDayTasks('all') — the org projects
+ * list only ever returns taskCount/issueCount summaries, never the actual
+ * task/issue arrays, so this must derive from the real per-item queries
+ * rather than `project.tasks`/`project.issues` (which are always empty).
  */
 export function useCompletedTodayCount() {
-  const { user } = useAuth();
-  const { data: projects = [] } = useProjects();
+  const { data: allItems } = useMyDayTasks('all');
 
   const data = useMemo(() => {
-    if (!user?.id || !projects.length) return 0;
-    const allItems = getUserItems(projects, user.id);
     return allItems.filter(item =>
       (item.status === 'done' || item.status === 'resolved') &&
       isCompletedToday(item.originalTask || item.originalIssue)
     ).length;
-  }, [user?.id, projects]);
+  }, [allItems]);
 
   return { data };
 }

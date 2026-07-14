@@ -310,7 +310,7 @@ export function ModuleDetailMobileView({
                   rows={3}
                 />
               ) : (
-                <p className="text-sm mt-1 text-foreground">
+                <p className="text-sm mt-1 text-foreground break-words whitespace-pre-wrap">
                   {module.description || <span className="text-muted-foreground">No description</span>}
                 </p>
               )}

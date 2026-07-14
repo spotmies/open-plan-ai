@@ -36,6 +36,10 @@ export default function MyDay() {
   // Fetch dynamic data
   const { data: userTasks = [], isLoading: tasksLoading } = useMyDayTasks(filter);
   const { data: overdueTasks = [] } = useMyDayTasks('overdue');
+  // Stat tiles reflect the full assigned set, not just the active tab — otherwise
+  // e.g. the default "today" tab makes every surviving item `isDueToday`, which the
+  // categorizer treats as "needs attention", so "Ready to Work" could never be > 0.
+  const { data: allDayItems = [] } = useMyDayTasks('all');
   const { data: completedTodayCount = 0 } = useCompletedTodayCount();
   const { data: projects = [] } = useProjects();
   const updateTaskMutation = useUpdateTask();
@@ -58,8 +62,8 @@ export default function MyDay() {
   }, [userTasks, columnFilters]);
 
   const { needsAttention, readyToWork, waitingBlocked } = useMemo(() => {
-    return categorizeMyDayItems(filteredTasks);
-  }, [filteredTasks]);
+    return categorizeMyDayItems(allDayItems);
+  }, [allDayItems]);
 
   const handleTaskClick = (item: MyDayItem) => {
     // Only open modal for tasks (issues have their own modal)

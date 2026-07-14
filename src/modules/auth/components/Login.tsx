@@ -179,9 +179,9 @@ const Login = () => {
       </div>
 
       {/* Right side - Login Form */}
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-y-auto hide-scrollbar">
-        <Card className="w-full max-w-md border-0 shadow-xl">
-          <CardHeader className="space-y-1 text-center pb-4">
+      <div className="flex-1 flex items-center justify-center p-0 sm:p-8 overflow-y-auto hide-scrollbar">
+        <Card className="w-full max-w-md border-0 sm:border shadow-none sm:shadow-xl rounded-none sm:rounded-lg bg-transparent sm:bg-card">
+          <CardHeader className="space-y-1 text-center px-6 pt-10 pb-4 sm:pt-6">
             <div className="flex items-center justify-center gap-2 lg:hidden mb-4">
               <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center">
                 <Logo className="h-6 w-6 text-primary-foreground" />
@@ -194,7 +194,7 @@ const Login = () => {
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-3 pb-4">
+            <CardContent className="space-y-3 px-6 pb-4">
               {resetSuccessMessage && (
                 <Alert className="border-green-500/50 bg-green-500/10">
                   <CheckCircle className="h-4 w-4 text-green-600" />
@@ -263,7 +263,7 @@ const Login = () => {
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="flex flex-col gap-3 pb-6">
+            <CardFooter className="flex flex-col gap-3 px-6 pb-10 sm:pb-6">
               <Button type="submit" className="w-full" disabled={isLoading || authLoading}>
                 {isLoading ? (
                   "Signing in..."

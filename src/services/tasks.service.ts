@@ -45,12 +45,25 @@ export function fromApi(raw: any): Task {
     avatar: a.avatar ?? a.avatarUrl ?? '',
   }));
 
+  const updater = raw.updatedBy as { id?: string; name?: string; avatarUrl?: string | null } | null | undefined;
+  const resolvedUpdater = updater?.id && updater?.name
+    ? {
+        id: updater.id,
+        name: updater.name,
+        email: '',
+        role: 'member',
+        initials: updater.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+        avatar: updater.avatarUrl || '',
+      }
+    : null;
+
   return {
     ...raw,
     moduleIds,
     blockedBy: (raw.blockedBy || []).map((d: any) => (typeof d === 'string' ? d : d.id)),
     checklist: Array.isArray(raw.checklist) ? raw.checklist : [],
     createdBy: resolvedCreator,
+    updatedBy: resolvedUpdater,
     assignees,
   };
 }

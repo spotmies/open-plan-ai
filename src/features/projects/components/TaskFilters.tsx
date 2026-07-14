@@ -15,15 +15,26 @@ interface TaskFiltersProps {
   modules: { id: string; name: string; type: ModuleType }[];
   teamMembers: { id: string; name: string; initials: string }[];
   allTags: string[];
+  statusOptions?: { value: string; label: string; color?: string }[];
 }
 
-const statusOptions: { value: TaskStatus; label: string; color: string }[] = [
+// Fallback used only when the caller hasn't loaded the project's dynamic
+// task buckets yet (e.g. no projectId). See TaskFiltersDropdown for the same pattern.
+const DEFAULT_STATUS_OPTIONS: { value: TaskStatus; label: string; color: string }[] = [
   { value: 'todo', label: 'To Do', color: 'bg-status-todo' },
   { value: 'in-progress', label: 'In Progress', color: 'bg-status-in-progress' },
   { value: 'review', label: 'Review', color: 'bg-status-review' },
   { value: 'done', label: 'Done', color: 'bg-status-done' },
   { value: 'blocked', label: 'Blocked', color: 'bg-status-blocked' },
 ];
+
+function StatusDot({ color }: { color?: string }) {
+  if (!color) return <div className="w-2 h-2 rounded-full bg-muted-foreground/60" />;
+  if (color.startsWith('#') || color.startsWith('rgb')) {
+    return <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />;
+  }
+  return <div className={cn('w-2 h-2 rounded-full', color)} />;
+}
 
 const priorityOptions: { value: Priority; label: string; color: string }[] = [
   { value: 'critical', label: 'Critical', color: 'bg-priority-critical' },
@@ -47,7 +58,10 @@ export function TaskFilters({
   modules,
   teamMembers,
   allTags,
+  statusOptions,
 }: TaskFiltersProps) {
+  const effectiveStatusOptions = statusOptions?.length ? statusOptions : DEFAULT_STATUS_OPTIONS;
+
   const toggleStatus = (status: TaskStatus) => {
     const current = filters.status || [];
     const updated = current.includes(status)
@@ -114,13 +128,13 @@ export function TaskFilters({
         </PopoverTrigger>
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2">
-            {statusOptions.map(option => (
+            {effectiveStatusOptions.map(option => (
               <label key={option.value} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.status?.includes(option.value) || false}
                   onCheckedChange={() => toggleStatus(option.value)}
                 />
-                <div className={cn('w-2 h-2 rounded-full', option.color)} />
+                <StatusDot color={option.color} />
                 <span className="text-sm">{option.label}</span>
               </label>
             ))}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Filter, Flag, CheckSquare, FolderKanban } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -56,10 +56,14 @@ export function MyTasksFiltersDropdown({ items, filters, onFiltersChange }: MyTa
     return count;
   }, [filters]);
 
-  const clearAll = () => onFiltersChange({});
+  const [open, setOpen] = useState(false);
+  const clearAll = () => {
+    onFiltersChange({});
+    setOpen(false);
+  };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
           <Filter className="h-4 w-4" />

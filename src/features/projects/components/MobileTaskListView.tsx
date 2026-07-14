@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Task, ModuleType, TeamMember } from '@/types';
+import { Task, ModuleType, TeamMember, Milestone } from '@/types';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -22,6 +22,7 @@ interface MobileTaskListViewProps {
   tasks: Task[];
   allTasks?: Task[];
   modules?: { id: string; name: string; type: ModuleType }[];
+  milestones?: Milestone[];
   assignableMembers?: TeamMember[];
   onTaskUpdate?: (task: Task, onError?: () => void) => void;
   onBatchTaskUpdate?: (updates: Array<{ id: string; updates: Partial<Task> }>) => void;
@@ -85,6 +86,7 @@ export function MobileTaskListView({
   tasks,
   allTasks,
   modules = [],
+  milestones = [],
   assignableMembers,
   onTaskUpdate,
   onBatchTaskUpdate,
@@ -322,6 +324,7 @@ export function MobileTaskListView({
         onDelete={onTaskDelete}
         userProjectRole={userProjectRole}
         modules={modules}
+        milestones={milestones}
         projectId={projectId}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}

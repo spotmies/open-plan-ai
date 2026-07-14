@@ -8,6 +8,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +57,7 @@ interface MessageBubbleProps {
   currentUserId?: string;
   searchQuery?: string;
   memberNames?: string[];
+  reactionUsers?: Record<string, string>;
   readReceipts?: ReadReceipt[];
   otherMembersCount?: number;
   reactions?: MessageReaction[];
@@ -426,7 +428,7 @@ function FileAttachment({ file, isOwn }: { file: FileContent; isOwn: boolean }) 
 
 export function MessageBubble({
   message, showSenderInfo, showTimestamp, isGroupChat, currentUserId,
-  searchQuery, memberNames, readReceipts, otherMembersCount, reactions, onEdit, onDelete, onToggleReaction, onReply,
+  searchQuery, memberNames, reactionUsers, readReceipts, otherMembersCount, reactions, onEdit, onDelete, onToggleReaction, onReply,
 }: MessageBubbleProps) {
   const timezone = useUserTimezone();
   const navigate = useNavigate();
@@ -473,6 +475,23 @@ export function MessageBubble({
   // Touch devices don't fire hover reliably, so the toolbar is opened by tapping the bubble instead.
   const [isMobileToolbarOpen, setIsMobileToolbarOpen] = useState(false);
 
+  // Swipe-to-reply: drag the bubble horizontally past DRAG_REPLY_THRESHOLD to trigger reply.
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
+  const dragXRef = useRef(0);
+  const hasDraggedRef = useRef(false);
+  const DRAG_REPLY_THRESHOLD = 60;
+  const DRAG_MAX = 80;
+
+  const getReactorNames = useCallback((r: MessageReaction) => {
+    return r.userIds.map((id) => {
+      if (id === currentUserId) return 'You';
+      return reactionUsers?.[id] ?? 'Unknown';
+    });
+  }, [currentUserId, reactionUsers]);
+
   // Toolbar stays visible while hovered/tapped OR any popover/dropdown is open
   const showToolbar = (isMobile ? isMobileToolbarOpen : isHovered) || isMoreEmojiOpen || isMenuOpen;
 
@@ -495,6 +514,63 @@ export function MessageBubble({
   const handleBubbleTap = () => {
     if (!isMobile) return;
     setIsMobileToolbarOpen((v) => !v);
+  };
+
+  const handleBubbleClick = () => {
+    // Swallow the click that follows a drag so it doesn't also toggle the mobile toolbar.
+    if (hasDraggedRef.current) {
+      hasDraggedRef.current = false;
+      return;
+    }
+    handleBubbleTap();
+  };
+
+  // dragDirection: bubble slides toward the empty side of the screen, uncovering the
+  // reply icon parked underneath it (own bubbles hug the right edge so they drag left;
+  // others hug the left edge so they drag right).
+  const dragDirection = isOwn ? -1 : 1;
+
+  const handleDragPointerDown = (e: React.PointerEvent) => {
+    if (isDeleted || isEditing || e.pointerType === 'mouse' && e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, textarea, input, [role="button"]')) return;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragAxisRef.current = null;
+  };
+
+  const handleDragPointerMove = (e: React.PointerEvent) => {
+    if (!dragStartRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+
+    if (dragAxisRef.current === null) {
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      dragAxisRef.current = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+      if (dragAxisRef.current === 'horizontal') {
+        setIsDragging(true);
+        hasDraggedRef.current = true;
+        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+      }
+    }
+
+    if (dragAxisRef.current !== 'horizontal') return;
+    e.preventDefault();
+    const signedDx = dx * dragDirection;
+    const clamped = Math.max(0, Math.min(DRAG_MAX, signedDx));
+    dragXRef.current = clamped;
+    setDragX(clamped);
+  };
+
+  const endDrag = (e: React.PointerEvent) => {
+    if (dragAxisRef.current === 'horizontal') {
+      if (dragXRef.current >= DRAG_REPLY_THRESHOLD) onReply?.(message);
+      try { (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
+    }
+    dragStartRef.current = null;
+    dragAxisRef.current = null;
+    dragXRef.current = 0;
+    setIsDragging(false);
+    setDragX(0);
   };
 
   useEffect(() => {
@@ -704,6 +780,26 @@ export function MessageBubble({
             </DropdownMenu>
           </div>
 
+          {/* Reply icon, parked behind the bubble and uncovered as it drags away */}
+          {!isEditing && (
+            <div
+              className={cn('absolute inset-y-0 flex items-center pointer-events-none', isOwn ? 'right-2' : 'left-2')}
+              style={{
+                opacity: Math.min(1, dragX / DRAG_REPLY_THRESHOLD),
+                transform: `scale(${0.6 + 0.4 * Math.min(1, dragX / DRAG_REPLY_THRESHOLD)})`,
+              }}
+            >
+              <span
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-full transition-colors',
+                  dragX >= DRAG_REPLY_THRESHOLD ? 'bg-primary text-primary-foreground' : 'bg-primary/15 text-primary'
+                )}
+              >
+                <Reply className="h-3.5 w-3.5" />
+              </span>
+            </div>
+          )}
+
           {/* Message bubble content */}
           {isEditing ? (
             <div className="flex flex-col gap-1 min-w-[200px]">
@@ -729,12 +825,18 @@ export function MessageBubble({
           ) : (
             <div
               className={cn(
-                'rounded-2xl px-3 py-2 text-sm leading-relaxed max-w-full min-w-0 overflow-hidden break-words [overflow-wrap:anywhere]',
+                'relative rounded-2xl px-3 py-2 text-sm leading-relaxed max-w-full min-w-0 overflow-hidden break-words [overflow-wrap:anywhere] touch-pan-y',
+                isDragging ? 'transition-none select-none cursor-grabbing ring-2 ring-primary/50 shadow-lg' : 'transition-transform duration-200 ease-out cursor-grab',
                 isOwn
                   ? 'bg-primary text-primary-foreground rounded-br-md border border-primary/20'
                   : 'bg-muted text-foreground rounded-bl-md border border-border'
               )}
-              onClick={handleBubbleTap}
+              style={{ transform: `translateX(${dragX * dragDirection}px)` }}
+              onClick={handleBubbleClick}
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
             >
               {message.replyToMessage && (
                 <div
@@ -785,20 +887,27 @@ export function MessageBubble({
             <Popover open={isReactionPickerOpen} onOpenChange={setIsReactionPickerOpen}>
               <PopoverTrigger asChild>
                 <div className="flex flex-wrap gap-1 cursor-pointer">
-                  {reactions.map((r) => (
-                    <span
-                      key={r.emoji}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border transition-colors',
-                        r.reactedByMe
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                      )}
-                    >
-                      <span>{r.emoji}</span>
-                      <span>{r.count}</span>
-                    </span>
-                  ))}
+                  {reactions.map((r) => {
+                    const names = getReactorNames(r);
+                    return (
+                      <Tooltip key={r.emoji} delayDuration={200}>
+                        <TooltipTrigger asChild>
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border transition-colors',
+                              r.reactedByMe
+                                ? 'border-primary bg-primary/10 text-primary'
+                                : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                            )}
+                          >
+                            <span>{r.emoji}</span>
+                            <span>{r.count}</span>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{names.join(', ')}</TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
                 </div>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-2" side="top" align="center">

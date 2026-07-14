@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useECOList } from '@/hooks/useECOs';
+import { useECODetail } from '@/hooks/useECOs';
 import { useProjectRealtime } from '@/hooks/useProjectRealtime';
-import { ECOListItem, fromApiEcoListItem } from './ecoData';
+import { ECOListItem, fromApiEcoDetail } from './ecoData';
 import { ECOListView } from './ECOListView';
 import { ECODetailView } from './ECODetailView';
 import { ECOWizard } from './ECOWizard';
@@ -36,13 +36,11 @@ export function ECOView({
     }
   }, [newTrigger]);
 
-  // Resolves openEcoId (from the URL) into a full ECOListItem. Reuses ECOListView's
-  // unfiltered query cache when both are mounted with the same key; otherwise fetches
-  // its own copy (e.g. on a direct deep link / page refresh).
-  const { data: listData, isLoading: listLoading } = useECOList(projectId, {});
-  const resolvedEco = openEcoId
-    ? (listData?.data ?? []).map(fromApiEcoListItem).find(e => e.id === openEcoId) ?? null
-    : null;
+  // Resolves openEcoId (from the URL) into a full ECOListItem by fetching that ECO
+  // directly — works regardless of which page it's on, and on a direct deep link / refresh.
+  const { data: detailRaw, isLoading: detailLoading } = useECODetail(projectId, openEcoId ?? undefined);
+  const detail = detailRaw ? fromApiEcoDetail(detailRaw) : null;
+  const resolvedEco: ECOListItem | null = detail ? { ...detail, parts: detail.parts.length } : null;
 
   const setOpenEco = (eco: ECOListItem | null) => onOpenEcoIdChange?.(eco ? eco.id : null);
 
@@ -57,7 +55,7 @@ export function ECOView({
             onBack={() => setOpenEco(null)}
             onEdit={eco => setWizard({ ecoId: eco.id, isRework: eco.status === 'REWORK' })}
           />
-        ) : listLoading ? (
+        ) : detailLoading ? (
           <div className="flex items-center justify-center h-[50vh]">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>

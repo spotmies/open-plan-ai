@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { Task, TaskStatus, Priority, ModuleType, Issue, TeamMember } from '@/types';
+import { Task, TaskStatus, Priority, ModuleType, Issue, TeamMember, Milestone } from '@/types';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -49,6 +49,7 @@ import {
   useDeleteTaskColumn,
   useReorderTaskColumns,
 } from '@/hooks/useProjectTaskColumns';
+import { buildTaskStatusOptions } from '../utils/taskStatusOptions';
 
 // Utility function to convert Date to YYYY-MM-DD format (date-only, no timezone shift)
 const toDateOnly = (date: Date | undefined | null): string | undefined => {
@@ -121,6 +122,7 @@ interface KanbanViewProps {
   onTaskDelete?: (taskId: string) => void;
   userProjectRole?: string;
   modules?: { id: string; name: string; type: ModuleType }[];
+  milestones?: Milestone[];
   projectId?: string;
   onAddModule?: () => void;
 }
@@ -172,6 +174,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
   onTaskDelete,
   userProjectRole,
   modules = [],
+  milestones = [],
   projectId,
   onAddModule,
 }: KanbanViewProps) {
@@ -228,28 +231,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [expandedChecklistPreview, setExpandedChecklistPreview] = useState<Record<string, boolean>>({});
-  const taskModalStatusOptions = useMemo(() => {
-    const deduped = new Map<string, { value: string; label: string; color?: string }>();
-
-    columns.forEach((column) => {
-      if (column.isSpecial && column.status === 'blocked') return;
-      deduped.set(column.status, {
-        value: column.status,
-        label: column.label,
-        color: column.color,
-      });
-    });
-
-    if (!deduped.has('blocked')) {
-      deduped.set('blocked', {
-        value: 'blocked',
-        label: 'Blocked',
-        color: 'bg-status-blocked',
-      });
-    }
-
-    return Array.from(deduped.values());
-  }, [columns]);
+  const taskModalStatusOptions = useMemo(() => buildTaskStatusOptions(columns), [columns]);
   const [isMaximizedAddTask, setIsMaximizedAddTask] = useState(false);
   const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
   const [isModulePopoverOpen, setIsModulePopoverOpen] = useState(false);
@@ -1142,6 +1124,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
         onDelete={onTaskDelete}
         userProjectRole={userProjectRole}
         modules={modules}
+        milestones={milestones}
         projectId={projectId}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}
@@ -1169,6 +1152,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
           setAddTaskToColumn(null);
         }}
         modules={modules}
+        milestones={milestones}
         projectId={projectId}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}

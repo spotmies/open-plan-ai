@@ -73,6 +73,7 @@ import {
   FolderKanban,
   ChevronLeft,
   MoreVertical,
+  Target,
 } from 'lucide-react';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -88,6 +89,7 @@ import {
   Attachment,
   Comment,
   VideoLink,
+  Milestone,
 } from '@/types';
 import { useOrganizationMembers } from '@/hooks/useProjectTeam';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -125,6 +127,7 @@ interface TaskDetailModalProps {
   mode?: 'view' | 'create';
   onCreate?: (task: Task, pendingFiles?: File[]) => void;
   modules?: { id: string; name: string; type: ModuleType }[];
+  milestones?: Milestone[];
   projectId?: string;
   onAddModule?: () => void;
   assignableMembers?: TeamMember[];
@@ -183,6 +186,7 @@ const serializeTaskForDirtyCheck = (task: Task): string => {
     module: task.module || null,
     moduleId: task.moduleId || null,
     moduleIds: [...(task.moduleIds || [])].sort(),
+    milestoneId: task.milestoneId || null,
     dueDate: task.dueDate || null,
     startDate: task.startDate || null,
     assigneeIds: (task.assignees || []).map(a => a.id).sort(),
@@ -211,6 +215,7 @@ export const TaskDetailModal = ({
   mode = 'view',
   onCreate,
   modules = [],
+  milestones = [],
   projectId,
   onAddModule,
   assignableMembers,
@@ -1626,6 +1631,35 @@ export const TaskDetailModal = ({
                   </div>
                 )}
 
+                {/* Modified By */}
+                {mode !== 'create' && editedTask.updatedBy && (
+                  <div className="space-y-1.5">
+                    <Label className={cn(
+                      'text-xs text-muted-foreground flex items-center gap-1.5',
+                      showMobileHeader && 'uppercase tracking-wider font-medium'
+                    )}>
+                      {!showMobileHeader && <Pencil className="h-3 w-3" />}
+                      Modified By
+                    </Label>
+                    <div className={cn(
+                      'flex items-center gap-2 overflow-hidden',
+                      showMobileHeader ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
+                    )}>
+                      <Avatar className="h-5 w-5 shrink-0">
+                        <AvatarFallback className="text-[9px]">
+                          {editedTask.updatedBy.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span
+                        className={cn('text-sm truncate min-w-0', showMobileHeader && 'font-bold text-foreground')}
+                        title={editedTask.updatedBy.name}
+                      >
+                        {editedTask.updatedBy.name}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Priority */}
                 <div className="space-y-1.5">
                   <Label className={cn(
@@ -1672,6 +1706,42 @@ export const TaskDetailModal = ({
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Milestone */}
+                {milestones.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className={cn(
+                      'text-xs text-muted-foreground flex items-center gap-1.5',
+                      showMobileHeader && 'uppercase tracking-wider font-medium'
+                    )}>
+                      {!showMobileHeader && <Target className="h-3 w-3" />}
+                      Milestone
+                    </Label>
+                    <Select
+                      value={editedTask.milestoneId || 'none'}
+                      onValueChange={(value) => handleFieldChange('milestoneId', value === 'none' ? undefined : value)}
+                      disabled={!canEditTaskFields}
+                    >
+                      <SelectTrigger
+                        className={cn(
+                          showMobileHeader
+                            ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default'
+                            : 'h-9',
+                          showMobileHeader && !canEditTask && 'opacity-60'
+                        )}
+                        title={canEditTaskFields ? undefined : editLockTitle}
+                      >
+                        <SelectValue placeholder="No Milestone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No Milestone</SelectItem>
+                        {milestones.map((milestone) => (
+                          <SelectItem key={milestone.id} value={milestone.id}>{milestone.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* Project — only shown when explicitly provided (e.g. My Day, which aggregates tasks across projects) */}
                 {projectName && (
@@ -1764,10 +1834,10 @@ export const TaskDetailModal = ({
                           </span>
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent className="p-0 w-[240px]" align="start">
+                      <PopoverContent className="p-0 w-[240px] max-h-[--radix-popover-content-available-height] overflow-hidden" align="start">
                         <Command>
                           <CommandInput placeholder="Search modules..." />
-                          <CommandList>
+                          <CommandList className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto">
                             <CommandEmpty className="py-2 px-2">
                               <div className="text-sm text-center py-2 text-muted-foreground">
                                 No modules found.
@@ -2413,7 +2483,6 @@ export const TaskDetailModal = ({
                             <CommandInput placeholder="Search tasks..." />
                             <CommandList
                               className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto"
-                              onWheel={(e) => { e.currentTarget.scrollTop += e.deltaY; }}
                             >
                               <CommandEmpty>
                                 {availableTasksForBlocking.length === 0 ? "No available tasks" : "No results found."}
@@ -2503,7 +2572,6 @@ export const TaskDetailModal = ({
                             <CommandInput placeholder="Search tasks..." />
                             <CommandList
                               className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto"
-                              onWheel={(e) => { e.currentTarget.scrollTop += e.deltaY; }}
                             >
                               <CommandEmpty>
                                 {availableTasksForBlockedBy.length === 0 ? "No available tasks" : "No results found."}

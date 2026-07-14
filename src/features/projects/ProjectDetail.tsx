@@ -51,6 +51,7 @@ import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
 import { useOrganizationMembers, useProjectMembers } from '@/hooks/useProjectTeam';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
+import { buildTaskStatusOptions } from './utils/taskStatusOptions';
 import { useIssueColumns } from '@/hooks/useIssueColumns';
 import { DEFAULT_ISSUE_COLUMNS, type ProjectIssueColumn } from '@/services/issueColumns.service';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -166,6 +167,7 @@ function IssueViewControls({
   activeFilterCount: number;
   onClearFilters: () => void;
 }) {
+  const [filterOpen, setFilterOpen] = useState(false);
   return (
     <div className="flex items-center gap-2">
       {/* View Toggle */}
@@ -189,7 +191,7 @@ function IssueViewControls({
       </div>
 
       {/* Filter Dropdown */}
-      <Popover>
+      <Popover open={filterOpen} onOpenChange={setFilterOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
             <Filter className="h-4 w-4" />
@@ -206,7 +208,15 @@ function IssueViewControls({
             <div className="flex items-center justify-between">
               <h4 className="font-medium text-sm">Filter Issues</h4>
               {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" onClick={onClearFilters} className="h-6 px-2 text-xs">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    onClearFilters();
+                    setFilterOpen(false);
+                  }}
+                  className="h-6 px-2 text-xs"
+                >
                   Clear all
                 </Button>
               )}
@@ -341,6 +351,7 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const { id, tab: tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
   const { data: boardColumns } = useProjectTaskColumns(id);
+  const filterStatusOptions = useMemo(() => buildTaskStatusOptions(boardColumns), [boardColumns]);
   const { data: apiIssueColumns } = useIssueColumns(id);
   const issueColumns = apiIssueColumns && apiIssueColumns.length > 0 ? apiIssueColumns : DEFAULT_ISSUE_COLUMNS;
 
@@ -910,16 +921,21 @@ export default function ProjectDetail() {
     setIsAddModuleDialogOpen(true);
   };
 
-  const handleModuleAdd = (newModule: Omit<Module, 'id' | 'createdAt'>) => {
-    createModuleMutation.mutate({
-      name: newModule.name,
-      module_type: newModule.type,
-      description: newModule.description || undefined,
-      status: 'active',
-      progress: 0,
-      owner_id: newModule.owner?.id || null,
-    });
-    setIsAddModuleDialogOpen(false);
+  const handleModuleAdd = async (newModule: Omit<Module, 'id' | 'createdAt'>): Promise<boolean> => {
+    try {
+      await createModuleMutation.mutateAsync({
+        name: newModule.name,
+        module_type: newModule.type,
+        description: newModule.description || undefined,
+        status: 'active',
+        progress: 0,
+        owner_id: newModule.owner?.id || null,
+      });
+      setIsAddModuleDialogOpen(false);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const handleModuleUpdate = async (updatedModule: Module): Promise<boolean> => {
@@ -1018,7 +1034,7 @@ export default function ProjectDetail() {
 
     const taskUpdates = [
       ...addedTaskIds.map(id => ({ id, updates: { milestoneId: updatedMilestone.id } })),
-      ...removedTaskIds.map(id => ({ id, updates: { milestoneId: undefined } }))
+      ...removedTaskIds.map(id => ({ id, updates: { milestoneId: null } }))
     ];
 
     if (taskUpdates.length > 0) {
@@ -1411,6 +1427,7 @@ export default function ProjectDetail() {
                       filters={filters}
                       onFiltersChange={setFilters}
                       activeFilterCount={activeFilterCount}
+                      statusOptions={filterStatusOptions}
                     />
                     {isMobile && (
                       <button
@@ -1690,6 +1707,7 @@ export default function ProjectDetail() {
         mode="create"
         onCreate={handleTaskCreate}
         modules={modules}
+        milestones={project.milestones || []}
         projectId={id}
         onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
         assignableMembers={projectMembers}
@@ -1711,6 +1729,7 @@ export default function ProjectDetail() {
           onUpdate={handleTaskUpdate}
           mode="view"
           modules={modules}
+          milestones={project.milestones || []}
           projectId={id}
           onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
           assignableMembers={organizationMembers}

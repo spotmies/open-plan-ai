@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
 interface AddModuleDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (module: Omit<Module, 'id' | 'createdAt'>) => void;
+  onAdd: (module: Omit<Module, 'id' | 'createdAt'>) => Promise<boolean>;
   teamMembers: TeamMember[];
   existingModuleNames?: string[];
 }
@@ -51,6 +51,7 @@ export function AddModuleDialog({
   const [description, setDescription] = useState('');
   const [ownerId, setOwnerId] = useState<string>('');
   const [errors, setErrors] = useState<{ name?: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleTypeChange = (newType: ModuleType) => {
     setType(newType);
@@ -69,14 +70,15 @@ export function AddModuleDialog({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) return;
 
     const owner = teamMembers.find(m => m.id === ownerId);
 
-    onAdd({
+    setIsSubmitting(true);
+    const success = await onAdd({
       name: name.trim(),
       type,
       description: description.trim() || undefined,
@@ -85,6 +87,9 @@ export function AddModuleDialog({
       progress: 0,
       status: 'active',
     });
+    setIsSubmitting(false);
+
+    if (!success) return;
 
     // Reset form
     setName('');
@@ -199,10 +204,12 @@ export function AddModuleDialog({
           </div>
 
           <DialogFooter className="pt-4">
-            <Button type="button" variant="outline" onClick={handleClose}>
+            <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit">Add Module</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Adding...' : 'Add Module'}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

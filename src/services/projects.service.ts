@@ -41,6 +41,21 @@ function fromApiMilestone(raw: Record<string, unknown>): Milestone {
   };
 }
 
+/** Map a raw {id, name, avatarUrl} person object from the API into a TeamMember. */
+function mapPerson(raw: any): TeamMember {
+  return {
+    id: raw?.id ?? '',
+    name: raw?.name ?? 'Unknown',
+    email: '',
+    role: 'Member' as const,
+    initials: raw?.name
+      ? (raw.name as string).split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+      : 'U',
+    avatar: raw?.avatar ?? raw?.avatarUrl ?? '',
+    avatarUrl: raw?.avatarUrl ?? null,
+  };
+}
+
 function fromApiIssue(raw: Record<string, unknown>): Issue {
   const assignees = ((raw.assignees as any[]) || []).map((a: any): TeamMember => ({
     id: a.id,
@@ -52,20 +67,11 @@ function fromApiIssue(raw: Record<string, unknown>): Issue {
     avatarUrl: a.avatarUrl ?? null,
   }));
 
-  const rawReportedBy = raw.reportedBy as any;
-  const reportedBy: TeamMember = rawReportedBy
-    ? {
-        id: rawReportedBy.id ?? '',
-        name: rawReportedBy.name ?? 'Unknown',
-        email: '',
-        role: 'Member' as const,
-        initials: rawReportedBy.name
-          ? (rawReportedBy.name as string).split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
-          : 'U',
-        avatar: rawReportedBy.avatar ?? rawReportedBy.avatarUrl ?? '',
-        avatarUrl: rawReportedBy.avatarUrl ?? null,
-      }
+  const reportedBy: TeamMember = raw.reportedBy
+    ? mapPerson(raw.reportedBy)
     : { id: '', name: 'Unknown', email: '', role: 'Member', initials: 'U', avatar: '' };
+
+  const updatedBy: TeamMember | null = raw.updatedBy ? mapPerson(raw.updatedBy) : null;
 
   return {
     id: raw.id as string,
@@ -81,6 +87,7 @@ function fromApiIssue(raw: Record<string, unknown>): Issue {
     dueDate: (raw.dueDate as string) || undefined,
     resolution: (raw.resolution as string) || undefined,
     reportedBy,
+    updatedBy,
     assignees,
     blocksTaskIds: ((raw.blockedTasks as any[]) || []).map((t: any) => t.id),
     blockedBy: ((raw.blockedByTasks as any[]) || []).map((t: any) => t.id),

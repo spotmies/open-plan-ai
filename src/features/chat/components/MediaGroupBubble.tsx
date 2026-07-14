@@ -6,6 +6,7 @@ import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +37,7 @@ interface MediaGroupBubbleProps {
   readReceipts?: ReadReceipt[];
   otherMembersCount?: number;
   reactions?: MessageReaction[];
+  reactionUsers?: Record<string, string>;
   onDelete?: (messageId: string, senderName: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReply?: (message: ChatMessage) => void;
@@ -145,7 +147,7 @@ function tileClass(index: number, count: number): string {
 
 export function MediaGroupBubble({
   messages, showSenderInfo, showTimestamp, isGroupChat, currentUserId,
-  readReceipts, otherMembersCount, reactions, onDelete, onToggleReaction, onReply,
+  readReceipts, otherMembersCount, reactions, reactionUsers, onDelete, onToggleReaction, onReply,
 }: MediaGroupBubbleProps) {
   const timezone = useUserTimezone();
   const isMobile = useIsMobile();
@@ -188,6 +190,13 @@ export function MediaGroupBubble({
     messages.forEach((m) => onDelete?.(m.id, m.senderName));
     setShowDeleteConfirm(false);
   };
+
+  const getReactorNames = useCallback((r: MessageReaction) => {
+    return r.userIds.map((id) => {
+      if (id === currentUserId) return 'You';
+      return reactionUsers?.[id] ?? 'Unknown';
+    });
+  }, [currentUserId, reactionUsers]);
 
   const renderStatusIcon = () => {
     const otherReads = (readReceipts ?? []).filter((r) => r.userId !== currentUserId);
@@ -342,18 +351,25 @@ export function MediaGroupBubble({
             <Popover open={isReactionPickerOpen} onOpenChange={setIsReactionPickerOpen}>
               <PopoverTrigger asChild>
                 <div className="flex flex-wrap gap-1 cursor-pointer">
-                  {reactions.map((r) => (
-                    <span
-                      key={r.emoji}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border transition-colors',
-                        r.reactedByMe ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                      )}
-                    >
-                      <span>{r.emoji}</span>
-                      <span>{r.count}</span>
-                    </span>
-                  ))}
+                  {reactions.map((r) => {
+                    const names = getReactorNames(r);
+                    return (
+                      <Tooltip key={r.emoji} delayDuration={200}>
+                        <TooltipTrigger asChild>
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border transition-colors',
+                              r.reactedByMe ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                            )}
+                          >
+                            <span>{r.emoji}</span>
+                            <span>{r.count}</span>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{names.join(', ')}</TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
                 </div>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-2" side="top" align="center">

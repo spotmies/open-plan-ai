@@ -434,8 +434,8 @@ export function ECOListView({
         <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-4 items-start">
           {/* Left: list */}
           <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="flex flex-col gap-2.5 px-4 py-3 border-b border-border">
-              <span className="text-[13px] font-semibold">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 px-4 py-3 border-b border-border">
+              <span className="text-[13px] font-semibold shrink-0">
                 Change Orders{' '}
                 <span className="font-normal text-muted-foreground">
                   · {listLoading ? '…' : total}

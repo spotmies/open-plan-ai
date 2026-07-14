@@ -93,6 +93,11 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
     [conversation.members, user?.id]
   );
 
+  const reactionUsers = useMemo(
+    () => Object.fromEntries(conversation.members.map((m) => [m.id, m.name])),
+    [conversation.members]
+  );
+
   if (messages.length === 0) {
     return <EmptyState type="no-messages" />;
   }
@@ -175,6 +180,7 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
                         readReceipts={readReceiptMap?.[last.id]}
                         otherMembersCount={otherMembersCount}
                         reactions={reactionMap?.[last.id]}
+                        reactionUsers={reactionUsers}
                         onDelete={onDeleteMessage}
                         onToggleReaction={onToggleReaction}
                         onReply={onReplyMessage}
@@ -211,6 +217,7 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
                     readReceipts={readReceiptMap?.[msg.id]}
                     otherMembersCount={otherMembersCount}
                     reactions={reactionMap?.[msg.id]}
+                    reactionUsers={reactionUsers}
                     onEdit={onEditMessage}
                     onDelete={onDeleteMessage}
                     onToggleReaction={onToggleReaction}

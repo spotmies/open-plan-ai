@@ -12,6 +12,8 @@ import { TaskFilters } from './TaskFilters';
 import { TaskFiltersDropdown } from './TaskFiltersDropdown';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
+import { buildTaskStatusOptions } from '../utils/taskStatusOptions';
 
 interface TasksSectionProps {
   projectId: string;
@@ -124,6 +126,8 @@ export function TasksSection({
 }: TasksSectionProps) {
   const dependencyTasks = allTasks ?? tasks;
   const isMobile = useIsMobile();
+  const { data: boardColumns } = useProjectTaskColumns(projectId);
+  const statusOptions = useMemo(() => buildTaskStatusOptions(boardColumns), [boardColumns]);
 
   const [internalViewMode, setInternalViewMode] = useState<TaskViewMode>('kanban');
   const [internalFilters, setInternalFilters] = useState<TaskFilter>({});
@@ -220,8 +224,12 @@ export function TasksSection({
       }
 
       // Milestone filter
-      if (filters.milestoneId && task.milestoneId !== filters.milestoneId) {
-        return false;
+      if (filters.milestoneId) {
+        if (filters.milestoneId === 'none') {
+          if (task.milestoneId) return false;
+        } else if (task.milestoneId !== filters.milestoneId) {
+          return false;
+        }
       }
 
       // Due date filter
@@ -317,6 +325,7 @@ export function TasksSection({
           modules={modules}
           teamMembers={teamMembers}
           allTags={allTags}
+          statusOptions={statusOptions}
         />
       )}
 
@@ -328,6 +337,7 @@ export function TasksSection({
             tasks={filteredTasks}
             allTasks={dependencyTasks}
             modules={modules}
+            milestones={milestones}
             assignableMembers={assignableMembers}
             onTaskUpdate={onTaskUpdate}
             onBatchTaskUpdate={onBatchTaskUpdate}
@@ -348,6 +358,7 @@ export function TasksSection({
             onTaskDelete={onTaskDelete}
             userProjectRole={userProjectRole}
             modules={modules}
+            milestones={milestones}
             onAddModule={onAddModule}
           />
         ) : (

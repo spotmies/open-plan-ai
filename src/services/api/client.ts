@@ -234,41 +234,60 @@ function extractApiError(err: unknown): Error {
   return err instanceof Error ? err : new Error('An unexpected error occurred');
 }
 
+// ─── Response envelope unwrapping ──────────────────────────────────────────────
+//
+// The backend can respond with HTTP 200 and `{ success: false, ... }` for
+// server-side validation failures instead of a 4xx status. Axios only rejects
+// on network errors / non-2xx statuses, so without this check those responses
+// would resolve normally and callers (e.g. mutation onSuccess handlers) would
+// treat a failed operation as having succeeded.
+
+interface ApiEnvelope<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  error?: { message?: string; details?: Array<{ message?: string }> };
+}
+
+function unwrap<T>(res: AxiosResponse<ApiEnvelope<T>>): T {
+  const body = res.data;
+  if (body?.success === false) {
+    const detail = body.error?.details?.[0]?.message;
+    throw new Error(detail || body.error?.message || body.message || 'Request failed');
+  }
+  return body.data;
+}
+
 // ─── ApiClient ────────────────────────────────────────────────────────────────
 
 class ApiClient {
   async get<T>(url: string, cfg?: AxiosRequestConfig): Promise<T> {
     try {
-      const res: AxiosResponse<{ success: boolean; data: T }> = await axiosInstance.get(url, cfg);
-      return res.data.data;
+      return unwrap<T>(await axiosInstance.get(url, cfg));
     } catch (err) { throw extractApiError(err); }
   }
 
   async post<T>(url: string, data?: unknown, cfg?: AxiosRequestConfig): Promise<T> {
     try {
-      const res: AxiosResponse<{ success: boolean; data: T }> = await axiosInstance.post(url, data, cfg);
-      return res.data.data;
+      return unwrap<T>(await axiosInstance.post(url, data, cfg));
     } catch (err) { throw extractApiError(err); }
   }
 
   async put<T>(url: string, data?: unknown, cfg?: AxiosRequestConfig): Promise<T> {
     try {
-      const res: AxiosResponse<{ success: boolean; data: T }> = await axiosInstance.put(url, data, cfg);
-      return res.data.data;
+      return unwrap<T>(await axiosInstance.put(url, data, cfg));
     } catch (err) { throw extractApiError(err); }
   }
 
   async patch<T>(url: string, data?: unknown, cfg?: AxiosRequestConfig): Promise<T> {
     try {
-      const res: AxiosResponse<{ success: boolean; data: T }> = await axiosInstance.patch(url, data, cfg);
-      return res.data.data;
+      return unwrap<T>(await axiosInstance.patch(url, data, cfg));
     } catch (err) { throw extractApiError(err); }
   }
 
   async delete<T>(url: string, cfg?: AxiosRequestConfig): Promise<T> {
     try {
-      const res: AxiosResponse<{ success: boolean; data: T }> = await axiosInstance.delete(url, cfg);
-      return res.data.data;
+      return unwrap<T>(await axiosInstance.delete(url, cfg));
     } catch (err) { throw extractApiError(err); }
   }
 
