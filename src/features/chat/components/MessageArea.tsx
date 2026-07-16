@@ -21,9 +21,19 @@ interface MessageAreaProps {
   onDeleteMessage?: (messageId: string, senderName: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReplyMessage?: (message: ChatMessage) => void;
+  /** When set, only pinned/favourite messages render — the rest of the timeline is filtered out. */
+  filterMode?: 'pinned' | 'favourites' | null;
+  pinnedMessageIds?: Set<string>;
+  favouriteMessageIds?: Set<string>;
+  onTogglePin?: (messageId: string) => void;
+  onToggleFavourite?: (messageId: string) => void;
 }
 
-export function MessageArea({ messages, conversation, hasMore, onLoadMore, readReceiptMap, reactionMap, onEditMessage, onDeleteMessage, onToggleReaction, onReplyMessage }: MessageAreaProps) {
+export function MessageArea({
+  messages, conversation, hasMore, onLoadMore, readReceiptMap, reactionMap,
+  onEditMessage, onDeleteMessage, onToggleReaction, onReplyMessage,
+  filterMode, pinnedMessageIds, favouriteMessageIds, onTogglePin, onToggleFavourite,
+}: MessageAreaProps) {
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevConvIdRef = useRef<string | null>(null);
@@ -99,6 +109,20 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
   );
 
   if (messages.length === 0) {
+    if (filterMode === 'pinned') {
+      return (
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-muted-foreground px-8">
+          No pinned messages yet. Pin up to 5 important messages to see them here.
+        </div>
+      );
+    }
+    if (filterMode === 'favourites') {
+      return (
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-muted-foreground px-8">
+          No favourite messages yet. Star a message to save it here.
+        </div>
+      );
+    }
     return <EmptyState type="no-messages" />;
   }
 
@@ -168,7 +192,7 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
                 const showTimestamp = !isSameSenderAsNext;
 
                 nodes.push(
-                  <div key={msg.id}>
+                  <div key={msg.id} id={`msg-${last.id}`}>
                     {showDateDivider && <MessageDateDivider date={msgDate} />}
                     <div className={showSenderInfo && i > 0 ? 'mt-3' : 'mt-0.5'}>
                       <MediaGroupBubble
@@ -181,9 +205,13 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
                         otherMembersCount={otherMembersCount}
                         reactions={reactionMap?.[last.id]}
                         reactionUsers={reactionUsers}
+                        isPinned={pinnedMessageIds?.has(last.id)}
+                        isFavourited={favouriteMessageIds?.has(last.id)}
                         onDelete={onDeleteMessage}
                         onToggleReaction={onToggleReaction}
                         onReply={onReplyMessage}
+                        onTogglePin={onTogglePin}
+                        onToggleFavourite={onToggleFavourite}
                       />
                     </div>
                   </div>
@@ -200,7 +228,7 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
             const showTimestamp = !isSameSenderAsNext;
 
             nodes.push(
-              <div key={msg.id}>
+              <div key={msg.id} id={`msg-${msg.id}`}>
                 {showDateDivider && <MessageDateDivider date={msgDate} />}
                 <div className={showSenderInfo && i > 0 ? 'mt-3' : 'mt-0.5'}>
                   <MessageBubble
@@ -218,10 +246,14 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
                     otherMembersCount={otherMembersCount}
                     reactions={reactionMap?.[msg.id]}
                     reactionUsers={reactionUsers}
+                    isPinned={pinnedMessageIds?.has(msg.id)}
+                    isFavourited={favouriteMessageIds?.has(msg.id)}
                     onEdit={onEditMessage}
                     onDelete={onDeleteMessage}
                     onToggleReaction={onToggleReaction}
                     onReply={onReplyMessage}
+                    onTogglePin={onTogglePin}
+                    onToggleFavourite={onToggleFavourite}
                   />
                 </div>
               </div>

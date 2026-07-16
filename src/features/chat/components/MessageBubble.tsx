@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, ZoomIn, FileImage, File as FileIcon2 } from 'lucide-react';
+import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Star } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -61,10 +61,14 @@ interface MessageBubbleProps {
   readReceipts?: ReadReceipt[];
   otherMembersCount?: number;
   reactions?: MessageReaction[];
+  isPinned?: boolean;
+  isFavourited?: boolean;
   onEdit?: (messageId: string, newContent: string) => void;
   onDelete?: (messageId: string, senderName: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReply?: (message: ChatMessage) => void;
+  onTogglePin?: (messageId: string) => void;
+  onToggleFavourite?: (messageId: string) => void;
 }
 
 interface FileContent {
@@ -242,8 +246,8 @@ function LinkifiedText({ text, query, isOwn = false }: { text: string; query?: s
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              'underline break-all hover:opacity-80',
-              isOwn ? 'text-blue-100' : 'text-blue-500 dark:text-blue-400'
+              'underline break-all hover:opacity-80 font-medium',
+              isOwn ? 'text-blue-100 dark:text-blue-800' : 'text-blue-500 dark:text-blue-400'
             )}
           >
             {segment}
@@ -428,7 +432,8 @@ function FileAttachment({ file, isOwn }: { file: FileContent; isOwn: boolean }) 
 
 export function MessageBubble({
   message, showSenderInfo, showTimestamp, isGroupChat, currentUserId,
-  searchQuery, memberNames, reactionUsers, readReceipts, otherMembersCount, reactions, onEdit, onDelete, onToggleReaction, onReply,
+  searchQuery, memberNames, reactionUsers, readReceipts, otherMembersCount, reactions,
+  isPinned, isFavourited, onEdit, onDelete, onToggleReaction, onReply, onTogglePin, onToggleFavourite,
 }: MessageBubbleProps) {
   const timezone = useUserTimezone();
   const navigate = useNavigate();
@@ -758,6 +763,18 @@ export function MessageBubble({
                     Reply
                   </DropdownMenuItem>
                 )}
+                {!isDeleted && onTogglePin && (
+                  <DropdownMenuItem onClick={() => onTogglePin(message.id)} className="cursor-pointer">
+                    {isPinned ? <PinOff className="h-4 w-4 mr-2" /> : <Pin className="h-4 w-4 mr-2" />}
+                    {isPinned ? 'Unpin Message' : 'Pin Message'}
+                  </DropdownMenuItem>
+                )}
+                {!isDeleted && onToggleFavourite && (
+                  <DropdownMenuItem onClick={() => onToggleFavourite(message.id)} className="cursor-pointer">
+                    <Star className={cn('h-4 w-4 mr-2', isFavourited && 'fill-amber-500 text-amber-500')} />
+                    {isFavourited ? 'Remove from Favourites' : 'Add to Favourites'}
+                  </DropdownMenuItem>
+                )}
                 {canModify && !isFile && (
                   <>
                     <DropdownMenuSeparator />
@@ -934,13 +951,17 @@ export function MessageBubble({
 
         {showTimestamp && (
           <span className="text-[10px] text-muted-foreground mt-0.5 px-1 flex items-center gap-1">
+            {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
+            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
             {formatMessageTimestamp(message.createdAt, timezone)}
             {message.isEdited && ' (edited)'}
             {isOwn && renderStatusIcon()}
           </span>
         )}
         {!showTimestamp && isOwn && (
-          <span className="text-[10px] mt-0.5 px-1 flex items-center justify-end">
+          <span className="text-[10px] mt-0.5 px-1 flex items-center justify-end gap-1">
+            {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
+            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
             {renderStatusIcon()}
           </span>
         )}

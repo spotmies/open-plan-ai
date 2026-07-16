@@ -4,7 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { queryClient } from "@/lib/queryClient";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppLayoutSkeleton } from "@/components/layout/AppLayoutSkeleton";
@@ -34,6 +34,7 @@ const MyDay         = lazy(() => import("./features/myday"));
 const Calendar      = lazy(() => import("./features/calendar"));
 const Projects      = lazy(() => import("./features/projects"));
 const ProjectDetail = lazy(() => import("./features/projects/ProjectDetail"));
+const IssuePage     = lazy(() => import("./features/projects/IssuePage"));
 const NewProject    = lazy(() => import("./features/projects/NewProject"));
 const EditProject   = lazy(() => import("./features/projects/EditProject"));
 const Team          = lazy(() => import("./features/team"));
@@ -43,6 +44,7 @@ const Reports       = lazy(() => import("./features/reports"));
 const Notifications = lazy(() => import("./features/notifications"));
 const Chat          = lazy(() => import("./features/chat"));
 const Integrations  = lazy(() => import("./features/integrations"));
+const CallStatusWindow = lazy(() => import("./features/chat/CallStatusWindow"));
 
 // ── ReactQueryDevtools — dev only, lazy so it is never in the production bundle
 const ReactQueryDevtools = import.meta.env.DEV
@@ -63,6 +65,233 @@ function ProjectLegacyTabRedirect() {
   return <Navigate to={`/projects/${id}/${target}`} replace />;
 }
 
+// The call-status tab (see CallStatusWindow.tsx) is a bare display + remote
+// control synced over BroadcastChannel — it doesn't need its own chat socket
+// connection, unread-count hydration, or call-signaling subscriptions, so
+// ChatNotificationsProvider (which owns all of that) is skipped there.
+function AppShell() {
+  const location = useLocation();
+  const isCallStatusWindow = location.pathname === "/call";
+
+  return (
+    <>
+      {!isCallStatusWindow && <ChatNotificationsProvider />}
+      <Routes>
+        {/* ── Public (auth) routes ─────────────────────────────── */}
+        <Route path="/login"           element={<LoginPage />} />
+        <Route path="/signup"          element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password"  element={<ResetPasswordPage />} />
+        <Route path="/verify-email"    element={<VerifyEmailPage />} />
+        <Route path="/join-org"        element={<JoinOrganizationPage />} />
+
+        {/* ── Protected routes ─────────────────────────────────── */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayoutOutlet />}>
+            <Route
+              path="/"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="dashboard" />}>
+                  <Dashboard />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/my-day"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="list" />}>
+                  <MyDay />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="projects" />}>
+                  <Projects />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/new"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="detail" />}>
+                  <NewProject />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id"
+              element={<ProjectLegacyTabRedirect />}
+            />
+            <Route
+              path="/projects/:id/:tab"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/bom/:partId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/eng-changes/:ecoId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/tasks/:taskId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/modules/:moduleId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/milestones/:milestoneId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/edit"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="detail" />}>
+                  <EditProject />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/issues/:issueId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:projectId/issues/:issueId/full"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="detail" />}>
+                  <IssuePage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/team"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="team" />}>
+                  <Team />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="settings" />}>
+                  <Settings />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/settings/organization/edit"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="detail" />}>
+                  <EditOrganizationSettings />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/reports"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="reports" />}>
+                  <Reports />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/notifications"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="notifications" />}>
+                  <Notifications />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/integrations"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
+                  <Integrations />
+                </Suspense>
+              }
+            />
+          </Route>
+
+          {/* ── Routes without content padding ───────────────── */}
+          <Route element={<AppLayoutOutlet noPadding />}>
+            <Route
+              path="/calendar"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="calendar" />}>
+                  <Calendar />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/chat"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="chat" />}>
+                  <Chat />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/chat/:conversationId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="chat" />}>
+                  <Chat />
+                </Suspense>
+              }
+            />
+          </Route>
+
+          {/* ── Bare, chrome-free tab (no sidebar/topbar) ───────── */}
+          <Route
+            path="/call"
+            element={
+              <Suspense fallback={null}>
+                <CallStatusWindow />
+              </Suspense>
+            }
+          />
+        </Route>
+
+        {/* 404 */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
+  );
+}
+
 const App = () => {
   const storedTheme = useUserStore.getState().preferences.theme;
 
@@ -76,201 +305,7 @@ const App = () => {
                 <Toaster />
                 <Sonner />
                 <BrowserRouter>
-                  <ChatNotificationsProvider />
-                  <Routes>
-                    {/* ── Public (auth) routes ─────────────────────────────── */}
-                    <Route path="/login"           element={<LoginPage />} />
-                    <Route path="/signup"          element={<SignupPage />} />
-                    <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-                    <Route path="/reset-password"  element={<ResetPasswordPage />} />
-                    <Route path="/verify-email"    element={<VerifyEmailPage />} />
-                    <Route path="/join-org"        element={<JoinOrganizationPage />} />
-
-                    {/* ── Protected routes ─────────────────────────────────── */}
-                    <Route element={<ProtectedRoute />}>
-                      <Route element={<AppLayoutOutlet />}>
-                        <Route
-                          path="/"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="dashboard" />}>
-                              <Dashboard />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/my-day"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="list" />}>
-                              <MyDay />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="projects" />}>
-                              <Projects />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/new"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="detail" />}>
-                              <NewProject />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id"
-                          element={<ProjectLegacyTabRedirect />}
-                        />
-                        <Route
-                          path="/projects/:id/:tab"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
-                              <ProjectDetail />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id/bom/:partId"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
-                              <ProjectDetail />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id/eng-changes/:ecoId"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
-                              <ProjectDetail />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id/tasks/:taskId"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
-                              <ProjectDetail />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id/modules/:moduleId"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
-                              <ProjectDetail />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id/milestones/:milestoneId"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
-                              <ProjectDetail />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id/edit"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="detail" />}>
-                              <EditProject />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/projects/:id/issues/:issueId"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
-                              <ProjectDetail />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/team"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="team" />}>
-                              <Team />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/settings"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="settings" />}>
-                              <Settings />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/settings/organization/edit"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="detail" />}>
-                              <EditOrganizationSettings />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/reports"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="reports" />}>
-                              <Reports />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/notifications"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="notifications" />}>
-                              <Notifications />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/integrations"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
-                              <Integrations />
-                            </Suspense>
-                          }
-                        />
-                      </Route>
-
-                      {/* ── Routes without content padding ───────────────── */}
-                      <Route element={<AppLayoutOutlet noPadding />}>
-                        <Route
-                          path="/calendar"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="calendar" />}>
-                              <Calendar />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/chat"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="chat" />}>
-                              <Chat />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="/chat/:conversationId"
-                          element={
-                            <Suspense fallback={<AppLayoutSkeleton variant="chat" />}>
-                              <Chat />
-                            </Suspense>
-                          }
-                        />
-                      </Route>
-                    </Route>
-
-                    {/* 404 */}
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
+                  <AppShell />
                 </BrowserRouter>
 
                 {/* Dev tools — zero production bundle impact via lazy + null guard */}

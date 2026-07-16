@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { chatTransport } from '../transport';
 import { mapMessage, entityTagsPreviewText } from '../chat.mappers';
 import { useChatStore } from '../stores/useChatStore';
-import type { Conversation, ChatMessage, MessageReaction, EntityTagRef } from '../types';
+import type { Conversation, ChatMessage, MessageReaction, EntityTagRef, PinnedMessage, FavouriteMessage } from '../types';
 import type { Unsubscribe } from '../transport/IChatTransport';
 import { useAuth } from '@/contexts/AuthContext';
 import { logger } from '@/services/monitoring/logger';
@@ -595,4 +595,134 @@ export function useReactions(messages: ChatMessage[], currentUserId?: string, co
   }, [currentUserId]);
 
   return { reactionMap, handleToggleReaction };
+}
+
+/** Mirrors the backend cap in chat.service.ts (MAX_PINNED_MESSAGES) — checked client-side too, for instant feedback. */
+export const MAX_PINNED_MESSAGES = 5;
+
+/**
+ * Pinned messages are shared conversation state (every member sees the same
+ * pins), so they're kept in a small dedicated list synced over sockets —
+ * unlike favourites, which are private per user.
+ */
+export function usePinnedMessages(conversationId: string | null) {
+  const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchPinned = useCallback(async () => {
+    if (!conversationId) { setPinnedMessages([]); return; }
+    setLoading(true);
+    try {
+      const data = await chatService.getPinnedMessages(conversationId);
+      setPinnedMessages(data);
+    } catch (err) {
+      logger.error('Failed to fetch pinned messages:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [conversationId]);
+
+  useEffect(() => { fetchPinned(); }, [fetchPinned]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    const unsub = chatTransport.subscribeToPinUpdates(
+      conversationId,
+      ({ message }) => {
+        const raw = message as any;
+        const mapped: PinnedMessage = {
+          ...mapMessage(raw, null),
+          pinnedAt: raw.pinnedAt ?? raw.pinned_at ?? new Date().toISOString(),
+          pinnedBy: raw.pinnedBy ?? raw.pinned_by ?? null,
+        };
+        setPinnedMessages((prev) => (prev.some((m) => m.id === mapped.id) ? prev : [...prev, mapped]));
+      },
+      ({ messageId }) => {
+        setPinnedMessages((prev) => prev.filter((m) => m.id !== messageId));
+      },
+    );
+    return () => unsub();
+  }, [conversationId]);
+
+  const pinMessage = useCallback(async (messageId: string) => {
+    if (!conversationId) return;
+    if (pinnedMessages.length >= MAX_PINNED_MESSAGES) {
+      toast.error(`You can only pin up to ${MAX_PINNED_MESSAGES} messages in this chat. Unpin one first.`);
+      return;
+    }
+    try {
+      const pinned = await chatService.pinMessage(conversationId, messageId);
+      setPinnedMessages((prev) => (prev.some((m) => m.id === pinned.id) ? prev : [...prev, pinned]));
+    } catch (err) {
+      logger.error('Failed to pin message:', err);
+      toast.error('Failed to pin message');
+    }
+  }, [conversationId, pinnedMessages.length]);
+
+  const unpinMessage = useCallback(async (messageId: string) => {
+    if (!conversationId) return;
+    const previous = pinnedMessages;
+    setPinnedMessages((prev) => prev.filter((m) => m.id !== messageId));
+    try {
+      await chatService.unpinMessage(conversationId, messageId);
+    } catch (err) {
+      logger.error('Failed to unpin message:', err);
+      toast.error('Failed to unpin message');
+      setPinnedMessages(previous);
+    }
+  }, [conversationId, pinnedMessages]);
+
+  const pinnedMessageIds = useMemo(() => new Set(pinnedMessages.map((m) => m.id)), [pinnedMessages]);
+
+  return { pinnedMessages, pinnedMessageIds, loading, pinMessage, unpinMessage, refetchPinned: fetchPinned };
+}
+
+/**
+ * Favourite (starred) messages are private per user — no socket sync needed.
+ * The full per-conversation list is fetched eagerly (it's a small, personal
+ * dataset); favouriteIds is simply derived from it for badge state on
+ * individual message bubbles.
+ */
+export function useFavouriteMessages(conversationId: string | null) {
+  const [favouriteMessages, setFavouriteMessages] = useState<FavouriteMessage[]>([]);
+  const [loadingFavourites, setLoadingFavourites] = useState(false);
+
+  const fetchFavouriteMessages = useCallback(async () => {
+    if (!conversationId) { setFavouriteMessages([]); return; }
+    setLoadingFavourites(true);
+    try {
+      const data = await chatService.getFavouriteMessages(conversationId);
+      setFavouriteMessages(data);
+    } catch (err) {
+      logger.error('Failed to fetch favourite messages:', err);
+    } finally {
+      setLoadingFavourites(false);
+    }
+  }, [conversationId]);
+
+  useEffect(() => { fetchFavouriteMessages(); }, [fetchFavouriteMessages]);
+
+  const toggleFavourite = useCallback(async (message: ChatMessage) => {
+    const wasFavourited = favouriteMessages.some((m) => m.id === message.id);
+    setFavouriteMessages((prev) =>
+      wasFavourited
+        ? prev.filter((m) => m.id !== message.id)
+        : [{ ...message, favouritedAt: new Date().toISOString() }, ...prev]
+    );
+    try {
+      await chatService.toggleFavourite(message.id);
+    } catch (err) {
+      logger.error('Failed to toggle favourite:', err);
+      toast.error('Failed to update favourite');
+      setFavouriteMessages((prev) =>
+        wasFavourited
+          ? [{ ...message, favouritedAt: new Date().toISOString() }, ...prev]
+          : prev.filter((m) => m.id !== message.id)
+      );
+    }
+  }, [favouriteMessages]);
+
+  const favouriteIds = useMemo(() => new Set(favouriteMessages.map((m) => m.id)), [favouriteMessages]);
+
+  return { favouriteMessages, favouriteIds, loadingFavourites, toggleFavourite, refetchFavourites: fetchFavouriteMessages };
 }

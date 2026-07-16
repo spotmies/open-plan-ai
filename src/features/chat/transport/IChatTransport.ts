@@ -1,5 +1,33 @@
 export type Unsubscribe = () => void;
 
+export interface CallInvitePayload {
+  callId: string;
+  conversationId: string;
+  callType: 'audio' | 'video';
+  meetingUri: string;
+}
+
+export interface CallActionPayload {
+  callId: string;
+  conversationId: string;
+}
+
+export interface IncomingCallEvent {
+  callId: string;
+  conversationId: string;
+  callType: 'audio' | 'video';
+  meetingUri: string;
+  fromUserId: string;
+  fromUserName: string;
+  participantIds: string[];
+}
+
+export interface CallStatusEvent {
+  callId: string;
+  byUserId: string;
+  byUserName?: string;
+}
+
 export interface IChatTransport {
   subscribeToMessages(
     conversationId: string,
@@ -42,9 +70,33 @@ export interface IChatTransport {
     }) => void
   ): Unsubscribe;
 
+  subscribeToPinUpdates(
+    conversationId: string,
+    onPinned: (payload: { conversationId: string; message: unknown }) => void,
+    onUnpinned: (payload: { conversationId: string; messageId: string }) => void
+  ): Unsubscribe;
+
   unsubscribe(channel: Unsubscribe): void;
 
   connect(): void;
 
   disconnect(): void;
+
+  // ─── Call signaling ───────────────────────────────────────────────────────
+
+  emitCallInvite(payload: CallInvitePayload): void;
+
+  emitCallAccept(payload: CallActionPayload): void;
+
+  emitCallDecline(payload: CallActionPayload): void;
+
+  emitCallEnd(payload: CallActionPayload): void;
+
+  subscribeToIncomingCalls(onIncoming: (event: IncomingCallEvent) => void): Unsubscribe;
+
+  subscribeToCallAccepted(onAccepted: (event: CallStatusEvent) => void): Unsubscribe;
+
+  subscribeToCallDeclined(onDeclined: (event: CallStatusEvent) => void): Unsubscribe;
+
+  subscribeToCallEnded(onEnded: (event: CallStatusEvent) => void): Unsubscribe;
 }

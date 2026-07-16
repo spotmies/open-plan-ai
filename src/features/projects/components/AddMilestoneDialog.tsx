@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { format, startOfMonth } from 'date-fns';
+import { format, startOfMonth, startOfToday } from 'date-fns';
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
 import {
   Calendar as CalendarIcon,
@@ -83,6 +84,7 @@ export function AddMilestoneDialog({
   const [targetDateCalendarMonth, setTargetDateCalendarMonth] = useState<Date>(() =>
     startOfMonth(new Date())
   );
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const form = useForm<MilestoneFormData>({
     resolver: zodResolver(milestoneSchema),
@@ -114,6 +116,31 @@ export function AddMilestoneDialog({
 
     onAdd(milestone);
     onClose();
+  };
+
+  const isFormDirty =
+    form.formState.isDirty ||
+    selectedTasks.length > 0 ||
+    selectedModules.length > 0 ||
+    selectedIssues.length > 0;
+
+  const resetAndClose = () => {
+    form.reset();
+    setSelectedTasks([]);
+    setSelectedModules([]);
+    setSelectedIssues([]);
+    setTaskSearch('');
+    setModuleSearch('');
+    setIssueSearch('');
+    onClose();
+  };
+
+  const attemptClose = () => {
+    if (isFormDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      resetAndClose();
+    }
   };
 
   const toggleTask = useCallback((taskId: string) => {
@@ -165,7 +192,7 @@ export function AddMilestoneDialog({
   );
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && attemptClose()}>
       <DialogContent className="max-w-3xl max-h-[90vh] p-0 flex flex-col gap-0">
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>Add Milestone</DialogTitle>
@@ -242,6 +269,7 @@ export function AddMilestoneDialog({
                             onMonthChange={setTargetDateCalendarMonth}
                             selected={field.value}
                             onSelect={field.onChange}
+                            disabled={{ before: startOfToday() }}
                             initialFocus
                             className="p-3 pointer-events-auto"
                           />
@@ -437,7 +465,7 @@ export function AddMilestoneDialog({
             </div>
 
             <DialogFooter className="px-6 py-4 border-t shrink-0">
-              <Button type="button" variant="outline" onClick={onClose}>
+              <Button type="button" variant="outline" onClick={attemptClose}>
                 Cancel
               </Button>
               <Button type="submit">
@@ -447,6 +475,17 @@ export function AddMilestoneDialog({
           </form>
         </Form>
       </DialogContent>
+
+      <ConfirmationDialog
+        open={showDiscardConfirm}
+        onOpenChange={setShowDiscardConfirm}
+        onConfirm={resetAndClose}
+        title="Discard changes?"
+        description="You have unsaved changes. Are you sure you want to discard them?"
+        confirmText="Discard"
+        cancelText="Keep Editing"
+        variant="destructive"
+      />
     </Dialog>
   );
 }

@@ -342,6 +342,21 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
   // DOM node and this effect must rerun to size the fresh node correctly.
   useEffect(() => { resize(); }, [value, resize, isMobile]);
 
+  // Mobile-only: when this screen is entered via a deep link (e.g. tapping a
+  // chat notification), the mobile header/bottom-nav chrome collapses away
+  // and the message pane's width settles *after* the textarea's first
+  // mount/measurement, leaving a stale inline height until something
+  // (previously only typing) re-triggers resize(). Re-measure whenever the
+  // textarea's own box actually changes size so it self-corrects immediately.
+  useEffect(() => {
+    if (!isMobile) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, resize]);
+
   // Create and revoke object URLs for file previews to avoid memory leaks
   useEffect(() => {
     const urls = pendingFiles.map((file) => {

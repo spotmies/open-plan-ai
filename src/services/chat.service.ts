@@ -1,8 +1,16 @@
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
-import type { Conversation, ChatMessage, ReachableUser, MessageReaction, EntityTagRef } from '@/features/chat/types';
+import type { Conversation, ChatMessage, ReachableUser, MessageReaction, EntityTagRef, PinnedMessage, FavouriteMessage } from '@/features/chat/types';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import type { Project } from '@/types';
+
+/** Computes initials from a display name: first letter of the first 2 words, or the single letter for a one-word name. */
+function computeInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '??';
+  if (words.length === 1) return words[0].charAt(0).toUpperCase();
+  return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+}
 
 /** Map backend MessageResponse (camelCase) to frontend ChatMessage (flat senderId). */
 function mapChatMessage(raw: any): ChatMessage {
@@ -15,7 +23,7 @@ function mapChatMessage(raw: any): ChatMessage {
     senderId: raw.senderId ?? raw.sender_id ?? raw.sender?.id ?? '',
     senderName: raw.senderName ?? raw.sender?.name ?? raw.sender_name ?? 'Unknown',
     senderAvatar: resolveFileUrl(raw.senderAvatar ?? raw.sender?.avatarUrl ?? raw.sender?.avatar_url) ?? raw.senderAvatar ?? raw.sender?.avatarUrl ?? undefined,
-    senderInitials: raw.senderInitials ?? raw.sender?.initials ?? (raw.sender?.name ?? '').slice(0, 2).toUpperCase() ?? '??',
+    senderInitials: raw.senderInitials ?? raw.sender?.initials ?? computeInitials(raw.sender?.name ?? ''),
     contentType: (raw.contentType ?? raw.content_type ?? 'text') as any,
     content: raw.content ?? '',
     attachments: resolvedFileUrl ? [{
@@ -35,6 +43,21 @@ function mapChatMessage(raw: any): ChatMessage {
   };
 }
 
+function mapPinnedMessage(raw: any): PinnedMessage {
+  return {
+    ...mapChatMessage(raw),
+    pinnedAt: raw.pinnedAt ?? raw.pinned_at ?? new Date().toISOString(),
+    pinnedBy: raw.pinnedBy ?? raw.pinned_by ?? null,
+  };
+}
+
+function mapFavouriteMessage(raw: any): FavouriteMessage {
+  return {
+    ...mapChatMessage(raw),
+    favouritedAt: raw.favouritedAt ?? raw.favourited_at ?? new Date().toISOString(),
+  };
+}
+
 /** Map the backend ConversationResponse shape to the frontend Conversation type. */
 function mapConversation(raw: any): Conversation {
   const members = (raw.members ?? []).map((m: any) => {
@@ -43,8 +66,9 @@ function mapConversation(raw: any): Conversation {
       id: m.userId ?? m.id,
       userId: m.userId ?? m.id,
       name: m.name ?? '',
+      email: m.email ?? '',
       avatarUrl: resolveFileUrl(rawAvatarUrl) ?? rawAvatarUrl ?? undefined,
-      initials: m.initials ?? (m.name ?? '').slice(0, 2).toUpperCase(),
+      initials: m.initials ?? computeInitials(m.name ?? ''),
       role: m.role ?? 'member',
       lastSeenAt: m.lastSeenAt ?? m.last_seen_at ?? null,
       lastReadAt: m.lastReadAt ?? m.last_read_at ?? null,
@@ -237,6 +261,29 @@ export const chatService = {
 
   async toggleReaction(messageId: string, emoji: string): Promise<void> {
     await apiClient.post(ENDPOINTS.REACTIONS.TOGGLE(messageId), { emoji });
+  },
+
+  async pinMessage(conversationId: string, messageId: string): Promise<PinnedMessage> {
+    const data = await apiClient.post<any>(ENDPOINTS.PINS.TOGGLE(conversationId, messageId), {});
+    return mapPinnedMessage(data);
+  },
+
+  async unpinMessage(conversationId: string, messageId: string): Promise<void> {
+    await apiClient.delete(ENDPOINTS.PINS.TOGGLE(conversationId, messageId));
+  },
+
+  async getPinnedMessages(conversationId: string): Promise<PinnedMessage[]> {
+    const data = await apiClient.get<any[]>(ENDPOINTS.PINS.LIST(conversationId));
+    return (data || []).map(mapPinnedMessage);
+  },
+
+  async toggleFavourite(messageId: string): Promise<{ action: 'added' | 'removed' }> {
+    return apiClient.post(ENDPOINTS.FAVOURITES.TOGGLE(messageId), {});
+  },
+
+  async getFavouriteMessages(conversationId: string): Promise<FavouriteMessage[]> {
+    const data = await apiClient.get<any[]>(ENDPOINTS.FAVOURITES.LIST(conversationId));
+    return (data || []).map(mapFavouriteMessage);
   },
 
   async getSharedFiles(

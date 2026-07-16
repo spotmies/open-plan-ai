@@ -122,6 +122,14 @@ export interface Milestone {
   createdBy?: TeamMember;  // Who created this milestone
 }
 
+// A single "who changed what, when" entry, sourced from the activity log.
+export interface ModificationHistoryEntry {
+  userId: string;
+  userName: string;
+  fields: string[];
+  at: string;
+}
+
 // Enhanced Task interface
 export interface Task {
   id: string;
@@ -146,6 +154,8 @@ export interface Task {
   updatedAt: string;
   createdBy?: TeamMember;  // Who created this task
   updatedBy?: TeamMember | null;  // Who last modified this task
+  lastModifiedFields?: string[] | null;  // Field keys changed in the most recent update
+  changeHistory?: ModificationHistoryEntry[] | null;  // Recent modification history, most recent first
 
   // NEW optional fields (backward compatible)
   milestoneId?: string | null;      // Link to parent milestone
@@ -175,10 +185,13 @@ export interface Issue {
   // Ownership
   reportedBy: TeamMember;
   updatedBy?: TeamMember | null;  // Who last modified this issue
+  lastModifiedFields?: string[] | null;  // Field keys changed in the most recent update
+  changeHistory?: ModificationHistoryEntry[] | null;  // Recent modification history, most recent first
   assignees?: TeamMember[];
 
   // Dates
   reportedAt: string;
+  updatedAt?: string;
   resolvedAt?: string;
   dueDate?: string;
 

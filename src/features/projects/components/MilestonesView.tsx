@@ -216,7 +216,7 @@ export function MilestonesView({
                     >
                       <div className="space-y-2.5">
                         <div className="flex items-start justify-between gap-2">
-                          <h4 className={cn('text-sm font-medium leading-tight', milestone.completed && 'line-through text-muted-foreground')}>
+                          <h4 className={cn('text-sm font-medium leading-tight line-clamp-2 break-words min-w-0', milestone.completed && 'line-through text-muted-foreground')}>
                             {milestone.title}
                           </h4>
                           <Badge variant="outline" className="text-[10px] shrink-0">
@@ -225,7 +225,7 @@ export function MilestonesView({
                         </div>
 
                         {milestone.description && (
-                          <p className="text-xs text-muted-foreground line-clamp-2">{milestone.description}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-2 break-words">{milestone.description}</p>
                         )}
 
                         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -438,18 +438,18 @@ export function MilestonesView({
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <h3 className={cn(
-                                    'font-medium text-sm sm:text-base',
+                                    'font-medium text-sm sm:text-base line-clamp-2 break-words min-w-0',
                                     milestone.completed && 'line-through text-muted-foreground'
                                   )}>
                                     {displayTitle}
                                   </h3>
-                                  <Badge variant="outline" className={cn('text-xs', statusConfig[status].textColor)}>
+                                  <Badge variant="outline" className={cn('text-xs shrink-0', statusConfig[status].textColor)}>
                                     <StatusIcon className="h-3 w-3 mr-1" />
                                     {statusConfig[status].label}
                                   </Badge>
                                 </div>
                                 {milestone.description && (
-                                  <p className="text-xs sm:text-sm text-muted-foreground mt-1">{milestone.description}</p>
+                                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 line-clamp-2 break-words">{milestone.description}</p>
                                 )}
                               </div>
                             </div>

@@ -15,6 +15,7 @@ import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getFallbackTagColor } from '@/lib/tagColors';
 import { softTint } from '@/features/dashboard/utils/colors';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { Label } from '@/components/ui/label';
 import {
   Search,
@@ -67,6 +75,8 @@ import { toast } from 'sonner';
 const DEPARTMENTS = ['Engineering', 'Design', 'Management', 'Quality Assurance', 'Operations', 'Sales', 'Marketing', 'Support'];
 
 const ASSIGNABLE_ROLES = ['admin', 'maintainer'] as const;
+
+const MEMBERS_PAGE_SIZE = 10;
 
 const formatUiDate = (value?: string | null) => {
   if (!value) return 'N/A';
@@ -141,6 +151,7 @@ const Team = () => {
   const [editRole, setEditRole] = useState('');
   const [editDepartment, setEditDepartment] = useState('');
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const members = teamMembers || [];
   const invitations = pendingInvitations || [];
@@ -152,6 +163,17 @@ const Team = () => {
       member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / MEMBERS_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedMembers = filteredMembers.slice(
+    (safeCurrentPage - 1) * MEMBERS_PAGE_SIZE,
+    safeCurrentPage * MEMBERS_PAGE_SIZE
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   const stats = {
     total: members.length,
@@ -516,7 +538,7 @@ const Team = () => {
               Members
             </h3>
             <div className="rounded-lg border divide-y divide-border overflow-hidden">
-              {filteredMembers.map((member) => {
+              {paginatedMembers.map((member) => {
                 const avatarColor = getAvatarColor(member);
                 return (
                   <button
@@ -556,6 +578,37 @@ const Team = () => {
                 );
               })}
             </div>
+            {filteredMembers.length > 0 && totalPages > 1 && (
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <p className="text-xs text-muted-foreground">
+                  Page {safeCurrentPage} of {totalPages} ({filteredMembers.length} members)
+                </p>
+                <Pagination className="mx-0 w-auto">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (safeCurrentPage > 1) setCurrentPage(safeCurrentPage - 1);
+                        }}
+                        className={cn(safeCurrentPage <= 1 && 'pointer-events-none opacity-50')}
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (safeCurrentPage < totalPages) setCurrentPage(safeCurrentPage + 1);
+                        }}
+                        className={cn(safeCurrentPage >= totalPages && 'pointer-events-none opacity-50')}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
           </div>
         ) : (
         <div className="rounded-lg border overflow-hidden">
@@ -572,7 +625,7 @@ const Team = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredMembers.map((member) => (
+              {paginatedMembers.map((member) => (
                 <TableRow key={member.id}>
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -659,6 +712,37 @@ const Team = () => {
               ))}
             </TableBody>
           </Table>
+          {filteredMembers.length > 0 && totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <p className="text-sm text-muted-foreground">
+                Page {safeCurrentPage} of {totalPages} ({filteredMembers.length} members)
+              </p>
+              <Pagination className="mx-0 w-auto">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (safeCurrentPage > 1) setCurrentPage(safeCurrentPage - 1);
+                      }}
+                      className={cn(safeCurrentPage <= 1 && 'pointer-events-none opacity-50')}
+                    />
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (safeCurrentPage < totalPages) setCurrentPage(safeCurrentPage + 1);
+                      }}
+                      className={cn(safeCurrentPage >= totalPages && 'pointer-events-none opacity-50')}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </div>
         )}
 

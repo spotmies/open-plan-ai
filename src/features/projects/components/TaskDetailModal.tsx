@@ -14,6 +14,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -64,6 +75,7 @@ import {
   Tag,
   AlertCircle,
   AlertTriangle,
+  Info,
   Pencil,
   Check,
   Loader2,
@@ -104,6 +116,7 @@ import { Switch } from '@/components/ui/switch';
 import { SlashBlockEditor } from '@/components/ui/SlashBlockEditor';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { ISSUE_SEVERITY_OPTIONS, ISSUE_SEVERITY_DISPLAY } from './issueSeverity';
+import { formatModifiedFields } from './modifiedFields';
 
 // Utility function to convert Date to YYYY-MM-DD format (date-only, no timezone shift)
 const toDateOnly = (date: Date | undefined | null): string | undefined => {
@@ -1640,6 +1653,36 @@ export const TaskDetailModal = ({
                     )}>
                       {!showMobileHeader && <Pencil className="h-3 w-3" />}
                       Modified By
+                      <HoverCard openDelay={150} closeDelay={100}>
+                        <HoverCardTrigger asChild>
+                          <Info className="h-3 w-3 cursor-help" />
+                        </HoverCardTrigger>
+                        <HoverCardContent
+                          side="bottom"
+                          align="start"
+                          sideOffset={8}
+                          className="w-[280px] p-3 text-xs space-y-2 max-h-[240px] overflow-y-auto"
+                        >
+                          {editedTask.changeHistory && editedTask.changeHistory.length > 0 ? (
+                            editedTask.changeHistory.map((entry, idx) => (
+                              <div key={idx} className={idx > 0 ? 'pt-2 border-t border-border/50' : ''}>
+                                <p className="font-medium">{entry.userName}</p>
+                                {formatModifiedFields(entry.fields) && (
+                                  <p>Changed: {formatModifiedFields(entry.fields)}</p>
+                                )}
+                                <p className="text-muted-foreground">{format(parseISO(entry.at), 'MMM d, yyyy • h:mm a')}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <div>
+                              <p className="font-medium">{editedTask.updatedBy.name}</p>
+                              {editedTask.updatedAt && (
+                                <p className="text-muted-foreground">{format(parseISO(editedTask.updatedAt), 'MMM d, yyyy • h:mm a')}</p>
+                              )}
+                            </div>
+                          )}
+                        </HoverCardContent>
+                      </HoverCard>
                     </Label>
                     <div className={cn(
                       'flex items-center gap-2 overflow-hidden',
@@ -1650,12 +1693,18 @@ export const TaskDetailModal = ({
                           {editedTask.updatedBy.initials}
                         </AvatarFallback>
                       </Avatar>
-                      <span
-                        className={cn('text-sm truncate min-w-0', showMobileHeader && 'font-bold text-foreground')}
-                        title={editedTask.updatedBy.name}
-                      >
-                        {editedTask.updatedBy.name}
-                      </span>
+                      <TooltipProvider delayDuration={150}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className={cn('text-sm truncate min-w-0', showMobileHeader && 'font-bold text-foreground')}>
+                              {editedTask.updatedBy.name}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">
+                            {editedTask.updatedBy.name}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   </div>
                 )}

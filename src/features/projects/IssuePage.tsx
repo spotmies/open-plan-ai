@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Minimize2 } from 'lucide-react';
 import { IssueDetailContent } from './components/IssueDetailContent';
 import { Issue } from '@/types';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
@@ -105,15 +105,26 @@ export default function IssuePage() {
     <>
       <div className="container max-w-5xl mx-auto py-8 px-4 space-y-8 animate-in fade-in duration-500">
         <div className="flex flex-col gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-fit -ml-2 text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/projects/${projectId}?tab=issues`)}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Project
-          </Button>
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-fit -ml-2 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => navigate(`/projects/${projectId}?tab=issues`)}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Project
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              title="Shrink"
+              onClick={() => navigate(`/projects/${projectId}/issues/${issueId}`)}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+          </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground overflow-hidden">
             <span className="truncate max-w-[200px]">{project.name}</span>
             <span className="opacity-40">/</span>

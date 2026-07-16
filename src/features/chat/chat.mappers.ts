@@ -19,6 +19,14 @@ const ENTITY_TAG_TYPE_LABEL: Record<ChatEntityType, string> = {
   eco: 'ECO',
 };
 
+/** Computes initials from a display name: first letter of the first 2 words, or the single letter for a one-word name. */
+function computeInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return words[0].charAt(0).toUpperCase();
+  return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+}
+
 /** Fallback preview text for a message whose content is empty (tag-only message). */
 export function entityTagsPreviewText(entityTags: EntityTagRef[] | undefined | null): string {
   if (!entityTags?.length) return '';
@@ -104,7 +112,7 @@ export function mapMessage(
   const senderName = senderProfile?.name ?? m.sender?.name ?? m.senderName ?? 'Unknown';
   const rawSenderAvatar = senderProfile?.avatar_url ?? m.sender?.avatarUrl ?? m.sender?.avatar_url ?? undefined;
   const senderAvatar = resolveFileUrl(rawSenderAvatar) ?? rawSenderAvatar ?? undefined;
-  const senderInitials = senderProfile?.initials ?? m.sender?.initials ?? senderName?.slice(0, 2)?.toUpperCase() ?? '??';
+  const senderInitials = senderProfile?.initials ?? m.sender?.initials ?? computeInitials(senderName) ?? '??';
 
   const fileUrl = m.fileUrl ?? m.file_url ?? null;
   const resolvedFileUrl = fileUrl ? (resolveFileUrl(fileUrl) ?? fileUrl) : undefined;

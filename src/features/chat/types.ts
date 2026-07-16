@@ -81,6 +81,15 @@ export interface ChatMessage {
   };
 }
 
+export interface PinnedMessage extends ChatMessage {
+  pinnedAt: string;
+  pinnedBy: string | null;
+}
+
+export interface FavouriteMessage extends ChatMessage {
+  favouritedAt: string;
+}
+
 export interface Conversation {
   id: string;
   type: ConversationType;

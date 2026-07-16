@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Star } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -38,9 +38,13 @@ interface MediaGroupBubbleProps {
   otherMembersCount?: number;
   reactions?: MessageReaction[];
   reactionUsers?: Record<string, string>;
+  isPinned?: boolean;
+  isFavourited?: boolean;
   onDelete?: (messageId: string, senderName: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReply?: (message: ChatMessage) => void;
+  onTogglePin?: (messageId: string) => void;
+  onToggleFavourite?: (messageId: string) => void;
 }
 
 function getImageUrl(message: ChatMessage): { url: string; name: string } {
@@ -147,7 +151,8 @@ function tileClass(index: number, count: number): string {
 
 export function MediaGroupBubble({
   messages, showSenderInfo, showTimestamp, isGroupChat, currentUserId,
-  readReceipts, otherMembersCount, reactions, reactionUsers, onDelete, onToggleReaction, onReply,
+  readReceipts, otherMembersCount, reactions, reactionUsers, isPinned, isFavourited,
+  onDelete, onToggleReaction, onReply, onTogglePin, onToggleFavourite,
 }: MediaGroupBubbleProps) {
   const timezone = useUserTimezone();
   const isMobile = useIsMobile();
@@ -300,6 +305,18 @@ export function MediaGroupBubble({
                   <Reply className="h-4 w-4 mr-2" />
                   Reply
                 </DropdownMenuItem>
+                {onTogglePin && (
+                  <DropdownMenuItem onClick={() => onTogglePin(last.id)} className="cursor-pointer">
+                    {isPinned ? <PinOff className="h-4 w-4 mr-2" /> : <Pin className="h-4 w-4 mr-2" />}
+                    {isPinned ? 'Unpin' : 'Pin'}
+                  </DropdownMenuItem>
+                )}
+                {onToggleFavourite && (
+                  <DropdownMenuItem onClick={() => onToggleFavourite(last.id)} className="cursor-pointer">
+                    <Star className={cn('h-4 w-4 mr-2', isFavourited && 'fill-amber-500 text-amber-500')} />
+                    {isFavourited ? 'Remove from Favourites' : 'Add to Favourites'}
+                  </DropdownMenuItem>
+                )}
                 {canModify && (
                   <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="cursor-pointer text-destructive focus:text-destructive">
                     <Trash2 className="h-4 w-4 mr-2" />
@@ -394,12 +411,16 @@ export function MediaGroupBubble({
 
         {showTimestamp && (
           <span className="text-[10px] text-muted-foreground mt-0.5 px-1 flex items-center gap-1">
+            {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
+            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
             {formatMessageTimestamp(last.createdAt, timezone)}
             {isOwn && renderStatusIcon()}
           </span>
         )}
         {!showTimestamp && isOwn && (
-          <span className="text-[10px] mt-0.5 px-1 flex items-center justify-end">
+          <span className="text-[10px] mt-0.5 px-1 flex items-center justify-end gap-1">
+            {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
+            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
             {renderStatusIcon()}
           </span>
         )}

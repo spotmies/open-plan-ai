@@ -7,6 +7,8 @@ import { chatService } from '@/services/chat.service';
 import { chatTransport } from '../transport';
 import { useChatStore } from '../stores/useChatStore';
 import { logger } from '@/services/monitoring/logger';
+import { useCallSignaling } from '../hooks/useCallSignaling';
+import { CallOverlay } from '../components/CallOverlay';
 
 function refreshConversations() {
   chatService.getConversations()
@@ -40,6 +42,10 @@ export function ChatNotificationsProvider() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const conversations = useChatStore((s) => s.conversations);
+
+  // Real-time call ringing/accept/decline — app-wide, so an incoming call
+  // surfaces no matter which page the user is currently on.
+  useCallSignaling();
 
   // The chat socket only connects once we know the auth cookie is set —
   // connecting eagerly at module-load time races AuthProvider's bootstrap
@@ -136,5 +142,5 @@ export function ChatNotificationsProvider() {
     };
   }, [user, conversations.length, navigate]);
 
-  return null;
+  return <CallOverlay />;
 }

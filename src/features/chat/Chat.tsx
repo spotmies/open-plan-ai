@@ -11,8 +11,9 @@ import { AddMemberDialog } from './components/AddMemberDialog';
 import { EmptyState } from './components/EmptyState';
 import { TypingIndicator } from './components/TypingIndicator';
 import { MessageAreaSkeleton } from './components/MessageAreaSkeleton';
+import { PinnedBanner } from './components/PinnedBanner';
 import { useChatStore } from './stores/useChatStore';
-import { useConversations, useMessages, useReactions } from './hooks/useChatData';
+import { useConversations, useMessages, useReactions, usePinnedMessages, useFavouriteMessages } from './hooks/useChatData';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
 import { useReachableUsers } from './hooks/useReachableUsers';
 import { useReadReceipts } from './hooks/useReadReceipts';
@@ -20,6 +21,7 @@ import { chatService } from '@/services/chat.service';
 import { toast } from 'sonner';
 import { ChatMessage } from './types';
 import { logger } from '@/services/monitoring/logger';
+
 
 export default function Chat() {
   useEffect(() => {
@@ -48,6 +50,9 @@ export default function Chat() {
   const { reactionMap, handleToggleReaction } = useReactions(messages, user?.id, activeId ?? null);
   const { data: reachableUsers = [] } = useReachableUsers();
   const onlineUserIds = useChatStore((s) => s.onlineUserIds);
+  const [messageFilter, setMessageFilter] = useState<'pinned' | 'favourites' | null>(null);
+  const { pinnedMessages, pinnedMessageIds, pinMessage, unpinMessage } = usePinnedMessages(activeId ?? null);
+  const { favouriteMessages, favouriteIds, toggleFavourite } = useFavouriteMessages(activeId ?? null);
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
@@ -67,6 +72,7 @@ export default function Chat() {
 
   useEffect(() => {
     setReplyingTo(null);
+    setMessageFilter(null);
   }, [activeId]);
 
   // Landing on bare /chat (e.g. via the sidebar nav icon) after previously having
@@ -155,6 +161,36 @@ export default function Chat() {
     setReplyingTo(null);
   }, []);
 
+  const handleTogglePin = useCallback((messageId: string) => {
+    if (!activeId) return;
+    if (pinnedMessageIds.has(messageId)) {
+      unpinMessage(messageId);
+    } else {
+      pinMessage(messageId);
+    }
+  }, [activeId, pinnedMessageIds, pinMessage, unpinMessage]);
+
+  const handleToggleFavourite = useCallback((messageId: string) => {
+    const msg = messages.find((m) => m.id === messageId)
+      ?? pinnedMessages.find((m) => m.id === messageId)
+      ?? favouriteMessages.find((m) => m.id === messageId);
+    if (msg) toggleFavourite(msg);
+  }, [messages, pinnedMessages, favouriteMessages, toggleFavourite]);
+
+  const handleShowPinned = useCallback(() => {
+    useChatStore.getState().setDetailPanelOpen(false);
+    setMessageFilter('pinned');
+  }, []);
+
+  const handleShowFavourites = useCallback(() => {
+    useChatStore.getState().setDetailPanelOpen(false);
+    setMessageFilter('favourites');
+  }, []);
+
+  const handleCloseFilter = useCallback(() => {
+    setMessageFilter(null);
+  }, []);
+
   const routeHasConversation = Boolean(conversationId);
   const showConversationList = isMobile ? !routeHasConversation : true;
   const showMessageArea = isMobile ? routeHasConversation : true;
@@ -164,6 +200,12 @@ export default function Chat() {
       ? `${typingNames[0]} is typing...`
       : `${typingNames.length} people typing...`
     : undefined;
+
+  const displayMessages = messageFilter === 'pinned'
+    ? pinnedMessages
+    : messageFilter === 'favourites'
+      ? favouriteMessages
+      : messages;
 
   return (
     <>
@@ -190,21 +232,40 @@ export default function Chat() {
                   onlineUserIds={onlineUserIds}
                   typingText={typingText}
                   onAddMember={() => setAddMemberOpen(true)}
+                  onSendMessage={sendMessage}
+                  pinnedCount={pinnedMessages.length}
+                  favouriteCount={favouriteMessages.length}
+                  filterMode={messageFilter}
+                  onShowPinned={handleShowPinned}
+                  onShowFavourites={handleShowFavourites}
+                  onCloseFilter={handleCloseFilter}
                 />
+                {!messageFilter && pinnedMessages.length > 0 && (
+                  <PinnedBanner
+                    pinnedMessages={pinnedMessages}
+                    onUnpin={unpinMessage}
+                    onShowAll={handleShowPinned}
+                  />
+                )}
                 {msgsLoading ? (
                   <MessageAreaSkeleton />
                 ) : (
                   <MessageArea
-                    messages={messages}
+                    messages={displayMessages}
                     conversation={activeConv}
-                    hasMore={hasMore}
-                    onLoadMore={loadMore}
+                    hasMore={!messageFilter && hasMore}
+                    onLoadMore={!messageFilter ? loadMore : undefined}
                     readReceiptMap={readReceiptMap}
                     reactionMap={reactionMap}
                     onEditMessage={handleEditMessage}
                     onDeleteMessage={handleDeleteMessage}
                     onToggleReaction={handleToggleReaction}
                     onReplyMessage={handleReplyMessage}
+                    filterMode={messageFilter}
+                    pinnedMessageIds={pinnedMessageIds}
+                    favouriteMessageIds={favouriteIds}
+                    onTogglePin={handleTogglePin}
+                    onToggleFavourite={handleToggleFavourite}
                   />
                 )}
                 <TypingIndicator typingNames={typingNames} />
@@ -243,10 +304,21 @@ export default function Chat() {
                 conversation={activeConv}
                 onRefetch={refetch}
                 className="w-full border-l-0"
+                pinnedCount={pinnedMessages.length}
+                favouriteCount={favouriteMessages.length}
+                onShowPinned={handleShowPinned}
+                onShowFavourites={handleShowFavourites}
               />
             </div>
           ) : (
-            <DetailPanel conversation={activeConv} onRefetch={refetch} />
+            <DetailPanel
+              conversation={activeConv}
+              onRefetch={refetch}
+              pinnedCount={pinnedMessages.length}
+              favouriteCount={favouriteMessages.length}
+              onShowPinned={handleShowPinned}
+              onShowFavourites={handleShowFavourites}
+            />
           )
         )}
       </div>

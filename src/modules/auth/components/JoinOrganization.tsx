@@ -132,9 +132,17 @@ export default function JoinOrganization() {
                 You've been invited to join <strong>{orgName}</strong> as a <strong>{invitation?.role || 'member'}</strong>.
                 Sign in or create an account to accept.
               </p>
-              <div className="flex w-full flex-col gap-2">
-                <Link to={`/signup?invite=${inviteParam}`} className="w-full">
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
+                <Link to={`/signup?invite=${inviteParam}`} className="w-full sm:w-auto">
                   <Button className="w-full">Create Account</Button>
+                </Link>
+                <Link
+                  to={`/login?redirect=${encodeURIComponent(`/join-org?invite=${inviteParam}`)}`}
+                  className="w-full sm:w-auto"
+                >
+                  <Button variant="outline" className="w-full">
+                    Sign In
+                  </Button>
                 </Link>
               </div>
               {invitation?.expiresAt && (

@@ -1,4 +1,4 @@
-import { ArrowLeft, Info, Phone, Search, UserPlus, Video, X } from 'lucide-react';
+import { ArrowLeft, Phone, Search, UserPlus, Video, X, CalendarDays, Link, Loader2, AlertCircle, Info, Pin, Star } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,27 @@ import { useChatStore } from '../stores/useChatStore';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+// New Imports for Google Meet Integration & Call state
+import { useGoogleMeetStore } from '@/features/integrations/stores/useGoogleMeetStore';
+import { useGoogleMeetStatus } from '@/features/integrations/hooks/useGoogleMeetStatus';
+import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsureGoogleMeetToken';
+import { useCallStore } from '../stores/useCallStore';
+import { chatTransport } from '../transport';
+import { meetWindow } from '../utils/meetWindow';
+import { callWindow } from '../utils/callWindow';
+import { googleMeetService } from '@/services/googleMeet.service';
+import { ScheduleMeetingDialog } from './ScheduleMeetingDialog';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
 
 interface ChatHeaderProps {
   conversation: Conversation;
@@ -17,21 +37,47 @@ interface ChatHeaderProps {
   onlineUserIds?: Set<string>;
   typingText?: string;
   onAddMember?: () => void;
+  onSendMessage?: (content: string) => Promise<void>;
+  pinnedCount?: number;
+  favouriteCount?: number;
+  filterMode?: 'pinned' | 'favourites' | null;
+  onShowPinned?: () => void;
+  onShowFavourites?: () => void;
+  onCloseFilter?: () => void;
 }
 
-export function ChatHeader({ conversation, onBack, onlineUserIds, typingText, onAddMember }: ChatHeaderProps) {
+export function ChatHeader({
+  conversation,
+  onBack,
+  onlineUserIds,
+  typingText,
+  onAddMember,
+  onSendMessage,
+  pinnedCount = 0,
+  favouriteCount = 0,
+  filterMode,
+  onShowPinned,
+  onShowFavourites,
+  onCloseFilter,
+}: ChatHeaderProps) {
   const isMobile = useIsMobile();
   const { user } = useAuth();
   const currentUserId = user?.id;
-  const toggleDetailPanel = useChatStore((s) => s.toggleDetailPanel);
   const setDetailPanelOpen = useChatStore((s) => s.setDetailPanelOpen);
-  const isDetailOpen = useChatStore((s) => s.isDetailPanelOpen);
-  
+
   const isMessageSearchOpen = useChatStore((s) => s.isMessageSearchOpen);
   const messageSearchQuery = useChatStore((s) => s.messageSearchQuery);
   const setMessageSearchQuery = useChatStore((s) => s.setMessageSearchQuery);
   const toggleMessageSearch = useChatStore((s) => s.toggleMessageSearch);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Google Meet & Call states
+  const { isConnected } = useGoogleMeetStore();
+  const { ensureFreshToken } = useEnsureGoogleMeetToken();
+  const startOutgoingCall = useCallStore((s) => s.startOutgoingCall);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const [startingCall, setStartingCall] = useState(false);
 
   useEffect(() => {
     if (isMessageSearchOpen) {
@@ -54,11 +100,222 @@ export function ChatHeader({ conversation, onBack, onlineUserIds, typingText, on
     return emojiRegex.test(str) && str.length <= 8;
   };
 
+  const computeInitials = (name: string) => {
+    const words = name.trim().split(/\s+/);
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+    return words[0]?.charAt(0).toUpperCase() || '??';
+  };
+
   const initials = conversation.type === 'dm'
-    ? otherMember?.initials || otherMember?.name?.slice(0, 2).toUpperCase() || '??'
-    : (conversation.name || conversation.title || 'GC').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+    ? otherMember?.initials || (otherMember?.name ? computeInitials(otherMember.name) : '??')
+    : computeInitials(conversation.name || conversation.title || 'GC');
 
   const avatarUrl = conversation.type === 'dm' ? otherMember?.avatarUrl : conversation.avatarUrl;
+
+  // Other conversation members — the real (backend-persisted) Google Meet
+  // connection status for each is looked up below, replacing what used to
+  // be a hardcoded "everyone except Bob Martinez is connected" test rule.
+  const otherMemberIds = useMemo(
+    () => conversation.members.filter((m) => m.id !== currentUserId).map((m) => m.id),
+    [conversation.members, currentUserId],
+  );
+  const { data: meetStatusMap } = useGoogleMeetStatus(otherMemberIds);
+
+  const handleInitiateCall = async (type: 'audio' | 'video') => {
+    const otherMembers = conversation.members.filter((m) => m.id !== currentUserId);
+    if (otherMembers.length === 0 || startingCall) return;
+
+    // Opened synchronously inside this click handler, before any await —
+    // same reasoning as meetWindow.openPlaceholder() below: a window opened
+    // later from an async callback would be blocked by the popup blocker.
+    // Covers both the normal outgoing-call path and the "nobody reachable"
+    // panel path, since both render inside the call-status tab now.
+    callWindow.open();
+
+    const participants = otherMembers.map((m) => ({
+      id: m.id,
+      name: m.name,
+      connected: meetStatusMap?.[m.id]?.connected ?? false,
+    }));
+    const reachable = participants.filter((p) => p.connected);
+    const callId = crypto.randomUUID();
+
+    if (reachable.length === 0) {
+      // Nobody can actually be rung — show the "not connected" panel
+      // immediately, no Meet space needed until "Send Link" is clicked.
+      startOutgoingCall({
+        callId,
+        conversationId: conversation.id,
+        callType: type,
+        meetingUri: '',
+        participants,
+        isGroup: conversation.type === 'group',
+      });
+      return;
+    }
+
+    // Open the Meet tab now, synchronously, inside this click handler — a
+    // window opened later from the async call:accepted socket event would
+    // be blocked by the browser's popup blocker. We navigate this same
+    // placeholder to the real URL once the callee accepts.
+    meetWindow.openPlaceholder();
+
+    setStartingCall(true);
+    try {
+      const token = await ensureFreshToken();
+      if (!token) {
+        toast.error('Your Google Meet session expired. Please reconnect in Integrations.');
+        meetWindow.close();
+        callWindow.close();
+        return;
+      }
+      const meetData = await googleMeetService.createInstantMeeting(token);
+      startOutgoingCall({
+        callId,
+        conversationId: conversation.id,
+        callType: type,
+        meetingUri: meetData.meetingUri,
+        participants,
+        isGroup: conversation.type === 'group',
+      });
+      chatTransport.emitCallInvite({
+        callId,
+        conversationId: conversation.id,
+        callType: type,
+        meetingUri: meetData.meetingUri,
+      });
+    } catch (err) {
+      toast.error('Failed to start the call. Please try again.');
+      meetWindow.close();
+      callWindow.close();
+    } finally {
+      setStartingCall(false);
+    }
+  };
+
+  // Generate an instant meeting link and send to chat
+  const handleGenerateInstantLink = async () => {
+    setGeneratingLink(true);
+    const loadingToast = toast.loading('Generating Google Meet space...');
+    try {
+      const token = await ensureFreshToken();
+      if (!token) {
+        toast.dismiss(loadingToast);
+        toast.error('Your Google Meet session expired. Please reconnect in Integrations.');
+        return;
+      }
+      const meetData = await googleMeetService.createInstantMeeting(token);
+      if (onSendMessage && meetData.meetingUri) {
+        await onSendMessage(`I created an instant Google Meet call. Let's connect here: ${meetData.meetingUri}`);
+        toast.dismiss(loadingToast);
+        toast.success('Meeting link generated and posted to chat!');
+      } else {
+        toast.dismiss(loadingToast);
+        toast.error('Failed to automatically send the meeting link to chat.');
+      }
+    } catch (err) {
+      toast.dismiss(loadingToast);
+      toast.error('Failed to create instant Google Meet. Please try re-connecting your account.');
+    } finally {
+      setGeneratingLink(false);
+    }
+  };
+
+  const renderCallButtons = () => {
+    const isDisabled = !isConnected;
+    const buttonClass = cn(
+      "h-8 w-auto px-1.5 gap-1 transition-opacity duration-200",
+      isDisabled && "opacity-40 cursor-not-allowed"
+    );
+
+    const callIcon = (
+      <span className="flex items-center gap-0.5">
+        <Phone className="h-3.5 w-3.5" />
+        <span className="text-muted-foreground text-xs leading-none">/</span>
+        <Video className="h-3.5 w-3.5" />
+      </span>
+    );
+
+    if (isDisabled) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-block">
+              <Button variant="ghost" size="icon" className={buttonClass} disabled>
+                {callIcon}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent align="end" className="max-w-[220px] text-xs">
+            First connect to Google Meet in the integrations and then you can call.
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className={buttonClass} disabled={isDisabled}>
+            {callIcon}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuItem
+            onClick={() => handleInitiateCall('video')}
+            disabled={startingCall}
+            className="gap-2 cursor-pointer font-medium whitespace-nowrap"
+          >
+            {startingCall ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4 text-primary" />}
+            Start a meet: Audio/Video
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem
+            onClick={handleGenerateInstantLink}
+            disabled={generatingLink}
+            className="gap-2 cursor-pointer"
+          >
+            {generatingLink ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Link className="h-4 w-4 text-emerald-500" />
+            )}
+            Generate Meeting Link
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => setScheduleOpen(true)}
+            className="gap-2 cursor-pointer"
+          >
+            <CalendarDays className="h-4 w-4 text-indigo-500" />
+            Schedule Meeting
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  if (filterMode) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border min-h-[61px]">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCloseFilter} title="Back">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {filterMode === 'pinned' ? (
+            <Pin className="h-4 w-4 text-primary shrink-0" />
+          ) : (
+            <Star className="h-4 w-4 text-amber-500 shrink-0 fill-amber-500" />
+          )}
+          <h3 className="text-sm font-semibold truncate">
+            {filterMode === 'pinned' ? `Pinned Messages (${pinnedCount})` : `Favourite Messages (${favouriteCount})`}
+          </h3>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 border-b border-border min-h-[61px]">
@@ -138,21 +395,40 @@ export function ChatHeader({ conversation, onBack, onlineUserIds, typingText, on
             <UserPlus className="h-4 w-4" />
           </Button>
         )}
-        {!isMobile && (
-          <>
-            <Button variant="ghost" size="icon" className="h-8 w-8" disabled title="Voice call"><Phone className="h-4 w-4" /></Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" disabled title="Video call"><Video className="h-4 w-4" /></Button>
-          </>
+
+        {!isMessageSearchOpen && (onShowPinned || onShowFavourites) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" title="Info">
+                <Info className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={onShowPinned} className="gap-2 cursor-pointer">
+                <Pin className="h-4 w-4 text-primary" />
+                Pinned Messages
+                {pinnedCount > 0 && <span className="ml-auto text-xs text-muted-foreground">{pinnedCount}</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onShowFavourites} className="gap-2 cursor-pointer">
+                <Star className="h-4 w-4 text-amber-500" />
+                Favourite Messages
+                {favouriteCount > 0 && <span className="ml-auto text-xs text-muted-foreground">{favouriteCount}</span>}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
-        <Button
-          variant={isDetailOpen ? 'secondary' : 'ghost'}
-          size="icon" className="h-8 w-8"
-          onClick={toggleDetailPanel}
-          title="Conversation details"
-        >
-          <Info className="h-4 w-4" />
-        </Button>
+
+        {/* Render voice/video call button triggers */}
+        {renderCallButtons()}
       </div>
+
+      {/* Schedule Dialog rendered here */}
+      <ScheduleMeetingDialog
+        conversation={conversation}
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        onMeetingScheduled={onSendMessage}
+      />
     </div>
   );
 }

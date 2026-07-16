@@ -178,6 +178,15 @@ export const ENDPOINTS = {
     TOGGLE: (messageId: string) => `/messages/${messageId}/reactions`,
     BULK: '/messages/reactions',
   },
+  // Pinned / favourite messages
+  PINS: {
+    TOGGLE: (conversationId: string, messageId: string) => `/conversations/${conversationId}/messages/${messageId}/pin`,
+    LIST: (conversationId: string) => `/conversations/${conversationId}/pins`,
+  },
+  FAVOURITES: {
+    TOGGLE: (messageId: string) => `/messages/${messageId}/favourite`,
+    LIST: (conversationId: string) => `/conversations/${conversationId}/favourites`,
+  },
   // Chat / Conversations
   CONVERSATIONS: {
     LIST: '/conversations',
@@ -213,6 +222,12 @@ export const ENDPOINTS = {
   // Links
   LINKS: {
     DELETE: (id: string) => `/links/${id}`,
+  },
+  // Google Meet integration
+  GOOGLE_MEET: {
+    CONNECT: '/integrations/google-meet/connect',
+    DISCONNECT: '/integrations/google-meet/disconnect',
+    STATUS: (userIds: string[]) => `/integrations/google-meet/status?userIds=${userIds.join(',')}`,
   },
   // Uploads
   UPLOADS: {

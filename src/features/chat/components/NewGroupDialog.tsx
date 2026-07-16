@@ -34,6 +34,7 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -63,6 +64,8 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
   };
 
   const handleCreate = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
     try {
       const convId = await chatService.createGroup(
         name,
@@ -78,6 +81,8 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
     } catch (err) {
       logger.error('Failed to create group:', err);
       toast.error('Failed to create group');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -89,6 +94,7 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
     setSearch('');
     setAvatarUrl('');
     setAvatarError(false);
+    setIsCreating(false);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -226,9 +232,13 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
           {step === 1 ? (
             <Button onClick={() => setStep(2)} disabled={!name.trim()}>Next</Button>
           ) : (
-            <Button onClick={handleCreate} disabled={selectedIds.size === 0}>
-              <Check className="h-4 w-4 mr-2" />
-              Create Group
+            <Button onClick={handleCreate} disabled={selectedIds.size === 0 || isCreating}>
+              {isCreating ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4 mr-2" />
+              )}
+              {isCreating ? 'Creating...' : 'Create Group'}
             </Button>
           )}
         </DialogFooter>

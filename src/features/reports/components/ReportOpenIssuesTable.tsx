@@ -61,12 +61,12 @@ export const ReportOpenIssuesTable = memo(function ReportOpenIssuesTable({ issue
   
   const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDirection('asc');
     }
-  }, []);
+  }, [sortField]);
 
   const handleIssueClick = useCallback((issueId: string) => {
     onIssueClick?.(issueId);

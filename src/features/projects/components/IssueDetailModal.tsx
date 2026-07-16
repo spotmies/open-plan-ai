@@ -248,14 +248,12 @@ export function IssueDetailModal({
                 className="h-7 w-7 text-muted-foreground hover:text-foreground"
                 title="Expand"
                 onClick={() => {
-                  const pathParts = window.location.pathname.split('/');
-                  const projectIndex = pathParts.indexOf('projects');
-                  if (projectIndex !== -1 && pathParts[projectIndex + 1]) {
-                    navigate(`/projects/${pathParts[projectIndex + 1]}/issues/${editedIssue.id}`);
+                  if (editedIssue.projectId) {
+                    navigate(`/projects/${editedIssue.projectId}/issues/${editedIssue.id}/full`);
+                    onClose();
                   } else {
-                    logger.warn('Could not determine project ID from URL');
+                    logger.warn('Could not expand issue: missing projectId', { issueId: editedIssue.id });
                   }
-                  onClose();
                 }}
               >
                 <Maximize2 className="h-4 w-4" />

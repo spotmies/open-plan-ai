@@ -12,6 +12,11 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
+} from '@/components/ui/hover-card';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
@@ -89,6 +94,7 @@ import { SlashBlockEditor, EditorBlock } from '@/components/ui/SlashBlockEditor'
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { ISSUE_SEVERITY_DISPLAY, ISSUE_SEVERITY_OPTIONS } from './issueSeverity';
+import { formatModifiedFields } from './modifiedFields';
 import { attachmentsService } from '@/services/attachments.service';
 import { commentsService } from '@/services/comments.service';
 import { useAuth } from '@/contexts/AuthContext';
@@ -944,6 +950,36 @@ export function IssueDetailContent({
                                 )}>
                                     {!isMobileLayout && <Pencil className="h-3 w-3" />}
                                     Modified By
+                                    <HoverCard openDelay={150} closeDelay={100}>
+                                        <HoverCardTrigger asChild>
+                                            <Info className="h-3 w-3 cursor-help" />
+                                        </HoverCardTrigger>
+                                        <HoverCardContent
+                                            side="bottom"
+                                            align="start"
+                                            sideOffset={8}
+                                            className="w-[280px] p-3 text-xs space-y-2 max-h-[240px] overflow-y-auto"
+                                        >
+                                            {editedIssue.changeHistory && editedIssue.changeHistory.length > 0 ? (
+                                                editedIssue.changeHistory.map((entry, idx) => (
+                                                    <div key={idx} className={idx > 0 ? 'pt-2 border-t border-border/50' : ''}>
+                                                        <p className="font-medium">{entry.userName}</p>
+                                                        {formatModifiedFields(entry.fields) && (
+                                                            <p>Changed: {formatModifiedFields(entry.fields)}</p>
+                                                        )}
+                                                        <p className="text-muted-foreground">{format(parseISO(entry.at), 'MMM d, yyyy • h:mm a')}</p>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div>
+                                                    <p className="font-medium">{editedIssue.updatedBy.name}</p>
+                                                    {editedIssue.updatedAt && (
+                                                        <p className="text-muted-foreground">{format(parseISO(editedIssue.updatedAt), 'MMM d, yyyy • h:mm a')}</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </HoverCardContent>
+                                    </HoverCard>
                                 </Label>
                                 <div className={cn(
                                     'flex items-center gap-2',

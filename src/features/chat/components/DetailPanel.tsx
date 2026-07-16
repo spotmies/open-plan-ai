@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Bell, LogOut, FileText, UserPlus, Download, Image, Pencil, Check, Loader2, Camera, Trash2, Shield, ShieldOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Bell, LogOut, FileText, UserPlus, Download, Image, Pencil, Check, Loader2, Camera, Trash2, Shield, ShieldOff, ChevronLeft, ChevronRight, Pin, Star } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -36,6 +36,10 @@ interface DetailPanelProps {
   conversation: Conversation;
   onRefetch?: () => void;
   className?: string;
+  pinnedCount?: number;
+  favouriteCount?: number;
+  onShowPinned?: () => void;
+  onShowFavourites?: () => void;
 }
 
 const MEMBER_PREVIEW_COUNT = 5;
@@ -54,7 +58,7 @@ function formatShortDate(dateStr: string): string {
   return date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
 }
 
-export function DetailPanel({ conversation, onRefetch, className }: DetailPanelProps) {
+export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 0, favouriteCount = 0, onShowPinned, onShowFavourites }: DetailPanelProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const currentUserId = user?.id;
@@ -741,6 +745,32 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
                   +{conversation.members.length - MEMBER_PREVIEW_COUNT}
                 </div>
               )}
+            </button>
+          </div>
+
+          <Separator />
+
+          {/* Pinned & Favourite messages */}
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={onShowPinned}
+              className="w-full flex items-center gap-2.5 p-2 -mx-2 rounded-md hover:bg-muted transition-colors text-left"
+            >
+              <Pin className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm flex-1">Pinned Messages</span>
+              <span className="text-xs text-muted-foreground">{pinnedCount}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={onShowFavourites}
+              className="w-full flex items-center gap-2.5 p-2 -mx-2 rounded-md hover:bg-muted transition-colors text-left"
+            >
+              <Star className="h-4 w-4 text-amber-500 shrink-0" />
+              <span className="text-sm flex-1">Favourite Messages</span>
+              <span className="text-xs text-muted-foreground">{favouriteCount}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
             </button>
           </div>
 
