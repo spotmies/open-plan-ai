@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Users,
   Settings,
+  Calendar,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,9 +29,9 @@ const primaryNavItems: NavItem[] = [
 ];
 
 // Secondary items shown under "More"
-// Calendar hidden on mobile for now — feature still in progress
 const moreNavItems: NavItem[] = [
   { title: 'Team',      url: '/team',     icon: Users         },
+  { title: 'Calendar',  url: '/calendar', icon: Calendar      },
   { title: 'Reports',   url: '/reports',  icon: BarChart3     },
   { title: 'Settings',  url: '/settings', icon: Settings      },
 ];

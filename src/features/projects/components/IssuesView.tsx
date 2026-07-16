@@ -329,7 +329,7 @@ export function IssuesView({
       description: '',
       status: initialStatus,
       severity: 'minor',
-      category: '' as IssueCategory,
+      category: 'defect' as IssueCategory,
       projectId: pid, // Ensure projectId is set
       reportedBy: { id: user?.id ?? 'currentUser', name: user?.name ?? 'Current User', initials: user?.initials ?? user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? 'CU', avatar: user?.avatarUrl ?? '', email: user?.email ?? '', role: 'Member' },
       reportedAt: new Date().toISOString(), // Add reportedAt

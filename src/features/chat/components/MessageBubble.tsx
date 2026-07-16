@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Star } from 'lucide-react';
+import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, Forward, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Star } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -67,6 +67,7 @@ interface MessageBubbleProps {
   onDelete?: (messageId: string, senderName: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReply?: (message: ChatMessage) => void;
+  onForward?: (message: ChatMessage) => void;
   onTogglePin?: (messageId: string) => void;
   onToggleFavourite?: (messageId: string) => void;
 }
@@ -298,32 +299,53 @@ function getFileIcon(type: 'image' | 'pdf' | 'doc' | 'other') {
 
 // ─── Image Lightbox ──────────────────────────────────────────────────────────
 
-function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+function ImageLightbox({
+  src,
+  alt,
+  onClose,
+  onForward,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+  onForward?: () => void;
+}) {
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/90 border-none flex items-center justify-center overflow-hidden">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 z-50 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
-        >
-          <X className="h-5 w-5" />
-        </button>
+      <DialogContent hideClose className="w-[95vw] h-[95vh] max-w-[95vw] max-h-[95vh] p-0 bg-black/90 border-none flex items-center justify-center overflow-hidden">
         <img
           src={src}
           alt={alt}
-          className="max-w-full max-h-[90vh] object-contain rounded"
+          className="max-w-full max-h-full object-contain rounded"
           onClick={(e) => e.stopPropagation()}
         />
-        <a
-          href={src}
-          download={alt}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute bottom-3 right-3 z-50 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
-          title="Download"
-        >
-          <Download className="h-4 w-4" />
-        </a>
+        <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
+          {onForward && (
+            <button
+              onClick={onForward}
+              className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+              title="Forward this photo"
+            >
+              <Forward className="h-4 w-4" />
+            </button>
+          )}
+          <a
+            href={src}
+            download={alt}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+            title="Download"
+          >
+            <Download className="h-4 w-4" />
+          </a>
+          <button
+            onClick={onClose}
+            className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -331,20 +353,32 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
 
 // ─── Main FileAttachment component ──────────────────────────────────────────
 
-function FileAttachment({ file, isOwn }: { file: FileContent; isOwn: boolean }) {
+function FileAttachment({
+  file,
+  isOwn,
+  message,
+  onForward,
+}: {
+  file: FileContent;
+  isOwn: boolean;
+  message?: ChatMessage;
+  onForward?: (message: ChatMessage) => void;
+}) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const url = file.url ?? '';
   const fileType = getFileType(file.mimeType ?? '', file.fileName ?? '');
   const Icon = getFileIcon(fileType);
+  const [alreadyOpened, setAlreadyOpened] = useState(() => (url ? chatService.isAttachmentOpened(url) : false));
 
   const handleClick = useCallback(() => {
     if (!url) return;
     if (fileType === 'image') {
       setLightboxOpen(true);
     } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      chatService.openChatAttachment({ fileName: file.fileName ?? '', url });
+      setAlreadyOpened(true);
     }
-  }, [url, fileType]);
+  }, [url, fileType, file.fileName]);
 
   if (fileType === 'image') {
     return (
@@ -367,7 +401,12 @@ function FileAttachment({ file, isOwn }: { file: FileContent; isOwn: boolean }) 
         </div>
         {file.text && <p className="text-sm mt-1 break-words">{file.text}</p>}
         {lightboxOpen && url && (
-          <ImageLightbox src={url} alt={file.fileName} onClose={() => setLightboxOpen(false)} />
+          <ImageLightbox
+            src={url}
+            alt={file.fileName}
+            onClose={() => setLightboxOpen(false)}
+            onForward={message && onForward ? () => { onForward(message); setLightboxOpen(false); } : undefined}
+          />
         )}
       </>
     );
@@ -412,13 +451,13 @@ function FileAttachment({ file, isOwn }: { file: FileContent; isOwn: boolean }) 
             {fileType === 'pdf' ? 'PDF' : fileType === 'doc' ? 'Document' : ''}
           </p>
         </div>
-        {url && (
+        {url && !alreadyOpened && (
           <a
             href={url}
             download={file.fileName}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); chatService.markAttachmentOpened(url); setAlreadyOpened(true); }}
             title="Download"
             className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center opacity-70 hover:opacity-100 hover:bg-accent/70 transition-colors"
           >
@@ -433,7 +472,7 @@ function FileAttachment({ file, isOwn }: { file: FileContent; isOwn: boolean }) 
 export function MessageBubble({
   message, showSenderInfo, showTimestamp, isGroupChat, currentUserId,
   searchQuery, memberNames, reactionUsers, readReceipts, otherMembersCount, reactions,
-  isPinned, isFavourited, onEdit, onDelete, onToggleReaction, onReply, onTogglePin, onToggleFavourite,
+  isPinned, isFavourited, onEdit, onDelete, onToggleReaction, onReply, onForward, onTogglePin, onToggleFavourite,
 }: MessageBubbleProps) {
   const timezone = useUserTimezone();
   const navigate = useNavigate();
@@ -696,7 +735,7 @@ export function MessageBubble({
         >
           <div
             className={cn(
-              'absolute z-10 rounded-lg border border-border bg-popover shadow-md px-1 py-0.5 flex items-center flex-wrap gap-0.5 transition-opacity',
+              'absolute z-10 w-max rounded-lg border border-border bg-popover shadow-md px-1 py-0.5 flex items-center flex-nowrap gap-0.5 transition-opacity',
               isMobile
                 ? 'bottom-full mb-2 left-1/2 -translate-x-1/2 max-w-[88vw] justify-center'
                 : cn('top-0', isOwn ? 'right-full mr-2' : 'left-full ml-2'),
@@ -761,6 +800,12 @@ export function MessageBubble({
                   <DropdownMenuItem onClick={() => onReply?.(message)} className="cursor-pointer">
                     <Reply className="h-4 w-4 mr-2" />
                     Reply
+                  </DropdownMenuItem>
+                )}
+                {!isDeleted && onForward && (
+                  <DropdownMenuItem onClick={() => onForward(message)} className="cursor-pointer">
+                    <Forward className="h-4 w-4 mr-2" />
+                    Forward
                   </DropdownMenuItem>
                 )}
                 {!isDeleted && onTogglePin && (
@@ -876,7 +921,7 @@ export function MessageBubble({
               )}
               {isFile && fileData ? (
                 <div onClick={(e) => e.stopPropagation()}>
-                  <FileAttachment file={fileData} isOwn={isOwn} />
+                  <FileAttachment file={fileData} isOwn={isOwn} message={message} onForward={onForward} />
                 </div>
               ) : (
                 <ExpandableText text={message.content} query={searchQuery} isOwn={isOwn} memberNames={memberNames} />

@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Star } from 'lucide-react';
+import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, Forward, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Star } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -43,6 +43,7 @@ interface MediaGroupBubbleProps {
   onDelete?: (messageId: string, senderName: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReply?: (message: ChatMessage) => void;
+  onForward?: (messages: ChatMessage[]) => void;
   onTogglePin?: (messageId: string) => void;
   onToggleFavourite?: (messageId: string) => void;
 }
@@ -67,12 +68,16 @@ function getImageUrl(message: ChatMessage): { url: string; name: string } {
 
 function GroupLightbox({
   images,
+  messages,
   startIndex,
   onClose,
+  onForward,
 }: {
   images: { url: string; name: string }[];
+  messages: ChatMessage[];
   startIndex: number;
   onClose: () => void;
+  onForward?: (message: ChatMessage) => void;
 }) {
   const [index, setIndex] = useState(startIndex);
   const current = images[index];
@@ -91,13 +96,7 @@ function GroupLightbox({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/90 border-none flex items-center justify-center overflow-hidden">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 z-50 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
-        >
-          <X className="h-5 w-5" />
-        </button>
+      <DialogContent hideClose className="w-[95vw] h-[95vh] max-w-[95vw] max-h-[95vh] p-0 bg-black/90 border-none flex items-center justify-center overflow-hidden">
         {images.length > 1 && (
           <>
             <button
@@ -120,19 +119,36 @@ function GroupLightbox({
         <img
           src={current.url}
           alt={current.name}
-          className="max-w-full max-h-[90vh] object-contain rounded"
+          className="max-w-full max-h-full object-contain rounded"
           onClick={(e) => e.stopPropagation()}
         />
-        <a
-          href={current.url}
-          download={current.name}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute bottom-3 right-3 z-50 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
-          title="Download"
-        >
-          <Download className="h-4 w-4" />
-        </a>
+        <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
+          {onForward && (
+            <button
+              onClick={() => { onForward(messages[index]); onClose(); }}
+              className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+              title="Forward this photo"
+            >
+              <Forward className="h-4 w-4" />
+            </button>
+          )}
+          <a
+            href={current.url}
+            download={current.name}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+            title="Download"
+          >
+            <Download className="h-4 w-4" />
+          </a>
+          <button
+            onClick={onClose}
+            className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -152,7 +168,7 @@ function tileClass(index: number, count: number): string {
 export function MediaGroupBubble({
   messages, showSenderInfo, showTimestamp, isGroupChat, currentUserId,
   readReceipts, otherMembersCount, reactions, reactionUsers, isPinned, isFavourited,
-  onDelete, onToggleReaction, onReply, onTogglePin, onToggleFavourite,
+  onDelete, onToggleReaction, onReply, onForward, onTogglePin, onToggleFavourite,
 }: MediaGroupBubbleProps) {
   const timezone = useUserTimezone();
   const isMobile = useIsMobile();
@@ -250,7 +266,7 @@ export function MediaGroupBubble({
         >
           <div
             className={cn(
-              'absolute z-10 rounded-lg border border-border bg-popover shadow-md px-1 py-0.5 flex items-center flex-wrap gap-0.5 transition-opacity',
+              'absolute z-10 w-max rounded-lg border border-border bg-popover shadow-md px-1 py-0.5 flex items-center flex-nowrap gap-0.5 transition-opacity',
               isMobile
                 ? 'bottom-full mb-2 left-1/2 -translate-x-1/2 max-w-[88vw] justify-center'
                 : cn('top-0', isOwn ? 'right-full mr-2' : 'left-full ml-2'),
@@ -305,6 +321,12 @@ export function MediaGroupBubble({
                   <Reply className="h-4 w-4 mr-2" />
                   Reply
                 </DropdownMenuItem>
+                {onForward && (
+                  <DropdownMenuItem onClick={() => onForward(messages)} className="cursor-pointer">
+                    <Forward className="h-4 w-4 mr-2" />
+                    Forward{messages.length > 1 ? ` ${messages.length} Photos` : ''}
+                  </DropdownMenuItem>
+                )}
                 {onTogglePin && (
                   <DropdownMenuItem onClick={() => onTogglePin(last.id)} className="cursor-pointer">
                     {isPinned ? <PinOff className="h-4 w-4 mr-2" /> : <Pin className="h-4 w-4 mr-2" />}
@@ -359,7 +381,13 @@ export function MediaGroupBubble({
           </div>
 
           {lightboxIndex !== null && (
-            <GroupLightbox images={images} startIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+            <GroupLightbox
+              images={images}
+              messages={messages}
+              startIndex={lightboxIndex}
+              onClose={() => setLightboxIndex(null)}
+              onForward={onForward ? (message) => onForward([message]) : undefined}
+            />
           )}
         </div>
 

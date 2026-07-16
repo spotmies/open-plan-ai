@@ -4,6 +4,38 @@ import type { Conversation, ChatMessage, ReachableUser, MessageReaction, EntityT
 import { resolveFileUrl } from '@/utils/fileUrl';
 import type { Project } from '@/types';
 
+/** Caches blob URLs for already-fetched chat attachments, keyed by their source URL, so repeat opens reuse the local copy instead of re-fetching. */
+const attachmentBlobUrlCache = new Map<string, string>();
+
+const OPENED_ATTACHMENTS_STORAGE_KEY = 'chat:openedAttachments';
+
+/** Persists which attachment URLs have already been opened/downloaded, so the UI can stop showing a "download" affordance for them across page reloads. */
+function loadOpenedAttachments(): Set<string> {
+  try {
+    const raw = localStorage.getItem(OPENED_ATTACHMENTS_STORAGE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+const openedAttachments = loadOpenedAttachments();
+
+function persistOpenedAttachments(): void {
+  try {
+    localStorage.setItem(OPENED_ATTACHMENTS_STORAGE_KEY, JSON.stringify([...openedAttachments]));
+  } catch {
+    // localStorage unavailable (private mode, quota) — in-memory tracking still works for this session.
+  }
+}
+
+function markAttachmentOpened(url: string): void {
+  if (!openedAttachments.has(url)) {
+    openedAttachments.add(url);
+    persistOpenedAttachments();
+  }
+}
+
 /** Computes initials from a display name: first letter of the first 2 words, or the single letter for a one-word name. */
 function computeInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -41,6 +73,25 @@ function mapChatMessage(raw: any): ChatMessage {
     deletedAt: raw.deletedAt ?? raw.deleted_at ?? undefined,
     replyToMessageId: raw.replyToMessageId ?? raw.reply_to_message_id ?? undefined,
   };
+}
+
+/** Pulls {fileName, url, mimeType} out of a file/image message, handling both the new attachments[] shape and legacy JSON-encoded content. */
+function extractForwardableFile(message: ChatMessage): { fileName: string; url: string; mimeType?: string } | null {
+  if (message.attachments?.length) {
+    const a = message.attachments[0] as any;
+    const url = a.url;
+    if (!url) return null;
+    return { fileName: a.name ?? a.fileName ?? 'file', url, mimeType: a.mimeType ?? a.type };
+  }
+  try {
+    const parsed = JSON.parse(message.content);
+    if (parsed.fileName && parsed.url) {
+      return { fileName: parsed.fileName, url: parsed.url, mimeType: parsed.mimeType };
+    }
+  } catch {
+    // legacy content wasn't JSON — no file info available
+  }
+  return null;
 }
 
 function mapPinnedMessage(raw: any): PinnedMessage {
@@ -171,6 +222,34 @@ export const chatService = {
       entityTags: entityTags?.length ? entityTags : undefined,
     });
     return mapChatMessage(data);
+  },
+
+  /**
+   * Forwards a message to another conversation. Text messages are re-sent as-is;
+   * file/image messages are re-fetched from their stored URL and re-uploaded, since
+   * there's no "clone by reference" endpoint on the backend — only direct file upload.
+   */
+  async forwardMessage(targetConversationId: string, message: ChatMessage): Promise<ChatMessage> {
+    const isFileMessage = message.contentType === 'file' || message.contentType === 'image';
+    const fileInfo = isFileMessage ? extractForwardableFile(message) : null;
+
+    if (!fileInfo) {
+      return this.sendMessage(targetConversationId, message.content);
+    }
+
+    const response = await fetch(fileInfo.url);
+    if (!response.ok) throw new Error('Failed to fetch attachment for forwarding');
+    const blob = await response.blob();
+    const file = new File([blob], fileInfo.fileName, { type: fileInfo.mimeType || blob.type });
+
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.raw.post<{ success: boolean; data: any }>(
+      ENDPOINTS.CONVERSATIONS.FILE_MESSAGE(targetConversationId),
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return mapChatMessage(res.data.data);
   },
 
   async editMessage(messageId: string, newContent: string): Promise<void> {
@@ -310,6 +389,44 @@ export const chatService = {
   }): Promise<string> {
     if (file.url) return file.url;
     throw new Error('Attachment URL is not available');
+  },
+
+  /** Whether this attachment URL has already been opened/downloaded — used to hide the download affordance for it. */
+  isAttachmentOpened(url: string): boolean {
+    return openedAttachments.has(url);
+  },
+
+  /** Marks an attachment URL as opened/downloaded, e.g. after a plain `<a download>` click. */
+  markAttachmentOpened(url: string): void {
+    markAttachmentOpened(url);
+  },
+
+  /**
+   * Opens a chat attachment for viewing, reusing a cached blob URL on repeat clicks so
+   * re-opening a file doesn't re-trigger the browser's save-to-disk download every time.
+   */
+  async openChatAttachment(file: { fileName: string; url?: string }): Promise<void> {
+    if (!file.url) return;
+
+    const cached = attachmentBlobUrlCache.get(file.url);
+    if (cached) {
+      window.open(cached, '_blank', 'noopener,noreferrer');
+      markAttachmentOpened(file.url);
+      return;
+    }
+
+    try {
+      const response = await fetch(file.url);
+      if (!response.ok) throw new Error('Failed to fetch attachment');
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      attachmentBlobUrlCache.set(file.url, objectUrl);
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      // CORS or network failure — fall back to opening the original URL directly.
+      window.open(file.url, '_blank', 'noopener,noreferrer');
+    }
+    markAttachmentOpened(file.url);
   },
 
   async downloadChatAttachment(file: {

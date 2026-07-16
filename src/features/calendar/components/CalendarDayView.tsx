@@ -57,15 +57,15 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* Day header */}
-      <div className="py-4 px-6 border-b border-border">
+      <div className="py-3 px-4 border-b border-border">
         <div className="text-2xl font-semibold">{format(date, 'EEEE')}</div>
         <div className="text-sm text-muted-foreground">{format(date, 'MMMM d, yyyy')}</div>
       </div>
 
       {/* Events */}
-      <ScrollArea className="flex-1 py-4">
+      <ScrollArea className="flex-1 py-3">
         {dayEvents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center px-6">
+          <div className="flex flex-col items-center justify-center h-64 text-center px-4">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
               <CheckSquare className="h-8 w-8 text-muted-foreground" />
             </div>
@@ -77,7 +77,7 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
             </p>
           </div>
         ) : (
-          <div className="space-y-6 max-w-2xl px-6">
+          <div className="space-y-6 px-4">
             <EventSection
               title="Milestones"
               icon={<Flag className="h-4 w-4 text-amber-600" />}

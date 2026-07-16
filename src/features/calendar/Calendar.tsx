@@ -426,14 +426,14 @@ const CalendarPage: React.FC = () => {
   // ── Desktop layout ─────────────────────────────────────────────────────────
   return (
     <>
-      <div className="h-full flex flex-col gap-4 animate-fade-in">
+      <div className="h-full flex flex-col gap-6 animate-fade-in px-6 py-6">
         {/* Page Header */}
-        <div className="shrink-0">
+        {/* <div className="shrink-0">
           <h1 className="text-2xl font-semibold tracking-tight">Calendar</h1>
           <p className="text-muted-foreground text-sm mt-1">
             View and manage project timelines, milestones, and tasks.
           </p>
-        </div>
+        </div> */}
 
         {/* Controls Layout */}
         <div className="flex flex-col shrink-0">

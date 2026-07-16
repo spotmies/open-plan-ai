@@ -31,10 +31,10 @@ const mainNavItems = [{
   url: '/projects',
   icon: FolderKanban
 }, {
-//   title: 'Calendar',
-//   url: '/calendar',
-//   icon: Calendar
-// }, {
+  title: 'Calendar',
+  url: '/calendar',
+  icon: Calendar
+}, {
   title: 'Reports',
   url: '/reports',
   icon: BarChart3

@@ -21,6 +21,7 @@ interface MessageAreaProps {
   onDeleteMessage?: (messageId: string, senderName: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReplyMessage?: (message: ChatMessage) => void;
+  onForwardMessage?: (messages: ChatMessage[]) => void;
   /** When set, only pinned/favourite messages render — the rest of the timeline is filtered out. */
   filterMode?: 'pinned' | 'favourites' | null;
   pinnedMessageIds?: Set<string>;
@@ -31,7 +32,7 @@ interface MessageAreaProps {
 
 export function MessageArea({
   messages, conversation, hasMore, onLoadMore, readReceiptMap, reactionMap,
-  onEditMessage, onDeleteMessage, onToggleReaction, onReplyMessage,
+  onEditMessage, onDeleteMessage, onToggleReaction, onReplyMessage, onForwardMessage,
   filterMode, pinnedMessageIds, favouriteMessageIds, onTogglePin, onToggleFavourite,
 }: MessageAreaProps) {
   const { user } = useAuth();
@@ -210,6 +211,7 @@ export function MessageArea({
                         onDelete={onDeleteMessage}
                         onToggleReaction={onToggleReaction}
                         onReply={onReplyMessage}
+                        onForward={onForwardMessage}
                         onTogglePin={onTogglePin}
                         onToggleFavourite={onToggleFavourite}
                       />
@@ -252,6 +254,7 @@ export function MessageArea({
                     onDelete={onDeleteMessage}
                     onToggleReaction={onToggleReaction}
                     onReply={onReplyMessage}
+                    onForward={onForwardMessage ? (message) => onForwardMessage([message]) : undefined}
                     onTogglePin={onTogglePin}
                     onToggleFavourite={onToggleFavourite}
                   />

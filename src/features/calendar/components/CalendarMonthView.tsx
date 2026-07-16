@@ -28,7 +28,7 @@ export const CalendarMonthView: React.FC<CalendarMonthViewProps> = ({
         {WEEKDAY_HEADERS.map((day) => (
           <div
             key={day}
-            className="py-2 text-center text-xs font-medium text-muted-foreground"
+            className="py-3 text-center text-xs font-medium text-muted-foreground"
           >
             {day}
           </div>

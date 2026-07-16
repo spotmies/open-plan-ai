@@ -8,6 +8,7 @@ import { MessageInput } from './components/MessageInput';
 import { ChatHeader } from './components/ChatHeader';
 import { DetailPanel } from './components/DetailPanel';
 import { AddMemberDialog } from './components/AddMemberDialog';
+import { ForwardMessageDialog } from './components/ForwardMessageDialog';
 import { EmptyState } from './components/EmptyState';
 import { TypingIndicator } from './components/TypingIndicator';
 import { MessageAreaSkeleton } from './components/MessageAreaSkeleton';
@@ -45,6 +46,7 @@ export default function Chat() {
   const { conversations, loading: convsLoading, refetch } = useConversations();
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [forwardMessages, setForwardMessages] = useState<ChatMessage[] | null>(null);
   const activeId = conversationId || (isMobile ? null : activeConversationId);
   const { messages, loading: msgsLoading, hasMore, loadMore, refetchMessages, sendMessage, readOnly, readOnlyNotice } = useMessages(activeId ?? null);
   const { reactionMap, handleToggleReaction } = useReactions(messages, user?.id, activeId ?? null);
@@ -161,6 +163,31 @@ export default function Chat() {
     setReplyingTo(null);
   }, []);
 
+  const handleForwardMessage = useCallback((messages: ChatMessage[]) => {
+    setForwardMessages(messages);
+  }, []);
+
+  const handleForwardSubmit = useCallback(async (targetConversationIds: string[]) => {
+    if (!forwardMessages) return;
+    try {
+      for (const targetId of targetConversationIds) {
+        for (const msg of forwardMessages) {
+          await chatService.forwardMessage(targetId, msg);
+        }
+      }
+      toast.success(
+        forwardMessages.length > 1
+          ? `${forwardMessages.length} items forwarded`
+          : 'Message forwarded'
+      );
+      if (targetConversationIds.includes(activeId ?? '')) await refetchMessages();
+    } catch (err) {
+      logger.error('Failed to forward message:', err);
+      toast.error('Failed to forward message');
+      throw err;
+    }
+  }, [forwardMessages, activeId, refetchMessages]);
+
   const handleTogglePin = useCallback((messageId: string) => {
     if (!activeId) return;
     if (pinnedMessageIds.has(messageId)) {
@@ -261,6 +288,7 @@ export default function Chat() {
                     onDeleteMessage={handleDeleteMessage}
                     onToggleReaction={handleToggleReaction}
                     onReplyMessage={handleReplyMessage}
+                    onForwardMessage={handleForwardMessage}
                     filterMode={messageFilter}
                     pinnedMessageIds={pinnedMessageIds}
                     favouriteMessageIds={favouriteIds}
@@ -296,6 +324,14 @@ export default function Chat() {
             onMemberAdded={refetch}
           />
         )}
+
+        <ForwardMessageDialog
+          open={forwardMessages !== null}
+          onOpenChange={(open) => { if (!open) setForwardMessages(null); }}
+          conversations={conversations}
+          messages={forwardMessages}
+          onForward={handleForwardSubmit}
+        />
 
         {isDetailPanelOpen && activeConv && (
           isMobile ? (
