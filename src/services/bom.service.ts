@@ -14,6 +14,7 @@ export interface CreateNodeDto {
   partId: string;
   quantity: number;
   unit?: string;
+  designators?: string | null;
   status?: 'approved' | 'pending' | 'draft';
   parentId?: string | null;
   position?: number;
@@ -24,6 +25,7 @@ export interface CreateNodeDto {
 export interface UpdateNodeDto {
   quantity?: number;
   unit?: string;
+  designators?: string | null;
   status?: 'approved' | 'pending' | 'draft';
   notes?: string;
 }

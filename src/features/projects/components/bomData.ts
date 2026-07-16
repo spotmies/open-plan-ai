@@ -41,6 +41,7 @@ export interface BOMNode {
   desc: string;
   qty: number;
   uom: string;
+  designators: string;   // comma-separated reference designators, e.g. "C3, C4, C11" — mirrors backend bom_nodes.designators 1:1
   supplier: string;
   rev: string;
   status: BOMStatus;
@@ -164,6 +165,7 @@ export interface ApiNodeResponse {
   position: number;
   quantity: string;
   unit: string;
+  designators: string | null;
   status: BOMStatus;
   notes: string | null;
   owner: { id: string; name: string } | null;
@@ -285,6 +287,7 @@ export function fromApiNode(node: ApiNodeResponse, depth = 0): BOMNode {
     desc:         node.part.description,
     qty:          parseFloat(node.quantity),
     uom:          node.unit,
+    designators:  node.designators ?? '',
     supplier:     node.part.manufacturer ?? '',
     rev:          rev?.rev ?? 'A',
     status:       node.status,
@@ -468,6 +471,7 @@ export const SUBCOMPONENT_IMPORT_COLUMNS: ImportColumnDef[] = [
   { label: 'Lead Time (weeks)',  required: true,  aliases: ['lead time (weeks)', 'lead time', 'leadtime'] },
   { label: 'Quantity',           required: true,  aliases: ['quantity', 'qty'] },
   { label: 'UOM',                required: true,  aliases: ['uom', 'unit'] },
+  { label: 'Reference Designator', required: false, aliases: ['reference designator', 'designator', 'designators', 'refdes', 'ref des', 'ref designator'] },
 ];
 
 export interface ParsedImportRow {
@@ -485,6 +489,7 @@ export interface ParsedImportRow {
   leadTimeWeeks?: number;
   quantity: number;
   uom: string;
+  designators: string;   // comma-separated reference designators, e.g. "C3, C4" — empty if the sheet has no such column
   existingPart?: ApiPartResponse;
   errors: string[];
 }
@@ -593,6 +598,7 @@ export function parseSubcomponentImportRows(
     const leadTimeRaw   = pickField(row, colAliases('Lead Time (weeks)'));
     const quantityRaw   = pickField(row, colAliases('Quantity'));
     const uomRaw         = pickField(row, colAliases('UOM'));
+    const designators    = pickField(row, colAliases('Reference Designator'));
 
     if (!partNumber) errors.push('Missing Part Number');
     if (!name) errors.push('Missing Part Name');
@@ -652,6 +658,7 @@ export function parseSubcomponentImportRows(
       level,
       partNumber, name, description, category, status,
       manufacturer, mpn, supplier, unitPrice, leadTimeWeeks, quantity, uom,
+      designators,
       existingPart,
       errors,
     };

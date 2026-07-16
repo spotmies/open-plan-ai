@@ -41,25 +41,52 @@ interface Props {
   orgId: string;
 }
 
-function sheetToRows(sheet: Worksheet): { headers: string[]; rows: Record<string, unknown>[] } {
-  const headerCells: string[] = [];
-  sheet.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
-    headerCells[colNumber] = String(cell.value ?? '').trim();
-  });
-  const headers = headerCells.filter(Boolean);
+// Some spreadsheet exports (e.g. Altium BOM reports) prepend title/metadata
+// rows before the real header row. Scan the first few rows for the one that
+// best matches our known column aliases instead of assuming row 1 is it.
+const HEADER_SCAN_ROWS = 25;
+const KNOWN_HEADER_ALIASES = new Set(SUBCOMPONENT_IMPORT_COLUMNS.flatMap(c => c.aliases));
+
+function findHeaderRowIndex(matrix: unknown[][]): number {
+  let bestIndex = 0;
+  let bestScore = 0;
+  for (let i = 0; i < Math.min(HEADER_SCAN_ROWS, matrix.length); i++) {
+    const row = matrix[i] ?? [];
+    const score = row.filter(cell => KNOWN_HEADER_ALIASES.has(String(cell ?? '').trim().toLowerCase())).length;
+    if (score > bestScore) { bestScore = score; bestIndex = i; }
+  }
+  // Require at least 2 recognizable column names before trusting a row as the header;
+  // otherwise fall back to row 0 (preserves prior behavior for already-clean files).
+  return bestScore >= 2 ? bestIndex : 0;
+}
+
+function rowsFromMatrix(matrix: unknown[][]): { headers: string[]; rows: Record<string, unknown>[] } {
+  const headerRowIndex = findHeaderRowIndex(matrix);
+  const headerCells = matrix[headerRowIndex] ?? [];
+  const headers = headerCells.map(c => String(c ?? '').trim()).filter(Boolean);
 
   const rows: Record<string, unknown>[] = [];
-  sheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
+  for (let i = headerRowIndex + 1; i < matrix.length; i++) {
+    const rowCells = matrix[i] ?? [];
     const obj: Record<string, unknown> = {};
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const header = headerCells[colNumber];
-      if (header) obj[header] = cell.value;
+    rowCells.forEach((cell, colNumber) => {
+      const header = String(headerCells[colNumber] ?? '').trim();
+      if (header) obj[header] = cell;
     });
     const hasData = Object.values(obj).some(v => v != null && String(v).trim() !== '');
     if (hasData) rows.push(obj);
-  });
+  }
   return { headers, rows };
+}
+
+function sheetToRows(sheet: Worksheet): { headers: string[]; rows: Record<string, unknown>[] } {
+  const matrix: unknown[][] = [];
+  sheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+    const cells: unknown[] = [];
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => { cells[colNumber] = cell.value; });
+    matrix[rowNumber - 1] = cells;
+  });
+  return rowsFromMatrix(matrix);
 }
 
 async function buildTemplateWorkbook(): Promise<Workbook> {
@@ -228,12 +255,13 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
 
       if (isCsv) {
         const text = await file.text();
-        const result = Papa.parse(text, { header: true, skipEmptyLines: true });
+        const result = Papa.parse(text, { header: false, skipEmptyLines: true });
         if (result.errors.length > 0 && result.data.length === 0) {
           throw new Error('Failed to parse CSV file: ' + result.errors[0].message);
         }
-        headers = result.meta.fields || [];
-        rawRows = result.data as Record<string, unknown>[];
+        const parsed = rowsFromMatrix(result.data as unknown[][]);
+        headers = parsed.headers;
+        rawRows = parsed.rows;
       } else {
         const buffer = await file.arrayBuffer();
         const { Workbook } = await import('exceljs');
@@ -326,6 +354,7 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
         }
         const node = await createNode.mutateAsync({
           partId, quantity: row.quantity, unit: row.uom,
+          designators: row.designators || null,
           status: row.status,
           parentId: resolvedParentId ?? null,
           ownerId: user?.id,
@@ -459,6 +488,11 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
                           )}
                           <span className="font-mono font-medium text-foreground">{row.partNumber || `Row ${row.rowNumber}`}</span>
                           <span className="text-muted-foreground truncate">{row.name || row.description}</span>
+                          {row.designators && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono truncate max-w-[180px]" title={row.designators}>
+                              {row.designators} · qty {row.quantity}
+                            </span>
+                          )}
                           {row.existingPart && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
                               Existing part — will attach, not duplicate

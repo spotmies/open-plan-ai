@@ -862,6 +862,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
           <Field label="Manufacturer">{node.manufacturer}</Field>
           <Field label="Supplier">{node.distributor}</Field>
           <Field label="Quantity">{node.qty} {node.uom}</Field>
+          {node.designators && <Field label="Designators" mono>{node.designators}</Field>}
           <Field label="Unit Price">{formatCurrency(node.price)}</Field>
           <Field label="Lead Time">{formatLeadTime(node.leadTime)}</Field>
           <Field label="BOM Level">{node.levelLabel ?? node.level}</Field>
