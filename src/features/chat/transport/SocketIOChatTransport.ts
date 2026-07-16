@@ -249,4 +249,10 @@ export class SocketIOChatTransport implements IChatTransport {
     this.socket.on('call:ended', handler);
     return () => this.socket.off('call:ended', handler);
   }
+
+  subscribeToCallParticipantLeft(onLeft: (event: CallStatusEvent) => void): Unsubscribe {
+    const handler = (event: CallStatusEvent) => onLeft(event);
+    this.socket.on('call:participant_left', handler);
+    return () => this.socket.off('call:participant_left', handler);
+  }
 }

@@ -4,7 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { queryClient } from "@/lib/queryClient";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppLayoutSkeleton } from "@/components/layout/AppLayoutSkeleton";
@@ -44,7 +44,6 @@ const Reports       = lazy(() => import("./features/reports"));
 const Notifications = lazy(() => import("./features/notifications"));
 const Chat          = lazy(() => import("./features/chat"));
 const Integrations  = lazy(() => import("./features/integrations"));
-const CallStatusWindow = lazy(() => import("./features/chat/CallStatusWindow"));
 
 // ── ReactQueryDevtools — dev only, lazy so it is never in the production bundle
 const ReactQueryDevtools = import.meta.env.DEV
@@ -65,17 +64,10 @@ function ProjectLegacyTabRedirect() {
   return <Navigate to={`/projects/${id}/${target}`} replace />;
 }
 
-// The call-status tab (see CallStatusWindow.tsx) is a bare display + remote
-// control synced over BroadcastChannel — it doesn't need its own chat socket
-// connection, unread-count hydration, or call-signaling subscriptions, so
-// ChatNotificationsProvider (which owns all of that) is skipped there.
 function AppShell() {
-  const location = useLocation();
-  const isCallStatusWindow = location.pathname === "/call";
-
   return (
     <>
-      {!isCallStatusWindow && <ChatNotificationsProvider />}
+      <ChatNotificationsProvider />
       <Routes>
         {/* ── Public (auth) routes ─────────────────────────────── */}
         <Route path="/login"           element={<LoginPage />} />
@@ -273,16 +265,6 @@ function AppShell() {
               }
             />
           </Route>
-
-          {/* ── Bare, chrome-free tab (no sidebar/topbar) ───────── */}
-          <Route
-            path="/call"
-            element={
-              <Suspense fallback={null}>
-                <CallStatusWindow />
-              </Suspense>
-            }
-          />
         </Route>
 
         {/* 404 */}

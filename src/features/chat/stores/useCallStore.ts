@@ -25,6 +25,8 @@ interface CallStoreState {
   isMuted: boolean;
   isCameraOff: boolean;
   callDuration: number; // seconds
+  /** Wall-clock time (Date.now()) the call became active — duration is always derived from this, not accumulated tick-by-tick, so a throttled/backgrounded tab can't drift behind. */
+  callStartedAt: number | null;
 
   startOutgoingCall: (params: {
     callId: string;
@@ -48,9 +50,11 @@ interface CallStoreState {
 
   markActive: () => void;
   reset: () => void;
+  /** Drops one participant from a still-active group call — does not end the call. */
+  removeParticipant: (userId: string) => void;
   toggleMute: () => void;
   toggleCamera: () => void;
-  incrementDuration: () => void;
+  syncDuration: () => void;
 }
 
 const idleState = {
@@ -66,6 +70,7 @@ const idleState = {
   isMuted: false,
   isCameraOff: false,
   callDuration: 0,
+  callStartedAt: null as number | null,
 };
 
 export const useCallStore = create<CallStoreState>((set) => ({
@@ -97,11 +102,17 @@ export const useCallStore = create<CallStoreState>((set) => ({
       isGroup,
     }),
 
-  markActive: () => set({ callState: 'active', callDuration: 0 }),
+  markActive: () => set({ callState: 'active', callDuration: 0, callStartedAt: Date.now() }),
 
   reset: () => set({ ...idleState }),
 
+  removeParticipant: (userId) =>
+    set((state) => ({ participants: state.participants.filter((p) => p.id !== userId) })),
+
   toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
   toggleCamera: () => set((state) => ({ isCameraOff: !state.isCameraOff })),
-  incrementDuration: () => set((state) => ({ callDuration: state.callDuration + 1 })),
+  syncDuration: () =>
+    set((state) =>
+      state.callStartedAt ? { callDuration: Math.floor((Date.now() - state.callStartedAt) / 1000) } : state,
+    ),
 }));

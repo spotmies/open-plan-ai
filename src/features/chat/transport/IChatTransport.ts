@@ -99,4 +99,7 @@ export interface IChatTransport {
   subscribeToCallDeclined(onDeclined: (event: CallStatusEvent) => void): Unsubscribe;
 
   subscribeToCallEnded(onEnded: (event: CallStatusEvent) => void): Unsubscribe;
+
+  /** Fired instead of `call:ended` when a 3+ person group call loses one participant but stays active for the rest. */
+  subscribeToCallParticipantLeft(onLeft: (event: CallStatusEvent) => void): Unsubscribe;
 }

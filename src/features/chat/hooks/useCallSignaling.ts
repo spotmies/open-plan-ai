@@ -5,7 +5,6 @@ import { chatTransport } from '../transport';
 import { useCallStore } from '../stores/useCallStore';
 import { useChatStore } from '../stores/useChatStore';
 import { meetWindow } from '../utils/meetWindow';
-import { callWindow } from '../utils/callWindow';
 
 /** Best-effort name lookup from whatever conversation data is already cached. */
 function resolveMemberName(conversationId: string, userId: string): string {
@@ -48,6 +47,14 @@ export function useCallSignaling() {
       const store = useCallStore.getState();
       if (store.callId !== callId || store.callState === 'idle') return;
 
+      // The server fans this out to every other conversation member, not just
+      // the caller — in a group ring, a fellow invitee who's still being rung
+      // must keep ringing independently. Someone else accepting doesn't
+      // answer the call on their behalf; only their own accept/decline/
+      // timeout should. Only the original caller ('outgoing') or a party
+      // that's already 'active' reacts here.
+      if (store.callState === 'incoming') return;
+
       if (store.callState !== 'active') {
         store.markActive();
         if (store.meetingUri) {
@@ -57,18 +64,37 @@ export function useCallSignaling() {
       toast.success(`${byUserName || 'They'} joined the call`);
     });
 
-    const unsubDeclined = chatTransport.subscribeToCallDeclined(({ callId, byUserName }) => {
+    const unsubDeclined = chatTransport.subscribeToCallDeclined(({ callId, byUserId, byUserName }) => {
       const store = useCallStore.getState();
       if (store.callId !== callId) return;
+
+      // Same reasoning as call:accepted above — one recipient declining a
+      // group call must not cancel the ring for a fellow invitee who's still
+      // being rung and hasn't made their own decision yet.
+      if (store.callState === 'incoming') return;
+
+      // Drop the decliner from the invite list — for whoever's watching
+      // (the caller, or another already-active member) they're no longer
+      // part of this call.
+      const stillPending = store.participants.filter((p) => p.id !== byUserId);
+      store.removeParticipant(byUserId);
 
       // In a group call that's already active, one more decline doesn't end it.
       if (store.callState === 'active') {
         toast.info(`${byUserName || 'Someone'} declined`);
         return;
       }
+
+      // Still ringing (outgoing) — only give up once EVERY invitee has
+      // declined. If someone else is still being rung, keep the call alive
+      // for them instead of cancelling it out from under them.
+      if (stillPending.length > 0) {
+        toast.info(`${byUserName || 'Someone'} declined`);
+        return;
+      }
+
       toast.info(`${byUserName || 'They'} declined the call`);
       meetWindow.close();
-      callWindow.close();
       store.reset();
     });
 
@@ -77,8 +103,18 @@ export function useCallSignaling() {
       if (store.callId !== callId) return;
 
       meetWindow.close();
-      callWindow.close();
       store.reset();
+    });
+
+    // Only fires for a 3+ person group call that's still active for everyone
+    // else — the server has already determined the call itself keeps going,
+    // so just drop the one participant instead of tearing down the call.
+    const unsubParticipantLeft = chatTransport.subscribeToCallParticipantLeft(({ callId, byUserId, byUserName }) => {
+      const store = useCallStore.getState();
+      if (store.callId !== callId) return;
+
+      store.removeParticipant(byUserId);
+      toast.info(`${byUserName || 'Someone'} left the call`);
     });
 
     return () => {
@@ -86,8 +122,8 @@ export function useCallSignaling() {
       chatTransport.unsubscribe(unsubAccepted);
       chatTransport.unsubscribe(unsubDeclined);
       chatTransport.unsubscribe(unsubEnded);
+      chatTransport.unsubscribe(unsubParticipantLeft);
       meetWindow.close();
-      callWindow.close();
     };
   }, [user?.id]);
 }

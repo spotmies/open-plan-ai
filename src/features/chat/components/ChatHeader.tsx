@@ -18,7 +18,6 @@ import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsur
 import { useCallStore } from '../stores/useCallStore';
 import { chatTransport } from '../transport';
 import { meetWindow } from '../utils/meetWindow';
-import { callWindow } from '../utils/callWindow';
 import { googleMeetService } from '@/services/googleMeet.service';
 import { ScheduleMeetingDialog } from './ScheduleMeetingDialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -125,13 +124,6 @@ export function ChatHeader({
     const otherMembers = conversation.members.filter((m) => m.id !== currentUserId);
     if (otherMembers.length === 0 || startingCall) return;
 
-    // Opened synchronously inside this click handler, before any await —
-    // same reasoning as meetWindow.openPlaceholder() below: a window opened
-    // later from an async callback would be blocked by the popup blocker.
-    // Covers both the normal outgoing-call path and the "nobody reachable"
-    // panel path, since both render inside the call-status tab now.
-    callWindow.open();
-
     const participants = otherMembers.map((m) => ({
       id: m.id,
       name: m.name,
@@ -154,10 +146,11 @@ export function ChatHeader({
       return;
     }
 
-    // Open the Meet tab now, synchronously, inside this click handler — a
-    // window opened later from the async call:accepted socket event would
-    // be blocked by the browser's popup blocker. We navigate this same
-    // placeholder to the real URL once the callee accepts.
+    // Open the Meet tab now, synchronously, inside this click handler — the
+    // ONLY popup opened for this gesture (some browsers only honor one
+    // window.open() per click). A window opened later from the async
+    // call:accepted socket event would be blocked outright, so we navigate
+    // this same placeholder to the real URL once the callee accepts.
     meetWindow.openPlaceholder();
 
     setStartingCall(true);
@@ -166,7 +159,6 @@ export function ChatHeader({
       if (!token) {
         toast.error('Your Google Meet session expired. Please reconnect in Integrations.');
         meetWindow.close();
-        callWindow.close();
         return;
       }
       const meetData = await googleMeetService.createInstantMeeting(token);
@@ -187,7 +179,6 @@ export function ChatHeader({
     } catch (err) {
       toast.error('Failed to start the call. Please try again.');
       meetWindow.close();
-      callWindow.close();
     } finally {
       setStartingCall(false);
     }
