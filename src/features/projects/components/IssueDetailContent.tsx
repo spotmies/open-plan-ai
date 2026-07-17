@@ -180,6 +180,7 @@ export function IssueDetailContent({
     const [isAdvancedDescription, setIsAdvancedDescription] = useState(false);
     const [newChecklistItem, setNewChecklistItem] = useState('');
     const [isTagPopoverOpen, setIsTagPopoverOpen] = useState(false);
+    const [isDueDatePopoverOpen, setIsDueDatePopoverOpen] = useState(false);
     const [tagSearch, setTagSearch] = useState('');
     const tagSearchInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -869,7 +870,7 @@ export function IssueDetailContent({
                                 {!isMobileLayout && <CalendarIcon className="h-3 w-3" />}
                                 Due Date
                             </Label>
-                            <Popover>
+                            <Popover open={isDueDatePopoverOpen} onOpenChange={(open) => canEditIssueFields && setIsDueDatePopoverOpen(open)}>
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant={isMobileLayout ? 'ghost' : 'outline'}
@@ -895,12 +896,13 @@ export function IssueDetailContent({
                                         onSelect={(date) => {
                                             if (date) {
                                                 // Use local date string YYYY-MM-DD to avoid timezone shifts
-                                                // Adjust for timezone offset to ensure we get the correct local YYYY-MM-DD 
+                                                // Adjust for timezone offset to ensure we get the correct local YYYY-MM-DD
                                                 // or just use format from date-fns which uses local time
                                                 handleFieldChange('dueDate', format(date, 'yyyy-MM-dd'));
                                             } else {
                                                 handleFieldChange('dueDate', undefined);
                                             }
+                                            setIsDueDatePopoverOpen(false);
                                         }}
                                         disabled={(date) => date < startOfDay(new Date())}
                                         initialFocus

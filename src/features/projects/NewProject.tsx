@@ -51,7 +51,8 @@ import {
   Target,
   Pencil,
   Loader2,
-  Smile
+  Smile,
+  Eye
 } from "lucide-react";
 import { format, isBefore, startOfMonth } from "date-fns";
 import { cn, isValidPhoneNumber } from "@/lib/utils";
@@ -229,6 +230,8 @@ const NewProject = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
 
   // Tasks from document
   const [taskDocument, setTaskDocument] = useState<UploadedFile | null>(null);
@@ -516,6 +519,19 @@ const NewProject = () => {
       });
     }
   }, []);
+
+  useEffect(() => {
+    const urls: Record<string, string> = {};
+    attachments.forEach(file => {
+      if (file.file && (file.file.type.startsWith('image/') || file.file.type === 'application/pdf')) {
+        urls[file.id] = URL.createObjectURL(file.file);
+      }
+    });
+    setPreviewUrls(urls);
+    return () => {
+      Object.values(urls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [attachments]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     processFiles(e.target.files);
@@ -1504,23 +1520,44 @@ const NewProject = () => {
                       key={file.id}
                       className="flex items-center justify-between p-3 rounded-lg border bg-card"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <FileText className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm">{file.name}</p>
+                      <div
+                        className="flex items-center gap-3 cursor-pointer min-w-0"
+                        onClick={() => setPreviewFile(file)}
+                      >
+                        {previewUrls[file.id] && file.file?.type.startsWith('image/') ? (
+                          <img
+                            src={previewUrls[file.id]}
+                            alt={file.name}
+                            className="h-10 w-10 rounded-lg object-cover flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <FileText className="h-5 w-5 text-primary" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{file.name}</p>
                           <p className="text-xs text-muted-foreground">{file.size}</p>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleRemoveAttachment(file.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          onClick={() => setPreviewFile(file)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleRemoveAttachment(file.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1719,6 +1756,34 @@ const NewProject = () => {
             )}
           </Button>
         </div>
+
+        {/* File Preview Dialog */}
+        <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
+          <DialogContent className={cn(previewFile?.file?.type === 'application/pdf' ? "max-w-4xl" : "max-w-2xl")}>
+            <DialogHeader>
+              <DialogTitle className="truncate pr-6">{previewFile?.name}</DialogTitle>
+              <DialogDescription>{previewFile?.size}</DialogDescription>
+            </DialogHeader>
+            {previewFile && previewUrls[previewFile.id] && previewFile.file?.type.startsWith('image/') ? (
+              <img
+                src={previewUrls[previewFile.id]}
+                alt={previewFile.name}
+                className="max-h-[70vh] w-full object-contain rounded-lg bg-muted/30"
+              />
+            ) : previewFile && previewUrls[previewFile.id] && previewFile.file?.type === 'application/pdf' ? (
+              <iframe
+                src={previewUrls[previewFile.id]}
+                title={previewFile.name}
+                className="h-[75vh] w-full rounded-lg border"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground">
+                <FileText className="h-16 w-16" />
+                <p className="text-sm">Preview not available for this file type</p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteConfirmation.isOpen} onOpenChange={(open) => {

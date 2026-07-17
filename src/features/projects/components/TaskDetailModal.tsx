@@ -273,6 +273,8 @@ export const TaskDetailModal = ({
   const [isBlockingTaskPopoverOpen, setIsBlockingTaskPopoverOpen] = useState(false);
   const [isBlockedByTaskPopoverOpen, setIsBlockedByTaskPopoverOpen] = useState(false);
   const [isTagPopoverOpen, setIsTagPopoverOpen] = useState(false);
+  const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false);
+  const [isDueDatePopoverOpen, setIsDueDatePopoverOpen] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
   const [editingTagIndex, setEditingTagIndex] = useState<number | null>(null);
   const [editingTagValue, setEditingTagValue] = useState('');
@@ -1525,7 +1527,7 @@ export const TaskDetailModal = ({
                     Start Date
                     {!showMobileHeader && <span className="text-destructive">*</span>}
                   </Label>
-                  <Popover>
+                  <Popover open={isStartDatePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsStartDatePopoverOpen(open)}>
                     <PopoverTrigger asChild>
                       <Button
                         variant={showMobileHeader ? 'ghost' : 'outline'}
@@ -1548,7 +1550,10 @@ export const TaskDetailModal = ({
                       <Calendar
                         mode="single"
                         selected={editedTask.startDate ? new Date(editedTask.startDate) : undefined}
-                        onSelect={(date) => handleFieldChange('startDate', toDateOnly(date || undefined))}
+                        onSelect={(date) => {
+                          handleFieldChange('startDate', toDateOnly(date || undefined));
+                          setIsStartDatePopoverOpen(false);
+                        }}
                         disabled={(date) => {
                           if (editedTask.dueDate) {
                             return isAfter(date, parseISO(editedTask.dueDate));
@@ -1571,7 +1576,7 @@ export const TaskDetailModal = ({
                     {!showMobileHeader && <CalendarIcon className="h-3 w-3" />}
                     Due Date {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
                   </Label>
-                  <Popover>
+                  <Popover open={isDueDatePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsDueDatePopoverOpen(open)}>
                     <PopoverTrigger asChild>
                       <Button
                         variant={showMobileHeader ? 'ghost' : 'outline'}
@@ -1595,7 +1600,10 @@ export const TaskDetailModal = ({
                       <Calendar
                         mode="single"
                         selected={editedTask.dueDate ? new Date(editedTask.dueDate) : undefined}
-                        onSelect={(date) => handleFieldChange('dueDate', toDateOnly(date || undefined))}
+                        onSelect={(date) => {
+                          handleFieldChange('dueDate', toDateOnly(date || undefined));
+                          setIsDueDatePopoverOpen(false);
+                        }}
                         disabled={(date) => {
                           if (editedTask.startDate) {
                             return isBefore(date, parseISO(editedTask.startDate));

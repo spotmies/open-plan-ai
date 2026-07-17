@@ -257,7 +257,7 @@ export const chatService = {
   },
 
   async deleteMessage(messageId: string, _senderName: string): Promise<void> {
-    await apiClient.delete(ENDPOINTS.COMMENTS.DELETE(messageId));
+    await apiClient.delete(ENDPOINTS.MESSAGES.DELETE(messageId));
   },
 
   async markConversationAsRead(conversationId: string): Promise<void> {

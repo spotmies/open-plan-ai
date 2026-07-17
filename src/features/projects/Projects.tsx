@@ -36,6 +36,8 @@ import { useOrgPermissions } from '@/hooks/useProjectPermissions';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
+import { resolveFileUrl } from '@/utils/fileUrl';
+import { FilePreviewDialog } from '@/components/FilePreviewDialog';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -71,6 +73,17 @@ const formatDisplayDate = (value?: string | number | Date | null) => {
 
   return `${day}-${month}-${year}`;
 };
+
+const getAttachmentMimeType = (attachment: any): string => {
+  const mime = attachment?.mimeType || attachment?.mime_type;
+  if (mime) return mime;
+  const name: string = attachment?.file_name || attachment?.fileName || attachment?.name || '';
+  const ext = name.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return 'application/pdf';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return `image/${ext}`;
+  return '';
+};
+const isImageAttachment = (attachment: any) => getAttachmentMimeType(attachment).startsWith('image/');
 
 function ProjectTeamHoverCard({ projectId, memberCount }: { projectId: string; memberCount?: number }) {
   const [open, setOpen] = useState(false);
@@ -148,6 +161,7 @@ export default function Projects() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [filesDialogOpen, setFilesDialogOpen] = useState(false);
   const [selectedFilesProjectId, setSelectedFilesProjectId] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<any>(null);
 
   // Fetch full project details when a project is selected for viewing details
   const { data: selectedProjectDetails, isLoading: isLoadingDetails } = useProjectDetail(selectedProjectId || undefined);
@@ -574,30 +588,38 @@ export default function Projects() {
                       Attachments ({projectAttachments.length})
                     </h4>
                     <div className="space-y-2">
-                      {projectAttachments.map((attachment: any) => (
-                        <a
-                          key={attachment.id}
-                          href={attachment.url || '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(
-                            "flex items-center gap-2 p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors",
-                            attachment.url ? "cursor-pointer" : "cursor-default"
-                          )}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!attachment.url) {
-                              e.preventDefault();
-                            }
-                          }}
-                        >
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm flex-1 truncate">{attachment.name || attachment.file_name}</span>
-                          {attachment.url && (
-                            <span className="text-xs text-primary">Open ↗</span>
-                          )}
-                        </a>
-                      ))}
+                      {projectAttachments.map((attachment: any) => {
+                        const attachmentName = attachment.file_name || attachment.fileName || attachment.name || 'Untitled file';
+                        const rawUrl = attachment.url || attachment.fileUrl;
+                        const previewUrl = resolveFileUrl(rawUrl) ?? rawUrl;
+                        return (
+                          <div
+                            key={attachment.id}
+                            className={cn(
+                              "flex items-center gap-2 p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors",
+                              previewUrl ? "cursor-pointer" : "cursor-default"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (previewUrl) setPreviewFile(attachment);
+                            }}
+                          >
+                            {previewUrl && isImageAttachment(attachment) ? (
+                              <img
+                                src={previewUrl}
+                                alt={attachmentName}
+                                className="h-8 w-8 rounded object-cover shrink-0"
+                              />
+                            ) : (
+                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                            )}
+                            <span className="text-sm flex-1 truncate">{attachmentName}</span>
+                            {previewUrl && (
+                              <Eye className="h-4 w-4 text-primary shrink-0" />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -803,35 +825,42 @@ export default function Projects() {
             </div>
           ) : projectFiles.length > 0 ? (
             <div className="space-y-2 py-4">
-              {projectFiles.map((file: any) => (
-                <a
-                  key={file.id}
-                  href={file.url || '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(
-                    "flex items-center gap-3 p-3 rounded-md bg-muted/50 hover:bg-muted transition-colors border",
-                    file.url ? "cursor-pointer" : "cursor-default opacity-70"
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!file.url) e.preventDefault();
-                  }}
-                >
-                  <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate text-foreground">
-                      {file.name || file.file_name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Click to view • {formatDisplayDate(file.uploaded_at || Date.now())}
-                    </p>
+              {projectFiles.map((file: any) => {
+                const rawUrl = file.url || file.fileUrl;
+                const previewUrl = resolveFileUrl(rawUrl) ?? rawUrl;
+                const fileName = file.file_name || file.fileName || file.name || 'Untitled file';
+                return (
+                  <div
+                    key={file.id}
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-md bg-muted/50 hover:bg-muted transition-colors border",
+                      previewUrl ? "cursor-pointer" : "cursor-default opacity-70"
+                    )}
+                    onClick={() => previewUrl && setPreviewFile(file)}
+                  >
+                    {previewUrl && isImageAttachment(file) ? (
+                      <img
+                        src={previewUrl}
+                        alt={fileName}
+                        className="h-9 w-9 rounded object-cover shrink-0"
+                      />
+                    ) : (
+                      <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate text-foreground">
+                        {fileName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {previewUrl ? "Click to preview" : "No preview available"} • {formatDisplayDate(file.uploaded_at || file.createdAt || Date.now())}
+                      </p>
+                    </div>
+                    {previewUrl && (
+                      <Eye className="h-4 w-4 text-primary shrink-0" />
+                    )}
                   </div>
-                  {file.url && (
-                    <span className="text-xs text-primary font-medium shrink-0">Open ↗</span>
-                  )}
-                </a>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-8">
@@ -850,6 +879,22 @@ export default function Projects() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* File Preview Dialog */}
+      {previewFile && (() => {
+        const rawUrl = previewFile.url || previewFile.fileUrl;
+        const url = resolveFileUrl(rawUrl) ?? rawUrl;
+        return (
+          <FilePreviewDialog
+            file={{
+              url,
+              fileName: previewFile.file_name || previewFile.fileName || previewFile.name || 'Untitled file',
+              mimeType: getAttachmentMimeType(previewFile) || undefined,
+            }}
+            onClose={() => setPreviewFile(null)}
+          />
+        );
+      })()}
 
     </>
   );

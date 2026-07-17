@@ -709,6 +709,11 @@ function MobileListView({
                 onClick={() => onOpen(row.id)}
                 className="flex items-center gap-3 px-4 py-3 active:bg-muted/40 transition-colors cursor-pointer"
               >
+                {/* Level label — mirrors the desktop LEVEL column */}
+                <span className="shrink-0 text-[11px] font-medium text-muted-foreground tabular-nums" style={{ width: 26 }}>
+                  {row.levelLabel ?? row.level}
+                </span>
+
                 {/* Expand toggle (only for parents) / hierarchy indent */}
                 <span className="shrink-0 flex items-center justify-center" style={{ width: 16, marginLeft: indent }}>
                   {hasChildren && !filtersActive ? (

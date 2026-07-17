@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Document, Page, pdfjs } from 'react-pdf';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { Download, Copy, File as FileIcon, ExternalLink, ChevronLeft, ChevronRight, X, Loader2, Video, ZoomIn, ZoomOut } from 'lucide-react';
+import { Download, Copy, File as FileIcon, ExternalLink, ChevronLeft, ChevronRight, X, Loader2, Video, ZoomIn, ZoomOut, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -181,6 +181,24 @@ export function FilePreviewDialog({
     };
   }, []);
 
+  const handleShare = useCallback(async () => {
+    if (!current) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: current.fileName, url: current.url });
+        return;
+      }
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return;
+    }
+    try {
+      await navigator.clipboard.writeText(current.url);
+      toast.success('Link copied to clipboard');
+    } catch {
+      toast.error('Failed to share');
+    }
+  }, [current]);
+
   if (!current) return null;
   const kind = kindOf(current.fileName, current.url, current.mimeType);
   const isMedia = kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'embed';
@@ -203,6 +221,10 @@ export function FilePreviewDialog({
             <p className="text-sm font-medium text-foreground text-center break-all">{current.fileName}</p>
             <p className="text-xs text-muted-foreground">No inline preview available for this file type.</p>
             <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleShare}>
+                <Share2 className="w-3.5 h-3.5 mr-1.5" />
+                Share
+              </Button>
               <Button variant="outline" size="sm" asChild>
                 <a href={current.url} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
@@ -230,6 +252,13 @@ export function FilePreviewDialog({
                     {currentIdx + 1} / {list.length}
                   </span>
                 )}
+                <button
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  title="Share"
+                  onClick={handleShare}
+                >
+                  <Share2 className="w-4 h-4" />
+                </button>
                 {kind !== 'embed' && (
                   <button
                     className="text-muted-foreground hover:text-foreground transition-colors"

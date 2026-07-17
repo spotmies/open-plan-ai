@@ -173,6 +173,10 @@ export const ENDPOINTS = {
     UPDATE: (id: string) => `/comments/${id}`,
     DELETE: (id: string) => `/comments/${id}`,
   },
+  // Chat messages (single-message operations, not nested under a conversation)
+  MESSAGES: {
+    DELETE: (messageId: string) => `/messages/${messageId}`,
+  },
   // Message reactions
   REACTIONS: {
     TOGGLE: (messageId: string) => `/messages/${messageId}/reactions`,

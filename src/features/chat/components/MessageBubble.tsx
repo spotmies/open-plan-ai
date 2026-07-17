@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, Forward, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Star } from 'lucide-react';
+import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, Forward, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Star, Eye } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { FilePreviewDialog } from '@/components/FilePreviewDialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -20,7 +21,6 @@ import { differenceInHours } from 'date-fns';
 import { ChatMessage, ReadReceipt, MessageReaction, ChatEntityType, EntityTagRef } from '../types';
 import { toast } from 'sonner';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
-import { chatService } from '@/services/chat.service';
 import { useUserTimezone } from '@/hooks/useUserTimezone';
 import { formatMessageTimestamp } from '@/utils/dateTime';
 import EntityTagChip from './EntityTagChip';
@@ -365,20 +365,18 @@ function FileAttachment({
   onForward?: (message: ChatMessage) => void;
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const url = file.url ?? '';
   const fileType = getFileType(file.mimeType ?? '', file.fileName ?? '');
   const Icon = getFileIcon(fileType);
-  const [alreadyOpened, setAlreadyOpened] = useState(() => (url ? chatService.isAttachmentOpened(url) : false));
-
   const handleClick = useCallback(() => {
     if (!url) return;
     if (fileType === 'image') {
       setLightboxOpen(true);
     } else {
-      chatService.openChatAttachment({ fileName: file.fileName ?? '', url });
-      setAlreadyOpened(true);
+      setPreviewOpen(true);
     }
-  }, [url, fileType, file.fileName]);
+  }, [url, fileType]);
 
   if (fileType === 'image') {
     return (
@@ -413,7 +411,8 @@ function FileAttachment({
   }
 
   // PDF / DOC / other file card — small preview thumbnail above the filename,
-  // with a dedicated download action beside the name (matches design spec).
+  // with a dedicated preview action beside the name (opens the file in a modal
+  // instead of triggering a raw browser download).
   const isPreviewable = fileType === 'pdf' || fileType === 'doc';
   return (
     <div
@@ -451,20 +450,24 @@ function FileAttachment({
             {fileType === 'pdf' ? 'PDF' : fileType === 'doc' ? 'Document' : ''}
           </p>
         </div>
-        {url && !alreadyOpened && (
-          <a
-            href={url}
-            download={file.fileName}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => { e.stopPropagation(); chatService.markAttachmentOpened(url); setAlreadyOpened(true); }}
-            title="Download"
-            className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center opacity-70 hover:opacity-100 hover:bg-accent/70 transition-colors"
+        {url && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setPreviewOpen(true); }}
+            title="Preview"
+            className="h-8 px-2.5 shrink-0 rounded-full flex items-center gap-1 opacity-80 hover:opacity-100 hover:bg-accent/70 transition-colors text-xs font-medium"
           >
-            <Download className="h-4 w-4" />
-          </a>
+            <Eye className="h-3.5 w-3.5" />
+            Preview
+          </button>
         )}
       </div>
+      {previewOpen && url && (
+        <FilePreviewDialog
+          file={{ url, fileName: file.fileName ?? '', mimeType: file.mimeType }}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </div>
   );
 }
