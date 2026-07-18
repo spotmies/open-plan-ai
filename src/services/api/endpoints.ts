@@ -233,6 +233,13 @@ export const ENDPOINTS = {
     DISCONNECT: '/integrations/google-meet/disconnect',
     STATUS: (userIds: string[]) => `/integrations/google-meet/status?userIds=${userIds.join(',')}`,
   },
+  // Google Drive integration (org-level — connecting switches storage for
+  // project-level file uploads from S3 to the org's own Drive)
+  GOOGLE_DRIVE: {
+    CONNECT: (orgId: string) => `/organizations/${orgId}/integrations/google-drive/connect`,
+    DISCONNECT: (orgId: string) => `/organizations/${orgId}/integrations/google-drive/disconnect`,
+    STATUS: (orgId: string) => `/organizations/${orgId}/integrations/google-drive/status`,
+  },
   // Uploads
   UPLOADS: {
     AVATAR: '/uploads/avatar',

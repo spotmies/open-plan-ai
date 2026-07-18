@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import fusion360Logo from '@/assets/logos/fusion360.svg';
 import orcadLogo from '@/assets/logos/orcad.svg';
 import arenaLogo from '@/assets/logos/arena-plm.svg';
 import googleMeetLogo from '@/assets/logos/google-meet.svg';
+import googleDriveLogo from '@/assets/logos/google-drive.svg';
 import {
   Search,
   Clock,
@@ -21,10 +23,14 @@ import {
   ShieldCheck,
   FileSpreadsheet,
   CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { useGoogleMeetStore } from './stores/useGoogleMeetStore';
 import { useGoogleIdentityServices } from './hooks/useGoogleIdentityServices';
 import { googleMeetService } from '@/services/googleMeet.service';
+import { googleDriveService } from '@/services/googleDrive.service';
+import { useGoogleDriveStatus, useDisconnectGoogleDrive } from '@/hooks/useGoogleDrive';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { toast } from 'sonner';
 import type { GoogleTokenResponse } from './types/google-identity';
 
@@ -126,6 +132,13 @@ const SECTIONS: Section[] = [
         color: '#00897B',
       },
       {
+        id: 'google-drive',
+        name: 'Google Drive',
+        description: "Store project files in your organization's own Google Drive instead of our servers.",
+        logo: { kind: 'image', src: googleDriveLogo, alt: 'Google Drive' },
+        color: '#0F9D58',
+      },
+      {
         id: 'mcp',
         name: 'MCP',
         description: 'Connect Model Context Protocol servers to bring external tools and data in.',
@@ -189,11 +202,65 @@ export default function Integrations() {
   const [search, setSearch] = useState('');
   const { isConnected, userEmail, setConnected, disconnect } = useGoogleMeetStore();
   const { isLoaded: gisScriptLoaded } = useGoogleIdentityServices();
+  const { currentOrganization } = useOrganization();
+  const isOrgAdmin = currentOrganization?.myRole === 'admin';
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const { data: driveStatus, isLoading: isDriveStatusLoading } = useGoogleDriveStatus(currentOrganization?.id);
+  const disconnectDrive = useDisconnectGoogleDrive(currentOrganization?.id);
+  const isDriveConnected = !!driveStatus?.connected;
 
   useEffect(() => {
     document.title = 'Integrations | Open Plan AI';
     return () => { document.title = 'Open Plan AI'; };
   }, []);
+
+  // Handle the redirect back from the Google Drive OAuth callback
+  // (?drive=connected | ?drive=error&reason=...) — show a toast, then strip
+  // the query params so a page refresh doesn't re-trigger the message.
+  useEffect(() => {
+    const driveResult = searchParams.get('drive');
+    if (!driveResult) return;
+
+    if (driveResult === 'connected') {
+      toast.success('Google Drive connected — new project files will save there.');
+    } else if (driveResult === 'error') {
+      const reason = searchParams.get('reason');
+      toast.error(
+        reason === 'cancelled' || reason === 'access_denied'
+          ? 'Google Drive connection was cancelled.'
+          : 'Failed to connect Google Drive. Please try again.',
+      );
+    }
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('drive');
+    next.delete('reason');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const handleConnectGoogleDrive = () => {
+    if (!currentOrganization) {
+      toast.error('Select an organization first.');
+      return;
+    }
+    if (!isOrgAdmin) {
+      toast.error('Only an organization admin can connect Google Drive.');
+      return;
+    }
+    // Full page navigation (not a fetch) — the browser needs to follow the
+    // redirect chain all the way to Google's consent screen and back.
+    window.location.href = googleDriveService.getConnectUrl(currentOrganization.id);
+  };
+
+  const handleDisconnectGoogleDrive = () => {
+    if (!isOrgAdmin) {
+      toast.error('Only an organization admin can disconnect Google Drive.');
+      return;
+    }
+    disconnectDrive.mutate();
+  };
 
   const handleConnectGoogleMeet = () => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -283,7 +350,8 @@ export default function Integrations() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {section.items.map((integration) => {
                 const isGoogleMeet = integration.id === 'google-meet';
-                
+                const isGoogleDrive = integration.id === 'google-drive';
+
                 return (
                   <Card key={integration.id} className="relative overflow-hidden">
                     <CardContent className="p-5 flex flex-col h-full">
@@ -313,6 +381,17 @@ export default function Integrations() {
                               Available
                             </Badge>
                           )
+                        ) : isGoogleDrive ? (
+                          isDriveConnected ? (
+                            <Badge variant="outline" className="gap-1 text-[11px] border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Connected
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[11px]">
+                              Available
+                            </Badge>
+                          )
                         ) : (
                           <Badge variant="secondary" className="gap-1 text-[11px]">
                             <Clock className="h-3 w-3" />
@@ -324,9 +403,11 @@ export default function Integrations() {
                       <p className="text-sm text-muted-foreground flex-1">
                         {isGoogleMeet && isConnected && userEmail
                           ? `Connected as ${userEmail}`
+                          : isGoogleDrive && isDriveConnected && driveStatus?.email
+                          ? `Connected as ${driveStatus.email}`
                           : integration.description}
                       </p>
-                      
+
                       {isGoogleMeet ? (
                         isConnected ? (
                           <Button
@@ -343,6 +424,30 @@ export default function Integrations() {
                             size="sm"
                             className="mt-4 w-full"
                             onClick={handleConnectGoogleMeet}
+                          >
+                            Connect
+                          </Button>
+                        )
+                      ) : isGoogleDrive ? (
+                        isDriveConnected ? (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="mt-4 w-full"
+                            onClick={handleDisconnectGoogleDrive}
+                            disabled={!isOrgAdmin || disconnectDrive.isPending}
+                            title={!isOrgAdmin ? 'Only an organization admin can disconnect Google Drive' : undefined}
+                          >
+                            {disconnectDrive.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Disconnect'}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="mt-4 w-full"
+                            onClick={handleConnectGoogleDrive}
+                            disabled={!isOrgAdmin || isDriveStatusLoading}
+                            title={!isOrgAdmin ? 'Only an organization admin can connect Google Drive' : undefined}
                           >
                             Connect
                           </Button>
