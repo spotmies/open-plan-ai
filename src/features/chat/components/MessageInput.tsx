@@ -958,7 +958,13 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
         )}
 
         {/* Hidden inputs — both support multiple */}
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
+        />
 
         {/* Input bar */}
         {isMobile ? (

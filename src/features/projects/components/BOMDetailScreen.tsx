@@ -373,7 +373,7 @@ function RevisionToggle({
             const isLatestRev = origIdx === revHistory.length - 1;
             return (
               <button
-                key={r.rev}
+                key={r.id}
                 onClick={() => { onChange(origIdx); setOpen(false); }}
                 className={cn(
                   'flex items-start gap-3 w-full px-3 py-2.5 text-left transition-colors hover:bg-muted/50',
@@ -493,7 +493,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
   const addRequirement = useAddRequirement(projectId);
   const removeRequirement = useRemoveRequirement(projectId);
 
-  const activeRev = revHistory[activeRevIdx] ?? { rev: originalNode.rev, status: originalNode.status, price: originalNode.price, leadTime: originalNode.leadTime, date: '', author: '', changes: '', customFields: originalNode.customFields } as BOMRevision;
+  const activeRev = revHistory[activeRevIdx] ?? { id: originalNode.id, rev: originalNode.rev, status: originalNode.status, price: originalNode.price, leadTime: originalNode.leadTime, date: '', author: '', changes: '', customFields: originalNode.customFields } as BOMRevision;
   const isLatest = revHistory.length === 0 || activeRevIdx === revHistory.length - 1;
 
   // Build a synthetic "view node" that reflects the active revision's data.
@@ -1109,7 +1109,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                     const isActive = origIdx === activeRevIdx;
                     const isLatestRev = origIdx === revHistory.length - 1;
                     return (
-                      <div key={r.rev}
+                      <div key={r.id}
                         onClick={() => setActiveRevIdx(origIdx)}
                         className={cn(
                           'flex items-start gap-3 py-2.5 px-2 rounded-lg cursor-pointer transition-colors -mx-2',

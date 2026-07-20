@@ -179,6 +179,8 @@ export function IssueDetailContent({
     const [isBlockedByTaskPopoverOpen, setIsBlockedByTaskPopoverOpen] = useState(false);
     const [isAdvancedDescription, setIsAdvancedDescription] = useState(false);
     const [newChecklistItem, setNewChecklistItem] = useState('');
+    const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null);
+    const [editingChecklistValue, setEditingChecklistValue] = useState('');
     const [isTagPopoverOpen, setIsTagPopoverOpen] = useState(false);
     const [isDueDatePopoverOpen, setIsDueDatePopoverOpen] = useState(false);
     const [tagSearch, setTagSearch] = useState('');
@@ -340,6 +342,26 @@ export function IssueDetailContent({
 
     const handleRemoveChecklistItem = (itemId: string) => {
         handleFieldChange('checklist', checklist.filter(item => item.id !== itemId));
+    };
+
+    const handleStartEditChecklist = (item: ChecklistItem) => {
+        setEditingChecklistId(item.id);
+        setEditingChecklistValue(item.text);
+    };
+
+    const handleSaveEditChecklist = () => {
+        if (!editingChecklistId || !editingChecklistValue.trim()) return;
+        const updated = checklist.map(item =>
+            item.id === editingChecklistId ? { ...item, text: editingChecklistValue.trim() } : item
+        );
+        handleFieldChange('checklist', updated);
+        setEditingChecklistId(null);
+        setEditingChecklistValue('');
+    };
+
+    const handleCancelEditChecklist = () => {
+        setEditingChecklistId(null);
+        setEditingChecklistValue('');
     };
 
     const attachments = editedIssue.attachments || [];
@@ -1360,18 +1382,51 @@ export function IssueDetailContent({
                                         disabled={isMobileFieldsLocked}
                                         className={cn(isMobileLayout && 'h-5 w-5 rounded-md data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 disabled:opacity-100 disabled:cursor-default')}
                                     />
-                                    <span className={cn('flex-1 text-sm', item.completed && 'line-through text-muted-foreground')}>
-                                        {item.text}
-                                    </span>
-                                    {!isMobileFieldsLocked && (
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className={cn('h-6 w-6', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
-                                        onClick={() => handleRemoveChecklistItem(item.id)}
-                                    >
-                                        <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                                    </Button>
+                                    {editingChecklistId === item.id ? (
+                                        <div className="flex-1 flex items-center gap-2">
+                                            <Input
+                                                autoFocus
+                                                value={editingChecklistValue}
+                                                onChange={(e) => setEditingChecklistValue(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') handleSaveEditChecklist();
+                                                    if (e.key === 'Escape') handleCancelEditChecklist();
+                                                }}
+                                                className="h-8"
+                                            />
+                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSaveEditChecklist}>
+                                                <Check className="h-4 w-4 text-green-600" />
+                                            </Button>
+                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancelEditChecklist}>
+                                                <X className="h-4 w-4 text-muted-foreground" />
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <span className={cn('flex-1 text-sm', item.completed && 'line-through text-muted-foreground')}>
+                                                {item.text}
+                                            </span>
+                                            {!isMobileFieldsLocked && (
+                                            <div className={cn('flex items-center gap-1', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-6 w-6"
+                                                    onClick={() => handleStartEditChecklist(item)}
+                                                >
+                                                    <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-6 w-6"
+                                                    onClick={() => handleRemoveChecklistItem(item.id)}
+                                                >
+                                                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                </Button>
+                                            </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             ))}

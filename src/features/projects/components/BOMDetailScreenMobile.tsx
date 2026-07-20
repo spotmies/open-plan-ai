@@ -774,7 +774,7 @@ export function BOMDetailScreenMobile({
                     const origIdx = revHistory.length - 1 - ri;
                     return (
                       <RevisionRow
-                        key={r.rev}
+                        key={r.id}
                         r={r}
                         isLatestRev={origIdx === revHistory.length - 1}
                         isActive={origIdx === activeRevIdx}

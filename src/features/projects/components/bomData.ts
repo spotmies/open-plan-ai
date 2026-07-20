@@ -16,6 +16,7 @@ export const KNOWN_BOM_CATEGORIES = [
 export const UOM_OPTIONS = ['EA', 'SET', 'LIC', 'KG', 'M', 'FT', 'PCS', 'LOT'] as const;
 
 export interface BOMRevision {
+  id: string;
   rev: string;
   date: string;       // ISO date string
   author: string;
@@ -324,6 +325,7 @@ export function applyPriceRollup(node: BOMNode): BOMNode {
 
 export function fromApiRevision(r: ApiRevisionResponse): BOMRevision {
   return {
+    id:        r.id,
     rev:       r.rev,
     date:      r.createdAt.split('T')[0],
     author:    r.author ?? 'Unknown',
