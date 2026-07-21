@@ -316,7 +316,7 @@ export const TaskDetailModal = ({
     editedTask.status.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
   const currentStatusColor = currentStatusOption?.color || 'bg-muted-foreground/60';
   const effectiveProjectId = editedTask.projectId ?? projectId;
-  const { canEditResource } = useProjectPermissions(effectiveProjectId);
+  const { canEditResource, canDeleteResource } = useProjectPermissions(effectiveProjectId);
   const canEditTask = useMemo(
     () =>
       canEditResource({
@@ -325,7 +325,12 @@ export const TaskDetailModal = ({
       }),
     [canEditResource, editedTask.createdBy?.id, editedTask.assignees]
   );
+  const canDeleteTask = useMemo(
+    () => canDeleteResource({ createdBy: editedTask.createdBy?.id }),
+    [canDeleteResource, editedTask.createdBy?.id]
+  );
   const editLockTitle = 'You can only edit items you created or are assigned to';
+  const deleteLockTitle = 'Only the task creator or a project/organization Admin can delete this task';
   const { data: projectTags = [] } = useProjectTags(effectiveProjectId);
   const createTagMutation = useCreateTag(effectiveProjectId);
   const updateTagMutation = useUpdateTag(effectiveProjectId);
@@ -1254,7 +1259,8 @@ export const TaskDetailModal = ({
                 {onDelete && (
                   <DropdownMenuItem
                     onClick={() => setShowDeleteConfirm(true)}
-                    disabled={!canEditTask}
+                    disabled={!canDeleteTask}
+                    title={canDeleteTask ? undefined : deleteLockTitle}
                     className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
@@ -2817,17 +2823,17 @@ export const TaskDetailModal = ({
         )}
         {mode === 'view' && !showMobileHeader && (
           <div className="px-4 sm:px-6 py-3 sm:py-4 border-t flex items-center justify-between gap-2 bg-background">
-            {/* Delete button on the bottom left — enabled for Maintainer+, the task creator, or an assignee */}
+            {/* Delete button on the bottom left — only the task creator or a project/organization Admin can delete */}
             {onDelete ? (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowDeleteConfirm(true)}
-                disabled={!canEditTask}
-                title={canEditTask ? 'Delete this task' : editLockTitle}
+                disabled={!canDeleteTask}
+                title={canDeleteTask ? 'Delete this task' : deleteLockTitle}
                 className={cn(
                   'text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2',
-                  !canEditTask && 'cursor-not-allowed opacity-60'
+                  !canDeleteTask && 'cursor-not-allowed opacity-60'
                 )}
               >
                 <Trash2 className="h-4 w-4" />

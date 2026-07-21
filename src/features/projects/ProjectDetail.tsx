@@ -1727,6 +1727,7 @@ export default function ProjectDetail() {
           isOpen={!!taskId}
           onClose={() => navigate(`/projects/${id}/tasks`)}
           onUpdate={handleTaskUpdate}
+          onDelete={handleTaskDelete}
           mode="view"
           modules={modules}
           milestones={project.milestones || []}

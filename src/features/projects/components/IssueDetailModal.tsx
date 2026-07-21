@@ -101,7 +101,7 @@ export function IssueDetailModal({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isMobileEditMode, setIsMobileEditMode] = useState(false);
   const initialSnapshotRef = useRef<string>('');
-  const { canEditResource } = useProjectPermissions(editedIssue?.projectId);
+  const { canEditResource, canDeleteResource } = useProjectPermissions(editedIssue?.projectId);
   const canEditIssue = useMemo(
     () =>
       canEditResource({
@@ -110,7 +110,12 @@ export function IssueDetailModal({
       }),
     [canEditResource, editedIssue?.reportedBy?.id, editedIssue?.assignees]
   );
+  const canDeleteIssue = useMemo(
+    () => canDeleteResource({ createdBy: editedIssue?.reportedBy?.id }),
+    [canDeleteResource, editedIssue?.reportedBy?.id]
+  );
   const editLockTitle = 'You can only edit items you created or are assigned to';
+  const deleteLockTitle = 'Only the issue reporter or a project/organization Admin can delete this issue';
 
   useEffect(() => {
     if (isOpen && issue) {
@@ -226,7 +231,8 @@ export function IssueDetailModal({
                 {onDelete && (
                   <DropdownMenuItem
                     onClick={() => setShowDeleteConfirm(true)}
-                    disabled={!canEditIssue}
+                    disabled={!canDeleteIssue}
+                    title={canDeleteIssue ? undefined : deleteLockTitle}
                     className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
@@ -317,17 +323,17 @@ export function IssueDetailModal({
         {mode === 'view' && !isMobile && (
           <div className="p-4 border-t flex justify-end gap-2 bg-background z-10 w-full">
             <div className="flex-1">
-              {/* Delete button — enabled for Maintainer+, the issue reporter, or an assignee */}
+              {/* Delete button — only the issue reporter or a project/organization Admin can delete */}
               {onDelete && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowDeleteConfirm(true)}
-                  disabled={!canEditIssue}
-                  title={canEditIssue ? 'Delete this issue' : editLockTitle}
+                  disabled={!canDeleteIssue}
+                  title={canDeleteIssue ? 'Delete this issue' : deleteLockTitle}
                   className={cn(
                     'text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2',
-                    !canEditIssue && 'cursor-not-allowed opacity-60'
+                    !canDeleteIssue && 'cursor-not-allowed opacity-60'
                   )}
                 >
                   <Trash2 className="h-4 w-4" />

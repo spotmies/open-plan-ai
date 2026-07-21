@@ -200,7 +200,7 @@ export function IssueDetailContent({
     }, [pendingFiles]);
 
     const projectId = issue?.projectId;
-    const { canEditResource } = useProjectPermissions(projectId);
+    const { canEditResource, canDeleteResource } = useProjectPermissions(projectId);
     const canEditIssue = useMemo(
         () =>
             canEditResource({
@@ -209,8 +209,13 @@ export function IssueDetailContent({
             }),
         [canEditResource, editedIssue?.reportedBy?.id, editedIssue?.assignees]
     );
+    const canDeleteIssue = useMemo(
+        () => canDeleteResource({ createdBy: editedIssue?.reportedBy?.id }),
+        [canDeleteResource, editedIssue?.reportedBy?.id]
+    );
     const canEditIssueFields = canEditIssue && !isMobileFieldsLocked;
     const editLockTitle = 'You can only edit items you created or are assigned to';
+    const deleteLockTitle = 'Only the issue reporter or a project/organization Admin can delete this issue';
     const { data: apiIssueColumns } = useIssueColumns(projectId);
     const statusOptions = (apiIssueColumns && apiIssueColumns.length > 0 ? apiIssueColumns : DEFAULT_ISSUE_COLUMNS)
         .filter((c) => !c.isSpecial || c.status !== 'wont-fix' ? true : true)
@@ -1969,11 +1974,11 @@ export function IssueDetailContent({
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => setShowDeleteConfirm(true)}
-                                        disabled={!canEditIssue}
-                                        title={canEditIssue ? 'Delete this issue' : editLockTitle}
+                                        disabled={!canDeleteIssue}
+                                        title={canDeleteIssue ? 'Delete this issue' : deleteLockTitle}
                                         className={cn(
                                             'text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2',
-                                            !canEditIssue && 'cursor-not-allowed opacity-60'
+                                            !canDeleteIssue && 'cursor-not-allowed opacity-60'
                                         )}
                                     >
                                         <Trash2 className="h-4 w-4" />

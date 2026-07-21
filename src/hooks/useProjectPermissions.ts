@@ -23,6 +23,8 @@ export interface ProjectPermissions {
   canManageAnyContent: boolean;
   /** Member can edit only resources they created/own/are assigned to; Maintainer+ can edit anything. */
   canEditResource: (resource: EditableResource) => boolean;
+  /** Deleting is stricter than editing: only the creator or an Admin (not a plain Maintainer, and not an assignee). */
+  canDeleteResource: (resource: EditableResource) => boolean;
   isLoading: boolean;
 }
 
@@ -55,6 +57,14 @@ export function useProjectPermissions(projectId: string | undefined): ProjectPer
       return ownerIds.includes(user.id);
     };
 
+    // Deleting is admin-or-creator only — plain Maintainers and assignees
+    // (who aren't the creator) cannot delete, unlike canEditResource above.
+    const canDeleteResource = (resource: EditableResource): boolean => {
+      if (!user || !myProjectRole) return false;
+      if (isProjectAdmin) return true;
+      return resource.createdBy === user.id;
+    };
+
     return {
       myProjectRole,
       isProjectAdmin,
@@ -64,6 +74,7 @@ export function useProjectPermissions(projectId: string | undefined): ProjectPer
       canManageMembers: isProjectAdmin,
       canManageAnyContent: isProjectMaintainerPlus,
       canEditResource,
+      canDeleteResource,
       isLoading,
     };
   }, [user, members, isOrgAdmin, isLoading]);
