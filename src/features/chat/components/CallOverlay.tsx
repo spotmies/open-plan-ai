@@ -10,6 +10,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Phone, PhoneOff, Video, ExternalLink, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { finalizeCallCard } from '../utils/callCardRegistry';
+import { playRingtone, stopRingtone } from '@/lib/ringtone';
 
 const RING_TIMEOUT_MS = 45_000;
 const POSITION_STORAGE_KEY = 'call-overlay-position';
@@ -115,6 +117,7 @@ export function CallOverlay() {
     callId,
     conversationId,
     meetingUri,
+    isGroup,
     participants,
     callerName,
     callDuration,
@@ -160,6 +163,20 @@ export function CallOverlay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callState, syncDuration]);
 
+  // Ringtone — plays for both "trying to connect to" (outgoing) and "trying
+  // to connect with you" (incoming). Keying directly off callState means it
+  // stops the instant the state leaves outgoing/incoming for any reason:
+  // answered (-> active), declined/cancelled/ended (-> idle via reset), or
+  // the ring-timeout watchdog below firing (-> idle).
+  useEffect(() => {
+    if (callState === 'outgoing' || callState === 'incoming') {
+      playRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [callState]);
+
   // Ring timeout — an outgoing/incoming call that's never answered shouldn't
   // ring forever. Each side times out independently (no cross-messaging).
   useEffect(() => {
@@ -168,6 +185,10 @@ export function CallOverlay() {
         if (callState === 'outgoing' && callId && conversationId) {
           chatTransport.emitCallEnd({ callId, conversationId });
           meetWindow.close();
+          // Reaching here means nobody in the call ever answered — the whole
+          // call attempt is over, so the card finalizes as "missed" regardless
+          // of group size (callState only leaves 'outgoing' once someone joins).
+          finalizeCallCard(callId);
         }
         toast.info(callState === 'outgoing' ? 'No answer' : 'Missed call');
         reset();
@@ -203,6 +224,13 @@ export function CallOverlay() {
   const handleEnd = () => {
     if (callId && conversationId) {
       chatTransport.emitCallEnd({ callId, conversationId });
+      // Finalize immediately unless this is an already-active group call —
+      // there, one person hanging up doesn't mean everyone's done, so the
+      // card only finalizes once the 'call:ended' broadcast confirms the last
+      // participant has left (see useCallSignaling). In every other case
+      // (a DM, or cancelling a group call nobody has joined yet) hanging up
+      // unambiguously ends the whole call attempt right now.
+      if (!isGroup || callState !== 'active') finalizeCallCard(callId);
     }
     meetWindow.close();
     reset();

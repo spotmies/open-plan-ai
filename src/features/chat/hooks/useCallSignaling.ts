@@ -5,6 +5,7 @@ import { chatTransport } from '../transport';
 import { useCallStore } from '../stores/useCallStore';
 import { useChatStore } from '../stores/useChatStore';
 import { meetWindow } from '../utils/meetWindow';
+import { finalizeCallCard, markCallCardActive } from '../utils/callCardRegistry';
 
 /** Best-effort name lookup from whatever conversation data is already cached. */
 function resolveMemberName(conversationId: string, userId: string): string {
@@ -57,6 +58,7 @@ export function useCallSignaling() {
 
       if (store.callState !== 'active') {
         store.markActive();
+        markCallCardActive(callId);
         if (store.meetingUri) {
           meetWindow.navigateOrOpen(store.meetingUri);
         }
@@ -95,10 +97,16 @@ export function useCallSignaling() {
 
       toast.info(`${byUserName || 'They'} declined the call`);
       meetWindow.close();
+      finalizeCallCard(callId);
       store.reset();
     });
 
     const unsubEnded = chatTransport.subscribeToCallEnded(({ callId }) => {
+      // Finalize off the registry regardless of local store state — in a
+      // group call, the initiator (who holds the registry entry) may have
+      // left long before this "everyone's gone" signal arrives.
+      finalizeCallCard(callId);
+
       const store = useCallStore.getState();
       if (store.callId !== callId) return;
 

@@ -19,6 +19,9 @@ import { useCallStore } from '../stores/useCallStore';
 import { chatTransport } from '../transport';
 import { meetWindow } from '../utils/meetWindow';
 import { googleMeetService } from '@/services/googleMeet.service';
+import { chatService } from '@/services/chat.service';
+import { buildCallCardContent } from '../utils/callCard';
+import { registerCallCard } from '../utils/callCardRegistry';
 import { ScheduleMeetingDialog } from './ScheduleMeetingDialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
@@ -176,6 +179,41 @@ export function ChatHeader({
         callType: type,
         meetingUri: meetData.meetingUri,
       });
+
+      // Post the call-history card now (status 'ongoing' — "X started a meet" /
+      // "Video call") and remember its id so it can be edited in place once the
+      // call reaches a terminal state. Fire-and-forget: a failure here shouldn't
+      // block the call itself, which is already ringing via Meet.
+      const initiatorName = user?.name ?? 'You';
+      const isGroupCall = conversation.type === 'group';
+      chatService
+        .sendCallCard(
+          conversation.id,
+          buildCallCardContent({
+            kind: 'call-card',
+            callId,
+            callType: type,
+            isGroup: isGroupCall,
+            status: 'ongoing',
+            durationSec: 0,
+            initiatorId: currentUserId || '',
+            initiatorName,
+          }),
+        )
+        .then((created) => {
+          registerCallCard(callId, {
+            callType: type,
+            isGroup: isGroupCall,
+            initiatorId: currentUserId || '',
+            initiatorName,
+            messageId: created.id,
+            activeAt: null,
+          });
+        })
+        .catch(() => {
+          // No card was registered — later finalize attempts for this callId
+          // simply no-op, which is fine since none was ever shown either.
+        });
     } catch (err) {
       toast.error('Failed to start the call. Please try again.');
       meetWindow.close();

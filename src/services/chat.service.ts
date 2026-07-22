@@ -486,6 +486,15 @@ export const chatService = {
     });
   },
 
+  /** Same wire shape as sendSystemMessage, but returns the created message — a call-history card needs its id right away to edit in place once the call ends. */
+  async sendCallCard(conversationId: string, content: string): Promise<ChatMessage> {
+    const data = await apiClient.post<any>(ENDPOINTS.CONVERSATIONS.MESSAGES(conversationId), {
+      content,
+      type: 'system',
+    });
+    return mapChatMessage(data);
+  },
+
   // Project chat group: lazily created on first "Start Chat" click, keyed by project id.
   async ensureProjectGroup(projectId: string): Promise<string> {
     const data = await apiClient.post<any>(ENDPOINTS.PROJECTS.CHAT(projectId), {});

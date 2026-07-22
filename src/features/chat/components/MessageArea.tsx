@@ -4,8 +4,10 @@ import { MessageBubble } from './MessageBubble';
 import { MediaGroupBubble } from './MediaGroupBubble';
 import { MessageDateDivider } from './MessageDateDivider';
 import { SystemMessage } from './SystemMessage';
+import { CallHistoryCard } from './CallHistoryCard';
 import { EmptyState } from './EmptyState';
 import { ChatMessage, Conversation, ReadReceipt, MessageReaction } from '../types';
+import { parseCallCardContent } from '../utils/callCard';
 import { isSameDay, differenceInMinutes } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '../stores/useChatStore';
@@ -153,10 +155,15 @@ export function MessageArea({
             const showDateDivider = !prev || !isSameDay(new Date(prev.createdAt), msgDate);
 
             if (msg.contentType === 'system') {
+              const callCard = parseCallCardContent(msg.content);
               nodes.push(
                 <div key={msg.id}>
                   {showDateDivider && <MessageDateDivider date={msgDate} />}
-                  <SystemMessage content={msg.content} />
+                  {callCard ? (
+                    <CallHistoryCard message={msg} content={callCard} isGroupChat={isGroup} currentUserId={user?.id} />
+                  ) : (
+                    <SystemMessage content={msg.content} />
+                  )}
                 </div>
               );
               i += 1;
