@@ -127,6 +127,13 @@ export const ENDPOINTS = {
     TASK_LINK: (issueId: string, taskId: string) => `/issues/${issueId}/task-links/${taskId}`,
     COMMENTS: (id: string) => `/issues/${id}/comments`,
   },
+  // Customer-support intake API keys (management — authenticated)
+  SUPPORT_LINKS: {
+    LIST:       (projectId: string) => `/projects/${projectId}/support-links`,
+    CREATE:     (projectId: string) => `/projects/${projectId}/support-links`,
+    BY_ID:      (projectId: string, linkId: string) => `/projects/${projectId}/support-links/${linkId}`,
+    REGENERATE: (projectId: string, linkId: string) => `/projects/${projectId}/support-links/${linkId}/regenerate`,
+  },
   // BOM
   BOM: {
     TREE:              (projectId: string) => `/projects/${projectId}/bom/tree`,

@@ -37,6 +37,7 @@ import { TasksSection, ViewControls } from './components/TasksSection';
 import { ModulesSection, ModuleViewControls } from './components/ModulesSection';
 import { MilestonesView } from './components/MilestonesView';
 import { IssuesView } from './components/IssuesView';
+import { SupportLinksSheet } from './components/SupportLinksSheet';
 import { ProjectDetailSkeleton } from './components/ProjectDetailSkeleton';
 import { ProjectProgressPopover } from './components/ProjectProgressPopover';
 import { AddModuleDialog } from './components/AddModuleDialog';
@@ -1343,10 +1344,13 @@ export default function ProjectDetail() {
                   </Button>
                 )}
                 {section === 'issues' && !isMobile && (
-                  <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={() => setIsAddIssueDialogOpen(true)}>
-                    <Plus className="h-4 w-4" />
-                    <span className="hidden md:inline">Report Issue</span>
-                  </Button>
+                  <>
+                    {id && <SupportLinksSheet projectId={id} />}
+                    <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={() => setIsAddIssueDialogOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                      <span className="hidden md:inline">Report Issue</span>
+                    </Button>
+                  </>
                 )}
                 {section === 'bom' && !isMobile && (
                   <Button size="sm" onClick={() => setBomAddOpen(true)} className="gap-2 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-0 w-9 sm:w-auto sm:px-3 rounded-lg">
@@ -1558,6 +1562,7 @@ export default function ProjectDetail() {
                       activeFilterCount={activeIssueFilterCount}
                       onClearFilters={clearIssueFilters}
                     />
+                    {isMobile && id && <SupportLinksSheet projectId={id} iconOnly />}
                     {isMobile && (
                       <button
                         type="button"

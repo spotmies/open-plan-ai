@@ -68,6 +68,7 @@ import {
     Video,
     Play,
     FolderKanban,
+    LifeBuoy,
 } from 'lucide-react';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import {
@@ -1281,6 +1282,32 @@ export function IssueDetailContent({
                         </div>
                     </div>
                     </div>
+
+                    {/* Support-portal submitter contact — shown only for issues raised via a public support link */}
+                    {(() => {
+                        const sub = (issue as any)?.externalSubmission as
+                            | { name: string; email: string | null; phone: string | null; submittedAt: string }
+                            | null
+                            | undefined;
+                        if (!sub) return null;
+                        return (
+                            <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                    <LifeBuoy className="h-4 w-4 text-primary" />
+                                    <span className="text-sm font-medium">Submitted via support portal</span>
+                                </div>
+                                <div className="text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                                    <span><span className="font-medium text-foreground">{sub.name}</span></span>
+                                    {sub.email && (
+                                        <a href={`mailto:${sub.email}`} className="text-primary hover:underline">{sub.email}</a>
+                                    )}
+                                    {sub.phone && (
+                                        <a href={`tel:${sub.phone}`} className="text-primary hover:underline">{sub.phone}</a>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {/* Description Editor (Full Width) */}
                     <div className="space-y-3">
