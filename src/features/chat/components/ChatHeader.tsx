@@ -12,7 +12,6 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 // New Imports for Google Meet Integration & Call state
-import { useGoogleMeetStore } from '@/features/integrations/stores/useGoogleMeetStore';
 import { useGoogleMeetStatus } from '@/features/integrations/hooks/useGoogleMeetStatus';
 import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsureGoogleMeetToken';
 import { useCallStore } from '../stores/useCallStore';
@@ -74,7 +73,6 @@ export function ChatHeader({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Google Meet & Call states
-  const { isConnected } = useGoogleMeetStore();
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
   const startOutgoingCall = useCallStore((s) => s.startOutgoingCall);
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -114,14 +112,18 @@ export function ChatHeader({
 
   const avatarUrl = conversation.type === 'dm' ? otherMember?.avatarUrl : conversation.avatarUrl;
 
-  // Other conversation members — the real (backend-persisted) Google Meet
-  // connection status for each is looked up below, replacing what used to
-  // be a hardcoded "everyone except Bob Martinez is connected" test rule.
-  const otherMemberIds = useMemo(
-    () => conversation.members.filter((m) => m.id !== currentUserId).map((m) => m.id),
-    [conversation.members, currentUserId],
+  // All conversation members, including the viewer — the real
+  // (backend-persisted) Google Meet connection status for each is looked up
+  // below, replacing what used to be a hardcoded "everyone except Bob
+  // Martinez is connected" test rule. Including the viewer's own id here
+  // (rather than a separate query) is also what gates whether they can
+  // start a call at all — see isSelfMeetConnected below.
+  const memberIdsForMeetStatus = useMemo(
+    () => conversation.members.map((m) => m.id),
+    [conversation.members],
   );
-  const { data: meetStatusMap } = useGoogleMeetStatus(otherMemberIds);
+  const { data: meetStatusMap } = useGoogleMeetStatus(memberIdsForMeetStatus);
+  const isSelfMeetConnected = !!(currentUserId && meetStatusMap?.[currentUserId]?.connected);
 
   const handleInitiateCall = async (type: 'audio' | 'video') => {
     const otherMembers = conversation.members.filter((m) => m.id !== currentUserId);
@@ -202,6 +204,7 @@ export function ChatHeader({
         )
         .then((created) => {
           registerCallCard(callId, {
+            conversationId: conversation.id,
             callType: type,
             isGroup: isGroupCall,
             initiatorId: currentUserId || '',
@@ -251,7 +254,7 @@ export function ChatHeader({
   };
 
   const renderCallButtons = () => {
-    const isDisabled = !isConnected;
+    const isDisabled = !isSelfMeetConnected;
     const buttonClass = cn(
       "h-8 w-auto px-1.5 gap-1 transition-opacity duration-200",
       isDisabled && "opacity-40 cursor-not-allowed"

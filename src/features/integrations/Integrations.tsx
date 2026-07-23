@@ -26,13 +26,14 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useGoogleMeetStore } from './stores/useGoogleMeetStore';
-import { useGoogleIdentityServices } from './hooks/useGoogleIdentityServices';
+import { useGoogleMeetStatus } from './hooks/useGoogleMeetStatus';
 import { googleMeetService } from '@/services/googleMeet.service';
 import { googleDriveService } from '@/services/googleDrive.service';
 import { useGoogleDriveStatus, useDisconnectGoogleDrive } from '@/hooks/useGoogleDrive';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { GoogleTokenResponse } from './types/google-identity';
 
 interface Integration {
   id: string;
@@ -200,8 +201,8 @@ const SECTIONS: Section[] = [
 
 export default function Integrations() {
   const [search, setSearch] = useState('');
-  const { isConnected, userEmail, setConnected, disconnect } = useGoogleMeetStore();
-  const { isLoaded: gisScriptLoaded } = useGoogleIdentityServices();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { currentOrganization } = useOrganization();
   const isOrgAdmin = currentOrganization?.myRole === 'admin';
   const [searchParams, setSearchParams] = useSearchParams();
@@ -209,6 +210,13 @@ export default function Integrations() {
   const { data: driveStatus, isLoading: isDriveStatusLoading } = useGoogleDriveStatus(currentOrganization?.id);
   const disconnectDrive = useDisconnectGoogleDrive(currentOrganization?.id);
   const isDriveConnected = !!driveStatus?.connected;
+
+  // Real (backend-persisted) status for the current user — single source of
+  // truth across tabs/devices, unlike the old client-side sessionStorage flag
+  // that only reflected whichever tab happened to run the OAuth popup.
+  const { data: meetStatusMap } = useGoogleMeetStatus(user ? [user.id] : []);
+  const isMeetConnected = !!(user && meetStatusMap?.[user.id]?.connected);
+  const meetEmail = (user && meetStatusMap?.[user.id]?.email) || null;
 
   useEffect(() => {
     document.title = 'Integrations | Open Plan AI';
@@ -240,6 +248,33 @@ export default function Integrations() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Handle the redirect back from the Google Meet OAuth callback
+  // (?meet=connected | ?meet=error&reason=...) — same pattern as Drive above.
+  // This is a full page redirect (Connect uses window.location.href), so the
+  // component remounts fresh and useGoogleMeetStatus already refetches the
+  // real backend status on its own — no manual query invalidation needed here.
+  useEffect(() => {
+    const meetResult = searchParams.get('meet');
+    if (!meetResult) return;
+
+    if (meetResult === 'connected') {
+      toast.success('Google Meet connected — this will stay connected until you disconnect it.');
+    } else if (meetResult === 'error') {
+      const reason = searchParams.get('reason');
+      toast.error(
+        reason === 'cancelled' || reason === 'access_denied'
+          ? 'Google Meet connection was cancelled.'
+          : 'Failed to connect Google Meet. Please try again.',
+      );
+    }
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('meet');
+    next.delete('reason');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   const handleConnectGoogleDrive = () => {
     if (!currentOrganization) {
       toast.error('Select an organization first.');
@@ -263,58 +298,23 @@ export default function Integrations() {
   };
 
   const handleConnectGoogleMeet = () => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      toast.error('Google Client ID is missing. Please set VITE_GOOGLE_CLIENT_ID in your .env file.');
-      return;
-    }
-
-    if (!gisScriptLoaded || !window.google?.accounts?.oauth2) {
-      toast.error('Google Auth SDK is still loading, please try again in a moment.');
-      return;
-    }
-
-    try {
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/meetings.space.created https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email',
-        callback: async (tokenResponse: GoogleTokenResponse) => {
-          if (tokenResponse.error) {
-            toast.error(`Authentication failed: ${tokenResponse.error_description || tokenResponse.error}`);
-            return;
-          }
-
-          if (tokenResponse.access_token) {
-            const loadingToast = toast.loading('Connecting and retrieving profile...');
-            try {
-              const profile = await googleMeetService.fetchUserProfile(tokenResponse.access_token);
-              setConnected(tokenResponse.access_token, profile.email, tokenResponse.expires_in ?? 3600);
-              // Persist the connection flag (no token) server-side so other
-              // users can see this account is reachable for a call.
-              await googleMeetService.reportConnected(profile.email);
-              toast.dismiss(loadingToast);
-              toast.success(`Successfully connected Google Meet as ${profile.email}`);
-            } catch {
-              toast.dismiss(loadingToast);
-              toast.error('Failed to retrieve user profile after Google authorization.');
-            }
-          }
-        },
-      });
-
-      client.requestAccessToken({ prompt: 'consent' });
-    } catch {
-      toast.error('Error starting Google Authentication flow');
-    }
+    // Full page navigation (not a fetch) — same reasoning as Drive above: the
+    // browser has to follow the redirect chain to Google's consent screen and
+    // back to our callback route, which stores a permanent refresh token.
+    window.location.href = googleMeetService.getConnectUrl();
   };
 
-  const handleDisconnectGoogleMeet = () => {
-    disconnect();
-    googleMeetService.reportDisconnected().catch(() => {
-      // Local disconnect already happened; a failed backend call here just
-      // means other users may briefly still see this account as reachable.
-    });
-    toast.success('Disconnected from Google Meet integration');
+  const handleDisconnectGoogleMeet = async () => {
+    // Clear any cached access token immediately so ensureFreshToken() can't
+    // keep serving a stale one before the backend call below completes.
+    useGoogleMeetStore.getState().disconnect();
+    try {
+      await googleMeetService.disconnect();
+      queryClient.invalidateQueries({ queryKey: ['google-meet', 'status'] });
+      toast.success('Disconnected from Google Meet integration');
+    } catch {
+      toast.error('Failed to disconnect Google Meet. Please try again.');
+    }
   };
 
   const grouped = useMemo(() => {
@@ -371,7 +371,7 @@ export default function Integrations() {
                           />
                         </div>
                         {isGoogleMeet ? (
-                          isConnected ? (
+                          isMeetConnected ? (
                             <Badge variant="outline" className="gap-1 text-[11px] border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                               <CheckCircle2 className="h-3 w-3" />
                               Connected
@@ -401,15 +401,15 @@ export default function Integrations() {
                       </div>
                       <h3 className="font-medium text-foreground mb-1">{integration.name}</h3>
                       <p className="text-sm text-muted-foreground flex-1">
-                        {isGoogleMeet && isConnected && userEmail
-                          ? `Connected as ${userEmail}`
+                        {isGoogleMeet && isMeetConnected && meetEmail
+                          ? `Connected as ${meetEmail}`
                           : isGoogleDrive && isDriveConnected && driveStatus?.email
                           ? `Connected as ${driveStatus.email}`
                           : integration.description}
                       </p>
 
                       {isGoogleMeet ? (
-                        isConnected ? (
+                        isMeetConnected ? (
                           <Button
                             variant="destructive"
                             size="sm"

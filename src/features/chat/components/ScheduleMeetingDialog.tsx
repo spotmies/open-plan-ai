@@ -12,7 +12,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useGoogleMeetStore } from '@/features/integrations/stores/useGoogleMeetStore';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGoogleMeetStatus } from '@/features/integrations/hooks/useGoogleMeetStatus';
 import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsureGoogleMeetToken';
 import { googleMeetService } from '@/services/googleMeet.service';
 import { logger } from '@/services/monitoring/logger';
@@ -34,7 +35,12 @@ export function ScheduleMeetingDialog({
   onOpenChange, 
   onMeetingScheduled 
 }: ScheduleMeetingDialogProps) {
-  const { isConnected } = useGoogleMeetStore();
+  const { user } = useAuth();
+  // Real (backend-persisted) status for the viewer — same source of truth
+  // as ChatHeader/Integrations, not a local sessionStorage flag that only
+  // updates lazily on first token fetch.
+  const { data: meetStatusMap } = useGoogleMeetStatus(user ? [user.id] : []);
+  const isConnected = !!(user && meetStatusMap?.[user.id]?.connected);
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
   const [loading, setLoading] = useState(false);
   

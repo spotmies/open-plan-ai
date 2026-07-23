@@ -1,6 +1,7 @@
 import { apiClient } from './api/client';
 import { ENDPOINTS } from './api/endpoints';
 import { logger } from './monitoring/logger';
+import { config } from '@/config';
 
 export interface ScheduleEventParams {
   title: string;
@@ -13,6 +14,12 @@ export interface GoogleMeetStatus {
   connected: boolean;
   email: string | null;
   connectedAt: string | null;
+}
+
+export interface GoogleMeetAccessToken {
+  accessToken: string;
+  expiresIn: number;
+  email: string;
 }
 
 /**
@@ -50,16 +57,28 @@ async function toGoogleApiError(response: Response): Promise<Error> {
 
 export const googleMeetService = {
   /**
-   * Records on the backend that the current user has connected Google Meet.
-   * No OAuth token is ever sent — this is only a reachability flag so other
-   * users can see whether this person can be called, independent of whose
-   * browser/localStorage the token itself lives in.
+   * Full backend URL that kicks off the OAuth flow. Must be used as a real
+   * page navigation (`window.location.href = ...`), not an apiClient fetch —
+   * the browser has to follow the redirect all the way to Google's consent
+   * screen and back to our callback route. The backend stores the resulting
+   * refresh token permanently, which is what lets the connection survive
+   * indefinitely instead of needing re-consent every ~hour.
    */
-  async reportConnected(email: string): Promise<void> {
-    await apiClient.post(ENDPOINTS.GOOGLE_MEET.CONNECT, { email });
+  getConnectUrl(): string {
+    const base = config.api.baseUrl.replace(/\/$/, '');
+    return `${base}${ENDPOINTS.GOOGLE_MEET.CONNECT}`;
   },
 
-  async reportDisconnected(): Promise<void> {
+  /**
+   * Mints a fresh short-lived access token from the refresh token the
+   * backend already has on file — no Google popup involved. Throws (404) if
+   * this account has never connected, or the connection was invalidated.
+   */
+  async getAccessToken(): Promise<GoogleMeetAccessToken> {
+    return apiClient.get<GoogleMeetAccessToken>(ENDPOINTS.GOOGLE_MEET.ACCESS_TOKEN);
+  },
+
+  async disconnect(): Promise<void> {
     await apiClient.post(ENDPOINTS.GOOGLE_MEET.DISCONNECT);
   },
 
@@ -174,23 +193,5 @@ export const googleMeetService = {
       logger.error('Failed to schedule calendar meeting:', error);
       throw error;
     }
-  },
-
-  /**
-   * Fetches user profile/email info to verify who is logged in.
-   * GET https://www.googleapis.com/oauth2/v3/userinfo
-   */
-  async fetchUserProfile(accessToken: string): Promise<{ email: string; name?: string }> {
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch user profile info');
-    }
-
-    return response.json();
   },
 };

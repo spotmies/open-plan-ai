@@ -13,20 +13,12 @@ interface CallHistoryCardProps {
   currentUserId?: string;
 }
 
-function getCallCardText(content: CallCardContent, isOwn: boolean): { title: string; subtitle: string | null } {
-  const { isGroup, callType, status, durationSec, initiatorName } = content;
-  const kindLabel = callType === 'video' ? 'Video call' : 'Voice call';
+function getCallCardText(content: CallCardContent): { title: string; subtitle: string | null } {
+  const { status, durationSec, initiatorName } = content;
 
-  if (isGroup) {
-    if (status === 'ongoing') return { title: `${initiatorName} started a meet`, subtitle: null };
-    if (status === 'completed') return { title: `${initiatorName} had a meet`, subtitle: formatCallDuration(durationSec) };
-    return { title: `${initiatorName}'s meet ended`, subtitle: 'No one joined' };
-  }
-
-  if (status === 'ongoing') return { title: kindLabel, subtitle: null };
-  if (status === 'completed') return { title: kindLabel, subtitle: formatCallDuration(durationSec) };
-  if (isOwn) return { title: kindLabel, subtitle: 'No answer' };
-  return { title: `Missed ${kindLabel.toLowerCase()}`, subtitle: 'Tap to call back' };
+  if (status === 'ongoing') return { title: `Meet initiated by ${initiatorName}`, subtitle: null };
+  if (status === 'completed') return { title: `Meet started by ${initiatorName}`, subtitle: formatCallDuration(durationSec) };
+  return { title: 'Missed meet', subtitle: `started by ${initiatorName}` };
 }
 
 /** WhatsApp-style call-history bubble — a system-generated message sent automatically by whoever starts the call. */
@@ -35,7 +27,7 @@ export function CallHistoryCard({ message, content, isGroupChat, currentUserId }
   const isOwn = message.senderId === currentUserId;
   const { callType, status } = content;
   const isMissed = status === 'missed';
-  const { title, subtitle } = getCallCardText(content, isOwn);
+  const { title, subtitle } = getCallCardText(content);
 
   const Icon = isMissed ? (callType === 'video' ? VideoOff : PhoneMissed) : callType === 'video' ? Video : Phone;
 
@@ -57,8 +49,8 @@ export function CallHistoryCard({ message, content, isGroupChat, currentUserId }
       <div className={cn('flex flex-col max-w-[70%] min-w-0', isOwn ? 'items-end' : 'items-start')}>
         <div
           className={cn(
-            'flex items-center gap-2.5 rounded-2xl px-3 py-2 min-w-[190px]',
-            isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
+            'flex items-center gap-2.5 rounded-2xl px-3 py-2.5 min-w-[200px] shadow-sm',
+            isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground border border-border/60',
           )}
         >
           <span

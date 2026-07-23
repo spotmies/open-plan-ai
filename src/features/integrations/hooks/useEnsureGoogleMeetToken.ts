@@ -1,70 +1,32 @@
 import { useCallback } from 'react';
 import { useGoogleMeetStore } from '../stores/useGoogleMeetStore';
-import { useGoogleIdentityServices } from './useGoogleIdentityServices';
-
-const SCOPES =
-  'https://www.googleapis.com/auth/meetings.space.created https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email';
+import { googleMeetService } from '@/services/googleMeet.service';
 
 /**
- * GIS access tokens expire after ~1hr with no refresh token — that lifetime
- * is fixed by Google's OAuth server and can't be extended from our side.
- * Without this, useGoogleMeetStore.isConnected stays true forever while the
- * token silently goes dead, and every Meet/Calendar call starts failing with
- * a confusing 401. Call ensureFreshToken() right before any such call — it
- * reuses the current token if still valid, otherwise attempts a silent (no
- * popup) re-issue since the user already granted consent once.
+ * The backend stores a permanent (encrypted) refresh token once the user
+ * connects via the OAuth redirect flow in Integrations.tsx, and mints a
+ * fresh short-lived access token from it on demand. Call ensureFreshToken()
+ * right before any Meet/Calendar API call — it reuses the cached token if
+ * still valid, otherwise fetches a new one from our backend. No Google popup
+ * is ever involved here: if this returns null, the user genuinely never
+ * connected (or disconnected), not just "the token happened to expire".
  */
 export function useEnsureGoogleMeetToken() {
-  const { isLoaded: gisLoaded } = useGoogleIdentityServices();
-
-  const requestToken = useCallback(
-    (clientId: string, prompt: '' | 'consent'): Promise<string | null> => {
-      const store = useGoogleMeetStore.getState();
-      return new Promise<string | null>((resolve) => {
-        try {
-          const client = window.google!.accounts.oauth2.initTokenClient({
-            client_id: clientId,
-            scope: SCOPES,
-            callback: (tokenResponse: { error?: string; access_token?: string; expires_in?: number }) => {
-              if (tokenResponse.error || !tokenResponse.access_token) {
-                resolve(null);
-                return;
-              }
-              store.setConnected(tokenResponse.access_token, store.userEmail ?? '', tokenResponse.expires_in ?? 3600);
-              resolve(tokenResponse.access_token);
-            },
-            error_callback: () => resolve(null),
-          });
-          client.requestAccessToken({ prompt });
-        } catch {
-          resolve(null);
-        }
-      });
-    },
-    [],
-  );
-
   const ensureFreshToken = useCallback(async (): Promise<string | null> => {
     const store = useGoogleMeetStore.getState();
-    if (!store.isConnected) return null;
     if (store.accessToken && !store.isTokenExpired()) return store.accessToken;
 
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId || !gisLoaded || !window.google?.accounts?.oauth2) return null;
-
-    // Try a silent (no popup) re-issue first — this is the common case and
-    // needs no user interaction. Browsers with strict third-party-cookie /
-    // FedCM policies can make this fail even though consent was already
-    // granted, so fall back to a one-click popup rather than dead-ending
-    // into "please reconnect in Integrations". Since scopes were already
-    // granted, Google shows an account-picker, not a full consent screen.
-    // This fallback only runs from a direct click-handler continuation, so
-    // it still counts as user-activated and isn't blocked as a popup.
-    const silentToken = await requestToken(clientId, '');
-    if (silentToken) return silentToken;
-
-    return requestToken(clientId, 'consent');
-  }, [gisLoaded, requestToken]);
+    try {
+      const { accessToken, expiresIn, email } = await googleMeetService.getAccessToken();
+      store.setConnected(accessToken, email, expiresIn);
+      return accessToken;
+    } catch {
+      // Not connected, or the stored connection is no longer valid — the
+      // backend already cleaned up its side; reflect that locally too.
+      store.disconnect();
+      return null;
+    }
+  }, []);
 
   return { ensureFreshToken };
 }

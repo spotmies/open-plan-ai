@@ -1,7 +1,10 @@
 import { chatService } from '@/services/chat.service';
+import { logger } from '@/services/monitoring/logger';
 import { buildCallCardContent, CallCardStatus } from './callCard';
+import { emitCallCardFinalized } from './callCardEvents';
 
 interface RegistryEntry {
+  conversationId: string;
   callType: 'audio' | 'video';
   isGroup: boolean;
   initiatorId: string;
@@ -60,8 +63,11 @@ export async function finalizeCallCard(callId: string): Promise<void> {
 
   try {
     await chatService.editMessage(entry.messageId, content);
-  } catch {
-    // Best-effort — a failed finalize just leaves the card showing "ongoing";
-    // not worth surfacing an error toast for a background update this late.
+    // The editor's own client isn't guaranteed to receive a 'message-updated'
+    // socket echo for its own edit (same reason Chat.tsx's handleEditMessage
+    // forces a refetch) — patch local state directly instead of waiting for one.
+    emitCallCardFinalized({ conversationId: entry.conversationId, messageId: entry.messageId, content });
+  } catch (err) {
+    logger.error('Failed to finalize call-history card:', err);
   }
 }

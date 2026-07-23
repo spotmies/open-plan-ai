@@ -154,16 +154,27 @@ export function MessageArea({
             const msgDate = new Date(msg.createdAt);
             const showDateDivider = !prev || !isSameDay(new Date(prev.createdAt), msgDate);
 
-            if (msg.contentType === 'system') {
-              const callCard = parseCallCardContent(msg.content);
+            // Checked regardless of contentType: the backend doesn't reliably
+            // echo back the 'system' type we post a call card as (it can come
+            // back as 'text'), so detection has to rely on the JSON shape of
+            // the content itself, not the server's reported contentType.
+            const callCard = parseCallCardContent(msg.content);
+            if (callCard) {
               nodes.push(
                 <div key={msg.id}>
                   {showDateDivider && <MessageDateDivider date={msgDate} />}
-                  {callCard ? (
-                    <CallHistoryCard message={msg} content={callCard} isGroupChat={isGroup} currentUserId={user?.id} />
-                  ) : (
-                    <SystemMessage content={msg.content} />
-                  )}
+                  <CallHistoryCard message={msg} content={callCard} isGroupChat={isGroup} currentUserId={user?.id} />
+                </div>
+              );
+              i += 1;
+              continue;
+            }
+
+            if (msg.contentType === 'system') {
+              nodes.push(
+                <div key={msg.id}>
+                  {showDateDivider && <MessageDateDivider date={msgDate} />}
+                  <SystemMessage content={msg.content} />
                 </div>
               );
               i += 1;

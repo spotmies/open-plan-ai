@@ -8,6 +8,7 @@ import type { Conversation, ChatMessage, MessageReaction, EntityTagRef, PinnedMe
 import type { Unsubscribe } from '../transport/IChatTransport';
 import { useAuth } from '@/contexts/AuthContext';
 import { logger } from '@/services/monitoring/logger';
+import { onCallCardFinalized } from '../utils/callCardEvents';
 
 type ConversationAccessState = { readOnly: boolean; leftAt: string | null; joinedAt: string | null };
 
@@ -472,6 +473,21 @@ export function useMessages(conversationId: string | null) {
       }
     );
     return () => { if (updateChannelRef.current) chatTransport.unsubscribe(updateChannelRef.current); };
+  }, [conversationId, storeUpdateMessage]);
+
+  // A call-history card is finalized via a plain REST edit, not a socket
+  // emit, so the editor's own client can't rely on a 'message-updated' echo
+  // for it — apply the new content locally the moment the edit succeeds,
+  // the same way the socket handler above does for edits made elsewhere.
+  useEffect(() => {
+    if (!conversationId) return;
+    return onCallCardFinalized((payload) => {
+      if (payload.conversationId !== conversationId) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === payload.messageId ? { ...m, content: payload.content } : m))
+      );
+      storeUpdateMessage(conversationId, payload.messageId, (m) => ({ ...m, content: payload.content }));
+    });
   }, [conversationId, storeUpdateMessage]);
 
   const refetchMessages = useCallback(async () => {

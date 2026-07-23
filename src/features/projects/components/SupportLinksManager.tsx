@@ -96,11 +96,20 @@ function copy(text: string, label: string) {
 /** Ready-to-paste snippets with the real endpoint and real key baked in. */
 function snippets(apiKey: string) {
   return {
-    curl: `curl -X POST "${ENDPOINT}" \\
+    // attachments: up to 5 files, 10MB each, 25MB total (base64-encoded)
+    curl: `# Encode a file to base64 first (macOS: -i flag; Linux: base64 -w0 file)
+FILE_B64=$(base64 -i screenshot.png)
+
+curl -X POST "${ENDPOINT}" \\
   -H "Authorization: Bearer ${apiKey}" \\
   -H "Content-Type: application/json" \\
-  -d '{"title":"Customer issue","description":"Details...","customer":{"name":"Jane","email":"jane@acme.com"},"device":{"macAddress":"AA:BB:CC:DD:EE:FF","osInfo":"Windows 11","browserInfo":"Chrome 124"}}'`,
-    node: `await fetch("${ENDPOINT}", {
+  -d "{\\"title\\":\\"Customer issue\\",\\"description\\":\\"Details...\\",\\"customer\\":{\\"name\\":\\"Jane\\",\\"email\\":\\"jane@acme.com\\"},\\"attachments\\":[{\\"filename\\":\\"screenshot.png\\",\\"mimeType\\":\\"image/png\\",\\"contentBase64\\":\\"$FILE_B64\\"}]}"`,
+    node: `import fs from "fs";
+
+// attachments: up to 5 files, 10MB each, 25MB total (base64-encoded)
+const fileBuffer = fs.readFileSync("screenshot.png");
+
+await fetch("${ENDPOINT}", {
   method: "POST",
   headers: {
     "Authorization": "Bearer ${apiKey}",
@@ -110,10 +119,24 @@ function snippets(apiKey: string) {
     title: "Customer issue",
     description: "Details...",
     customer: { name: "Jane", email: "jane@acme.com" },
-    device: { macAddress: "AA:BB:CC:DD:EE:FF", osInfo: "Windows 11", browserInfo: "Chrome 124" },
+    attachments: [
+      { filename: "screenshot.png", mimeType: "image/png", contentBase64: fileBuffer.toString("base64") },
+    ],
   }),
 });`,
-    javascript: `fetch("${ENDPOINT}", {
+    javascript: `// Reads a browser File object (e.g. from <input type="file">) as base64.
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]); // strip data: URI prefix
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+const contentBase64 = await fileToBase64(selectedFile);
+
+fetch("${ENDPOINT}", {
   method: "POST",
   headers: {
     "Authorization": "Bearer ${apiKey}",
@@ -123,13 +146,19 @@ function snippets(apiKey: string) {
     title: "Customer issue",
     description: "Details...",
     customer: { name: "Jane", email: "jane@acme.com" },
-    device: { macAddress: "AA:BB:CC:DD:EE:FF", osInfo: "Windows 11", browserInfo: "Chrome 124" },
+    // attachments: up to 5 files, 10MB each, 25MB total (base64-encoded)
+    attachments: [{ filename: selectedFile.name, mimeType: selectedFile.type, contentBase64 }],
   }),
 })
   .then((res) => res.json())
   .then(({ data }) => console.log("Ticket created:", data.id))
   .catch((err) => console.error("Ticket failed:", err));`,
     python: `import requests
+import base64
+
+# attachments: up to 5 files, 10MB each, 25MB total (base64-encoded)
+with open("screenshot.png", "rb") as f:
+    file_b64 = base64.b64encode(f.read()).decode()
 
 requests.post(
     "${ENDPOINT}",
@@ -138,7 +167,9 @@ requests.post(
         "title": "Customer issue",
         "description": "Details...",
         "customer": {"name": "Jane", "email": "jane@acme.com"},
-        "device": {"macAddress": "AA:BB:CC:DD:EE:FF", "osInfo": "Windows 11", "browserInfo": "Chrome 124"},
+        "attachments": [
+            {"filename": "screenshot.png", "mimeType": "image/png", "contentBase64": file_b64},
+        ],
     },
 )`,
   };
@@ -264,7 +295,7 @@ export function SupportLinksManager({ projectId }: { projectId: string }) {
           Ready-to-paste code your systems use to create issues via the API.
         </p>
         <Button onClick={openCreate} size="sm" className="shrink-0">
-          <Plus className="h-4 w-4 mr-1" /> New key
+          <Plus className="h-4 w-4 mr-1" /> New API
         </Button>
       </div>
 
@@ -295,10 +326,10 @@ export function SupportLinksManager({ projectId }: { projectId: string }) {
                   onClick={() => openEdit(link)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" title="Regenerate key"
+                {/* <Button variant="ghost" size="icon" className="h-8 w-8" title="Regenerate key"
                   onClick={() => regenMut.mutate(link.id)}>
                   <RefreshCw className="h-4 w-4" />
-                </Button>
+                </Button> */}
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Delete"
                   onClick={() => deleteMut.mutate(link.id)}>
                   <Trash2 className="h-4 w-4" />
@@ -440,7 +471,7 @@ export function SupportLinksManager({ projectId }: { projectId: string }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending}>
-              {editingId ? 'Save changes' : 'Create key'}
+              {editingId ? 'Save changes' : 'Create API'}
             </Button>
           </DialogFooter>
         </DialogContent>
