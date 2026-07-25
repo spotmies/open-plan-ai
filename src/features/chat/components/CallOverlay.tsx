@@ -167,15 +167,17 @@ export function CallOverlay() {
   // to connect with you" (incoming). Keying directly off callState means it
   // stops the instant the state leaves outgoing/incoming for any reason:
   // answered (-> active), declined/cancelled/ended (-> idle via reset), or
-  // the ring-timeout watchdog below firing (-> idle).
+  // the ring-timeout watchdog below firing (-> idle). Also stops for
+  // showUnreachablePanel — the recipient never connected, so there's nobody
+  // to ring.
   useEffect(() => {
-    if (callState === 'outgoing' || callState === 'incoming') {
+    if ((callState === 'outgoing' || callState === 'incoming') && !showUnreachablePanel) {
       playRingtone();
     } else {
       stopRingtone();
     }
     return () => stopRingtone();
-  }, [callState]);
+  }, [callState, showUnreachablePanel]);
 
   // Ring timeout — an outgoing/incoming call that's never answered shouldn't
   // ring forever. Each side times out independently (no cross-messaging).

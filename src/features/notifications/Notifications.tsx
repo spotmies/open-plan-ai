@@ -31,6 +31,7 @@ import {
     CheckCheck,
     Activity,
     MessageSquare,
+    UserPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNotifications, AppNotification } from '@/hooks/useNotifications';
@@ -56,6 +57,8 @@ const getNotificationIcon = (type: AppNotification['type']) => {
         case 'task_deleted':
         case 'issue_deleted':
             return <Trash2 className="h-4 w-4 text-red-500" />;
+        case 'team_invitation':
+            return <UserPlus className="h-4 w-4 text-purple-500" />;
         default:
             return <Bell className="h-4 w-4 text-muted-foreground" />;
     }
@@ -80,6 +83,8 @@ const getNotificationTypeLabel = (type: AppNotification['type']) => {
             return 'ECO';
         case 'chat_message':
             return 'Chat';
+        case 'team_invitation':
+            return 'Team';
         default:
             return 'Notification';
     }

@@ -4,6 +4,7 @@ import { OnlineStatus } from './OnlineStatus';
 import { UnreadBadge } from './UnreadBadge';
 import { Clock } from 'lucide-react';
 import { Conversation } from '../types';
+import { messagePreviewText } from '../chat.mappers';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNowStrict } from 'date-fns';
 
@@ -77,7 +78,7 @@ export function ConversationItem({ conversation, isActive, unreadCount, onClick,
             {conversation.lastMessage.senderId === currentUserId
               ? 'You: '
               : conversation.type === 'group' && conversation.lastMessage.senderName && `${conversation.lastMessage.senderName}: `}
-            {conversation.lastMessage.content}
+            {messagePreviewText(conversation.lastMessage.content)}
             {conversation.lastMessage.status === 'pending' && (
               <Clock className="inline-block h-3 w-3 ml-1 text-muted-foreground" />
             )}

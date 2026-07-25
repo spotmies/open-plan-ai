@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { formatMessageTimestamp } from '@/utils/dateTime';
 import { useUserTimezone } from '@/hooks/useUserTimezone';
 import type { ChatMessage } from '../types';
-import { formatCallDuration, type CallCardContent } from '../utils/callCard';
+import { callCardPreviewText, formatCallDuration, type CallCardContent } from '../utils/callCard';
 
 interface CallHistoryCardProps {
   message: ChatMessage;
@@ -15,10 +15,11 @@ interface CallHistoryCardProps {
 
 function getCallCardText(content: CallCardContent): { title: string; subtitle: string | null } {
   const { status, durationSec, initiatorName } = content;
+  const title = callCardPreviewText(content);
 
-  if (status === 'ongoing') return { title: `Meet initiated by ${initiatorName}`, subtitle: null };
-  if (status === 'completed') return { title: `Meet started by ${initiatorName}`, subtitle: formatCallDuration(durationSec) };
-  return { title: 'Missed meet', subtitle: `started by ${initiatorName}` };
+  if (status === 'ongoing') return { title, subtitle: null };
+  if (status === 'completed') return { title, subtitle: formatCallDuration(durationSec) };
+  return { title, subtitle: `started by ${initiatorName}` };
 }
 
 /** WhatsApp-style call-history bubble — a system-generated message sent automatically by whoever starts the call. */

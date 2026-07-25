@@ -198,6 +198,17 @@ const NewProject = () => {
     setProjectStage(stage);
   }, [projectType]);
 
+  // The project creator is always added as Admin by the backend on creation,
+  // so reflect that in the UI without requiring the user to add themselves.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    setAssignedMembers(prev =>
+      prev.some(m => m.memberId === currentUser.id)
+        ? prev
+        : [{ memberId: currentUser.id, role: 'admin' as ProjectRole }, ...prev]
+    );
+  }, [currentUser?.id]);
+
   // Optional Details
   const [showOptionalDetails, setShowOptionalDetails] = useState(false);
   const [clientName, setClientName] = useState("");
@@ -389,6 +400,7 @@ const NewProject = () => {
   };
 
   const handleRemoveTeamMember = (memberId: string) => {
+    if (memberId === currentUser?.id) return; // Creator is always Admin, can't be removed
     setAssignedMembers(assignedMembers.filter(m => m.memberId !== memberId));
   };
 
@@ -1057,6 +1069,7 @@ const NewProject = () => {
                 </div>
                 <div className="max-h-52 overflow-y-auto">
                   {teamMembers
+                    .filter(m => m.id !== currentUser?.id)
                     .filter(m => m.name.toLowerCase().includes(memberSearch.toLowerCase()))
                     .length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">
@@ -1064,6 +1077,7 @@ const NewProject = () => {
                     </p>
                   ) : (
                     teamMembers
+                      .filter(m => m.id !== currentUser?.id)
                       .filter(m => m.name.toLowerCase().includes(memberSearch.toLowerCase()))
                       .map((member) => (
                         <div
@@ -1093,6 +1107,7 @@ const NewProject = () => {
                 {assignedMembers.map((assignment) => {
                   const member = getMemberById(assignment.memberId);
                   if (!member) return null;
+                  const isCreator = assignment.memberId === currentUser?.id;
                   return (
                     <div
                       key={assignment.memberId}
@@ -1104,32 +1119,43 @@ const NewProject = () => {
                           <AvatarFallback>{member.initials}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium text-sm">{member.name}</p>
+                          <p className="font-medium text-sm flex items-center gap-2">
+                            {member.name}
+                            {isCreator && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">You · Creator</Badge>
+                            )}
+                          </p>
                           <p className="text-xs text-muted-foreground">{member.email}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Select
-                          value={assignment.role}
-                          onValueChange={(v) => handleChangeAssignedMemberRole(assignment.memberId, v as ProjectRole)}
-                        >
-                          <SelectTrigger className="h-8 w-[120px] text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="maintainer">Maintainer</SelectItem>
-                            <SelectItem value="member">Member</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleRemoveTeamMember(assignment.memberId)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                        {isCreator ? (
+                          <Badge variant="outline" className="h-8 px-3 flex items-center text-xs font-normal">Admin</Badge>
+                        ) : (
+                          <>
+                            <Select
+                              value={assignment.role}
+                              onValueChange={(v) => handleChangeAssignedMemberRole(assignment.memberId, v as ProjectRole)}
+                            >
+                              <SelectTrigger className="h-8 w-[120px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="admin">Admin</SelectItem>
+                                <SelectItem value="maintainer">Maintainer</SelectItem>
+                                <SelectItem value="member">Member</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleRemoveTeamMember(assignment.memberId)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );

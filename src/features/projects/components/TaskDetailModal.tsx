@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1206,15 +1207,25 @@ export const TaskDetailModal = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && attemptClose()}>
       <DialogContent
         className={cn(
-          'p-0 gap-0',
+          'p-0 flex flex-col gap-0 overflow-hidden',
           isMobile
             ? 'inset-0 left-0 top-0 h-[100dvh] w-screen max-w-none max-h-none translate-x-0 translate-y-0 rounded-none border-0'
-            : 'max-w-3xl max-h-[90vh] w-[95vw] sm:w-full'
+            : 'max-w-4xl max-h-[90vh]'
         )}
-        hideClose={showMobileHeader}
+        hideClose
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {showMobileHeader ? (
+        {mode === 'create' && (
+          <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between">
+            <DialogTitle>Add New Task</DialogTitle>
+            <DialogClose asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogClose>
+          </DialogHeader>
+        )}
+        {mode !== 'create' && showMobileHeader ? (
           <div className="flex items-center justify-between gap-3 px-4 py-3 border-b shrink-0 bg-background">
             <div className="flex items-center gap-3 min-w-0">
               <button
@@ -1250,7 +1261,7 @@ export const TaskDetailModal = ({
                 ) : (
                   <DropdownMenuItem
                     onClick={handleUpdateTask}
-                    disabled={isSaving || !editedTask.title || !editedTask.dueDate || !isFormDirty || isBlockedWithoutDependencies || !canEditTask}
+                    disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
                   >
                     <Check className="h-4 w-4 mr-2" />
                     Update Task
@@ -1270,10 +1281,17 @@ export const TaskDetailModal = ({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        ) : (
-          <DialogHeader className="px-4 sm:px-6 py-4 border-b">
-            <DialogTitle>{mode === 'create' ? 'Add New Task' : 'Task Details'}</DialogTitle>
-          </DialogHeader>
+        ) : mode !== 'create' && (
+          <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
+            <DialogTitle className="text-sm font-medium text-muted-foreground">Task</DialogTitle>
+            <div className="flex items-center gap-1">
+              <DialogClose asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </Button>
+              </DialogClose>
+            </div>
+          </div>
         )}
         <DialogDescription className="sr-only">
           View and edit details for task {task?.title || 'New Task'}
@@ -1301,7 +1319,7 @@ export const TaskDetailModal = ({
                 className={cn(
                   showMobileHeader
                     ? 'text-xl font-bold h-auto py-1 px-0 border-0 shadow-none focus-visible:ring-0 rounded-none disabled:opacity-100 disabled:cursor-default'
-                    : 'text-base font-medium h-10',
+                    : 'text-base font-semibold w-full',
                   showMobileHeader && !canEditTask && 'opacity-60'
                 )}
                 placeholder="Task title..."
@@ -2384,25 +2402,32 @@ export const TaskDetailModal = ({
                 )}
 
                 {!isMobileFieldsLocked && (
-                <label
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={cn(
-                  "flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
-                  isDragging ? "border-primary bg-primary/10" : "hover:border-primary/50 hover:bg-muted/30",
-                  isUploading && "opacity-50 pointer-events-none"
-                )}>
-                  {isUploading ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  ) : (
-                    <Upload className="h-5 w-5 text-muted-foreground" />
-                  )}
-                  <span className="text-sm text-muted-foreground">
-                    {isUploading ? "Uploading..." : "Drop files, click to upload, or paste image"}
-                  </span>
-                  <input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,video/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
-                </label>
+                <div className="flex items-center justify-center w-full">
+                  <label
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={cn(
+                    "flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
+                    isDragging ? "border-primary bg-primary/10" : "bg-muted/20 hover:bg-muted/40",
+                    isUploading && "opacity-50 pointer-events-none"
+                  )}>
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        {isUploading ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Upload className="h-5 w-5" />
+                        )}
+                        <span className="text-sm font-medium">
+                          {isUploading ? 'Uploading...' : 'Add Attachment'}
+                        </span>
+                      </div>
+                      {!isUploading && <p className="text-xs text-muted-foreground mt-1">or drag and drop, or paste image</p>}
+                    </div>
+                    <input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,video/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                  </label>
+                </div>
                 )}
               </div>
             </section>
@@ -2799,7 +2824,7 @@ export const TaskDetailModal = ({
           </div>
         </ScrollArea>
         {mode === 'create' && (
-          <div className="px-4 sm:px-6 py-3 sm:py-4 border-t flex justify-end gap-2 bg-background">
+          <div className="p-4 border-t flex justify-end gap-2 bg-background z-10 w-full">
             <Button variant="outline" onClick={attemptClose} disabled={isSaving}>
               Cancel
             </Button>
@@ -2814,7 +2839,7 @@ export const TaskDetailModal = ({
             <Button
               className="w-full"
               onClick={handleUpdateTask}
-              disabled={isSaving || !editedTask.title || !editedTask.dueDate || !isFormDirty || isBlockedWithoutDependencies || !canEditTask}
+              disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
             >
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Update Task
@@ -2822,7 +2847,7 @@ export const TaskDetailModal = ({
           </div>
         )}
         {mode === 'view' && !showMobileHeader && (
-          <div className="px-4 sm:px-6 py-3 sm:py-4 border-t flex items-center justify-between gap-2 bg-background">
+          <div className="p-4 border-t flex items-center justify-between gap-2 bg-background z-10 w-full">
             {/* Delete button on the bottom left — only the task creator or a project/organization Admin can delete */}
             {onDelete ? (
               <Button
@@ -2848,7 +2873,7 @@ export const TaskDetailModal = ({
               </Button>
               <Button
                 onClick={handleUpdateTask}
-                disabled={isSaving || !editedTask.title || !editedTask.dueDate || !isFormDirty || isBlockedWithoutDependencies || !canEditTask}
+                disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
                 title={canEditTask ? undefined : editLockTitle}
               >
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

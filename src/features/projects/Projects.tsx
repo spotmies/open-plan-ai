@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ProjectListProgress } from './components/ProjectListProgress';
-import { Plus, Search, Grid3X3, List, Users, MoreVertical, Eye, Pencil, Calendar, Link as LinkIcon, Paperclip, FileText, Flag, Target, FolderOpen, Package, X, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { Plus, Search, Grid3X3, List, Users, MoreVertical, Eye, Pencil, Calendar, Link as LinkIcon, Paperclip, FileText, Flag, Target, FolderOpen, Package, X, Trash2, AlertTriangle, Loader2, Tag, Layers, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -60,6 +60,25 @@ const stageLabels = {
   development: 'Development',
   testing: 'Testing',
   production: 'Production',
+};
+
+// Mirrors the department list in NewProject.tsx / EditProject.tsx
+const departmentLabels: Record<string, string> = {
+  design: 'Design',
+  hardware: 'Hardware',
+  software: 'Software',
+  mechanical: 'Mechanical',
+  electrical: 'Electrical',
+  firmware: 'Firmware',
+  testing: 'Testing & QA',
+  manufacturing: 'Manufacturing',
+  documentation: 'Documentation',
+};
+
+const formatDepartmentLabel = (id: string) => {
+  if (departmentLabels[id]) return departmentLabels[id];
+  const cleaned = id.startsWith('custom-') ? id.slice('custom-'.length) : id;
+  return cleaned.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
 const formatDisplayDate = (value?: string | number | Date | null) => {
@@ -165,6 +184,9 @@ export default function Projects() {
 
   // Fetch full project details when a project is selected for viewing details
   const { data: selectedProjectDetails, isLoading: isLoadingDetails } = useProjectDetail(selectedProjectId || undefined);
+  // getProjectById doesn't return a populated `team` array — fetch members from the
+  // dedicated endpoint instead (same source the card's team hover-card uses).
+  const { data: selectedProjectTeam = [], isLoading: isLoadingTeam } = useProjectMembers(selectedProjectId || undefined);
   const { data: projectAttachments = [] } = useProjectAttachments(selectedProjectId || undefined);
   const { data: projectLinks = [] } = useProjectLinks(selectedProjectId || undefined);
   const { data: projectFiles = [], isLoading: isLoadingFiles } = useProjectAttachments(selectedFilesProjectId || undefined);
@@ -518,6 +540,47 @@ export default function Projects() {
                   </div>
                 )}
 
+                {/* Project Type & Stage */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Tag className="h-4 w-4" />
+                      Project Type
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedProjectDetails.type || 'Not set'}
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Layers className="h-4 w-4" />
+                      Project Stage
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      {stageLabels[selectedProjectDetails.stage as keyof typeof stageLabels] || selectedProjectDetails.stage}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Departments */}
+                <div>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    Department{(selectedProjectDetails.departments?.length ?? 0) !== 1 ? 's' : ''}
+                  </h4>
+                  {selectedProjectDetails.departments && selectedProjectDetails.departments.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedProjectDetails.departments.map((deptId) => (
+                        <Badge key={deptId} variant="outline" className="text-xs font-normal">
+                          {formatDepartmentLabel(deptId)}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No departments assigned.</p>
+                  )}
+                </div>
+
                 {/* Progress */}
                 <div>
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
@@ -553,18 +616,26 @@ export default function Projects() {
                 </div>
 
                 {/* Team Members */}
-                {selectedProjectDetails.team && selectedProjectDetails.team.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      Team Members ({selectedProjectDetails.team.length})
-                    </h4>
+                <div>
+                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Team Members {selectedProjectTeam.length > 0 && `(${selectedProjectTeam.length})`}
+                  </h4>
+                  {isLoadingTeam ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {selectedProjectDetails.team.map((member) => (
+                      <Skeleton className="h-12 w-full" />
+                      <Skeleton className="h-12 w-full" />
+                    </div>
+                  ) : selectedProjectTeam.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {selectedProjectTeam.map((member) => (
                         <div key={member.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
-                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                            {member.initials}
-                          </div>
+                          <Avatar className="h-8 w-8 shrink-0">
+                            <AvatarImage src={member.avatar || undefined} alt={member.name} referrerPolicy="no-referrer" />
+                            <AvatarFallback className="text-[11px] font-bold text-primary bg-primary/10">
+                              {member.initials}
+                            </AvatarFallback>
+                          </Avatar>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium truncate">{member.name}</p>
                             {member.role && (
@@ -577,8 +648,10 @@ export default function Projects() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No team members assigned yet.</p>
+                  )}
+                </div>
 
                 {/* Attachments */}
                 {projectAttachments.length > 0 && (
@@ -625,12 +698,12 @@ export default function Projects() {
                 )}
 
                 {/* Links */}
-                {projectLinks.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <LinkIcon className="h-4 w-4" />
-                      Links ({projectLinks.length})
-                    </h4>
+                <div>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <LinkIcon className="h-4 w-4" />
+                    Project Links {projectLinks.length > 0 && `(${projectLinks.length})`}
+                  </h4>
+                  {projectLinks.length > 0 ? (
                     <div className="space-y-2">
                       {projectLinks.map((link: any) => (
                         <div key={link.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
@@ -650,8 +723,10 @@ export default function Projects() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No links added.</p>
+                  )}
+                </div>
 
                 {/* Modules List */}
                 {selectedProjectDetails.projectModules && selectedProjectDetails.projectModules.length > 0 && (

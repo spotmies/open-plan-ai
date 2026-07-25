@@ -19,6 +19,12 @@ export function resolveFileUrl(value: string | null | undefined): string | null 
     return `${base}/uploads/serve/${encodeURIComponent(key)}`;
   }
 
+  if (value.startsWith('drive-serve:')) {
+    const attachmentId = value.slice('drive-serve:'.length);
+    const base = config.api.baseUrl.replace(/\/$/, '');
+    return `${base}/uploads/drive-serve/${encodeURIComponent(attachmentId)}`;
+  }
+
   // Already a full URL — return unchanged
   if (value.startsWith('http://') || value.startsWith('https://')) {
     // Rewrite old localhost URLs to the current API base

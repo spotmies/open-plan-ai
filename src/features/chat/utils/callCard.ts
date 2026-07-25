@@ -34,6 +34,13 @@ export function parseCallCardContent(content: string): CallCardContent | null {
   return null;
 }
 
+/** Single-line summary of a call card for previews (chat list, toasts) — mirrors CallHistoryCard's title text. */
+export function callCardPreviewText(content: CallCardContent): string {
+  if (content.status === 'ongoing') return `Meet initiated by ${content.initiatorName}`;
+  if (content.status === 'completed') return `Meet started by ${content.initiatorName}`;
+  return 'Missed meet';
+}
+
 /** Formats a talk duration the way WhatsApp-style call cards do: "23 secs", "2 mins", "1 hr, 10 mins". */
 export function formatCallDuration(totalSec: number): string {
   const sec = Math.max(0, Math.round(totalSec));

@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { chatService } from '@/services/chat.service';
 import { chatTransport } from '../transport';
 import { useChatStore } from '../stores/useChatStore';
+import { messagePreviewText } from '../chat.mappers';
 import { logger } from '@/services/monitoring/logger';
 import { useCallSignaling } from '../hooks/useCallSignaling';
 import { CallOverlay } from '../components/CallOverlay';
@@ -111,7 +112,7 @@ export function ChatNotificationsProvider() {
 
           const senderName = raw.sender?.name ?? raw.senderName ?? 'Someone';
           const heading = conv?.type === 'group' && conv.name ? `${senderName} in ${conv.name}` : `${senderName} sent you a message`;
-          const preview = content.slice(0, 80);
+          const preview = messagePreviewText(content).slice(0, 80);
 
           toast.custom((toastId) => (
             <button

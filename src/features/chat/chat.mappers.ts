@@ -9,6 +9,7 @@ import type {
   EntityTagRef,
 } from './types';
 import { resolveFileUrl } from '@/utils/fileUrl';
+import { callCardPreviewText, parseCallCardContent } from './utils/callCard';
 
 const ENTITY_TAG_TYPE_LABEL: Record<ChatEntityType, string> = {
   task: 'Task',
@@ -25,6 +26,12 @@ function computeInitials(name: string): string {
   if (words.length === 0) return '';
   if (words.length === 1) return words[0].charAt(0).toUpperCase();
   return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+}
+
+/** Renders a message's raw content for single-line previews (chat list, toasts) — decodes the call-card JSON payload into human text instead of showing it raw. */
+export function messagePreviewText(content: string): string {
+  const callCard = parseCallCardContent(content);
+  return callCard ? callCardPreviewText(callCard) : content;
 }
 
 /** Fallback preview text for a message whose content is empty (tag-only message). */
