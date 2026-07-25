@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { MultiSelect } from '@/components/ui/multi-select';
+import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import {
   Dialog,
   DialogContent,
@@ -234,6 +235,7 @@ export function SupportLinksManager({ projectId }: { projectId: string }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState<SupportLink | null>(null);
 
   const openCreate = () => {
     setEditingId(null);
@@ -331,7 +333,7 @@ export function SupportLinksManager({ projectId }: { projectId: string }) {
                   <RefreshCw className="h-4 w-4" />
                 </Button> */}
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Delete"
-                  onClick={() => deleteMut.mutate(link.id)}>
+                  onClick={() => setDeleteTarget(link)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -476,6 +478,18 @@ export function SupportLinksManager({ projectId }: { projectId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmationDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) deleteMut.mutate(deleteTarget.id);
+        }}
+        title="Delete API key?"
+        description={`This will permanently delete "${deleteTarget?.name ?? ''}". Any systems using this key will no longer be able to create tickets.`}
+        confirmText="Delete"
+        variant="destructive"
+      />
     </div>
   );
 }

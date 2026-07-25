@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
-import { Sun, Moon, ChevronLeft, BarChart3, Plus, Users } from 'lucide-react';
+import { Sun, Moon, ChevronLeft, BarChart3, Plus, Users, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { NotificationsPopover } from './NotificationsPopover';
+import { ReportBugDialog } from '@/features/support/components/ReportBugDialog';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
@@ -61,6 +62,7 @@ export function AppHeader() {
   const { theme, changeTheme } = useAppTheme();
   const isMobile = useIsMobile();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [showReportBugDialog, setShowReportBugDialog] = useState(false);
   const setNewDMDialogOpen = useChatStore((s) => s.setNewDMDialogOpen);
   const setNewGroupDialogOpen = useChatStore((s) => s.setNewGroupDialogOpen);
 
@@ -169,6 +171,18 @@ export function AppHeader() {
           isMobileProjectDetail ? <ProjectTeamButton projectId={projectId!} /> : null
         ) : (
           <>
+            {/* Report a Bug */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('h-9 w-9', isMobile && 'border border-border rounded-xl')}
+              onClick={() => setShowReportBugDialog(true)}
+              title="Report a bug"
+            >
+              <Bug className="h-4 w-4" />
+              <span className="sr-only">Report a bug</span>
+            </Button>
+
             {/* Theme Toggle */}
             <Button
               variant="ghost"
@@ -232,6 +246,8 @@ export function AppHeader() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ReportBugDialog isOpen={showReportBugDialog} onClose={() => setShowReportBugDialog(false)} />
     </header>
   );
 }
