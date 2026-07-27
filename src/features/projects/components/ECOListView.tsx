@@ -362,6 +362,7 @@ export function ECOListView({
   const list: ECOListItem[] = (listData?.data ?? []).map(fromApiEcoListItem);
   const total = listData?.meta?.total ?? 0;
   const totalPages = Math.max(1, listData?.meta?.totalPages ?? 1);
+  const isTrulyEmpty = !listLoading && !statsLoading && total === 0 && fStatus === 'ALL' && fPriority === 'ALL';
 
   const effectiveSelectedId = selectedId ?? list[0]?.id ?? null;
   const selected = list.find(e => e.id === effectiveSelectedId) ?? list[0] ?? null;
@@ -408,6 +409,29 @@ export function ECOListView({
       ))}
     </select>
   );
+
+  if (isTrulyEmpty) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mb-6 border border-border shadow-sm">
+          <GitMerge className="w-8 h-8 text-muted-foreground/80" />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground mb-2">No change orders yet</h3>
+        <p className="text-[13px] text-muted-foreground max-w-[360px] mb-8 leading-relaxed">
+          Create your first Engineering Change Order to start tracking part updates, revisions, and approval workflows.
+        </p>
+        {onNewEco && (
+          <button
+            onClick={onNewEco}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-md text-[13px] font-semibold bg-primary hover:bg-primary/90 text-primary-foreground transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            New Change Order
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden text-foreground">

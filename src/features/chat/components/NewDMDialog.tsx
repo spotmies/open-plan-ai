@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import type { ReachableUser } from '../types';
 import { logger } from '@/services/monitoring/logger';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface NewDMDialogProps {
   open: boolean;
@@ -19,6 +20,7 @@ interface NewDMDialogProps {
 }
 
 export function NewDMDialog({ open, onOpenChange, onSelect, onConversationCreated, orgId }: NewDMDialogProps) {
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<ReachableUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -36,10 +38,27 @@ export function NewDMDialog({ open, onOpenChange, onSelect, onConversationCreate
       .finally(() => setLoading(false));
   }, [open]);
 
+  // The "message yourself" entry never comes back from getReachableUsers (the
+  // backend deliberately excludes the requester from that search), so it's
+  // synthesized client-side from the logged-in user's own profile.
+  const selfEntry: ReachableUser | null = user
+    ? {
+        id: user.id,
+        name: `${user.name} (You)`,
+        email: user.email,
+        avatarUrl: user.avatarUrl ?? undefined,
+        initials: user.initials || user.name.charAt(0).toUpperCase(),
+        role: 'Message yourself',
+        isOnline: true,
+      }
+    : null;
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
   }, [search, users]);
+
+  const showSelfEntry = !!selfEntry && selfEntry.name.toLowerCase().includes(search.toLowerCase());
 
   const handleSelect = async (userId: string) => {
     try {
@@ -75,10 +94,30 @@ export function NewDMDialog({ open, onOpenChange, onSelect, onConversationCreate
                 </div>
               </div>
             ))
-          ) : filtered.length === 0 ? (
+          ) : !showSelfEntry && filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">No users found</p>
           ) : (
-            filtered.map((user) => (
+            <>
+              {showSelfEntry && selfEntry && (
+                <button
+                  key={selfEntry.id}
+                  onClick={() => handleSelect(selfEntry.id)}
+                  className="flex items-center gap-3 w-full px-3 py-2 rounded-md hover:bg-accent/50 transition-colors text-left"
+                >
+                  <div className="relative">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={selfEntry.avatarUrl} alt={selfEntry.name} />
+                      <AvatarFallback className="text-xs">{selfEntry.initials}</AvatarFallback>
+                    </Avatar>
+                    <OnlineStatus isOnline className="absolute -bottom-0.5 -right-0.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium block truncate">{selfEntry.name}</span>
+                    <span className="text-xs text-muted-foreground block truncate">{selfEntry.role}</span>
+                  </div>
+                </button>
+              )}
+              {filtered.map((user) => (
               <button
                 key={user.id}
                 onClick={() => handleSelect(user.id)}
@@ -96,7 +135,8 @@ export function NewDMDialog({ open, onOpenChange, onSelect, onConversationCreate
                   <span className="text-xs text-muted-foreground block truncate">{user.role}</span>
                 </div>
               </button>
-            ))
+              ))}
+            </>
           )}
         </div>
       </DialogContent>

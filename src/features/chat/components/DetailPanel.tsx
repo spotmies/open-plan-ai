@@ -681,23 +681,33 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
             ) : (
               <>
                 {(() => {
-                  const otherMember = !isGroup ? conversation.members.find((m) => m.id !== currentUserId) : null;
+                  const isSelfChat = !isGroup && conversation.members.every((m) => m.id === currentUserId);
+                  const otherMember = !isGroup
+                    ? conversation.members.find((m) => m.id !== currentUserId) ?? (isSelfChat ? conversation.members[0] : undefined)
+                    : null;
                   const topAvatarUrl = isGroup ? conversation.avatarUrl : otherMember?.avatarUrl;
                   const topInitials = isGroup
                     ? conversation.name.split(' ').map((w) => w[0]).join('').slice(0, 2)
                     : otherMember?.initials || '??';
+                  const topName = isGroup
+                    ? conversation.name
+                    : isSelfChat
+                      ? `${otherMember?.name || 'You'} (You)`
+                      : otherMember?.name || conversation.name;
                   return (
-                    <Avatar className="h-16 w-16 mx-auto">
-                      {topAvatarUrl && !isEmoji(topAvatarUrl) ? (
-                        <AvatarImage src={topAvatarUrl} className="object-cover" />
-                      ) : null}
-                      <AvatarFallback className={cn('text-lg font-semibold', isGroup && 'bg-primary/10 text-primary')}>
-                        {topAvatarUrl && isEmoji(topAvatarUrl) ? topAvatarUrl : topInitials}
-                      </AvatarFallback>
-                    </Avatar>
+                    <>
+                      <Avatar className="h-16 w-16 mx-auto">
+                        {topAvatarUrl && !isEmoji(topAvatarUrl) ? (
+                          <AvatarImage src={topAvatarUrl} className="object-cover" />
+                        ) : null}
+                        <AvatarFallback className={cn('text-lg font-semibold', isGroup && 'bg-primary/10 text-primary')}>
+                          {topAvatarUrl && isEmoji(topAvatarUrl) ? topAvatarUrl : topInitials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <h4 className="font-semibold mt-2">{topName}</h4>
+                    </>
                   );
                 })()}
-                <h4 className="font-semibold mt-2">{conversation.name}</h4>
                 {conversation.description && (
                   <p className="text-xs text-muted-foreground mt-1">{conversation.description}</p>
                 )}

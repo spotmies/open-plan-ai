@@ -1216,7 +1216,7 @@ export const TaskDetailModal = ({
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         {mode === 'create' && (
-          <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between">
+          <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between shrink-0">
             <DialogTitle>Add New Task</DialogTitle>
             <DialogClose asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
@@ -1298,10 +1298,8 @@ export const TaskDetailModal = ({
         </DialogDescription>
 
         <ScrollArea className={cn(
-          'flex-1',
-          isMobile
-            ? (showMobileHeader && isMobileEditMode ? 'max-h-[calc(100dvh-129px)]' : 'max-h-[calc(100dvh-57px)]')
-            : 'max-h-[calc(90vh-80px)]'
+          'flex-1 overflow-y-auto w-full min-h-0',
+          isMobile && (showMobileHeader && isMobileEditMode ? 'max-h-[calc(100dvh-129px)]' : 'max-h-[calc(100dvh-57px)]')
         )}>
           <div className={cn('p-4 sm:p-6 space-y-6', showMobileHeader && 'space-y-5')}>
             {showMobileHeader && projectName && (
@@ -1384,65 +1382,73 @@ export const TaskDetailModal = ({
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="p-0 w-[260px]" align="start">
-                    {(editedTask.assignees || []).length > 0 && (
-                      <div className="p-2 border-b">
-                        <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
-                        {(editedTask.assignees || []).map((assignee) => (
-                          <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
-                            <Avatar className="h-6 w-6 shrink-0">
-                              <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
-                              <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm truncate">{assignee.name}</p>
-                              {assignee.assignedBy && (
-                                <p className="text-[10px] text-muted-foreground truncate">Assigned by {assignee.assignedBy.name}</p>
-                              )}
-                            </div>
-                            <button
-                              disabled={!canEditTaskFields}
-                              title={canEditTaskFields ? undefined : editLockTitle}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleFieldChange('assignees', (editedTask.assignees || []).filter(a => a.id !== assignee.id));
-                              }}
-                              className={cn(
-                                'text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100',
-                                !canEditTaskFields && 'cursor-not-allowed group-hover:opacity-60'
-                              )}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                     <Command>
                       <CommandInput placeholder="Search members..." />
-                      <CommandList>
-                        <CommandEmpty>No results found.</CommandEmpty>
-                        <CommandGroup heading="Add members">
-                          {availableAssignees
-                            .filter(m => !editedTask.assignees?.some(a => a.id === m.id))
-                            .map((member) => (
-                              <CommandItem
-                                key={member.id}
-                                value={`${member.id} ${member.name}`}
-                                onSelect={() => {
-                                  handleFieldChange('assignees', [...(editedTask.assignees || []), member]);
+                      
+                      {(editedTask.assignees || []).length > 0 && (
+                        <div className="p-2 border-b">
+                          <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
+                          {(editedTask.assignees || []).map((assignee) => (
+                            <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
+                              <Avatar className="h-6 w-6 shrink-0">
+                                <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm truncate">{assignee.name}</p>
+                                {assignee.assignedBy && (
+                                  <p className="text-[10px] text-muted-foreground truncate">Assigned by {assignee.assignedBy.name}</p>
+                                )}
+                              </div>
+                              <button
+                                disabled={!canEditTaskFields}
+                                title={canEditTaskFields ? undefined : editLockTitle}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleFieldChange('assignees', (editedTask.assignees || []).filter(a => a.id !== assignee.id));
                                 }}
-                                className="cursor-pointer"
+                                className={cn(
+                                  'text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100',
+                                  !canEditTaskFields && 'cursor-not-allowed group-hover:opacity-60'
+                                )}
                               >
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-5 w-5">
-                                    <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
-                                    <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
-                                  </Avatar>
-                                  {member.name}
-                                </div>
-                              </CommandItem>
-                            ))}
-                        </CommandGroup>
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <CommandList>
+                        <CommandEmpty>
+                          {availableAssignees.filter(m => !editedTask.assignees?.some(a => a.id === m.id)).length === 0
+                            ? "All members assigned"
+                            : "No results found."}
+                        </CommandEmpty>
+                        {availableAssignees.filter(m => !editedTask.assignees?.some(a => a.id === m.id)).length > 0 && (
+                          <CommandGroup heading="Add members">
+                            {availableAssignees
+                              .filter(m => !editedTask.assignees?.some(a => a.id === m.id))
+                              .map((member) => (
+                                <CommandItem
+                                  key={member.id}
+                                  value={`${member.id} ${member.name}`}
+                                  onSelect={() => {
+                                    handleFieldChange('assignees', [...(editedTask.assignees || []), member]);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-5 w-5">
+                                      <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                      <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                    </Avatar>
+                                    {member.name}
+                                  </div>
+                                </CommandItem>
+                              ))}
+                          </CommandGroup>
+                        )}
                       </CommandList>
                     </Command>
                   </PopoverContent>
@@ -2824,7 +2830,7 @@ export const TaskDetailModal = ({
           </div>
         </ScrollArea>
         {mode === 'create' && (
-          <div className="p-4 border-t flex justify-end gap-2 bg-background z-10 w-full">
+          <div className="p-4 border-t flex justify-end gap-2 bg-background z-10 w-full shrink-0">
             <Button variant="outline" onClick={attemptClose} disabled={isSaving}>
               Cancel
             </Button>

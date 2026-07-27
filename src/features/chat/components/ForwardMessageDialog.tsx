@@ -18,10 +18,13 @@ interface ForwardMessageDialogProps {
 }
 
 function conversationDisplay(conversation: Conversation, currentUserId?: string) {
+  const isSelfChat = conversation.type === 'dm' && conversation.members.every((m) => m.id === currentUserId);
   const otherMember = conversation.type === 'dm'
-    ? conversation.members.find((m) => m.id !== currentUserId)
+    ? conversation.members.find((m) => m.id !== currentUserId) ?? (isSelfChat ? conversation.members[0] : undefined)
     : null;
-  const name = conversation.type === 'dm' ? otherMember?.name || conversation.name : conversation.name;
+  const name = conversation.type === 'dm'
+    ? (isSelfChat ? `${otherMember?.name || 'You'} (You)` : otherMember?.name || conversation.name)
+    : conversation.name;
   const initials = conversation.type === 'dm'
     ? otherMember?.initials || '??'
     : conversation.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();

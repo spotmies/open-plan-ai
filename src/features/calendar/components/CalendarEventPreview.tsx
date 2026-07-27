@@ -11,6 +11,7 @@ import { resolveFileUrl } from '@/utils/fileUrl';
 interface CalendarEventPreviewProps {
   event: CalendarEvent;
   children: React.ReactNode;
+  side?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 const typeLabels: Record<string, { label: string; icon: React.ReactNode; className: string }> = {
@@ -49,6 +50,7 @@ const priorityLabels: Record<string, { label: string; className: string }> = {
 export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
   event,
   children,
+  side = 'right',
 }) => {
   const typeInfo = typeLabels[event.type];
   const statusInfo = event.status ? statusLabels[event.status] : null;
@@ -57,7 +59,7 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
   return (
     <HoverCard openDelay={300} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent className="w-80 p-4" side="right" align="start">
+      <HoverCardContent className="w-80 p-4" side={side} align="start" collisionPadding={12}>
         <div className="space-y-3">
           {/* Type badge */}
           <div className="flex items-center gap-2">

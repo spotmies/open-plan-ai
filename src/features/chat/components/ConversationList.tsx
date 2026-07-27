@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import type { Conversation } from '../types';
 import { logger } from '@/services/monitoring/logger';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -30,6 +31,8 @@ interface ConversationListProps {
 export function ConversationList({ conversations, loading, onSelect, onConversationCreated, onlineUserIds }: ConversationListProps) {
   const isMobile = useIsMobile();
   const { currentOrganization } = useOrganization();
+  const { user } = useAuth();
+  const currentUserId = user?.id;
   const {
     activeConversationId, conversationFilter, setConversationFilter, searchQuery, setSearchQuery, unreadCounts,
     isNewDMDialogOpen: dmDialogOpen, setNewDMDialogOpen: setDmDialogOpen,
@@ -38,13 +41,17 @@ export function ConversationList({ conversations, loading, onSelect, onConversat
   const { data: reachableUsers = [] } = useReachableUsers();
   const [isCreatingDM, setIsCreatingDM] = useState(false);
 
+  const isSelfConversation = (c: Conversation) =>
+    c.type === 'dm' && c.members.length > 0 && c.members.every((m) => m.id === currentUserId);
+
   const filtered = useMemo(() => {
     // A DM only counts as "started" once a message has actually been sent —
     // hide empty ones (created just by clicking a search result) from the
     // sidebar list. The currently open conversation stays visible even while
     // empty so the user isn't kicked out of the thread they're about to type in.
+    // The self-chat ("Message yourself") is always shown, like Teams' own Notes.
     let list: Conversation[] = conversations.filter(
-      (c) => c.type !== 'dm' || !!c.lastMessage || c.id === activeConversationId
+      (c) => c.type !== 'dm' || !!c.lastMessage || c.id === activeConversationId || isSelfConversation(c)
     );
     if (conversationFilter === 'dms') list = list.filter((c) => c.type === 'dm');
     if (conversationFilter === 'groups') list = list.filter((c) => c.type === 'group');
@@ -55,18 +62,37 @@ export function ConversationList({ conversations, loading, onSelect, onConversat
         c.members.some(m => (m.name ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q))
       );
     }
-    return list.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
-  }, [conversations, conversationFilter, searchQuery, activeConversationId]);
+    return list.sort((a, b) => {
+      if (isSelfConversation(a) !== isSelfConversation(b)) return isSelfConversation(a) ? -1 : 1;
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+  }, [conversations, conversationFilter, searchQuery, activeConversationId, currentUserId]);
+
+  const hasSelfConversation = conversations.some(isSelfConversation);
 
   const filteredPeople = useMemo(() => {
     if (!searchQuery.trim() || conversationFilter === 'groups') return [];
     const q = searchQuery.toLowerCase();
     // Only show people who don't already have a DM in the list (or filter them visually later)
-    return reachableUsers.filter(u =>
+    const people = reachableUsers.filter(u =>
       ((u.name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)) &&
       !conversations.some(c => c.type === 'dm' && c.members.some(m => m.id === u.id))
     );
-  }, [searchQuery, reachableUsers, conversations, conversationFilter]);
+    // The reachable-users search deliberately excludes the requester, so
+    // "message yourself" has to be synthesized here too, mirroring NewDMDialog.
+    if (user && !hasSelfConversation && `${user.name} (You)`.toLowerCase().includes(q)) {
+      people.unshift({
+        id: user.id,
+        name: `${user.name} (You)`,
+        email: user.email,
+        avatarUrl: user.avatarUrl ?? undefined,
+        initials: user.initials || user.name.charAt(0).toUpperCase(),
+        role: 'Message yourself',
+        isOnline: true,
+      });
+    }
+    return people;
+  }, [searchQuery, reachableUsers, conversations, conversationFilter, user, hasSelfConversation]);
 
   const handleSelectPerson = async (userId: string) => {
     try {

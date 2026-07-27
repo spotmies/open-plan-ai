@@ -722,63 +722,70 @@ export function IssueDetailContent({
                                 </button>
                             </PopoverTrigger>
                             <PopoverContent className="p-0 w-[260px]" align="start">
-                                {(editedIssue.assignees || []).length > 0 && (
-                                    <div className="p-2 border-b">
-                                        <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
-                                        {(editedIssue.assignees || []).map((assignee) => (
-                                            <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
-                                                <Avatar className="h-6 w-6 shrink-0">
-                                                    <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
-                                                    <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
-                                                </Avatar>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm truncate">{assignee.name}</p>
-                                                    {assignee.assignedBy && (
-                                                        <p className="text-[10px] text-muted-foreground truncate">Assigned by {assignee.assignedBy.name}</p>
-                                                    )}
-                                                </div>
-                                                <button
-                                                    disabled={!canEditIssueFields}
-                                                    title={canEditIssueFields ? undefined : editLockTitle}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleFieldChange('assignees', (editedIssue.assignees || []).filter(a => a.id !== assignee.id));
-                                                    }}
-                                                    className={cn(
-                                                        'text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100',
-                                                        !canEditIssueFields && 'cursor-not-allowed group-hover:opacity-60'
-                                                    )}
-                                                >
-                                                    <X className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
                                 <Command>
                                     <CommandInput placeholder="Search members..." />
-                                    <CommandList>
-                                        <CommandEmpty>No results found.</CommandEmpty>
-                                        <CommandGroup heading="Add members">
-                                            {teamMembers
-                                                .filter(m => !editedIssue.assignees?.some(a => a.id === m.id))
-                                                .map((member) => (
-                                                    <CommandItem
-                                                        key={member.id}
-                                                        value={member.name}
-                                                        onSelect={() => {
-                                                            handleFieldChange('assignees', [...(editedIssue.assignees || []), member]);
+                                    
+                                    {(editedIssue.assignees || []).length > 0 && (
+                                        <div className="p-2 border-b">
+                                            <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
+                                            {(editedIssue.assignees || []).map((assignee) => (
+                                                <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
+                                                    <Avatar className="h-6 w-6 shrink-0">
+                                                        <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                                        <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm truncate">{assignee.name}</p>
+                                                        {assignee.assignedBy && (
+                                                            <p className="text-[10px] text-muted-foreground truncate">Assigned by {assignee.assignedBy.name}</p>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        disabled={!canEditIssueFields}
+                                                        title={canEditIssueFields ? undefined : editLockTitle}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleFieldChange('assignees', (editedIssue.assignees || []).filter(a => a.id !== assignee.id));
                                                         }}
-                                                        className="cursor-pointer"
+                                                        className={cn(
+                                                            'text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100',
+                                                            !canEditIssueFields && 'cursor-not-allowed group-hover:opacity-60'
+                                                        )}
                                                     >
-                                                        <Avatar className="h-5 w-5 mr-2">
-                                                            <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
-                                                            <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
-                                                        </Avatar>
-                                                        {member.name}
-                                                    </CommandItem>
-                                                ))}
-                                        </CommandGroup>
+                                                        <X className="h-3 w-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <CommandList>
+                                        <CommandEmpty>
+                                            {teamMembers.filter(m => !editedIssue.assignees?.some(a => a.id === m.id)).length === 0
+                                                ? "All members assigned"
+                                                : "No results found."}
+                                        </CommandEmpty>
+                                        {teamMembers.filter(m => !editedIssue.assignees?.some(a => a.id === m.id)).length > 0 && (
+                                            <CommandGroup heading="Add members">
+                                                {teamMembers
+                                                    .filter(m => !editedIssue.assignees?.some(a => a.id === m.id))
+                                                    .map((member) => (
+                                                        <CommandItem
+                                                            key={member.id}
+                                                            value={member.name}
+                                                            onSelect={() => {
+                                                                handleFieldChange('assignees', [...(editedIssue.assignees || []), member]);
+                                                            }}
+                                                            className="cursor-pointer"
+                                                        >
+                                                            <Avatar className="h-5 w-5 mr-2">
+                                                                <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                                                <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                                            </Avatar>
+                                                            {member.name}
+                                                        </CommandItem>
+                                                    ))}
+                                            </CommandGroup>
+                                        )}
                                     </CommandList>
                                 </Command>
                             </PopoverContent>

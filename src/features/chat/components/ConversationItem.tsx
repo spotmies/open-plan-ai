@@ -19,12 +19,15 @@ interface ConversationItemProps {
 export function ConversationItem({ conversation, isActive, unreadCount, onClick, onlineUserIds }: ConversationItemProps) {
   const { user } = useAuth();
   const currentUserId = user?.id;
+  const isSelfChat = conversation.type === 'dm' && conversation.members.every((m) => m.id === currentUserId);
   const otherMember = conversation.type === 'dm'
-    ? conversation.members.find((m) => m.id !== currentUserId)
+    ? conversation.members.find((m) => m.id !== currentUserId) ?? (isSelfChat ? conversation.members[0] : undefined)
     : null;
   const isOtherOnline = otherMember ? onlineUserIds?.has(otherMember.id) ?? false : false;
 
-  const displayName = conversation.type === 'dm' ? otherMember?.name || conversation.name : conversation.name;
+  const displayName = conversation.type === 'dm'
+    ? (isSelfChat ? `${otherMember?.name || 'You'} (You)` : otherMember?.name || conversation.name)
+    : conversation.name;
   const initials = conversation.type === 'dm'
     ? otherMember?.initials || '??'
     : conversation.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();

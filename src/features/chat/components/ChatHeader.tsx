@@ -88,13 +88,16 @@ export function ChatHeader({
   const currentMember = conversation.members.find((m) => m.id === currentUserId);
   const isOwner = currentMember?.role === 'owner';
 
+  const isSelfChat = conversation.type === 'dm' && conversation.members.every((m) => m.id === currentUserId);
   const otherMember = conversation.type === 'dm'
-    ? conversation.members.find((m) => m.id !== currentUserId)
+    ? conversation.members.find((m) => m.id !== currentUserId) ?? (isSelfChat ? conversation.members[0] : undefined)
     : null;
 
   const isOtherOnline = otherMember ? onlineUserIds?.has(otherMember.id) ?? false : false;
 
-  const displayName = conversation.type === 'dm' ? otherMember?.name || conversation.name : conversation.name;
+  const displayName = conversation.type === 'dm'
+    ? (isSelfChat ? `${otherMember?.name || 'You'} (You)` : otherMember?.name || conversation.name)
+    : conversation.name;
   const isEmoji = (str: string) => {
     const emojiRegex = /(©|®|[ -㌀]|\ud83c[퀀-\udfff]|\ud83d[퀀-\udfff]|\ud83e[퀀-\udfff])/;
     return emojiRegex.test(str) && str.length <= 8;
@@ -382,11 +385,13 @@ export function ChatHeader({
             {typingText
               ? typingText
               : conversation.type === 'dm'
-                ? isOtherOnline
-                  ? 'Online'
-                  : otherMember?.lastSeenAt
-                    ? `Last seen ${formatDistanceToNowStrict(new Date(otherMember.lastSeenAt), { addSuffix: true })}`
-                    : 'Offline'
+                ? isSelfChat
+                  ? 'Message yourself'
+                  : isOtherOnline
+                    ? 'Online'
+                    : otherMember?.lastSeenAt
+                      ? `Last seen ${formatDistanceToNowStrict(new Date(otherMember.lastSeenAt), { addSuffix: true })}`
+                      : 'Offline'
                 : `${conversation.members.length} members`
             }
           </p>
@@ -449,7 +454,7 @@ export function ChatHeader({
         )}
 
         {/* Render voice/video call button triggers */}
-        {renderCallButtons()}
+        {!isSelfChat && renderCallButtons()}
       </div>
 
       {/* Schedule Dialog rendered here */}

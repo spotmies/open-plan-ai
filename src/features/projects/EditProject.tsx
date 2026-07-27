@@ -974,7 +974,7 @@ const EditProject = () => {
             // Invalidate queries to ensure project detail page reflects all changes
             await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(id) });
             await queryClient.invalidateQueries({ queryKey: queryKeys.modules.list(id) });
-            await queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(id) });
+            await queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
 
             toast.success('Project updated successfully!');
             navigate(`/projects/${id}`);

@@ -113,11 +113,29 @@ export function ModulesSection({
     return () => onMobileDetailOpenChange?.(false);
   }, [isMobile, selectedModule, onMobileDetailOpenChange]);
 
-  const handleInternalTaskClick = (task: Task) => setSelectedTask(task);
+  // Hide the module modal while a task/issue modal is open on top of it — otherwise
+  // both dialogs' overlays stack and compound into a near-opaque black background.
+  const handleInternalTaskClick = (task: Task) => {
+    setSelectedTask(task);
+    setIsDetailModalOpen(false);
+  };
   const effectiveOnTaskClick = onTaskClick ?? handleInternalTaskClick;
 
-  const handleInternalIssueClick = (issue: Issue) => setSelectedIssue(issue);
+  const handleInternalIssueClick = (issue: Issue) => {
+    setSelectedIssue(issue);
+    setIsDetailModalOpen(false);
+  };
   const effectiveOnIssueClick = onIssueClick ?? handleInternalIssueClick;
+
+  const handleCloseTaskModal = () => {
+    setSelectedTask(null);
+    if (selectedModule) setIsDetailModalOpen(true);
+  };
+
+  const handleCloseIssueModal = () => {
+    setSelectedIssue(null);
+    if (selectedModule) setIsDetailModalOpen(true);
+  };
 
   const viewMode = externalViewMode || 'kanban';
 
@@ -302,7 +320,7 @@ export function ModulesSection({
           task={selectedTask}
           allTasks={tasks}
           isOpen={selectedTask !== null}
-          onClose={() => setSelectedTask(null)}
+          onClose={handleCloseTaskModal}
           onUpdate={(updatedTask) => {
             onTaskUpdate?.(updatedTask);
             setSelectedTask(updatedTask);
@@ -318,7 +336,7 @@ export function ModulesSection({
           tasks={tasks}
           teamMembers={teamMembers}
           isOpen={selectedIssue !== null}
-          onClose={() => setSelectedIssue(null)}
+          onClose={handleCloseIssueModal}
           onUpdate={(updatedIssue) => {
             onIssueUpdate?.(updatedIssue);
             setSelectedIssue(updatedIssue);

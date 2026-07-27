@@ -72,11 +72,16 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
         )}
       >
         <AlertCircle className={cn('h-3 w-3 flex-shrink-0', severityColors[event.severity || 'major'])} />
-        <span className="text-xs font-medium text-destructive truncate">
+        <span className="text-xs font-medium text-destructive truncate flex-1 min-w-0">
           {event.title}
         </span>
+        {!isCompact && event.projectName && (
+          <Badge variant="outline" className="text-[10px] h-4 ml-auto shrink-0 max-w-[120px] truncate bg-muted/50 text-muted-foreground border-border">
+            {event.projectName}
+          </Badge>
+        )}
         {!isCompact && event.severity && (
-          <Badge variant="outline" className="text-[10px] h-4 ml-auto bg-destructive/10 text-destructive border-destructive/20">
+          <Badge variant="outline" className="text-[10px] h-4 shrink-0 bg-destructive/10 text-destructive border-destructive/20">
             {event.severity}
           </Badge>
         )}
@@ -100,14 +105,20 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
         <AlertTriangle className="h-3 w-3 text-destructive flex-shrink-0" />
       )}
       
-      <span className="text-xs font-medium text-foreground truncate flex-1">
+      <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0">
         {event.title}
       </span>
 
+      {!isCompact && event.projectName && (
+        <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0 max-w-[120px] truncate bg-muted/50 text-muted-foreground border-border">
+          {event.projectName}
+        </Badge>
+      )}
+
       {!isCompact && (event.priority === 'critical' || event.priority === 'major') && (
-        <Badge 
-          variant="outline" 
-          className={cn('text-[10px] h-4 px-1', priorityBadgeVariants[event.priority])}
+        <Badge
+          variant="outline"
+          className={cn('text-[10px] h-4 px-1 shrink-0', priorityBadgeVariants[event.priority])}
         >
           {event.priority}
         </Badge>

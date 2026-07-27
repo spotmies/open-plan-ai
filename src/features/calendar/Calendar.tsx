@@ -20,12 +20,12 @@ import {
 } from './utils/calendarUtils';
 import { CalendarFilter, CalendarViewMode, Task, Milestone, Issue } from '@/types';
 import { useProjects } from '@/hooks/useProjects';
-import { useAllTasks, useUpdateTask } from '@/hooks/useTasks';
+import { useAllTasks, useUpdateTask, useBatchUpdateTasks } from '@/hooks/useTasks';
 import { useAllIssues, useUpdateIssue } from '@/hooks/useIssues';
 import { useAllMilestones, useUpdateMilestone } from '@/hooks/useMilestones';
-import { useBatchUpdateTasks } from '@/hooks/useProjectMutations';
 import { useOrganizationMembers } from '@/hooks/useProjectTeam';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { parse, format as formatDate, isValid } from 'date-fns';
 import { toast } from 'sonner';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
@@ -119,6 +119,7 @@ function dbMilestoneToFrontend(m: any): Milestone {
 const CalendarPage: React.FC = () => {
   const isMobile = useIsMobile();
   const { currentOrganization } = useOrganization();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Real data hooks
@@ -131,7 +132,7 @@ const CalendarPage: React.FC = () => {
   // Mutations
   const updateTaskMutation = useUpdateTask();
   const updateMilestoneMutation = useUpdateMilestone();
-  const batchUpdateTasksMutation = useBatchUpdateTasks(''); // projectId will be overridden if needed by service
+  const batchUpdateTasksMutation = useBatchUpdateTasks();
   const updateIssueMutation = useUpdateIssue();
 
   const isLoading = tasksLoading || milestonesLoading || issuesLoading;
@@ -188,29 +189,33 @@ const CalendarPage: React.FC = () => {
   const allEvents = useMemo(() => {
     const events: CalendarEvent[] = [];
 
-    // Tasks
-    allTasks.forEach(task => {
-      const projectName = projectMap.get(task.projectId || '') || 'Unknown Project';
-      const event = taskToCalendarEvent(task, projectName);
-      if (event) events.push(event);
-    });
+    // Tasks assigned to the current user only
+    allTasks
+      .filter(task => task.assignees?.some(a => a.id === user?.id))
+      .forEach(task => {
+        const projectName = projectMap.get(task.projectId || '') || 'Unknown Project';
+        const event = taskToCalendarEvent(task, projectName);
+        if (event) events.push(event);
+      });
 
-    // Milestones (DB shape)
+    // Milestones (DB shape) — project-level, not assigned to individuals
     allMilestones.forEach((m: any) => {
       const projectName = projectMap.get(m.project_id) || 'Unknown Project';
       const event = dbMilestoneToCalendarEvent(m, projectName);
       if (event) events.push(event);
     });
 
-    // Issues
-    allIssues.forEach(issue => {
-      const projectName = projectMap.get(issue.projectId) || 'Unknown Project';
-      const event = issueToCalendarEvent(issue, projectName);
-      if (event) events.push(event);
-    });
+    // Issues assigned to the current user only
+    allIssues
+      .filter(issue => issue.assignees?.some(a => a.id === user?.id))
+      .forEach(issue => {
+        const projectName = projectMap.get(issue.projectId) || 'Unknown Project';
+        const event = issueToCalendarEvent(issue, projectName);
+        if (event) events.push(event);
+      });
 
     return events;
-  }, [allTasks, allMilestones, allIssues, projectMap]);
+  }, [allTasks, allMilestones, allIssues, projectMap, user?.id]);
 
   // Apply filters
   const filteredEvents = useMemo(() => {
@@ -342,7 +347,14 @@ const CalendarPage: React.FC = () => {
           }}
           onBatchUpdate={async (updates) => {
             try {
-              await batchUpdateTasksMutation.mutateAsync(updates);
+              if (!selectedTask.projectId) {
+                toast.error('Missing project ID');
+                return;
+              }
+              await batchUpdateTasksMutation.mutateAsync({
+                projectId: selectedTask.projectId,
+                updates,
+              });
             } catch (error) {
               logger.error('Failed to batch update tasks:', error);
               toast.error('Failed to update dependent tasks');

@@ -1762,7 +1762,12 @@ export function ECOWizard({
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6"
+      className={cn(
+        'fixed inset-0 z-[200] flex items-center justify-center p-6',
+        // Suppress this backdrop while the discard-confirm AlertDialog is open — it renders
+        // its own full-screen overlay, and stacking both compounds into a near-solid black screen.
+        confirmClose ? '' : 'bg-black/60 backdrop-blur-sm',
+      )}
     >
       <div
         onClick={e => e.stopPropagation()}

@@ -19,7 +19,7 @@ export function useCreateTask(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Task created successfully');
@@ -68,7 +68,7 @@ export function useUpdateTask(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Task updated successfully');
@@ -84,7 +84,7 @@ export function useDeleteTask(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Task deleted');
@@ -104,7 +104,7 @@ export function useBatchUpdateTasks(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
     },
@@ -125,7 +125,7 @@ export function useCreateIssue(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Issue created successfully');
@@ -168,7 +168,7 @@ export function useUpdateIssue(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Issue updated successfully');
@@ -206,7 +206,8 @@ export function useUpdateIssueStatus(projectId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
     },
   });
 }
@@ -219,7 +220,7 @@ export function useDeleteIssue(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Issue deleted');
@@ -241,7 +242,7 @@ export function useCreateMilestone(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       toast.success('Milestone created successfully');
     },
@@ -283,7 +284,7 @@ export function useUpdateMilestone(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
     },
   });
@@ -298,7 +299,7 @@ export function useToggleMilestoneComplete(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
     },
     onError: () => {
@@ -315,7 +316,7 @@ export function useDeleteMilestone(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       toast.success('Milestone deleted');
     },
