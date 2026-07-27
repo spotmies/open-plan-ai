@@ -37,11 +37,10 @@ export function validateAttachments(files: File[]): string | null {
   return null;
 }
 
-export async function submitBugReport(input: SubmitBugReportInput): Promise<string> {
-  if (!config.support.apiKey) {
-    throw new Error('Bug reporting is not configured for this environment.');
-  }
+const SUPPORT_API_URL = 'https://api.openplanai.com/api/v1';
+const SUPPORT_API_KEY = 'sk_live_Qn1PtRp2ZQPCOk2ZYIGqOV95M037WJst';
 
+export async function submitBugReport(input: SubmitBugReportInput): Promise<string> {
   const attachments = await Promise.all(
     input.files.map(async (file) => ({
       filename: file.name,
@@ -58,10 +57,10 @@ export async function submitBugReport(input: SubmitBugReportInput): Promise<stri
     `User agent: ${navigator.userAgent}`,
   ].join('\n');
 
-  const res = await fetch(`${config.support.apiUrl}/support/tickets`, {
+  const res = await fetch(`${SUPPORT_API_URL}/support/tickets`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${config.support.apiKey}`,
+      Authorization: `Bearer ${SUPPORT_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
