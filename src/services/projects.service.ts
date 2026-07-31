@@ -56,7 +56,7 @@ function mapPerson(raw: any): TeamMember {
   };
 }
 
-function fromApiIssue(raw: Record<string, unknown>): Issue {
+export function fromApiIssue(raw: Record<string, unknown>): Issue {
   const assignees = ((raw.assignees as any[]) || []).map((a: any): TeamMember => ({
     id: a.id,
     name: a.name ?? '',

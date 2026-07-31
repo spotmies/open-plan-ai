@@ -304,10 +304,10 @@ export default function Reports() {
         <ReportTrendChart data={trendData} />
 
         {/* Full Width: Open Issues Table */}
-        <ReportOpenIssuesTable
+        {/* <ReportOpenIssuesTable
           issues={issues}
           onIssueClick={handleIssueClick}
-        />
+        /> */}
 
         {/* Bill of Materials — project-scoped only */}
         {filter.projectId ? (

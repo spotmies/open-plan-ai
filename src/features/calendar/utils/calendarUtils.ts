@@ -17,7 +17,7 @@ import {
   parse,
   isValid,
 } from 'date-fns';
-import { Task, Milestone, Issue, CalendarFilter, CalendarViewMode, TaskStatus, Priority } from '@/types';
+import { Task, Milestone, Issue, CalendarFilter, CalendarViewMode, Priority } from '@/types';
 
 export interface CalendarDay {
   date: Date;
@@ -46,6 +46,7 @@ export interface CalendarEvent {
   // Common
   description?: string;
   tags?: string[];
+  createdBy?: { id: string; name: string };
 }
 
 /**
@@ -249,22 +250,6 @@ export function filterCalendarEvents(
       return false;
     }
 
-    // Assignee filter (only applies to tasks)
-    if (filters.assigneeIds?.length) {
-      if (event.type !== 'task') return false;
-      const hasMatchingAssignee = event.assignees?.some((a) =>
-        filters.assigneeIds!.includes(a.id)
-      );
-      if (!hasMatchingAssignee) return false;
-    }
-
-    // Status filter (only applies to tasks)
-    if (filters.status?.length && event.type === 'task') {
-      if (!event.status || !filters.status.includes(event.status as TaskStatus)) {
-        return false;
-      }
-    }
-
     // Priority filter (applies to tasks and issues)
     if (filters.priority?.length) {
       if (event.type === 'task' || event.type === 'issue') {
@@ -288,9 +273,9 @@ export function filterCalendarEvents(
       }
     }
 
-    // Tags filter
-    if (filters.tags?.length) {
-      if (!event.tags?.some((tag) => filters.tags!.includes(tag))) {
+    // Assigned By filter (task/issue creator — milestones don't carry creator data)
+    if (filters.assignedBy?.length) {
+      if (!event.createdBy || !filters.assignedBy.includes(event.createdBy.id)) {
         return false;
       }
     }

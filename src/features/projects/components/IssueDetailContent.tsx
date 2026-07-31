@@ -961,6 +961,7 @@ export function IssueDetailContent({
                                 isMobileLayout ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
                             )}>
                                 <Avatar className="h-5 w-5 shrink-0">
+                                    <AvatarImage src={resolveFileUrl(editedIssue.reportedBy.avatar) ?? editedIssue.reportedBy.avatar} alt={editedIssue.reportedBy.name} />
                                     <AvatarFallback className="text-[9px]">
                                         {editedIssue.reportedBy.initials}
                                     </AvatarFallback>

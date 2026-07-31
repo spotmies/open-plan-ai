@@ -1,5 +1,6 @@
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
+import { fromApiIssue } from '@/services/projects.service';
 import { Issue } from '@/types';
 
 export const issuesService = {
@@ -14,7 +15,8 @@ export const issuesService = {
    * Get issues for a specific project
    */
   async getByProject(projectId: string): Promise<Issue[]> {
-    return apiClient.get<Issue[]>(ENDPOINTS.ISSUES.LIST(projectId));
+    const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ISSUES.LIST(projectId));
+    return (data || []).map(fromApiIssue);
   },
 
   /**
@@ -22,7 +24,8 @@ export const issuesService = {
    */
   async getById(issueId: string): Promise<Issue | null> {
     try {
-      return await apiClient.get<Issue>(ENDPOINTS.ISSUES.BY_ID(issueId));
+      const data = await apiClient.get<Record<string, unknown>>(ENDPOINTS.ISSUES.BY_ID(issueId));
+      return data ? fromApiIssue(data) : null;
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) return null;

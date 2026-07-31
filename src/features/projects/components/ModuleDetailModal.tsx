@@ -32,7 +32,6 @@ import {
   Edit2,
   Trash2,
   ExternalLink,
-  Save,
   X,
   Link,
   Plus,
@@ -149,25 +148,34 @@ export function ModuleDetailModal({
     setIsEditing(true);
   };
 
-  const handleSave = async () => {
-    if (!editedModule || !onUpdate) {
-      setIsEditing(false);
-      return;
-    }
-
+  // Persists a field change immediately so there's no separate "Update Module" step.
+  const commitFieldUpdate = async (updated: Module) => {
+    if (!onUpdate) return;
     setIsSaving(true);
     try {
-      const didSave = await onUpdate(editedModule);
-      if (didSave === false) return;
-      setIsLinkingTasks(false);
-      setIsLinkingIssues(false);
-      setIsEditing(false);
+      await onUpdate(updated);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleCancel = () => {
+  const handleFieldChange = (patch: Partial<Module>) => {
+    if (!editedModule) return;
+    setEditedModule({ ...editedModule, ...patch });
+  };
+
+  const handleFieldBlur = () => {
+    if (editedModule) commitFieldUpdate(editedModule);
+  };
+
+  const handleSelectFieldChange = (patch: Partial<Module>) => {
+    if (!editedModule) return;
+    const updated = { ...editedModule, ...patch };
+    setEditedModule(updated);
+    commitFieldUpdate(updated);
+  };
+
+  const handleDone = () => {
     setEditedModule(null);
     setIsLinkingTasks(false);
     setIsLinkingIssues(false);
@@ -183,28 +191,24 @@ export function ModuleDetailModal({
   };
 
   const handleLinkTask = (taskId: string) => {
-    if (!isEditing) return;
     if (onLinkTask) {
       onLinkTask(taskId, module.id);
     }
   };
 
   const handleUnlinkTask = (taskId: string) => {
-    if (!isEditing) return;
     if (onUnlinkTask) {
       onUnlinkTask(taskId, module.id);
     }
   };
 
   const handleLinkIssue = (issueId: string) => {
-    if (!isEditing) return;
     if (onLinkIssue) {
       onLinkIssue(issueId, module.id);
     }
   };
 
   const handleUnlinkIssue = (issueId: string) => {
-    if (!isEditing) return;
     if (onUnlinkIssue) {
       onUnlinkIssue(issueId, module.id);
     }
@@ -245,7 +249,8 @@ export function ModuleDetailModal({
               {isEditing && editedModule ? (
                 <Input
                   value={editedModule.name}
-                  onChange={(e) => setEditedModule({ ...editedModule, name: e.target.value })}
+                  onChange={(e) => handleFieldChange({ name: e.target.value })}
+                  onBlur={handleFieldBlur}
                   className="text-lg font-semibold h-8 min-w-0"
                 />
               ) : (
@@ -254,15 +259,9 @@ export function ModuleDetailModal({
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {isEditing ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={handleCancel} disabled={isSaving}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={handleSave} disabled={isSaving}>
-                    <Save className="h-4 w-4 mr-1" />
-                    {isSaving ? 'Updating...' : 'Update Module'}
-                  </Button>
-                </>
+                <Button variant="outline" size="sm" onClick={handleDone} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Done'}
+                </Button>
               ) : (
                 <>
                   <Button variant="outline" size="sm" onClick={handleEdit}>
@@ -304,7 +303,8 @@ export function ModuleDetailModal({
                     {isEditing && editedModule ? (
                       <Textarea
                         value={editedModule.description || ''}
-                        onChange={(e) => setEditedModule({ ...editedModule, description: e.target.value })}
+                        onChange={(e) => handleFieldChange({ description: e.target.value })}
+                        onBlur={handleFieldBlur}
                         className="mt-1"
                         rows={3}
                       />
@@ -320,7 +320,7 @@ export function ModuleDetailModal({
                     {isEditing && editedModule ? (
                       <Select
                         value={editedModule.type}
-                        onValueChange={(value) => setEditedModule({ ...editedModule, type: value as ModuleType })}
+                        onValueChange={(value) => handleSelectFieldChange({ type: value as ModuleType })}
                       >
                         <SelectTrigger className="mt-1">
                           <SelectValue />
@@ -349,7 +349,7 @@ export function ModuleDetailModal({
                         value={editedModule.owner?.id || ''}
                         onValueChange={(value) => {
                           const owner = teamMembers.find(m => m.id === value);
-                          setEditedModule({ ...editedModule, owner });
+                          handleSelectFieldChange({ owner });
                         }}
                       >
                         <SelectTrigger className="mt-1">
@@ -462,7 +462,6 @@ export function ModuleDetailModal({
                         size="sm"
                         onClick={() => setIsLinkingTasks(!isLinkingTasks)}
                         className="h-7"
-                        disabled={!isEditing}
                       >
                         <Link className="h-3.5 w-3.5 mr-1" />
                         {isLinkingTasks ? 'Done' : 'Link'}
@@ -471,7 +470,7 @@ export function ModuleDetailModal({
                   </div>
                 </div>
 
-                {isEditing && isLinkingTasks && availableTasks.length > 0 && (
+                {isLinkingTasks && availableTasks.length > 0 && (
                   <div className="p-3 border rounded-lg bg-muted/30 space-y-2">
                     <Label className="text-xs font-medium">Link Tasks to Module</Label>
                     <Select onValueChange={handleLinkTask}>
@@ -519,7 +518,7 @@ export function ModuleDetailModal({
                               </AvatarFallback>
                             </Avatar>
                           )}
-                          {isEditing && onUnlinkTask && (
+                          {onUnlinkTask && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -563,7 +562,6 @@ export function ModuleDetailModal({
                         size="sm"
                         onClick={() => setIsLinkingIssues(!isLinkingIssues)}
                         className="h-7"
-                        disabled={!isEditing}
                       >
                         <Link className="h-3.5 w-3.5 mr-1" />
                         {isLinkingIssues ? 'Done' : 'Link'}
@@ -572,7 +570,7 @@ export function ModuleDetailModal({
                   </div>
                 </div>
 
-                {isEditing && isLinkingIssues && availableIssues.length > 0 && (
+                {isLinkingIssues && availableIssues.length > 0 && (
                   <div className="p-3 border rounded-lg bg-muted/30 space-y-2">
                     <Label className="text-xs font-medium">Link Issues to Module</Label>
                     <Select onValueChange={handleLinkIssue}>
@@ -612,7 +610,7 @@ export function ModuleDetailModal({
                           <span className="text-sm truncate">{issue.title}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {isEditing && onUnlinkIssue && (
+                          {onUnlinkIssue && (
                             <Button
                               variant="ghost"
                               size="sm"

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { issuesService } from '@/services/issues.service';
+import { fromApiIssue } from '@/services/projects.service';
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
 import { useProjectStore } from '@/stores/useProjectStore';
@@ -19,9 +20,10 @@ export function useAllIssues() {
 
   return useQuery({
     queryKey: [...queryKeys.issues.all, 'org-all', orgId],
-    queryFn: (): Promise<Issue[]> => {
-      if (!orgId) return Promise.resolve([]);
-      return apiClient.get<Issue[]>(ENDPOINTS.ORGANIZATIONS.ALL_ISSUES(orgId));
+    queryFn: async (): Promise<Issue[]> => {
+      if (!orgId) return [];
+      const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ORGANIZATIONS.ALL_ISSUES(orgId));
+      return (data || []).map(fromApiIssue);
     },
     enabled: !!orgId,
   });
@@ -37,9 +39,10 @@ export function useOrgAllIssues() {
 
   return useQuery({
     queryKey: [...queryKeys.issues.all, 'org', orgId],
-    queryFn: (): Promise<Issue[]> => {
-      if (!orgId) return Promise.resolve([]);
-      return apiClient.get<Issue[]>(ENDPOINTS.ORGANIZATIONS.ALL_ISSUES(orgId));
+    queryFn: async (): Promise<Issue[]> => {
+      if (!orgId) return [];
+      const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ORGANIZATIONS.ALL_ISSUES(orgId));
+      return (data || []).map(fromApiIssue);
     },
     enabled: !!orgId,
   });

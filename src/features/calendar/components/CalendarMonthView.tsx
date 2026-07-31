@@ -50,7 +50,7 @@ export const CalendarMonthView: React.FC<CalendarMonthViewProps> = ({
                 'flex flex-col overflow-hidden',
                 'hover:bg-accent/30',
                 !day.isCurrentMonth && 'bg-muted/30',
-                day.isToday && 'bg-primary/5'
+                day.isToday && day.isCurrentMonth && 'bg-primary/5'
               )}
               onClick={() => onDayClick(day.date)}
             >
@@ -60,7 +60,9 @@ export const CalendarMonthView: React.FC<CalendarMonthViewProps> = ({
                   className={cn(
                     'text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full transition-all',
                     !day.isCurrentMonth && 'text-muted-foreground/60',
-                    day.isToday ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-accent'
+                    day.isToday && day.isCurrentMonth
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'hover:bg-accent'
                   )}
                 >
                   {format(day.date, 'd')}

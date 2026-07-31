@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalendarViewMode } from '@/types';
@@ -24,7 +25,10 @@ export const CalendarHeader: React.FC<CalendarHeaderProps> = ({
   onNavigateToday,
   actions,
 }) => {
-  const dateLabel = formatDateRangeLabel(currentDate, viewMode);
+  const dateLabel =
+    viewMode === 'month' ? format(currentDate, 'yyyy') : formatDateRangeLabel(currentDate, viewMode);
+  const todayButtonLabel =
+    viewMode === 'month' ? format(currentDate, 'MMMM') : viewMode === 'week' ? 'This Week' : 'Today';
 
   return (
     <div className="flex items-center justify-between gap-4">
@@ -37,7 +41,7 @@ export const CalendarHeader: React.FC<CalendarHeaderProps> = ({
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="sm" onClick={onNavigateToday} className="h-8">
-            Today
+            {todayButtonLabel}
           </Button>
           <Button variant="outline" size="icon" onClick={onNavigateNext} className="h-8 w-8">
             <ChevronRight className="h-4 w-4" />

@@ -165,7 +165,7 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
               </p>
               {fileError && <p className="text-xs text-destructive">{fileError}</p>}
               {files.length > 0 && (
-                <ul className="space-y-1">
+                <ul className="space-y-1 max-h-32 overflow-y-auto pr-1">
                   {files.map((file, index) => (
                     <li
                       key={`${file.name}-${index}`}

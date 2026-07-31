@@ -1151,7 +1151,7 @@ export default function ProjectDetail() {
         {/* Section Tabs - Entity-based navigation */}
         <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
           {!partId && !ecoId && !isMobileModuleDetailOpen && (
-            <div className="flex flex-row md:items-center justify-between gap-2 w-full">
+            <div className="flex flex-row md:items-center justify-between gap-2 w-full sticky top-0 z-20 bg-background pb-1">
               {/* Left Side: Tabs */}
               <div className="flex-1 md:flex-none w-full md:w-auto py-1 min-w-0 md:mr-auto overflow-x-auto hide-scrollbar">
                 <TabsList className="bg-muted/50 grid grid-cols-6 min-w-[300px] md:min-w-0 w-full h-11 md:w-auto md:flex md:shrink-0">

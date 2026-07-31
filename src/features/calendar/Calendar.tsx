@@ -76,6 +76,7 @@ function taskToCalendarEvent(task: Task, projectName: string): CalendarEvent | n
     startDate: task.startDate ? parse(task.startDate, 'yyyy-MM-dd', new Date()) : undefined,
     description: task.description,
     tags: task.tags,
+    createdBy: task.createdBy ? { id: task.createdBy.id, name: task.createdBy.name } : undefined,
   };
 }
 
@@ -99,6 +100,7 @@ function issueToCalendarEvent(issue: Issue, projectName: string): CalendarEvent 
     issueStatus: issue.status,
     description: issue.description,
     tags: issue.tags,
+    createdBy: issue.reportedBy ? { id: issue.reportedBy.id, name: issue.reportedBy.name } : undefined,
   };
 }
 
@@ -118,8 +120,8 @@ function dbMilestoneToFrontend(m: any): Milestone {
 
 const CalendarPage: React.FC = () => {
   const isMobile = useIsMobile();
-  const { currentOrganization } = useOrganization();
   const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Real data hooks
@@ -229,15 +231,6 @@ const CalendarPage: React.FC = () => {
     }
     return getWeekDays(currentDate);
   }, [currentDate, viewMode]);
-
-  // Get all available tags for filter
-  const availableTags = useMemo(() => {
-    const tagSet = new Set<string>();
-    allEvents.forEach(event => {
-      event.tags?.forEach(tag => tagSet.add(tag));
-    });
-    return Array.from(tagSet).sort();
-  }, [allEvents]);
 
   // Navigation handlers – safely update query params (handles null/undefined)
   const updateUrlParams = (updates: Record<string, string | null | undefined>, replace = false) => {
@@ -463,7 +456,6 @@ const CalendarPage: React.FC = () => {
                 onFiltersChange={setFilters}
                 projects={projectsForFilter as any}
                 teamMembers={teamMembers}
-                availableTags={availableTags}
                 hideActiveFilters
               />
             }
@@ -476,7 +468,6 @@ const CalendarPage: React.FC = () => {
               onFiltersChange={setFilters}
               projects={projectsForFilter as any}
               teamMembers={teamMembers}
-              availableTags={availableTags}
               hideTrigger
             />
           </div>

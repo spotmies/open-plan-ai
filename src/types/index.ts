@@ -367,12 +367,10 @@ export interface ExtendedTeamMember extends TeamMember {
 // Calendar types
 export interface CalendarFilter {
   projectIds?: string[];
-  assigneeIds?: string[];
-  status?: TaskStatus[];
   priority?: Priority[];
   entityType?: ('task' | 'milestone' | 'issue')[];
   isBlocked?: boolean;
-  tags?: string[];
+  assignedBy?: string[];
 }
 
 export type CalendarViewMode = 'month' | 'week' | 'day';
