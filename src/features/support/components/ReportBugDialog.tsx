@@ -63,9 +63,9 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
     onClose();
   };
 
-  const handleFilesSelected = (selected: FileList | null) => {
-    if (!selected || selected.length === 0) return;
-    const nextFiles = [...files, ...Array.from(selected)];
+  const handleFilesSelected = (selected: File[]) => {
+    if (selected.length === 0) return;
+    const nextFiles = [...files, ...selected];
     const error = validateAttachments(nextFiles);
     if (error) {
       setFileError(error);
@@ -78,6 +78,22 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
   const removeFile = (index: number) => {
     setFileError(null);
     setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const pastedFiles: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) pastedFiles.push(file);
+      }
+    }
+    if (pastedFiles.length > 0) {
+      e.preventDefault();
+      handleFilesSelected(pastedFiles);
+    }
   };
 
   const handleSubmit = async (data: BugReportFormData) => {
@@ -108,7 +124,7 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
+          <form onSubmit={form.handleSubmit(handleSubmit)} onPaste={handlePaste} className="space-y-5">
             <FormField
               control={form.control}
               name="title"
@@ -155,13 +171,14 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
                   multiple
                   className="hidden"
                   onChange={(e) => {
-                    handleFilesSelected(e.target.files);
+                    handleFilesSelected(Array.from(e.target.files ?? []));
                     e.target.value = '';
                   }}
                 />
               </label>
               <p className="text-xs text-muted-foreground">
-                Up to {MAX_ATTACHMENTS} files, 10MB each, 25MB total.
+                Up to {MAX_ATTACHMENTS} files, 10MB each, 25MB total. You can also paste an image
+                (Ctrl/Cmd+V) anywhere in this form.
               </p>
               {fileError && <p className="text-xs text-destructive">{fileError}</p>}
               {files.length > 0 && (
