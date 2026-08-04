@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { ManageOrgAccessDialog } from './components/ManageOrgAccessDialog';
-import { useTeamMembers, useInviteTeamMember, useRemoveTeamMember, usePendingInvitations, useCancelInvitation, useUpdateTeamMemberDetails, type TeamMember, type TeamInvitation } from '@/hooks/useTeam';
+import { useTeamMembers, useTeamMembersPaginated, useInviteTeamMember, useRemoveTeamMember, usePendingInvitations, useCancelInvitation, useUpdateTeamMemberDetails, type TeamMember, type TeamInvitation } from '@/hooks/useTeam';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { chatService } from '@/services/chat.service';
@@ -153,27 +153,32 @@ const Team = () => {
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Debounce the search box so keystrokes don't fire a request each time —
+  // the actual filtering happens server-side via the `search` query param.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+
   const members = teamMembers || [];
   const invitations = pendingInvitations || [];
   const memberEmailSet = new Set(members.map((member) => normalizeEmail(member.email)).filter(Boolean));
   const visiblePendingInvitations = invitations.filter((inv) => !memberEmailSet.has(normalizeEmail(inv.email)));
 
-  const filteredMembers = members.filter(
-    (member) =>
-      member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      member.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const { data: membersPage, isLoading: isPageLoading } = useTeamMembersPaginated(
+    currentOrganization?.id,
+    { page: currentPage, limit: MEMBERS_PAGE_SIZE, search: debouncedSearch || undefined }
   );
 
-  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / MEMBERS_PAGE_SIZE));
+  const paginatedMembers = membersPage?.data ?? [];
+  const totalPages = Math.max(1, membersPage?.meta.totalPages ?? 1);
+  const totalFilteredCount = membersPage?.meta.total ?? 0;
   const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedMembers = filteredMembers.slice(
-    (safeCurrentPage - 1) * MEMBERS_PAGE_SIZE,
-    safeCurrentPage * MEMBERS_PAGE_SIZE
-  );
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
 
   const stats = {
     total: members.length,
@@ -320,7 +325,7 @@ const Team = () => {
 
   const getAvatarColor = (member: TeamMember) => getFallbackTagColor(member.userId || member.email || member.name);
 
-  if (isOrgLoading || (currentOrganization?.id && isTeamLoading)) {
+  if (isOrgLoading || (currentOrganization?.id && (isTeamLoading || (isPageLoading && !membersPage)))) {
     return <AppLayoutSkeleton variant="team" />;
   }
 
@@ -578,10 +583,10 @@ const Team = () => {
                 );
               })}
             </div>
-            {filteredMembers.length > 0 && totalPages > 1 && (
+            {totalFilteredCount > 0 && totalPages > 1 && (
               <div className="flex flex-col items-center gap-2 pt-2">
                 <p className="text-xs text-muted-foreground">
-                  Page {safeCurrentPage} of {totalPages} ({filteredMembers.length} members)
+                  Page {safeCurrentPage} of {totalPages} ({totalFilteredCount} members)
                 </p>
                 <Pagination className="mx-0 w-auto">
                   <PaginationContent>
@@ -712,10 +717,10 @@ const Team = () => {
               ))}
             </TableBody>
           </Table>
-          {filteredMembers.length > 0 && totalPages > 1 && (
+          {totalFilteredCount > 0 && totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-border">
               <p className="text-sm text-muted-foreground">
-                Page {safeCurrentPage} of {totalPages} ({filteredMembers.length} members)
+                Page {safeCurrentPage} of {totalPages} ({totalFilteredCount} members)
               </p>
               <Pagination className="mx-0 w-auto">
                 <PaginationContent>
@@ -746,7 +751,7 @@ const Team = () => {
         </div>
         )}
 
-        {filteredMembers.length === 0 && (
+        {!isPageLoading && totalFilteredCount === 0 && (
           <div className="text-center py-12">
             <Users className="h-12 w-12 mx-auto text-muted-foreground/50" />
             <h3 className="mt-4 text-lg font-medium">No members found</h3>

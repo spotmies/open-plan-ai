@@ -10,6 +10,18 @@ export function useTeamMembers(orgId?: string) {
   });
 }
 
+export function useTeamMembersPaginated(
+  orgId: string | undefined,
+  params: { page: number; limit: number; search?: string },
+) {
+  return useQuery({
+    queryKey: [...queryKeys.team.members(), 'page', orgId, params] as const,
+    queryFn: () => teamService.getByOrganizationPaginated(orgId!, params),
+    enabled: !!orgId,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
 export function useOrganizationTeamMembers(orgId: string) {
   return useQuery({
     queryKey: [...queryKeys.team.all, 'org', orgId] as const,

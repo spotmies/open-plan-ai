@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ListTodo, Boxes, Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Layers, Upload, Download, GitMerge, ChartGantt, ShieldAlert, ListChecks } from 'lucide-react';
+import { ListTodo, Boxes, Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Layers, Upload, Download, GitMerge, ChartGantt, ShieldAlert, ListChecks, Tag } from 'lucide-react';
 import { BOMView } from './components/BOMView';
 import RequirementsView from './components/RequirementsView';
 import { ECOView } from './components/ECOView';
@@ -97,6 +97,7 @@ interface IssueFilter {
   assignedById?: string[];
   dueDate?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
   reportedDate?: 'today' | 'this-week' | 'this-month';
+  tags?: string[];
 }
 
 
@@ -156,6 +157,7 @@ function IssueViewControls({
   onFiltersChange,
   teamMembers,
   issueColumns,
+  allTags,
   activeFilterCount,
   onClearFilters,
 }: {
@@ -165,6 +167,7 @@ function IssueViewControls({
   onFiltersChange: (filters: IssueFilter) => void;
   teamMembers: TeamMember[];
   issueColumns: ProjectIssueColumn[];
+  allTags: string[];
   activeFilterCount: number;
   onClearFilters: () => void;
 }) {
@@ -286,6 +289,22 @@ function IssueViewControls({
                 placeholder="All Members"
               />
             </div>
+
+            {/* Tags Filter */}
+            {allTags.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-1">
+                  <Tag className="h-3 w-3" />
+                  Tags
+                </Label>
+                <MultiSelect
+                  options={allTags.map((tag) => ({ value: tag, label: tag }))}
+                  selected={filters.tags || []}
+                  onChange={(values) => onFiltersChange({ ...filters, tags: values.length ? values : undefined })}
+                  placeholder="All Tags"
+                />
+              </div>
+            )}
 
             {/* Due Date Filter */}
             <div className="space-y-2">
@@ -523,6 +542,16 @@ export default function ProjectDetail() {
     return Array.from(tags);
   }, [project?.tasks]);
 
+  // Get unique tags from issues
+  const allIssueTags = useMemo(() => {
+    if (!project?.issues) return [];
+    const tags = new Set<string>();
+    project.issues.forEach(issue => {
+      issue.tags?.forEach(tag => tags.add(tag));
+    });
+    return Array.from(tags);
+  }, [project?.issues]);
+
   // Map database modules to frontend Module type
   const modules: Module[] = useMemo(() => {
     return projectModules.map((m) => {
@@ -623,6 +652,7 @@ export default function ProjectDetail() {
     if (issueFilters.assignedById?.length) count++;
     if (issueFilters.dueDate !== undefined) count++;
     if (issueFilters.reportedDate !== undefined) count++;
+    if (issueFilters.tags?.length) count++;
     return count;
   }, [issueFilters]);
 
@@ -1559,6 +1589,7 @@ export default function ProjectDetail() {
                       onFiltersChange={setIssueFilters}
                       teamMembers={projectMembers}
                       issueColumns={issueColumns}
+                      allTags={allIssueTags}
                       activeFilterCount={activeIssueFilterCount}
                       onClearFilters={clearIssueFilters}
                     />
@@ -1650,6 +1681,7 @@ export default function ProjectDetail() {
               assignedByFilter={issueFilters.assignedById}
               dueDateFilter={issueFilters.dueDate}
               reportedDateFilter={issueFilters.reportedDate}
+              tagsFilter={issueFilters.tags}
               isAddDialogOpen={isAddIssueDialogOpen}
               onAddDialogClose={() => setIsAddIssueDialogOpen(false)}
               onIssueCreate={handleIssueCreate}

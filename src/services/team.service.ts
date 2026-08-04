@@ -74,15 +74,52 @@ function fromApi(raw: Record<string, unknown>): TeamMember {
   };
 }
 
+export interface TeamMembersPage {
+  data: TeamMember[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+}
+
 export const teamService = {
   async getAll(orgId?: string): Promise<TeamMember[]> {
     if (orgId) return this.getByOrganization(orgId);
     return [];
   },
 
+  // Walks every page — the backend caps a single request at 100 members — so
+  // callers that need the full roster (stats, assignee pickers) never see a
+  // silently truncated list.
   async getByOrganization(orgId: string): Promise<TeamMember[]> {
-    const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ORGANIZATIONS.MEMBERS(orgId));
-    return (data || []).map(fromApi);
+    const limit = 100;
+    let page = 1;
+    const members: TeamMember[] = [];
+    for (;;) {
+      const r = await apiClient.raw.get(ENDPOINTS.ORGANIZATIONS.MEMBERS(orgId), {
+        params: { page, limit },
+      });
+      const batch = ((r.data.data ?? []) as Record<string, unknown>[]).map(fromApi);
+      members.push(...batch);
+      const total = r.data.meta?.total ?? members.length;
+      if (batch.length < limit || members.length >= total) break;
+      page += 1;
+    }
+    return members;
+  },
+
+  async getByOrganizationPaginated(
+    orgId: string,
+    params: { page: number; limit: number; search?: string },
+  ): Promise<TeamMembersPage> {
+    const r = await apiClient.raw.get(ENDPOINTS.ORGANIZATIONS.MEMBERS(orgId), {
+      params: {
+        page: params.page,
+        limit: params.limit,
+        search: params.search || undefined,
+      },
+    });
+    return {
+      data: ((r.data.data ?? []) as Record<string, unknown>[]).map(fromApi),
+      meta: r.data.meta,
+    };
   },
 
   async getById(id: string): Promise<TeamMember | null> {

@@ -13,6 +13,7 @@ import { ColorSwatchPicker } from '@/components/shared/ColorSwatchPicker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { playCompleteSound } from '@/lib/playSound';
 import { resolveFileUrl } from '@/utils/fileUrl';
@@ -57,6 +58,7 @@ interface IssuesViewProps {
   assignedByFilter?: string[];
   dueDateFilter?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
   reportedDateFilter?: 'today' | 'this-week' | 'this-month';
+  tagsFilter?: string[];
   isAddDialogOpen?: boolean;
   onAddDialogClose?: () => void;
   onIssueUpdate?: (issue: Issue) => void;
@@ -141,6 +143,7 @@ export function IssuesView({
   assignedByFilter: externalAssignedByFilter = [],
   dueDateFilter: externalDueDateFilter,
   reportedDateFilter: externalReportedDateFilter,
+  tagsFilter: externalTagsFilter = [],
   isAddDialogOpen: externalIsAddDialogOpen,
   onAddDialogClose,
   onIssueUpdate,
@@ -191,6 +194,7 @@ export function IssuesView({
   const assignedByFilter = externalAssignedByFilter;
   const dueDateFilter = externalDueDateFilter;
   const reportedDateFilter = externalReportedDateFilter;
+  const tagsFilter = externalTagsFilter;
 
   useEffect(() => {
     setLocalIssues(issues);
@@ -245,6 +249,8 @@ export function IssuesView({
       (issue.assignees?.some(a => assigneeFilter.includes(a.id)));
     const matchesAssignedBy = !assignedByFilter.length ||
       assignedByFilter.includes(issue.reportedBy.id);
+    const matchesTags = !tagsFilter.length ||
+      (issue.tags?.some(tag => tagsFilter.includes(tag)) ?? false);
     let matchesDueDate = true;
     if (dueDateFilter) {
       const today = new Date();
@@ -300,7 +306,7 @@ export function IssuesView({
       }
     }
 
-    return matchesSearch && matchesSeverity && matchesStatus && matchesAssignee && matchesAssignedBy && matchesDueDate && matchesReportedDate;
+    return matchesSearch && matchesSeverity && matchesStatus && matchesAssignee && matchesAssignedBy && matchesTags && matchesDueDate && matchesReportedDate;
   });
 
   // Sort by severity (critical first), then by date
@@ -380,8 +386,17 @@ export function IssuesView({
     onAddDialogClose?.();
   };
 
+  const hasIncompleteChecklistItems = (issue: Issue) =>
+    (issue.checklist ?? []).some((item) => !item.completed);
+
   const handleStatusChange = (issue: Issue, status: IssueStatus) => {
     if (issue.status === status) return;
+
+    if (status === 'resolved' && hasIncompleteChecklistItems(issue)) {
+      toast.error('Complete all checklist items before resolving this issue');
+      return;
+    }
+
     const updatedIssue = {
       ...issue,
       status,
@@ -463,6 +478,11 @@ export function IssuesView({
 
     const newStatus = destinationColumn.status;
     if (movedIssue.status === newStatus) return;
+
+    if (newStatus === 'resolved' && hasIncompleteChecklistItems(movedIssue)) {
+      toast.error('Complete all checklist items before resolving this issue');
+      return;
+    }
 
     setLocalIssues(prev => prev.map(i => i.id === movedIssue.id ? { ...i, status: newStatus as IssueStatus } : i));
     updateIssueStatus.mutate({ issueId: movedIssue.id, status: newStatus });

@@ -1,9 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Users, Trash2, Loader2 } from 'lucide-react';
+import { Users, Trash2, Loader2, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useOrganizationMembers, useProjectMembers } from '@/hooks/useProjectTeam';
@@ -51,6 +53,7 @@ export function ProjectTeamButton({ projectId }: ProjectTeamButtonProps) {
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
   const [selectedMemberRoleToAdd, setSelectedMemberRoleToAdd] = useState<ProjectRole>('member');
   const [isAddingProjectMember, setIsAddingProjectMember] = useState(false);
+  const [isAddMemberPopoverOpen, setIsAddMemberPopoverOpen] = useState(false);
   const [memberRoleUpdatingId, setMemberRoleUpdatingId] = useState<string | null>(null);
   
   const [memberRemovalPrompt, setMemberRemovalPrompt] = useState(DEFAULT_MEMBER_REMOVAL_PROMPT);
@@ -60,6 +63,11 @@ export function ProjectTeamButton({ projectId }: ProjectTeamButtonProps) {
     const projectMemberIds = new Set(projectMembers.map((member) => member.id));
     return organizationMembers.filter((member) => !projectMemberIds.has(member.id));
   }, [organizationMembers, projectMembers]);
+
+  const selectedMemberToAddDetails = useMemo(
+    () => availableOrganizationMembers.find((member) => member.id === selectedMemberToAdd),
+    [availableOrganizationMembers, selectedMemberToAdd]
+  );
 
   const handleAddProjectMember = async () => {
     if (!projectId || !selectedMemberToAdd) return;
@@ -267,24 +275,68 @@ export function ProjectTeamButton({ projectId }: ProjectTeamButtonProps) {
               <div className="pt-3 mt-2 border-t space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Add Member</p>
                 <div className="space-y-2">
-                  <Select value={selectedMemberToAdd} onValueChange={setSelectedMemberToAdd}>
-                    <SelectTrigger className="h-8">
-                      <SelectValue placeholder="Select organization member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableOrganizationMembers.length > 0 ? (
-                        availableOrganizationMembers.map((member) => (
-                          <SelectItem key={member.id} value={member.id}>
-                            {member.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                          No members available to add.
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={isAddMemberPopoverOpen} onOpenChange={setIsAddMemberPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={availableOrganizationMembers.length === 0}
+                        className={cn(
+                          'w-full h-8 flex items-center gap-2 px-3 rounded-md border border-input bg-background text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+                        )}
+                      >
+                        {selectedMemberToAddDetails ? (
+                          <>
+                            <Avatar className="h-5 w-5 shrink-0">
+                              <AvatarImage
+                                src={resolveFileUrl(selectedMemberToAddDetails.avatar) ?? selectedMemberToAddDetails.avatar}
+                                alt={selectedMemberToAddDetails.name}
+                              />
+                              <AvatarFallback className="text-[9px]">
+                                {selectedMemberToAddDetails.initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="flex-1 text-left truncate">{selectedMemberToAddDetails.name}</span>
+                          </>
+                        ) : (
+                          <span className="flex-1 text-left text-muted-foreground">
+                            {availableOrganizationMembers.length > 0
+                              ? 'Select organization member'
+                              : 'No members available to add'}
+                          </span>
+                        )}
+                        <ChevronsUpDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-[260px]" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search organization members..." />
+                        <CommandList>
+                          <CommandEmpty>No members found.</CommandEmpty>
+                          <CommandGroup>
+                            {availableOrganizationMembers.map((member) => (
+                              <CommandItem
+                                key={member.id}
+                                value={`${member.id} ${member.name}`}
+                                onSelect={() => {
+                                  setSelectedMemberToAdd(member.id);
+                                  setIsAddMemberPopoverOpen(false);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-5 w-5">
+                                    <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                    <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                  </Avatar>
+                                  {member.name}
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                   <Select value={selectedMemberRoleToAdd} onValueChange={(v) => setSelectedMemberRoleToAdd(v as ProjectRole)}>
                     <SelectTrigger className="h-8">
                       <SelectValue placeholder="Select project role" />
