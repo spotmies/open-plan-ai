@@ -485,6 +485,8 @@ const NewProject = () => {
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'text/plain',
       'text/csv',
+      'text/markdown',
+      'text/x-markdown',
       'image/jpeg',
       'image/jpg',
       'image/png',
@@ -1511,7 +1513,7 @@ const NewProject = () => {
                 ref={fileInputRef}
                 onChange={handleFileInputChange}
                 multiple
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.svg,.zip,.rar"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.jpg,.jpeg,.png,.gif,.webp,.svg,.zip,.rar"
                 className="hidden"
               />
 

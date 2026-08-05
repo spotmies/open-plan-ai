@@ -30,8 +30,21 @@ export function useOrganizationMembers(orgId: string | undefined) {
     queryFn: async (): Promise<TeamMember[]> => {
       if (!orgId) return [];
 
-      const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ORGANIZATIONS.MEMBERS(orgId));
-      const members = data || [];
+      // Walks every page — the backend caps a single request at 100 members —
+      // so this dropdown never silently drops members beyond the default page size.
+      const limit = 100;
+      let page = 1;
+      const members: Record<string, unknown>[] = [];
+      for (;;) {
+        const r = await apiClient.raw.get(ENDPOINTS.ORGANIZATIONS.MEMBERS(orgId), {
+          params: { page, limit },
+        });
+        const batch = (r.data.data ?? []) as Record<string, unknown>[];
+        members.push(...batch);
+        const total = r.data.meta?.total ?? members.length;
+        if (batch.length < limit || members.length >= total) break;
+        page += 1;
+      }
 
       return members
         .map((m) => {

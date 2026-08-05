@@ -61,7 +61,9 @@ export function ProjectTeamButton({ projectId }: ProjectTeamButtonProps) {
 
   const availableOrganizationMembers = useMemo(() => {
     const projectMemberIds = new Set(projectMembers.map((member) => member.id));
-    return organizationMembers.filter((member) => !projectMemberIds.has(member.id));
+    return organizationMembers
+      .filter((member) => !projectMemberIds.has(member.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [organizationMembers, projectMembers]);
 
   const selectedMemberToAddDetails = useMemo(
