@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, Settings, Users, Calendar, BarChart3, ListTodo, ChevronsUpDown, Check, Plus, Building2, Loader2, MessageSquare, Plug } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Settings, Users, Calendar, BarChart3, ListTodo, ChevronsUpDown, Check, Plus, Building2, Loader2, MessageSquare, Plug, Sparkles } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { Logo } from '@/components/Logo';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
@@ -22,6 +22,10 @@ const mainNavItems = [{
   title: 'Dashboard',
   url: '/',
   icon: LayoutDashboard
+}, {
+  title: 'Assistant',
+  url: '/assistant',
+  icon: Sparkles
 }, {
   title: 'My Tasks',
   url: '/my-day',

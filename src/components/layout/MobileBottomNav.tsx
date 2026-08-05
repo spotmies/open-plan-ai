@@ -10,6 +10,7 @@ import {
   Users,
   Settings,
   Calendar,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,7 @@ const primaryNavItems: NavItem[] = [
 
 // Secondary items shown under "More"
 const moreNavItems: NavItem[] = [
+  { title: 'Assistant', url: '/assistant', icon: Sparkles      },
   { title: 'Team',      url: '/team',     icon: Users         },
   { title: 'Calendar',  url: '/calendar', icon: Calendar      },
   { title: 'Reports',   url: '/reports',  icon: BarChart3     },

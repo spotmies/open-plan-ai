@@ -250,6 +250,19 @@ export const ENDPOINTS = {
     DISCONNECT: (orgId: string) => `/organizations/${orgId}/integrations/google-drive/disconnect`,
     STATUS: (orgId: string) => `/organizations/${orgId}/integrations/google-drive/status`,
   },
+  // AI Assistant (Ask — read-only, Phase 1). Deliberately separate from the
+  // /conversations/* namespace above, which is the team-chat feature.
+  AI_CONVERSATIONS: {
+    LIST: '/ai/conversations',
+    CREATE: '/ai/conversations',
+    DELETE_ALL: '/ai/conversations',
+    BY_ID: (id: string) => `/ai/conversations/${id}`,
+    MESSAGES: (id: string) => `/ai/conversations/${id}/messages`,
+    EDIT_MESSAGE: (id: string, messageId: string) => `/ai/conversations/${id}/messages/${messageId}`,
+    ANSWER: (id: string) => `/ai/conversations/${id}/answer`,
+    STOP: (id: string) => `/ai/conversations/${id}/stop`,
+    UPLOAD_ATTACHMENT: '/ai/conversations/attachments',
+  },
   // Uploads
   UPLOADS: {
     AVATAR: '/uploads/avatar',

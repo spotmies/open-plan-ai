@@ -43,8 +43,11 @@ export function AppLayout({ children, noPadding }: AppLayoutProps) {
   }, [preferences.compactMode]);
 
   const isConversationRoute = /^\/chat\/[^/]+/.test(location.pathname);
-  const showAppHeader = !(isMobile && (isConversationRoute || hideAppHeaderFlag));
-  const showMobileBottomNav = isMobile && !isConversationRoute;
+  // The assistant page builds its own ChatGPT-style header + drawer nav on
+  // mobile (see Assistant.tsx) — the global chrome would just duplicate it.
+  const isAssistantRoute = location.pathname.startsWith('/assistant');
+  const showAppHeader = !(isMobile && (isConversationRoute || isAssistantRoute || hideAppHeaderFlag));
+  const showMobileBottomNav = isMobile && !isConversationRoute && !isAssistantRoute;
 
   return (
     <SidebarProvider

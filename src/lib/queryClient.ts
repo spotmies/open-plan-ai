@@ -190,4 +190,11 @@ export const queryKeys = {
     list:     (projectId: string) => ['support-links', 'list', projectId] as const,
     detail:   (linkId: string) => ['support-links', 'detail', linkId] as const,
   },
+
+  // AI Assistant (Ask)
+  assistant: {
+    all:          ['assistant'] as const,
+    conversations: () => [...queryKeys.assistant.all, 'conversations'] as const,
+    conversation: (id: string) => [...queryKeys.assistant.all, 'conversation', id] as const,
+  },
 };
