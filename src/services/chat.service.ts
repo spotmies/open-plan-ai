@@ -318,7 +318,9 @@ export const chatService = {
 
   async getReachableUsers(orgId?: string): Promise<ReachableUser[]> {
     try {
-      const params = orgId ? `?q=&orgId=${encodeURIComponent(orgId)}` : '?q=';
+      const params = orgId
+        ? `?q=&limit=100&orgId=${encodeURIComponent(orgId)}`
+        : '?q=&limit=100';
       const users: ReachableUser[] = await apiClient.get(`${ENDPOINTS.USERS.SEARCH}${params}`);
       return users.map((u) => ({
         ...u,

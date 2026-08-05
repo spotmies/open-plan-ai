@@ -16,7 +16,6 @@ import { useGoogleMeetStatus } from '@/features/integrations/hooks/useGoogleMeet
 import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsureGoogleMeetToken';
 import { useCallStore } from '../stores/useCallStore';
 import { chatTransport } from '../transport';
-import { meetWindow } from '../utils/meetWindow';
 import { googleMeetService } from '@/services/googleMeet.service';
 import { chatService } from '@/services/chat.service';
 import { buildCallCardContent } from '../utils/callCard';
@@ -154,19 +153,14 @@ export function ChatHeader({
       return;
     }
 
-    // Open the Meet tab now, synchronously, inside this click handler — the
-    // ONLY popup opened for this gesture (some browsers only honor one
-    // window.open() per click). A window opened later from the async
-    // call:accepted socket event would be blocked outright, so we navigate
-    // this same placeholder to the real URL once the callee accepts.
-    meetWindow.openPlaceholder();
-
+    // No tab is opened here — the caller only gets redirected to the actual
+    // Google Meet once the callee accepts (see useCallSignaling.ts). Until
+    // then only the in-app "Trying to connect..." card is shown.
     setStartingCall(true);
     try {
       const token = await ensureFreshToken();
       if (!token) {
         toast.error('Your Google Meet session expired. Please reconnect in Integrations.');
-        meetWindow.close();
         return;
       }
       const meetData = await googleMeetService.createInstantMeeting(token);
@@ -222,7 +216,6 @@ export function ChatHeader({
         });
     } catch (err) {
       toast.error('Failed to start the call. Please try again.');
-      meetWindow.close();
     } finally {
       setStartingCall(false);
     }

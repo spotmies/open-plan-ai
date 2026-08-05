@@ -51,7 +51,15 @@ export function useProjectPermissions(projectId: string | undefined): ProjectPer
     const isProjectMemberPlus = myProjectRole !== null;
 
     const canEditResource = (resource: EditableResource): boolean => {
-      if (!user || !myProjectRole) return false;
+      if (!user) return false;
+      // No projectId means the resource has no project (e.g. a personal My
+      // Tasks item) — there's no project role to check, so it's editable
+      // only by its creator/owner, mirroring the backend's ownership check.
+      if (projectId === undefined) {
+        const ownerIds = [resource.createdBy, resource.ownerId, ...(resource.assigneeIds ?? [])];
+        return ownerIds.includes(user.id);
+      }
+      if (!myProjectRole) return false;
       if (isProjectMaintainerPlus) return true;
       const ownerIds = [resource.createdBy, resource.ownerId, ...(resource.assigneeIds ?? [])];
       return ownerIds.includes(user.id);
@@ -60,7 +68,11 @@ export function useProjectPermissions(projectId: string | undefined): ProjectPer
     // Deleting is admin-or-creator only — plain Maintainers and assignees
     // (who aren't the creator) cannot delete, unlike canEditResource above.
     const canDeleteResource = (resource: EditableResource): boolean => {
-      if (!user || !myProjectRole) return false;
+      if (!user) return false;
+      if (projectId === undefined) {
+        return resource.createdBy === user.id;
+      }
+      if (!myProjectRole) return false;
       if (isProjectAdmin) return true;
       return resource.createdBy === user.id;
     };
@@ -77,7 +89,7 @@ export function useProjectPermissions(projectId: string | undefined): ProjectPer
       canDeleteResource,
       isLoading,
     };
-  }, [user, members, isOrgAdmin, isLoading]);
+  }, [user, members, isOrgAdmin, isLoading, projectId]);
 }
 
 export interface OrgPermissions {

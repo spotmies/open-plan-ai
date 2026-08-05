@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Document, Page, pdfjs } from 'react-pdf';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Download, Copy, File as FileIcon, ExternalLink, ChevronLeft, ChevronRight, X, Loader2, Video, ZoomIn, ZoomOut, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
+// xlsx / docx-preview / pptx-preview are loaded via dynamic import() inside their
+// respective effects below — they're 600KB+ combined (mostly pptx-preview's echarts
+// dependency) and must not bloat the chunk every file preview (image, PDF, video) pays for.
+import type * as XLSXType from 'xlsx';
+import { logger } from '@/services/monitoring/logger';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -12,6 +17,15 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp', 'avif'];
 const VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'm4v'];
+const OFFICE_EXTENSIONS = ['xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt'];
+const OFFICE_MIME_TYPES = [
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+];
 
 function extOf(fileName: string, url: string): string {
   return (fileName || url).split(/[?#]/)[0].split('.').pop()?.toLowerCase() ?? '';
@@ -37,6 +51,12 @@ function getEmbedUrl(url: string): string | null {
   return null;
 }
 
+// Microsoft's viewer fetches the file itself, so this only renders when `url`
+// is reachable from the public internet (not localhost/dev environments).
+function getOfficeViewerUrl(url: string): string {
+  return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+}
+
 export function getVideoThumbnail(url: string): string | null {
   const ytId = getYouTubeId(url);
   if (ytId) return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
@@ -49,17 +69,37 @@ export function isVideoUrl(url: string): boolean {
   return VIDEO_EXTENSIONS.includes(ext);
 }
 
-function kindOf(fileName: string, url: string, mimeType?: string | null): 'image' | 'pdf' | 'video' | 'embed' | 'other' {
+function kindOf(fileName: string, url: string, mimeType?: string | null): 'image' | 'pdf' | 'video' | 'embed' | 'office' | 'other' {
   // Check for embed URLs first (YouTube, Vimeo) before generic video/* check
   if (getEmbedUrl(url)) return 'embed';
   if (mimeType?.startsWith('image/')) return 'image';
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType?.startsWith('video/')) return 'video';
+  if (mimeType && OFFICE_MIME_TYPES.includes(mimeType)) return 'office';
   const ext = extOf(fileName, url);
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
   if (ext === 'pdf') return 'pdf';
   if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+  if (OFFICE_EXTENSIONS.includes(ext)) return 'office';
   return 'other';
+}
+
+// Which office files can be rendered client-side (no public URL needed) vs.
+// need the Microsoft Office Online iframe fallback (legacy .doc/.ppt binary formats
+// have no viable client-side parser).
+function officeSubKindOf(fileName: string, url: string, mimeType?: string | null): 'spreadsheet' | 'word' | 'slideshow' | 'unsupported' {
+  const ext = extOf(fileName, url);
+  if (ext === 'xlsx' || ext === 'xls' || mimeType === 'application/vnd.ms-excel' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+    return 'spreadsheet';
+  }
+  if (ext === 'docx' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return 'word';
+  }
+  // pptx-preview parses the OOXML zip format — legacy binary .ppt isn't supported.
+  if (ext === 'pptx' || mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return 'slideshow';
+  }
+  return 'unsupported';
 }
 
 export interface FilePreviewTarget {
@@ -181,6 +221,152 @@ export function FilePreviewDialog({
     };
   }, []);
 
+  // Spreadsheets, Word docs, and .pptx slideshows render fully client-side (no public
+  // URL required) — legacy .doc / .ppt fall back to the Office Online iframe further down.
+  const [officeLoading, setOfficeLoading] = useState(false);
+  const [officeError, setOfficeError] = useState(false);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [activeSheet, setActiveSheet] = useState(0);
+  const workbookRef = useRef<XLSXType.WorkBook | null>(null);
+  const xlsxModuleRef = useRef<typeof XLSXType | null>(null);
+  const wordContainerRef = useRef<HTMLDivElement | null>(null);
+  const pptxContainerRef = useRef<HTMLDivElement | null>(null);
+  const pptxPreviewerRef = useRef<{ destroy(): void; preview(file: ArrayBuffer): Promise<unknown> } | null>(null);
+
+  useEffect(() => {
+    if (!current) return;
+    const kind = kindOf(current.fileName, current.url, current.mimeType);
+    const subKind = kind === 'office' ? officeSubKindOf(current.fileName, current.url, current.mimeType) : null;
+
+    setOfficeError(false);
+    if (subKind !== 'spreadsheet') {
+      workbookRef.current = null;
+      setSheetNames([]);
+      return;
+    }
+
+    setOfficeLoading(true);
+    setSheetNames([]);
+    setActiveSheet(0);
+    let cancelled = false;
+
+    Promise.all([
+      fetch(current.url, { credentials: 'include' }).then(r => {
+        if (!r.ok) throw new Error(`Failed to fetch file: ${r.status}`);
+        return r.arrayBuffer();
+      }),
+      import('xlsx'),
+    ])
+      .then(([buf, XLSX]) => {
+        if (cancelled) return;
+        xlsxModuleRef.current = XLSX;
+        const workbook = XLSX.read(buf, { type: 'array' });
+        workbookRef.current = workbook;
+        setSheetNames(workbook.SheetNames);
+      })
+      .catch(err => {
+        logger.warn('Failed to render spreadsheet preview', err);
+        if (!cancelled) setOfficeError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setOfficeLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [current?.url]);
+
+  const activeSheetHtml = useMemo(() => {
+    const workbook = workbookRef.current;
+    const XLSX = xlsxModuleRef.current;
+    const sheetName = sheetNames[activeSheet];
+    if (!workbook || !XLSX || !sheetName) return '';
+    return XLSX.utils.sheet_to_html(workbook.Sheets[sheetName]);
+  }, [sheetNames, activeSheet]);
+
+  useEffect(() => {
+    if (!current || !wordContainerRef.current) return;
+    const kind = kindOf(current.fileName, current.url, current.mimeType);
+    const subKind = kind === 'office' ? officeSubKindOf(current.fileName, current.url, current.mimeType) : null;
+    if (subKind !== 'word') return;
+
+    const container = wordContainerRef.current;
+    container.innerHTML = '';
+    setOfficeLoading(true);
+    setOfficeError(false);
+    let cancelled = false;
+
+    Promise.all([
+      fetch(current.url, { credentials: 'include' }).then(r => {
+        if (!r.ok) throw new Error(`Failed to fetch file: ${r.status}`);
+        return r.blob();
+      }),
+      import('docx-preview'),
+    ])
+      .then(([blob, { renderAsync }]) => {
+        if (cancelled) return;
+        return renderAsync(blob, container, container, { inWrapper: true, ignoreWidth: true });
+      })
+      .catch(err => {
+        logger.warn('Failed to render docx preview', err);
+        if (!cancelled) setOfficeError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setOfficeLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [current?.url]);
+
+  useEffect(() => {
+    if (!current || !pptxContainerRef.current) return;
+    const kind = kindOf(current.fileName, current.url, current.mimeType);
+    const subKind = kind === 'office' ? officeSubKindOf(current.fileName, current.url, current.mimeType) : null;
+    if (subKind !== 'slideshow') return;
+
+    const container = pptxContainerRef.current;
+    container.innerHTML = '';
+    pptxPreviewerRef.current?.destroy();
+    pptxPreviewerRef.current = null;
+    setOfficeLoading(true);
+    setOfficeError(false);
+    let cancelled = false;
+
+    Promise.all([
+      fetch(current.url, { credentials: 'include' }).then(r => {
+        if (!r.ok) throw new Error(`Failed to fetch file: ${r.status}`);
+        return r.arrayBuffer();
+      }),
+      import('pptx-preview'),
+    ])
+      .then(([buf, { init }]) => {
+        if (cancelled) return;
+        const previewer = init(container, { width: 960, height: 540, mode: 'list' });
+        pptxPreviewerRef.current = previewer;
+        return previewer.preview(buf);
+      })
+      .catch(err => {
+        logger.warn('Failed to render pptx preview', err);
+        if (!cancelled) setOfficeError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setOfficeLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [current?.url]);
+
+  useEffect(() => {
+    return () => {
+      pptxPreviewerRef.current?.destroy();
+    };
+  }, []);
+
   const handleShare = useCallback(async () => {
     if (!current) return;
     try {
@@ -201,7 +387,8 @@ export function FilePreviewDialog({
 
   if (!current) return null;
   const kind = kindOf(current.fileName, current.url, current.mimeType);
-  const isMedia = kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'embed';
+  const officeSubKind = kind === 'office' ? officeSubKindOf(current.fileName, current.url, current.mimeType) : null;
+  const isMedia = kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'embed' || kind === 'office';
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -284,6 +471,17 @@ export function FilePreviewDialog({
                 {kind === 'embed' && (
                   <a
                     href={current.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    title="Open in new tab"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
+                {kind === 'office' && (
+                  <a
+                    href={getOfficeViewerUrl(current.url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-muted-foreground hover:text-foreground transition-colors"
@@ -376,6 +574,85 @@ export function FilePreviewDialog({
                   className="w-full h-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
+                  title={current.fileName}
+                />
+              ) : kind === 'office' && officeSubKind === 'spreadsheet' ? (
+                officeLoading ? (
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                ) : officeError ? (
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                    <FileIcon className="w-10 h-10" />
+                    <p className="text-sm">Unable to preview this file.</p>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={current.url} download={current.fileName}>
+                        <Download className="w-3.5 h-3.5 mr-1.5" />
+                        Download
+                      </a>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex flex-col">
+                    <style>{`
+                      .xlsx-preview table { border-collapse: collapse; font-size: 12px; }
+                      .xlsx-preview td, .xlsx-preview th { border: 1px solid hsl(var(--border)); padding: 4px 8px; white-space: nowrap; }
+                    `}</style>
+                    {sheetNames.length > 1 && (
+                      <div className="flex gap-1 px-3 py-2 border-b border-border overflow-x-auto shrink-0">
+                        {sheetNames.map((name, i) => (
+                          <button
+                            key={name}
+                            onClick={() => setActiveSheet(i)}
+                            className={`px-2.5 py-1 text-xs rounded-md whitespace-nowrap transition-colors ${
+                              i === activeSheet
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:bg-muted'
+                            }`}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div
+                      className="flex-1 overflow-auto p-3 xlsx-preview"
+                      dangerouslySetInnerHTML={{ __html: activeSheetHtml }}
+                    />
+                  </div>
+                )
+              ) : kind === 'office' && officeSubKind === 'word' ? (
+                <div className="relative w-full h-full overflow-auto bg-white">
+                  {officeLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70">
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
+                  {officeError && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white text-muted-foreground">
+                      <FileIcon className="w-10 h-10" />
+                      <p className="text-sm">Unable to preview this file.</p>
+                    </div>
+                  )}
+                  <div ref={wordContainerRef} className="p-4" />
+                </div>
+              ) : kind === 'office' && officeSubKind === 'slideshow' ? (
+                <div className="relative w-full h-full overflow-auto bg-muted/30 flex justify-center">
+                  {officeLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
+                  {officeError && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background text-muted-foreground">
+                      <FileIcon className="w-10 h-10" />
+                      <p className="text-sm">Unable to preview this file.</p>
+                    </div>
+                  )}
+                  <div ref={pptxContainerRef} className="py-4" />
+                </div>
+              ) : kind === 'office' ? (
+                <iframe
+                  src={getOfficeViewerUrl(current.url)}
+                  className="w-full h-full border-0"
                   title={current.fileName}
                 />
               ) : blobLoading ? (

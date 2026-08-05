@@ -93,6 +93,27 @@ function toCreatePayload(task: Partial<Task>): Record<string, unknown> {
   };
 }
 
+/** Build a clean payload that satisfies the backend createPersonalTaskSchema — no project-scoped fields (milestone/assignees/modules/dependencies). */
+function toCreatePersonalPayload(task: Partial<Task>, organizationId: string): Record<string, unknown> {
+  return {
+    organizationId,
+    title: task.title?.trim() || '',
+    description: task.description || undefined,
+    descriptionBlocks: task.descriptionBlocks ?? undefined,
+    status: normalizeStatus(task.status),
+    priority: task.priority ?? 'minor',
+    dueDate: task.dueDate ?? undefined,
+    startDate: task.startDate ?? undefined,
+    tags: task.tags ?? [],
+    checklist: (task.checklist ?? []).map((item: any) => ({
+      id: item.id,
+      text: item.text,
+      completed: item.completed,
+      showInBoardView: item.showInBoardView ?? false,
+    })),
+  };
+}
+
 export const tasksService = {
   /**
    * Get all tasks assigned to the current user across all projects.
@@ -143,6 +164,14 @@ export const tasksService = {
       creatorByTaskId.set(created.id, task.createdBy);
     }
     return created;
+  },
+
+  /**
+   * Create a personal "My Tasks" item — not tied to any project, private to its creator.
+   */
+  async createPersonal(organizationId: string, task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
+    const data = await apiClient.post<any>(ENDPOINTS.TASKS.CREATE_PERSONAL, toCreatePersonalPayload(task, organizationId));
+    return fromApi(data);
   },
 
   /**

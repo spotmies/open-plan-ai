@@ -76,7 +76,8 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
           assignees: task.assignees || [],
           dueDate: task.dueDate,
           projectId: task.projectId || '',
-          projectName: (task as any).projectName || '',
+          // A task with no projectId is a personal "My Tasks" item (not tied to a project).
+          projectName: (task as any).projectName || (task.projectId ? '' : 'Personal'),
           isOverdue: dueDateStatus === 'overdue',
           isDueToday: dueDateStatus === 'today',
           isBlocked: task.status === 'blocked' || (task.blockedBy?.length ?? 0) > 0,

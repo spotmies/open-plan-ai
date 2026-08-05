@@ -9,6 +9,7 @@ import {
 } from '@/services/notifications.service';
 import { formatDistanceToNow } from 'date-fns';
 import { chatTransport } from '@/features/chat/transport';
+import { messagePreviewText } from '@/features/chat/chat.mappers';
 
 export interface AppNotification extends Notification {
   read: boolean;
@@ -64,7 +65,7 @@ export function useNotifications(params: NotificationListParams = {}) {
   const notifications: AppNotification[] = rawNotifications.map((n: Notification) => ({
     ...n,
     read: n.readAt !== null,
-    description: n.content,
+    description: n.content ? messagePreviewText(n.content) : n.content,
     time: formatDistanceToNow(new Date(n.createdAt), { addSuffix: true }),
     initials: (() => {
       const words = (n.title || '').trim().split(/\s+/);

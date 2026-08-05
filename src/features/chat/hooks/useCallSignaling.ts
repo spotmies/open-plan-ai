@@ -60,7 +60,17 @@ export function useCallSignaling() {
         store.markActive();
         markCallCardActive(callId);
         if (store.meetingUri) {
-          meetWindow.navigateOrOpen(store.meetingUri);
+          const meetingUri = store.meetingUri;
+          // This runs off an async socket event, not a click, so the browser
+          // is free to block window.open() here. If it does, the toast
+          // action button below is a real click, so routing the same open
+          // through it always succeeds.
+          const opened = meetWindow.navigateOrOpen(meetingUri);
+          if (!opened) {
+            toast.error('Your browser blocked the Google Meet tab.', {
+              action: { label: 'Open Meet', onClick: () => meetWindow.navigateOrOpen(meetingUri) },
+            });
+          }
         }
       }
       toast.success(`${byUserName || 'They'} joined the call`);

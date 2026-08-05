@@ -77,6 +77,8 @@ export const ENDPOINTS = {
     DEPENDENCY: (taskId: string, depId: string) => `/tasks/${taskId}/dependencies/${depId}`,
     COMMENTS: (id: string) => `/tasks/${id}/comments`,
     ME_ALL: '/tasks/me/all',
+    /** Personal "My Tasks" item — no project. */
+    CREATE_PERSONAL: '/tasks',
   },
   // Hardware Modules
   MODULES: {

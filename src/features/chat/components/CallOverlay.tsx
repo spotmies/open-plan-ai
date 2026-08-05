@@ -401,7 +401,11 @@ export function CallOverlay() {
 
           {callState === 'active' && (
             <>
-              <Button variant="outline" className="gap-2 rounded-full" onClick={handleReopenMeet}>
+              <Button
+                variant="outline"
+                className="gap-2 rounded-full border-green-600 bg-green-600 text-white hover:bg-green-700 hover:text-white"
+                onClick={handleReopenMeet}
+              >
                 <ExternalLink className="h-4 w-4" />
                 Reopen Meet
               </Button>

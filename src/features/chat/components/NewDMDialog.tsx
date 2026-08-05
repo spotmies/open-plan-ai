@@ -55,7 +55,9 @@ export function NewDMDialog({ open, onOpenChange, onSelect, onConversationCreate
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+    return users
+      .filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [search, users]);
 
   const showSelfEntry = !!selfEntry && selfEntry.name.toLowerCase().includes(search.toLowerCase());

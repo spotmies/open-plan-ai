@@ -90,6 +90,21 @@ export function useCreateTask() {
 }
 
 /**
+ * Create a personal "My Tasks" item — no project, private to its creator.
+ */
+export function useCreatePersonalTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ organizationId, task }: { organizationId: string; task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> }) =>
+      tasksService.createPersonal(organizationId, task),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
+    },
+  });
+}
+
+/**
  * Update existing task
  */
 export function useUpdateTask() {
