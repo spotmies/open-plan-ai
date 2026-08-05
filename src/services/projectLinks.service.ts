@@ -24,7 +24,7 @@ export interface CreateProjectLinkInput {
 }
 
 export interface UpdateProjectLinkInput {
-  name?: string;
+  title?: string;
   url?: string;
 }
 
@@ -48,6 +48,10 @@ export const projectLinksService = {
 
   async getByProject(projectId: string): Promise<ProjectLink[]> {
     return apiClient.get(ENDPOINTS.PROJECTS.LINKS(projectId));
+  },
+
+  async update(linkId: string, input: UpdateProjectLinkInput): Promise<ProjectLink> {
+    return apiClient.patch(ENDPOINTS.LINKS.UPDATE(linkId), input);
   },
 
   async delete(linkId: string): Promise<void> {

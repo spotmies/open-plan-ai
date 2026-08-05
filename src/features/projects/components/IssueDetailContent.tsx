@@ -1657,7 +1657,7 @@ export function IssueDetailContent({
                                         </div>
                                         {!isUploading && <p className="text-xs text-muted-foreground mt-1">or drag and drop, or paste image</p>}
                                     </div>
-                                    <input type="file" className="hidden" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,video/*" onChange={handleFileUpload} disabled={isUploading} />
+                                    <input type="file" className="hidden" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,video/*" onChange={handleFileUpload} disabled={isUploading} />
                                 </label>
                             </div>
                             )}

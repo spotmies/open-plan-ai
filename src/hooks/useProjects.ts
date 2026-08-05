@@ -158,6 +158,24 @@ export function useUpdateProjectProgress() {
 }
 
 /**
+ * Toggle the current user's pin on a project — pinned projects sort first
+ * in the project list. Private per-user, mirrors useUpdateProjectStage's
+ * dedicated-PATCH-endpoint shape.
+ */
+export function useTogglePinProject() {
+  const queryClient = useQueryClient();
+  const updateProject = useProjectStore((state) => state.updateProject);
+
+  return useMutation({
+    mutationFn: (id: string) => projectsService.togglePin(id),
+    onSuccess: (updatedProject) => {
+      updateProject(updatedProject.id, updatedProject);
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
+    },
+  });
+}
+
+/**
  * Delete project
  */
 export function useDeleteProject() {

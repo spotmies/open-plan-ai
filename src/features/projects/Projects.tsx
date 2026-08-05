@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ProjectListProgress } from './components/ProjectListProgress';
-import { Plus, Search, Grid3X3, List, Users, MoreVertical, Eye, Pencil, Calendar, Link as LinkIcon, Paperclip, FileText, Flag, Target, FolderOpen, Package, X, Trash2, AlertTriangle, Loader2, Tag, Layers, Building2 } from 'lucide-react';
+import { Plus, Search, Grid3X3, List, Users, MoreVertical, Eye, Pencil, Calendar, Link as LinkIcon, Paperclip, FileText, Flag, Target, FolderOpen, Package, X, Trash2, AlertTriangle, Loader2, Tag, Layers, Building2, Pin, PinOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useProjects, useDeleteProject } from '@/hooks/useProjects';
+import { useProjects, useDeleteProject, useTogglePinProject } from '@/hooks/useProjects';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useProjectAttachments } from '@/hooks/useProjectAttachments';
 import { useProjectLinks } from '@/hooks/useProjectLinks';
@@ -191,6 +191,7 @@ export default function Projects() {
   const { data: projectLinks = [] } = useProjectLinks(selectedProjectId || undefined);
   const { data: projectFiles = [], isLoading: isLoadingFiles } = useProjectAttachments(selectedFilesProjectId || undefined);
   const deleteProjectMutation = useDeleteProject();
+  const togglePinMutation = useTogglePinProject();
   const [deleteProjectDialogOpen, setDeleteProjectDialogOpen] = useState(false);
   const [deleteProjectConfirmText, setDeleteProjectConfirmText] = useState('');
 
@@ -208,9 +209,11 @@ export default function Projects() {
     }
   }, [isMobile, view]);
 
-  const filteredProjects = projectList.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  // Pinned projects always sort first, regardless of search — lets users
+  // with many projects jump straight to the ones they use most.
+  const filteredProjects = projectList
+    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned));
 
   const totalPages = Math.max(1, Math.ceil(filteredProjects.length / PROJECTS_PER_PAGE));
   const paginatedProjects = filteredProjects.slice(
@@ -242,6 +245,14 @@ export default function Projects() {
     e.preventDefault();
     e.stopPropagation();
     navigate(`/projects/${projectId}/edit`);
+  };
+
+  const handleTogglePin = (projectId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    togglePinMutation.mutate(projectId, {
+      onError: () => toast.error('Failed to update pin'),
+    });
   };
 
   const isProjectOwner = selectedProjectDetails?.createdBy === user?.id;
@@ -418,6 +429,9 @@ export default function Projects() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        {project.pinned && (
+                          <Pin className="h-3.5 w-3.5 text-primary fill-primary shrink-0" />
+                        )}
                         <Badge variant="secondary" className={cn(stageColors[project.stage as keyof typeof stageColors] || stageColors.concept)}>
                           {stageLabels[project.stage as keyof typeof stageLabels] || project.stage}
                         </Badge>
@@ -429,6 +443,20 @@ export default function Projects() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={(e) => handleTogglePin(project.id, e)}>
+                              {project.pinned ? (
+                                <>
+                                  <PinOff className="h-4 w-4 mr-2" />
+                                  Unpin
+                                </>
+                              ) : (
+                                <>
+                                  <Pin className="h-4 w-4 mr-2" />
+                                  Pin to top
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={(e) => handleViewDetails(project.id, e)}>
                               <Eye className="h-4 w-4 mr-2" />
                               View Details

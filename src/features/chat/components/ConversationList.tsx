@@ -73,10 +73,12 @@ export function ConversationList({ conversations, loading, onSelect, onConversat
   const filteredPeople = useMemo(() => {
     if (!searchQuery.trim() || conversationFilter === 'groups') return [];
     const q = searchQuery.toLowerCase();
-    // Only show people who don't already have a DM in the list (or filter them visually later)
+    // Only exclude people who have a *started* DM (a message was actually sent) —
+    // an empty DM created by clicking a search result shouldn't hide them here,
+    // otherwise they'd vanish from search entirely (matches the `filtered` rule above).
     const people = reachableUsers.filter(u =>
       ((u.name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)) &&
-      !conversations.some(c => c.type === 'dm' && c.members.some(m => m.id === u.id))
+      !conversations.some(c => c.type === 'dm' && !!c.lastMessage && c.members.some(m => m.id === u.id))
     );
     // The reachable-users search deliberately excludes the requester, so
     // "message yourself" has to be synthesized here too, mirroring NewDMDialog.

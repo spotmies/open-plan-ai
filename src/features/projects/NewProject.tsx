@@ -494,7 +494,9 @@ const NewProject = () => {
       'image/webp',
       'image/svg+xml',
       'application/zip',
+      'application/x-zip-compressed',
       'application/x-rar-compressed',
+      'application/vnd.rar',
     ];
 
     const maxSize = 50 * 1024 * 1024; // 50MB

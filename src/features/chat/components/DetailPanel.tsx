@@ -696,9 +696,9 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
                       : otherMember?.name || conversation.name;
                   return (
                     <>
-                      <Avatar className="h-16 w-16 mx-auto">
+                      <Avatar key={otherMember?.id ?? conversation.id} className="h-16 w-16 mx-auto">
                         {topAvatarUrl && !isEmoji(topAvatarUrl) ? (
-                          <AvatarImage src={topAvatarUrl} className="object-cover" />
+                          <AvatarImage src={resolveFileUrl(topAvatarUrl) ?? topAvatarUrl} className="object-cover" />
                         ) : null}
                         <AvatarFallback className={cn('text-lg font-semibold', isGroup && 'bg-primary/10 text-primary')}>
                           {topAvatarUrl && isEmoji(topAvatarUrl) ? topAvatarUrl : topInitials}

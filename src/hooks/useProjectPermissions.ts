@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { useProjectMembers } from '@/hooks/useProjectTeam';
+import { useProject } from '@/hooks/useProjects';
 import type { OrgRole, ProjectRole } from '@/types';
 
 export interface EditableResource {
@@ -29,22 +29,26 @@ export interface ProjectPermissions {
 }
 
 /**
- * Centralized project-role permission hook. Reuses the existing
- * useProjectMembers query cache rather than issuing a new network call.
- * Org Admins get implicit Admin access to every project, even without an
- * explicit project_members row (mirrors the backend's loadProjectMember
- * fallback behavior).
+ * Centralized project-role permission hook. Reuses the existing useProject
+ * query cache (shared with ProjectDetail/EditProject) rather than issuing a
+ * new network call.
+ *
+ * `myRole` comes straight from the backend's `GET /projects/:id` response,
+ * which resolves it the same way `requireProjectRole` does: a direct
+ * project_members row if one exists, otherwise implicit Admin when the
+ * caller is an org Admin **of this project's own organization**. This is
+ * deliberately *not* derived from the globally-selected organization
+ * (`useOrgPermissions`/`currentOrganization`) — a user can be an org Admin
+ * of one org while merely a project Member on a project that belongs to a
+ * different org, and using the globally-selected org here would show
+ * Admin-only controls the backend would then reject.
  */
 export function useProjectPermissions(projectId: string | undefined): ProjectPermissions {
   const { user } = useAuth();
-  const { data: members = [], isLoading } = useProjectMembers(projectId);
-  const { isOrgAdmin } = useOrgPermissions();
+  const { data: project, isLoading } = useProject(projectId);
 
   return useMemo(() => {
-    const myMembership = user ? members.find((m) => m.id === user.id) : undefined;
-    const myProjectRole: ProjectRole | null = isOrgAdmin
-      ? 'admin'
-      : ((myMembership?.role as ProjectRole | undefined) ?? null);
+    const myProjectRole: ProjectRole | null = (project?.myRole as ProjectRole | undefined) ?? null;
 
     const isProjectAdmin = myProjectRole === 'admin';
     const isProjectMaintainerPlus = myProjectRole === 'admin' || myProjectRole === 'maintainer';
@@ -89,7 +93,7 @@ export function useProjectPermissions(projectId: string | undefined): ProjectPer
       canDeleteResource,
       isLoading,
     };
-  }, [user, members, isOrgAdmin, isLoading, projectId]);
+  }, [user, project, isLoading, projectId]);
 }
 
 export interface OrgPermissions {

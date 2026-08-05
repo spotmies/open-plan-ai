@@ -67,7 +67,7 @@ import { useUpdateProject, useUpdateProjectStage, useProject, useDeleteProject }
 import { useOrganizationMembers, useProjectMembers } from "@/hooks/useProjectTeam";
 import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 import { useProjectAttachments, useDeleteAttachment } from "@/hooks/useProjectAttachments";
-import { useProjectLinks, useCreateProjectLink, useDeleteProjectLink } from "@/hooks/useProjectLinks";
+import { useProjectLinks, useCreateProjectLink, useUpdateProjectLink, useDeleteProjectLink } from "@/hooks/useProjectLinks";
 import { projectStorageService } from "@/services/projectStorage.service";
 import { resolveFileUrl } from "@/utils/fileUrl";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
@@ -193,6 +193,7 @@ const EditProject = () => {
     // Mutations
     const deleteAttachmentMutation = useDeleteAttachment();
     const createLinkMutation = useCreateProjectLink();
+    const updateLinkMutation = useUpdateProjectLink();
     const deleteLinkMutation = useDeleteProjectLink();
 
     // Form state
@@ -298,6 +299,9 @@ const EditProject = () => {
     // Links state
     const [newLinkName, setNewLinkName] = useState("");
     const [newLinkUrl, setNewLinkUrl] = useState("");
+    const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+    const [editingLinkName, setEditingLinkName] = useState("");
+    const [editingLinkUrl, setEditingLinkUrl] = useState("");
 
     // Deletion Confirmation State
     const [deleteConfirmation, setDeleteConfirmation] = useState<{
@@ -718,6 +722,33 @@ const EditProject = () => {
             toast.success('Link added successfully');
         } catch (err) {
             toast.error('Failed to add link');
+        }
+    };
+
+    const handleEditLink = (link: any) => {
+        setEditingLinkId(link.id);
+        setEditingLinkName(link.title || link.name || "");
+        setEditingLinkUrl(link.url || "");
+    };
+
+    const handleCancelLinkEdit = () => {
+        setEditingLinkId(null);
+        setEditingLinkName("");
+        setEditingLinkUrl("");
+    };
+
+    const handleSaveLinkEdit = async () => {
+        if (!editingLinkName || !editingLinkUrl || !editingLinkId || !id) return;
+
+        try {
+            await updateLinkMutation.mutateAsync({
+                linkId: editingLinkId,
+                projectId: id,
+                input: { title: editingLinkName, url: editingLinkUrl },
+            });
+            handleCancelLinkEdit();
+        } catch (err) {
+            toast.error('Failed to update link');
         }
     };
 
@@ -2018,33 +2049,97 @@ const EditProject = () => {
                         {/* Existing Links */}
                         {projectLinks.length > 0 && (
                             <div className="space-y-2">
-                                {projectLinks.map((link: any) => (
-                                    <div
-                                        key={link.id}
-                                        className="flex items-center justify-between p-3 rounded-md bg-muted/50"
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <LinkIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                                            <span className="text-sm font-medium">{link.title || link.name}</span>
-                                            <a
-                                                href={link.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-xs text-primary hover:underline truncate max-w-[200px]"
-                                            >
-                                                {link.url}
-                                            </a>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 shrink-0"
-                                            onClick={() => handleDeleteLink(link.id)}
+                                {projectLinks.map((link: any) => {
+                                    const isEditingLink = editingLinkId === link.id;
+                                    return (
+                                        <div
+                                            key={link.id}
+                                            className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/50"
                                         >
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                ))}
+                                            {isEditingLink ? (
+                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                    <LinkIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                    <Input
+                                                        autoFocus
+                                                        value={editingLinkName}
+                                                        onChange={(e) => setEditingLinkName(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveLinkEdit();
+                                                            if (e.key === 'Escape') handleCancelLinkEdit();
+                                                        }}
+                                                        className="h-8 flex-1"
+                                                        placeholder="Link name"
+                                                    />
+                                                    <Input
+                                                        value={editingLinkUrl}
+                                                        onChange={(e) => setEditingLinkUrl(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveLinkEdit();
+                                                            if (e.key === 'Escape') handleCancelLinkEdit();
+                                                        }}
+                                                        className="h-8 flex-1"
+                                                        placeholder="URL"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <LinkIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                    <span className="text-sm font-medium">{link.title || link.name}</span>
+                                                    <a
+                                                        href={link.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-xs text-primary hover:underline truncate max-w-[200px]"
+                                                    >
+                                                        {link.url}
+                                                    </a>
+                                                </div>
+                                            )}
+                                            <div className="flex gap-1 shrink-0">
+                                                {isEditingLink ? (
+                                                    <>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={handleSaveLinkEdit}
+                                                            disabled={!editingLinkName.trim() || !editingLinkUrl.trim()}
+                                                        >
+                                                            <Check className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={handleCancelLinkEdit}
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={() => handleEditLink(link)}
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={() => handleDeleteLink(link.id)}
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </Button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </CardContent>

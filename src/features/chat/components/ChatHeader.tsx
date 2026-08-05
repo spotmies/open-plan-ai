@@ -359,7 +359,10 @@ export function ChatHeader({
         onClick={() => setDetailPanelOpen(true)}
       >
         <div className="relative shrink-0">
-          <Avatar className="h-9 w-9 border border-border group-hover:border-primary/50 transition-colors">
+          <Avatar
+            key={otherMember?.id ?? conversation.id}
+            className="h-9 w-9 border border-border group-hover:border-primary/50 transition-colors"
+          >
             {avatarUrl && !isEmoji(avatarUrl) && (
               <AvatarImage src={avatarUrl} alt={displayName} className="object-cover" />
             )}

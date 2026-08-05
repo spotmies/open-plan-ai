@@ -266,6 +266,7 @@ export interface Project {
   notes?: string;
   departments?: string[];
   myRole?: string;
+  pinned?: boolean;
   createdBy?: string;
   createdAt: string;
   updatedAt: string;

@@ -180,6 +180,14 @@ export const projectsService = {
   },
 
   /**
+   * Toggle the current user's pin on a project — private per-user, reorders
+   * only that user's own project list.
+   */
+  async togglePin(id: string): Promise<Project> {
+    return apiClient.patch<Project>(ENDPOINTS.PROJECTS.PIN(id), {});
+  },
+
+  /**
    * Get project team members
    */
   async getTeam(id: string): Promise<TeamMember[]> {
