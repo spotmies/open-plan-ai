@@ -160,7 +160,7 @@ export async function createBomWorkbook(bomData: BomRow[]): Promise<ExcelJS.Work
     'Requirements',
   ];
 
-  const headerRow = sheet.addRow(headers);
+  sheet.addRow(headers);
   formatHeader(sheet, 1);
 
   // Add data rows
@@ -257,7 +257,7 @@ export async function createEcoWorkbook(ecoData: EcoData): Promise<ExcelJS.Workb
   // Sheet 1: Summary
   const summarySheet = workbook.addWorksheet('Summary');
   const summaryHeaders = ['Field', 'Value'];
-  const summaryRow = summarySheet.addRow(summaryHeaders);
+  summarySheet.addRow(summaryHeaders);
   formatHeader(summarySheet, 1);
 
   const summaryData = [

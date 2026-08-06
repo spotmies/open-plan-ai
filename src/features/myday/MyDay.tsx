@@ -52,6 +52,7 @@ export default function MyDay() {
   // Fetch dynamic data
   const { data: userTasks = [], isLoading: tasksLoading } = useMyDayTasks(filter);
   const { data: overdueTasks = [] } = useMyDayTasks('overdue');
+  const { data: todayTasks = [] } = useMyDayTasks('today');
   // Stat tiles reflect the full assigned set, not just the active tab — otherwise
   // e.g. the default "today" tab makes every surviving item `isDueToday`, which the
   // categorizer treats as "needs attention", so "Ready to Work" could never be > 0.
@@ -269,52 +270,47 @@ export default function MyDay() {
           completedTodayCount={completedTodayCount}
         />
 
-       {/* View controls - always visible once data is ready */}
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-          <Tabs value={filter} onValueChange={(v) => setFilter(v as MyDayFilter)}>
-            <TabsList>
-              <TabsTrigger value="today">My Day</TabsTrigger>
-              <TabsTrigger value="overdue" className="relative">
+        {/* View controls - always visible once data is ready */}
+        <div className="flex items-center justify-between mb-6 gap-2 sm:gap-4 flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible pb-1 sm:pb-0">
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as MyDayFilter)} className="shrink-0">
+            <TabsList className="h-9 p-1 shrink-0 gap-2">
+              <TabsTrigger value="today" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
+                My Day
+                {todayTasks.length > 0 && filter !== 'today' && (
+                  <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
+                    {todayTasks.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="overdue" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
                 Overdue
-                {overdueTasks.length > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none">
+                {overdueTasks.length > 0 && filter !== 'overdue' && (
+                  <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
                     {overdueTasks.length}
                   </span>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="all" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">All</TabsTrigger>
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <MyTasksFiltersDropdown
               items={userTasks}
               filters={columnFilters}
               onFiltersChange={setColumnFilters}
+              className="order-2 sm:order-1"
             />
 
             <Button
               size="sm"
-              className="gap-2 h-9 rounded-lg"
+              className="gap-1.5 sm:gap-2 h-9 rounded-lg px-2.5 sm:px-3 text-xs sm:text-sm order-1 sm:order-2"
               onClick={() => setIsAddTaskOpen(true)}
             >
               <Plus className="h-4 w-4" />
-              Add Task
+              Add<span className="hidden sm:inline">&nbsp;Task</span>
             </Button>
           </div>
-
-          {/* <Tabs value={view} onValueChange={(v) => setView(v as MyDayView)}>
-            <TabsList>
-              <TabsTrigger value="kanban" className="gap-2">
-                <LayoutGrid className="h-4 w-4" />
-                Kanban
-              </TabsTrigger>
-              <TabsTrigger value="list" className="gap-2">
-                <List className="h-4 w-4" />
-                List
-              </TabsTrigger>
-            </TabsList>
-          </Tabs> */}
         </div>
 
         {/* List content */}
@@ -426,7 +422,7 @@ export default function MyDay() {
           allTasks={[]}
           isOpen={isAddTaskOpen}
           onClose={handleCloseAddTaskModal}
-          onUpdate={() => {}}
+          onUpdate={() => { }}
           mode="create"
           onCreate={handleTaskCreate}
           modules={[]}

@@ -214,7 +214,7 @@ export function ActivityFeed({ activities, isLoading, className }: ActivityFeedP
   }
 
   return (
-    <Card className={cn('flex flex-col min-h-0 overflow-hidden', className)}>
+    <Card className={cn('flex flex-col', className)}>
       <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
         <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
           <PanelIcon icon={ActivityIcon} color="#2563EB" />
@@ -229,7 +229,7 @@ export function ActivityFeed({ activities, isLoading, className }: ActivityFeedP
           </Button>
         )}
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col px-3 md:px-6 overflow-x-hidden">
+      <CardContent className="flex flex-col px-3 md:px-6 pb-4">
         {activities.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center animate-fade-in">
             <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-3">
@@ -241,7 +241,7 @@ export function ActivityFeed({ activities, isLoading, className }: ActivityFeedP
             </p>
           </div>
         ) : (
-          <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden space-y-1">
+          <div ref={containerRef} className="space-y-1">
             {activities.map((activity) => {
               const Icon = activityIcons[activity.type] || ActivityIcon;
               const colorClass = activityColors[activity.type] || 'text-muted-foreground bg-muted';

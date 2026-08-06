@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { MultiSelect } from '@/components/ui/multi-select';
+import { cn } from '@/lib/utils';
 import { MyDayItem, MyDayItemType, MyTasksColumnFilters } from '@/types';
 
 interface MyTasksFiltersDropdownProps {
   items: MyDayItem[];
   filters: MyTasksColumnFilters;
   onFiltersChange: (filters: MyTasksColumnFilters) => void;
+  className?: string;
 }
 
 const typeOptions = [
@@ -36,7 +38,7 @@ const priorityOptions = [
   { value: 'trivial', label: 'Trivial' },
 ];
 
-export function MyTasksFiltersDropdown({ items, filters, onFiltersChange }: MyTasksFiltersDropdownProps) {
+export function MyTasksFiltersDropdown({ items, filters, onFiltersChange, className }: MyTasksFiltersDropdownProps) {
   const projectOptions = useMemo(() => {
     const seen = new Map<string, string>();
     items.forEach((item) => {
@@ -65,7 +67,7 @@ export function MyTasksFiltersDropdown({ items, filters, onFiltersChange }: MyTa
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
+        <Button variant="outline" size="sm" className={cn("gap-2 h-9 rounded-lg", className)}>
           <Filter className="h-4 w-4" />
           <span className="hidden sm:inline">Filter</span>
           {activeFilterCount > 0 && (

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { format, parse } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { CheckSquare, Bug, Check, ChevronUp, ChevronDown } from 'lucide-react';
+import { CheckSquare, Bug, Check, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 import {
   MyDayItem,
   groupTasksByProject,
@@ -187,6 +187,40 @@ export function MyDayListView({
     });
   }, [groupedTasks, sortField, sortDirection]);
 
+  // Infinite scrolling state for mobile view (displays 10 by 10)
+  const [mobileVisibleCount, setMobileVisibleCount] = useState(10);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const observerTarget = useRef<HTMLDivElement | null>(null);
+
+  // Reset mobile count whenever tasks or sort order changes
+  useEffect(() => {
+    setMobileVisibleCount(10);
+    setIsLoadingMore(false);
+  }, [allTasks]);
+
+  // Observer to load 10 more tasks when scrolling near bottom on mobile
+  useEffect(() => {
+    if (!isMobile) return;
+    const target = observerTarget.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoadingMore) {
+          setIsLoadingMore(true);
+          setTimeout(() => {
+            setMobileVisibleCount((prev) => Math.min(prev + 10, allTasks.length));
+            setIsLoadingMore(false);
+          }, 350);
+        }
+      },
+      { threshold: 0.1, rootMargin: '50px' }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [isMobile, allTasks.length, isLoadingMore]);
+
   const SortableHead = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
     <TableHead className={className}>
       <button
@@ -210,63 +244,79 @@ export function MyDayListView({
   }
 
   if (isMobile) {
+    const visibleTasks = allTasks.slice(0, mobileVisibleCount);
+    const hasMore = mobileVisibleCount < allTasks.length;
+
     return (
-      <div className="rounded-lg border divide-y divide-border">
-        {allTasks.map((task) => {
-          const isComplete = task.status === 'done' || task.status === 'resolved';
-          return (
-            <div
-              key={task.id}
-              className="flex items-start gap-3 px-4 py-3.5 cursor-pointer active:bg-muted/50"
-              onClick={() => onTaskClick(task)}
-            >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onStatusUpdate(task.id, isComplete ? 'todo' : 'done');
-                }}
-                aria-label={isComplete ? 'Mark as incomplete' : 'Mark as complete'}
-                className={cn(
-                  'h-5 w-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors',
-                  isComplete ? 'bg-status-done border-status-done' : 'border-muted-foreground/40'
-                )}
+      <div className="space-y-3">
+        <div className="rounded-lg border divide-y divide-border">
+          {visibleTasks.map((task) => {
+            const isComplete = task.status === 'done' || task.status === 'resolved';
+            return (
+              <div
+                key={task.id}
+                className="flex items-start gap-3 px-4 py-3.5 cursor-pointer active:bg-muted/50"
+                onClick={() => onTaskClick(task)}
               >
-                {isComplete && <Check className="h-3 w-3 text-white" />}
-              </button>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-[15px] leading-snug truncate">{task.title}</p>
-                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'text-[11px] px-2 py-0.5 flex items-center gap-1 w-fit font-medium',
-                      task.itemType === 'task' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-orange-50 text-orange-700 border-orange-200'
-                    )}
-                  >
-                    {task.itemType === 'task' ? (
-                      <>
-                        <CheckSquare className="h-3 w-3" />
-                        <span>Task</span>
-                      </>
-                    ) : (
-                      <>
-                        <Bug className="h-3 w-3" />
-                        <span>Issue</span>
-                      </>
-                    )}
-                  </Badge>
-                  <Badge
-                    variant="secondary"
-                    className={cn('text-[11px] px-2 py-0.5 font-medium capitalize', statusColors[task.status])}
-                  >
-                    {statusLabels[task.status] || task.status}
-                  </Badge>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStatusUpdate(task.id, isComplete ? 'todo' : 'done');
+                  }}
+                  aria-label={isComplete ? 'Mark as incomplete' : 'Mark as complete'}
+                  className={cn(
+                    'h-5 w-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors',
+                    isComplete ? 'bg-status-done border-status-done' : 'border-muted-foreground/40'
+                  )}
+                >
+                  {isComplete && <Check className="h-3 w-3 text-white" />}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-[15px] leading-snug truncate">{task.title}</p>
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-[11px] px-2 py-0.5 flex items-center gap-1 w-fit font-medium',
+                        task.itemType === 'task' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-orange-50 text-orange-700 border-orange-200'
+                      )}
+                    >
+                      {task.itemType === 'task' ? (
+                        <>
+                          <CheckSquare className="h-3 w-3" />
+                          <span>Task</span>
+                        </>
+                      ) : (
+                        <>
+                          <Bug className="h-3 w-3" />
+                          <span>Issue</span>
+                        </>
+                      )}
+                    </Badge>
+                    <Badge
+                      variant="secondary"
+                      className={cn('text-[11px] px-2 py-0.5 font-medium capitalize', statusColors[task.status])}
+                    >
+                      {statusLabels[task.status] || task.status}
+                    </Badge>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {/* Sentinel loader element for mobile infinite scroll */}
+        {hasMore && (
+          <div
+            ref={observerTarget}
+            className="py-3.5 text-center text-xs text-muted-foreground flex items-center justify-center gap-2 border rounded-lg bg-muted/20 font-medium"
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span>Loading...</span>
+          </div>
+        )}
       </div>
     );
   }

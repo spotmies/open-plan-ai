@@ -442,7 +442,7 @@ export function IssueDetailContent({
                     fileType: r.mimeType ?? r.mime_type ?? '',
                     uploadedAt: r.createdAt ?? r.uploaded_at ?? new Date().toISOString(),
                     uploadedBy: profile
-                        ? { id: profile.id, name: profile.name, email: profile.email, role: '', initials: profile.initials ?? '' }
+                        ? { id: profile.id, name: profile.name, email: profile.email, role: profile.role || 'member', initials: profile.initials ?? '' }
                         : { id: '', name: 'You', email: '', role: '', initials: '' },
                 })),
             ]);
@@ -1742,7 +1742,7 @@ export function IssueDetailContent({
 
                             <div className="flex gap-2">
                                 <Input
-                                    placeholder="Paste YouTube, Vimeo, or direct video URL…"
+                                    placeholder="Paste video URL…"
                                     value={videoLinkInput}
                                     onChange={(e) => setVideoLinkInput(e.target.value)}
                                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddVideoLink(); } }}

@@ -122,7 +122,7 @@ export const teamService = {
     };
   },
 
-  async getById(id: string): Promise<TeamMember | null> {
+  async getById(_id: string): Promise<TeamMember | null> {
     // No dedicated per-user endpoint in current API; return null gracefully.
     return null;
   },

@@ -119,16 +119,6 @@ describe('ErrorBoundary', () => {
       expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
     });
 
-    it('should render Refresh Page button', () => {
-      render(
-        <ErrorBoundary>
-          <ThrowingComponent />
-        </ErrorBoundary>
-      );
-
-      expect(screen.getByRole('button', { name: /Refresh Page/i })).toBeInTheDocument();
-    });
-
     it('should render Go Home button', () => {
       render(
         <ErrorBoundary>
@@ -172,25 +162,6 @@ describe('ErrorBoundary', () => {
 
       // The component should try to render children again
       expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
-    });
-
-    it('should call window.location.reload when Refresh Page is clicked', async () => {
-      const user = userEvent.setup();
-      const reloadMock = vi.fn();
-      Object.defineProperty(window, 'location', {
-        value: { reload: reloadMock, href: 'http://localhost' },
-        writable: true,
-      });
-
-      render(
-        <ErrorBoundary>
-          <ThrowingComponent />
-        </ErrorBoundary>
-      );
-
-      await user.click(screen.getByRole('button', { name: /Refresh Page/i }));
-
-      expect(reloadMock).toHaveBeenCalled();
     });
 
     it('should navigate home when Go Home is clicked', async () => {

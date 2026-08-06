@@ -324,8 +324,8 @@ describe('reportsUtils', () => {
       ...overrides,
     });
 
-    it('should return empty array when no tasks are assigned', () => {
-      const members = [createTeamMember()];
+    it('should return empty array when no team members exist', () => {
+      const members: TeamMember[] = [];
       const tasks: Task[] = [];
 
       const result = getTeamWorkload(tasks, members);

@@ -50,7 +50,7 @@ export function EngineeringChangesSummary({ projectIds, projects }: EngineeringC
   const remainingAwaiting = awaiting.length - fitCount;
 
   return (
-    <Card className="h-full min-h-0 flex flex-col overflow-hidden">
+    <Card className="flex flex-col">
       <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
         <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
           <PanelIcon icon={GitMerge} color="#9333EA" />
@@ -58,7 +58,7 @@ export function EngineeringChangesSummary({ projectIds, projects }: EngineeringC
         </CardTitle>
         <ProjectPickerPopover projects={projects} tab="eng-changes" label="Open ECOs" className="shrink-0" />
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col space-y-3">
+      <CardContent className="flex flex-col space-y-3 pb-4">
         <div className="shrink-0 grid grid-cols-3 gap-0 rounded-lg border border-border overflow-hidden">
           <div className="flex flex-col gap-0.5 px-3 py-2">
             <span className="text-[10.5px] font-medium text-muted-foreground">Open</span>
@@ -115,12 +115,12 @@ export function EngineeringChangesSummary({ projectIds, projects }: EngineeringC
         </div>
 
         {!awaitingLoading && awaiting.length > 0 && (
-          <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex flex-col">
             <span className="shrink-0 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-status-blocked mb-2">
               <GitPullRequest className="h-3 w-3" />
               Awaiting your approval
             </span>
-            <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden space-y-1.5">
+            <div ref={containerRef} className="space-y-1.5">
               {awaiting.map((eco) => (
                 <Link
                   key={eco.id}

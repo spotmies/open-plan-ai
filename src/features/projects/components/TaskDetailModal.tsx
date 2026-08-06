@@ -160,11 +160,11 @@ function StatusDot({ color }: { color: string }) {
 }
 
 const DEFAULT_STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
-  { value: 'backlog',      label: 'Backlog',      color: 'bg-[#6b7280]' },
-  { value: 'todo',         label: 'To Do',        color: 'bg-[#3b82f6]' },
-  { value: 'in_progress',  label: 'In Progress',  color: 'bg-[#f59e0b]' },
-  { value: 'in_review',    label: 'In Review',    color: 'bg-[#8b5cf6]' },
-  { value: 'done',         label: 'Done',         color: 'bg-[#10b981]' },
+  { value: 'backlog', label: 'Backlog', color: 'bg-[#6b7280]' },
+  { value: 'todo', label: 'To Do', color: 'bg-[#3b82f6]' },
+  { value: 'in_progress', label: 'In Progress', color: 'bg-[#f59e0b]' },
+  { value: 'in_review', label: 'In Review', color: 'bg-[#8b5cf6]' },
+  { value: 'done', label: 'Done', color: 'bg-[#10b981]' },
 ];
 
 
@@ -495,7 +495,7 @@ export const TaskDetailModal = ({
         };
       });
       setEditedTask(prev => ({ ...prev, attachments: mapped }));
-    }).catch(() => {});
+    }).catch(() => { });
     return () => { cancelled = true; };
   }, [isOpen, task?.id, mode]);
 
@@ -529,13 +529,13 @@ export const TaskDetailModal = ({
       updatedAt: new Date().toISOString(),
       createdBy: profile
         ? {
-            id: profile.id,
-            name: profile.name || profile.email,
-            email: profile.email,
-            role: profile.role || 'member',
-            initials: profile.initials || (profile.name || profile.email || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
-            avatar: profile.avatarUrl || profile.avatar_url || '',
-          }
+          id: profile.id,
+          name: profile.name || profile.email,
+          email: profile.email,
+          role: profile.role || 'member',
+          initials: profile.initials || (profile.name || profile.email || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+          avatar: profile.avatarUrl || '',
+        }
         : undefined,
     } : editedTask);
     setEditedTask(baseTask);
@@ -543,7 +543,7 @@ export const TaskDetailModal = ({
     setIsSaving(false);
     setIsAdvancedDescription(!!(baseTask.descriptionBlocks && baseTask.descriptionBlocks.length > 0));
     setInitialTaskSnapshot(serializeTaskForDirtyCheck(baseTask));
-    
+
     // Track initial blocked by items
     setInitialBlockedByIds(baseTask.blockedBy || []);
 
@@ -622,13 +622,13 @@ export const TaskDetailModal = ({
         ...editedTask,
         createdBy: profile
           ? {
-              id: profile.id,
-              name: profile.name || profile.email,
-              email: profile.email,
-              role: profile.role || 'member',
-              initials: profile.initials || (profile.name || profile.email || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
-              avatar: profile.avatarUrl || profile.avatar_url || '',
-            }
+            id: profile.id,
+            name: profile.name || profile.email,
+            email: profile.email,
+            role: profile.role || 'member',
+            initials: profile.initials || (profile.name || profile.email || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+            avatar: profile.avatarUrl || '',
+          }
           : editedTask.createdBy,
       };
       onCreate(taskWithCreator, pendingFiles.length > 0 ? pendingFiles : undefined);
@@ -845,7 +845,7 @@ export const TaskDetailModal = ({
 
     return sortedCurrentBlockingToIds.some((id, idx) => id !== sortedInitialBlockingToIds[idx]);
   }, [sortedCurrentBlockingToIds, sortedInitialBlockingToIds]);
-  
+
   // Check if blockedBy has changed
   const hasBlockedByChanges = useMemo(() => {
     const current = [...(editedTask.blockedBy || [])].sort();
@@ -853,7 +853,7 @@ export const TaskDetailModal = ({
     if (current.length !== initial.length) return true;
     return current.some((id, idx) => id !== initial[idx]);
   }, [editedTask.blockedBy, initialBlockedByIds]);
-  
+
   const hasDependenciesForBlocked =
     (editedTask.blockedBy?.length || 0) > 0 ||
     localBlockingToIds.length > 0 ||
@@ -863,10 +863,10 @@ export const TaskDetailModal = ({
   const isFormDirty = isTaskDirty || hasBlockingToChanges || hasBlockedByChanges || pendingFiles.length > 0;
   const canSubmitTask = Boolean(
     editedTask.title &&
-      editedTask.startDate &&
-      editedTask.dueDate &&
-      !isBlockedWithoutDependencies &&
-      (mode === 'create' || isFormDirty)
+    editedTask.startDate &&
+    editedTask.dueDate &&
+    !isBlockedWithoutDependencies &&
+    (mode === 'create' || isFormDirty)
   );
 
   const attemptClose = () => {
@@ -928,8 +928,8 @@ export const TaskDetailModal = ({
         author: {
           id: profile.id,
           name: profile.name || profile.email,
-          initials: profile.initials,
-          avatar: profile.avatar_url || undefined,
+          initials: profile.initials || '',
+          avatar: profile.avatarUrl || undefined,
           email: profile.email,
           role: profile.role || 'member'
         },
@@ -1032,7 +1032,7 @@ export const TaskDetailModal = ({
         .map(t => t.id);
 
       // Compute blockedBy diffs: tasks that THIS task depends on
-      const originalBlockedByIds = editedTask.id 
+      const originalBlockedByIds = editedTask.id
         ? allTasks.find(t => t.id === editedTask.id)?.blockedBy || []
         : [];
 
@@ -1057,7 +1057,7 @@ export const TaskDetailModal = ({
         if (other && !other.blockedBy.includes(editedTask.id)) {
           mergeBatchUpdate(id, {
             id,
-            updates: { 
+            updates: {
               blockedBy: [...other.blockedBy, editedTask.id],
               status: other.status === 'blocked' ? other.status : 'blocked'
             }
@@ -1073,7 +1073,7 @@ export const TaskDetailModal = ({
           const newBlockedBy = other.blockedBy.filter(bid => bid !== editedTask.id);
           mergeBatchUpdate(id, {
             id,
-            updates: { 
+            updates: {
               blockedBy: newBlockedBy,
               // If no more blockers, change status back to 'todo'
               status: newBlockedBy.length === 0 && other.status === 'blocked' ? 'todo' : other.status
@@ -1089,7 +1089,7 @@ export const TaskDetailModal = ({
         if (blocker) {
           mergeBatchUpdate(id, {
             id,
-            updates: { 
+            updates: {
               status: blocker.status === 'blocked' ? blocker.status : 'blocked'
             }
           }.updates);
@@ -1212,1225 +1212,1193 @@ export const TaskDetailModal = ({
 
   return (
     <>
-    <Dialog open={isOpen} onOpenChange={(open) => !open && attemptClose()}>
-      <DialogContent
-        className={cn(
-          'p-0 flex flex-col gap-0 overflow-hidden',
-          isMobile
-            ? 'inset-0 left-0 top-0 h-[100dvh] w-screen max-w-none max-h-none translate-x-0 translate-y-0 rounded-none border-0'
-            : 'max-w-4xl max-h-[90vh]'
-        )}
-        hideClose
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        {mode === 'create' && (
-          <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between shrink-0">
-            <DialogTitle>Add New Task</DialogTitle>
-            <DialogClose asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </Button>
-            </DialogClose>
-          </DialogHeader>
-        )}
-        {mode !== 'create' && showMobileHeader ? (
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b shrink-0 bg-background">
-            <div className="flex items-center gap-3 min-w-0">
-              <button
-                type="button"
-                onClick={attemptClose}
-                className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 text-foreground active:bg-muted/70 transition-colors"
-                aria-label="Back"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <DialogTitle className="text-[15px] font-bold truncate">Task Details</DialogTitle>
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 text-foreground active:bg-muted/70 transition-colors"
-                  aria-label="Task actions"
-                >
-                  <MoreVertical className="w-5 h-5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {!isMobileEditMode ? (
-                  <DropdownMenuItem
-                    onClick={() => setIsMobileEditMode(true)}
-                    disabled={!canEditTask}
-                    title={canEditTask ? undefined : editLockTitle}
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit Task
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem
-                    onClick={handleUpdateTask}
-                    disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
-                  >
-                    <Check className="h-4 w-4 mr-2" />
-                    Update Task
-                  </DropdownMenuItem>
-                )}
-                {onDelete && (
-                  <DropdownMenuItem
-                    onClick={() => setShowDeleteConfirm(true)}
-                    disabled={!canDeleteTask}
-                    title={canDeleteTask ? undefined : deleteLockTitle}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Task
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        ) : mode !== 'create' && (
-          <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
-            <DialogTitle className="text-sm font-medium text-muted-foreground">Task</DialogTitle>
-            <div className="flex items-center gap-1">
+      <Dialog open={isOpen} onOpenChange={(open) => !open && attemptClose()}>
+        <DialogContent
+          className={cn(
+            'p-0 flex flex-col gap-0 overflow-hidden',
+            isMobile
+              ? 'inset-0 left-0 top-0 h-[100dvh] w-screen max-w-none max-h-none translate-x-0 translate-y-0 rounded-none border-0'
+              : 'max-w-4xl max-h-[90vh]'
+          )}
+          hideClose
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          {mode === 'create' && (
+            <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between shrink-0">
+              <DialogTitle>Add New Task</DialogTitle>
               <DialogClose asChild>
                 <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
                   <X className="h-4 w-4" />
                 </Button>
               </DialogClose>
-            </div>
-          </div>
-        )}
-        <DialogDescription className="sr-only">
-          View and edit details for task {task?.title || 'New Task'}
-        </DialogDescription>
-
-        <ScrollArea className={cn(
-          'flex-1 overflow-y-auto w-full min-h-0',
-          isMobile && (showMobileHeader && isMobileEditMode ? 'max-h-[calc(100dvh-129px)]' : 'max-h-[calc(100dvh-57px)]')
-        )}>
-          <div className={cn('p-4 sm:p-6 space-y-6', showMobileHeader && 'space-y-5')}>
-            {showMobileHeader && projectName && (
-              <p className="text-xs text-muted-foreground -mb-2">
-                {projectName} <span className="mx-1">›</span> Board
-              </p>
-            )}
-            <div className="space-y-2">
-              {!showMobileHeader && (
-                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Task Title <span className="text-destructive" aria-hidden="true">*</span></Label>
-              )}
-              <Input
-                value={editedTask.title}
-                onChange={(e) => handleFieldChange('title', e.target.value)}
-                className={cn(
-                  showMobileHeader
-                    ? 'text-xl font-bold h-auto py-1 px-0 border-0 shadow-none focus-visible:ring-0 rounded-none disabled:opacity-100 disabled:cursor-default'
-                    : 'text-base font-semibold w-full',
-                  showMobileHeader && !canEditTask && 'opacity-60'
-                )}
-                placeholder="Task title..."
-                aria-required="true"
-                disabled={!canEditTaskFields}
-                title={canEditTaskFields ? undefined : editLockTitle}
-              />
-            </div>
-
-            {/* Metadata Section */}
-            <div className="flex flex-col gap-6">
-              {/* Assigned To — full-width row */}
-              <div className="space-y-1.5">
-                <Label className={cn(
-                  'text-xs text-muted-foreground flex items-center gap-1.5',
-                  showMobileHeader && 'uppercase tracking-wider font-medium'
-                )}>
-                  {!showMobileHeader && <User className="h-3 w-3" />}
-                  Assigned To
-                </Label>
-                <Popover open={isAssigneePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsAssigneePopoverOpen(open)}>
-                  <PopoverTrigger asChild>
-                    <button
-                      disabled={!canEditTaskFields}
-                      title={canEditTaskFields ? undefined : editLockTitle}
-                      className={cn(
-                        'flex items-center gap-2 h-10 px-2 w-full text-left rounded-md hover:bg-muted/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        !canEditTask && 'cursor-not-allowed opacity-60 hover:bg-transparent'
-                      )}
+            </DialogHeader>
+          )}
+          {mode !== 'create' && showMobileHeader ? (
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b shrink-0 bg-background">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  type="button"
+                  onClick={attemptClose}
+                  className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 text-foreground active:bg-muted/70 transition-colors"
+                  aria-label="Back"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <DialogTitle className="text-[15px] font-bold truncate">Task Details</DialogTitle>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 text-foreground active:bg-muted/70 transition-colors"
+                    aria-label="Task actions"
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {!isMobileEditMode ? (
+                    <DropdownMenuItem
+                      onClick={() => setIsMobileEditMode(true)}
+                      disabled={!canEditTask}
+                      title={canEditTask ? undefined : editLockTitle}
                     >
-                      <div className="flex items-center">
-                        {(editedTask.assignees || []).slice(0, 5).map((assignee, index) => (
-                          <div
-                            key={assignee.id}
-                            className="rounded-full ring-2 ring-background"
-                            style={{ zIndex: index, marginLeft: index === 0 ? 0 : '-8px' }}
-                            title={assignee.assignedBy ? `Assigned by ${assignee.assignedBy.name}` : undefined}
-                          >
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
-                              <AvatarFallback className="text-xs font-semibold bg-primary/15 text-primary">
-                                {assignee.initials}
-                              </AvatarFallback>
-                            </Avatar>
-                          </div>
-                        ))}
-                        {(editedTask.assignees || []).length > 5 && (
-                          <div
-                            className="h-8 w-8 rounded-full ring-2 ring-background bg-muted flex items-center justify-center"
-                            style={{ zIndex: 5, marginLeft: '-8px' }}
-                          >
-                            <span className="text-xs text-muted-foreground font-medium">+{(editedTask.assignees || []).length - 5}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/40 hover:border-primary hover:text-primary transition-all flex items-center justify-center shrink-0">
-                        <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-                      </div>
-                      {(editedTask.assignees || []).length === 0 && (
-                        <span className="text-sm text-muted-foreground">Click to assign members...</span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="p-0 w-[260px]" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search members..." />
-                      
-                      {(editedTask.assignees || []).length > 0 && (
-                        <div className="p-2 border-b">
-                          <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
-                          {(editedTask.assignees || []).map((assignee) => (
-                            <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
-                              <Avatar className="h-6 w-6 shrink-0">
-                                <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
-                                <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
-                              </Avatar>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm truncate">{assignee.name}</p>
-                                {assignee.assignedBy && (
-                                  <p className="text-[10px] text-muted-foreground truncate">Assigned by {assignee.assignedBy.name}</p>
-                                )}
-                              </div>
-                              <button
-                                disabled={!canEditTaskFields}
-                                title={canEditTaskFields ? undefined : editLockTitle}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFieldChange('assignees', (editedTask.assignees || []).filter(a => a.id !== assignee.id));
-                                }}
-                                className={cn(
-                                  'text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100',
-                                  !canEditTaskFields && 'cursor-not-allowed group-hover:opacity-60'
-                                )}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit Task
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={handleUpdateTask}
+                      disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
+                    >
+                      <Check className="h-4 w-4 mr-2" />
+                      Update Task
+                    </DropdownMenuItem>
+                  )}
+                  {onDelete && (
+                    <DropdownMenuItem
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={!canDeleteTask}
+                      title={canDeleteTask ? undefined : deleteLockTitle}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Task
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ) : mode !== 'create' && (
+            <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
+              <DialogTitle className="text-sm font-medium text-muted-foreground">Task</DialogTitle>
+              <div className="flex items-center gap-1">
+                <DialogClose asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </DialogClose>
+              </div>
+            </div>
+          )}
+          <DialogDescription className="sr-only">
+            View and edit details for task {task?.title || 'New Task'}
+          </DialogDescription>
 
-                      <CommandList>
-                        <CommandEmpty>
-                          {availableAssignees.filter(m => !editedTask.assignees?.some(a => a.id === m.id)).length === 0
-                            ? "All members assigned"
-                            : "No results found."}
-                        </CommandEmpty>
-                        {availableAssignees.filter(m => !editedTask.assignees?.some(a => a.id === m.id)).length > 0 && (
-                          <CommandGroup heading="Add members">
-                            {availableAssignees
-                              .filter(m => !editedTask.assignees?.some(a => a.id === m.id))
-                              .map((member) => (
-                                <CommandItem
-                                  key={member.id}
-                                  value={`${member.id} ${member.name}`}
-                                  onSelect={() => {
-                                    handleFieldChange('assignees', [...(editedTask.assignees || []), member]);
-                                  }}
-                                  className="cursor-pointer"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Avatar className="h-5 w-5">
-                                      <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
-                                      <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
-                                    </Avatar>
-                                    {member.name}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                          </CommandGroup>
-                        )}
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+          <ScrollArea className={cn(
+            'flex-1 overflow-y-auto w-full min-h-0',
+            isMobile && (showMobileHeader && isMobileEditMode ? 'max-h-[calc(100dvh-129px)]' : 'max-h-[calc(100dvh-57px)]')
+          )}>
+            <div className={cn('p-4 sm:p-6 space-y-6', showMobileHeader && 'space-y-5')}>
+              {showMobileHeader && projectName && (
+                <p className="text-xs text-muted-foreground -mb-2">
+                  {projectName} <span className="mx-1">›</span> Board
+                </p>
+              )}
+              <div className="space-y-2">
+                {!showMobileHeader && (
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Task Title <span className="text-destructive" aria-hidden="true">*</span></Label>
+                )}
+                <Input
+                  value={editedTask.title}
+                  onChange={(e) => handleFieldChange('title', e.target.value)}
+                  className={cn(
+                    showMobileHeader
+                      ? 'text-xl font-bold h-auto py-1 px-0 border-0 shadow-none focus-visible:ring-0 rounded-none disabled:opacity-100 disabled:cursor-default'
+                      : 'text-base font-semibold w-full',
+                    showMobileHeader && !canEditTask && 'opacity-60'
+                  )}
+                  placeholder="Task title..."
+                  aria-required="true"
+                  disabled={!canEditTaskFields}
+                  title={canEditTaskFields ? undefined : editLockTitle}
+                />
               </div>
 
-              {/* Status pill — mobile only, mirrors the Bucket value as a prominent chip */}
-              {showMobileHeader && (
-                <div className="space-y-1.5">
-                  <Label className="block text-xs text-muted-foreground uppercase tracking-wider font-medium">Status</Label>
-                  <Select
-                    value={editedTask.status}
-                    onValueChange={(value) => handleStatusChange(value as TaskStatus)}
-                    disabled={!canEditTaskFields}
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        'h-auto w-auto border-0 p-0 focus:ring-0 focus-visible:ring-0 shadow-none bg-transparent [&>svg]:hidden disabled:opacity-100 disabled:cursor-default',
-                        !canEditTask && 'opacity-60'
-                      )}
-                      title={canEditTaskFields ? undefined : editLockTitle}
-                    >
-                      <SelectValue>
-                        <span
-                          className={cn(
-                            'inline-flex items-center rounded-full px-3 py-1 text-xs font-medium text-white',
-                            currentStatusColor
-                          )}
-                        >
-                          {currentStatusLabel}
-                        </span>
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statusOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <div className="flex items-center gap-2">
-                            <StatusDot color={option.color} />
-                            {option.label}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Details card — mobile only wraps the metadata grid to match the card-based mobile layout */}
-              {showMobileHeader && (
-                <Label className="text-xs text-muted-foreground uppercase tracking-wider font-medium -mb-2">Details</Label>
-              )}
-              <div className={cn(showMobileHeader && 'border rounded-xl p-4')}>
-              {/* 4-column metadata grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-start">
-                {/* Bucket */}
+              {/* Metadata Section */}
+              <div className="flex flex-col gap-6">
+                {/* Assigned To — full-width row */}
                 <div className="space-y-1.5">
                   <Label className={cn(
                     'text-xs text-muted-foreground flex items-center gap-1.5',
                     showMobileHeader && 'uppercase tracking-wider font-medium'
                   )}>
-                    {!showMobileHeader && <AlertCircle className="h-3 w-3" />}
-                    Bucket {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
+                    {!showMobileHeader && <User className="h-3 w-3" />}
+                    Assigned To
                   </Label>
-                  <Select
-                    value={editedTask.status}
-                    onValueChange={(value) => handleStatusChange(value as TaskStatus)}
-                    disabled={!canEditTaskFields}
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        showMobileHeader
-                          ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default'
-                          : 'h-9',
-                        showMobileHeader && !canEditTask && 'opacity-60'
-                      )}
-                      aria-required="true"
-                      title={canEditTaskFields ? undefined : editLockTitle}
-                    >
-                      <SelectValue>
-                        <div className={cn('flex items-center gap-2', showMobileHeader && 'font-bold text-sm text-foreground')}>
-                          <StatusDot color={currentStatusColor} />
-                          {currentStatusLabel}
-                        </div>
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statusOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <div className="flex items-center gap-2">
-                            <StatusDot color={option.color} />
-                            {option.label}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Start Date */}
-                <div className="space-y-1.5">
-                  <Label className={cn(
-                    'text-xs text-muted-foreground flex items-center gap-1.5',
-                    showMobileHeader && 'uppercase tracking-wider font-medium'
-                  )}>
-                    {!showMobileHeader && <CalendarIcon className="h-3 w-3" />}
-                    Start Date
-                    {!showMobileHeader && <span className="text-destructive">*</span>}
-                  </Label>
-                  <Popover open={isStartDatePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsStartDatePopoverOpen(open)}>
+                  <Popover open={isAssigneePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsAssigneePopoverOpen(open)}>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant={showMobileHeader ? 'ghost' : 'outline'}
+                      <button
                         disabled={!canEditTaskFields}
                         title={canEditTaskFields ? undefined : editLockTitle}
                         className={cn(
-                          showMobileHeader
-                            ? 'h-auto w-auto p-0 justify-start text-left font-bold text-sm text-foreground hover:bg-transparent disabled:opacity-100 disabled:pointer-events-none'
-                            : 'w-full justify-start text-left font-normal h-9 px-3',
-                          !editedTask.startDate && 'text-muted-foreground',
-                          showMobileHeader && !canEditTask && 'opacity-60'
+                          'flex items-center gap-2 h-10 px-2 w-full text-left rounded-md hover:bg-muted/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          !canEditTask && 'cursor-not-allowed opacity-60 hover:bg-transparent'
                         )}
                       >
-                        {editedTask.startDate
-                          ? format(new Date(editedTask.startDate), showMobileHeader ? 'MMM d' : 'PPP')
-                          : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={editedTask.startDate ? new Date(editedTask.startDate) : undefined}
-                        onSelect={(date) => {
-                          handleFieldChange('startDate', toDateOnly(date || undefined));
-                          setIsStartDatePopoverOpen(false);
-                        }}
-                        disabled={(date) => {
-                          if (editedTask.dueDate) {
-                            return isAfter(date, parseISO(editedTask.dueDate));
-                          }
-                          return false;
-                        }}
-                        initialFocus
-                        className="p-3 pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                {/* Due Date */}
-                <div className="space-y-1.5">
-                  <Label className={cn(
-                    'text-xs text-muted-foreground flex items-center gap-1.5',
-                    showMobileHeader && 'uppercase tracking-wider font-medium'
-                  )}>
-                    {!showMobileHeader && <CalendarIcon className="h-3 w-3" />}
-                    Due Date {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
-                  </Label>
-                  <Popover open={isDueDatePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsDueDatePopoverOpen(open)}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={showMobileHeader ? 'ghost' : 'outline'}
-                        aria-required="true"
-                        disabled={!canEditTaskFields}
-                        title={canEditTaskFields ? undefined : editLockTitle}
-                        className={cn(
-                          showMobileHeader
-                            ? 'h-auto w-auto p-0 justify-start text-left font-bold text-sm text-foreground hover:bg-transparent disabled:opacity-100 disabled:pointer-events-none'
-                            : 'w-full justify-start text-left font-normal h-9 px-3',
-                          !editedTask.dueDate && 'text-muted-foreground',
-                          showMobileHeader && !canEditTask && 'opacity-60'
-                        )}
-                      >
-                        {editedTask.dueDate
-                          ? format(new Date(editedTask.dueDate), showMobileHeader ? 'MMM d' : 'PPP')
-                          : 'Set date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={editedTask.dueDate ? new Date(editedTask.dueDate) : undefined}
-                        onSelect={(date) => {
-                          handleFieldChange('dueDate', toDateOnly(date || undefined));
-                          setIsDueDatePopoverOpen(false);
-                        }}
-                        disabled={(date) => {
-                          if (editedTask.startDate) {
-                            return isBefore(date, parseISO(editedTask.startDate));
-                          }
-                          return false;
-                        }}
-                        initialFocus
-                        className="p-3 pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                {/* Reported By */}
-                {(mode === 'create' ? profile : editedTask.createdBy) && (
-                  <div className="space-y-1.5">
-                    <Label className={cn(
-                      'text-xs text-muted-foreground flex items-center gap-1.5',
-                      showMobileHeader && 'uppercase tracking-wider font-medium'
-                    )}>
-                      {!showMobileHeader && <User className="h-3 w-3" />}
-                      Reported By
-                    </Label>
-                    <div className={cn(
-                      'flex items-center gap-2 overflow-hidden',
-                      showMobileHeader ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
-                    )}>
-                      <Avatar className="h-5 w-5 shrink-0">
-                        <AvatarFallback className="text-[9px]">
-                          {mode === 'create'
-                            ? (profile?.initials || (profile?.name || '').slice(0, 2).toUpperCase())
-                            : editedTask.createdBy?.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span
-                        className={cn('text-sm truncate min-w-0', showMobileHeader && 'font-bold text-foreground')}
-                        title={mode === 'create'
-                          ? (profile?.name || profile?.email)
-                          : editedTask.createdBy?.name}
-                      >
-                        {mode === 'create'
-                          ? (profile?.name || profile?.email)
-                          : editedTask.createdBy?.name}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Modified By */}
-                {mode !== 'create' && editedTask.updatedBy && (
-                  <div className="space-y-1.5">
-                    <Label className={cn(
-                      'text-xs text-muted-foreground flex items-center gap-1.5',
-                      showMobileHeader && 'uppercase tracking-wider font-medium'
-                    )}>
-                      {!showMobileHeader && <Pencil className="h-3 w-3" />}
-                      Modified By
-                      <HoverCard openDelay={150} closeDelay={100}>
-                        <HoverCardTrigger asChild>
-                          <Info className="h-3 w-3 cursor-help" />
-                        </HoverCardTrigger>
-                        <HoverCardContent
-                          side="bottom"
-                          align="start"
-                          sideOffset={8}
-                          className="w-[280px] p-3 text-xs space-y-2 max-h-[240px] overflow-y-auto"
-                        >
-                          {editedTask.changeHistory && editedTask.changeHistory.length > 0 ? (
-                            editedTask.changeHistory.map((entry, idx) => (
-                              <div key={idx} className={idx > 0 ? 'pt-2 border-t border-border/50' : ''}>
-                                <p className="font-medium">{entry.userName}</p>
-                                {formatModifiedFields(entry.fields) && (
-                                  <p>Changed: {formatModifiedFields(entry.fields)}</p>
-                                )}
-                                <p className="text-muted-foreground">{format(parseISO(entry.at), 'MMM d, yyyy • h:mm a')}</p>
-                              </div>
-                            ))
-                          ) : (
-                            <div>
-                              <p className="font-medium">{editedTask.updatedBy.name}</p>
-                              {editedTask.updatedAt && (
-                                <p className="text-muted-foreground">{format(parseISO(editedTask.updatedAt), 'MMM d, yyyy • h:mm a')}</p>
-                              )}
+                        <div className="flex items-center">
+                          {(editedTask.assignees || []).slice(0, 5).map((assignee, index) => (
+                            <div
+                              key={assignee.id}
+                              className="rounded-full ring-2 ring-background"
+                              style={{ zIndex: index, marginLeft: index === 0 ? 0 : '-8px' }}
+                              title={assignee.assignedBy ? `Assigned by ${assignee.assignedBy.name}` : undefined}
+                            >
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                <AvatarFallback className="text-xs font-semibold bg-primary/15 text-primary">
+                                  {assignee.initials}
+                                </AvatarFallback>
+                              </Avatar>
+                            </div>
+                          ))}
+                          {(editedTask.assignees || []).length > 5 && (
+                            <div
+                              className="h-8 w-8 rounded-full ring-2 ring-background bg-muted flex items-center justify-center"
+                              style={{ zIndex: 5, marginLeft: '-8px' }}
+                            >
+                              <span className="text-xs text-muted-foreground font-medium">+{(editedTask.assignees || []).length - 5}</span>
                             </div>
                           )}
-                        </HoverCardContent>
-                      </HoverCard>
-                    </Label>
-                    <div className={cn(
-                      'flex items-center gap-2 overflow-hidden',
-                      showMobileHeader ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
-                    )}>
-                      <Avatar className="h-5 w-5 shrink-0">
-                        <AvatarFallback className="text-[9px]">
-                          {editedTask.updatedBy.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <TooltipProvider delayDuration={150}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className={cn('text-sm truncate min-w-0', showMobileHeader && 'font-bold text-foreground')}>
-                              {editedTask.updatedBy.name}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="text-xs">
-                            {editedTask.updatedBy.name}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-                )}
+                        </div>
+                        <div className="h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/40 hover:border-primary hover:text-primary transition-all flex items-center justify-center shrink-0">
+                          <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                        {(editedTask.assignees || []).length === 0 && (
+                          <span className="text-sm text-muted-foreground">Click to assign members...</span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-[260px]" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search members..." />
 
-                {/* Priority */}
-                <div className="space-y-1.5">
-                  <Label className={cn(
-                    'text-xs text-muted-foreground flex items-center gap-1.5',
-                    showMobileHeader && 'uppercase tracking-wider font-medium'
-                  )}>
-                    {!showMobileHeader && <AlertTriangle className="h-3 w-3" />}
-                    Priority {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
-                  </Label>
-                  <Select
-                    value={editedTask.priority}
-                    onValueChange={(value) => handleFieldChange('priority', value as Priority)}
-                    disabled={!canEditTaskFields}
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        showMobileHeader
-                          ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default'
-                          : 'h-9',
-                        showMobileHeader && !canEditTask && 'opacity-60'
-                      )}
-                      aria-required="true"
-                      title={canEditTaskFields ? undefined : editLockTitle}
-                    >
-                      <SelectValue>
-                        <Badge className={cn('text-xs gap-1', ISSUE_SEVERITY_DISPLAY[editedTask.priority].color)}>
-                          {(() => {
-                            const PriorityIcon = ISSUE_SEVERITY_DISPLAY[editedTask.priority].icon;
-                            return <PriorityIcon className="h-3 w-3" />;
-                          })()}
-                          {ISSUE_SEVERITY_DISPLAY[editedTask.priority].label}
-                        </Badge>
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ISSUE_SEVERITY_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <Badge className={cn('text-xs gap-1', option.color)}>
-                            <option.icon className="h-3 w-3" />
-                            {option.label}
-                          </Badge>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        {(editedTask.assignees || []).length > 0 && (
+                          <div className="p-2 border-b">
+                            <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
+                            {(editedTask.assignees || []).map((assignee) => (
+                              <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
+                                <Avatar className="h-6 w-6 shrink-0">
+                                  <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                  <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm truncate">{assignee.name}</p>
+                                  {assignee.assignedBy && (
+                                    <p className="text-[10px] text-muted-foreground truncate">Assigned by {assignee.assignedBy.name}</p>
+                                  )}
+                                </div>
+                                <button
+                                  disabled={!canEditTaskFields}
+                                  title={canEditTaskFields ? undefined : editLockTitle}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFieldChange('assignees', (editedTask.assignees || []).filter(a => a.id !== assignee.id));
+                                  }}
+                                  className={cn(
+                                    'text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100',
+                                    !canEditTaskFields && 'cursor-not-allowed group-hover:opacity-60'
+                                  )}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <CommandList>
+                          <CommandEmpty>
+                            {availableAssignees.filter(m => !editedTask.assignees?.some(a => a.id === m.id)).length === 0
+                              ? "All members assigned"
+                              : "No results found."}
+                          </CommandEmpty>
+                          {availableAssignees.filter(m => !editedTask.assignees?.some(a => a.id === m.id)).length > 0 && (
+                            <CommandGroup heading="Add members">
+                              {availableAssignees
+                                .filter(m => !editedTask.assignees?.some(a => a.id === m.id))
+                                .map((member) => (
+                                  <CommandItem
+                                    key={member.id}
+                                    value={`${member.id} ${member.name}`}
+                                    onSelect={() => {
+                                      handleFieldChange('assignees', [...(editedTask.assignees || []), member]);
+                                    }}
+                                    className="cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Avatar className="h-5 w-5">
+                                        <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                        <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                      </Avatar>
+                                      {member.name}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
-                {/* Milestone */}
-                {milestones.length > 0 && (
+                {/* Status pill — mobile only, mirrors the Bucket value as a prominent chip */}
+                {showMobileHeader && (
                   <div className="space-y-1.5">
-                    <Label className={cn(
-                      'text-xs text-muted-foreground flex items-center gap-1.5',
-                      showMobileHeader && 'uppercase tracking-wider font-medium'
-                    )}>
-                      {!showMobileHeader && <Target className="h-3 w-3" />}
-                      Milestone
-                    </Label>
+                    <Label className="block text-xs text-muted-foreground uppercase tracking-wider font-medium">Status</Label>
                     <Select
-                      value={editedTask.milestoneId || 'none'}
-                      onValueChange={(value) => handleFieldChange('milestoneId', value === 'none' ? undefined : value)}
+                      value={editedTask.status}
+                      onValueChange={(value) => handleStatusChange(value as TaskStatus)}
                       disabled={!canEditTaskFields}
                     >
                       <SelectTrigger
                         className={cn(
-                          showMobileHeader
-                            ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default'
-                            : 'h-9',
-                          showMobileHeader && !canEditTask && 'opacity-60'
+                          'h-auto w-auto border-0 p-0 focus:ring-0 focus-visible:ring-0 shadow-none bg-transparent [&>svg]:hidden disabled:opacity-100 disabled:cursor-default',
+                          !canEditTask && 'opacity-60'
                         )}
                         title={canEditTaskFields ? undefined : editLockTitle}
                       >
-                        <SelectValue placeholder="No Milestone" />
+                        <SelectValue>
+                          <span
+                            className={cn(
+                              'inline-flex items-center rounded-full px-3 py-1 text-xs font-medium text-white',
+                              currentStatusColor
+                            )}
+                          >
+                            {currentStatusLabel}
+                          </span>
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">No Milestone</SelectItem>
-                        {milestones.map((milestone) => (
-                          <SelectItem key={milestone.id} value={milestone.id}>{milestone.title}</SelectItem>
+                        {statusOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <div className="flex items-center gap-2">
+                              <StatusDot color={option.color} />
+                              {option.label}
+                            </div>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
 
-                {/* Project — only shown when explicitly provided (e.g. My Day, which aggregates tasks across projects) */}
-                {projectName && (
-                  <div className="space-y-1.5">
-                    <Label className={cn(
-                      'text-xs text-muted-foreground flex items-center gap-1.5',
-                      showMobileHeader && 'uppercase tracking-wider font-medium'
-                    )}>
-                      {!showMobileHeader && <FolderKanban className="h-3 w-3" />}
-                      Project
-                    </Label>
-                    <div className={cn(
-                      'flex items-center gap-2',
-                      showMobileHeader ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
-                    )}>
-                      <span className={cn('text-sm truncate', showMobileHeader && 'font-bold text-foreground')}>{projectName}</span>
-                    </div>
-                  </div>
+                {/* Details card — mobile only wraps the metadata grid to match the card-based mobile layout */}
+                {showMobileHeader && (
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider font-medium -mb-2">Details</Label>
                 )}
+                <div className={cn(showMobileHeader && 'border rounded-xl p-4')}>
+                  {/* 4-column metadata grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-start">
+                    {/* Bucket */}
+                    <div className="space-y-1.5">
+                      <Label className={cn(
+                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                        showMobileHeader && 'uppercase tracking-wider font-medium'
+                      )}>
+                        {!showMobileHeader && <AlertCircle className="h-3 w-3" />}
+                        Bucket {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
+                      </Label>
+                      <Select
+                        value={editedTask.status}
+                        onValueChange={(value) => handleStatusChange(value as TaskStatus)}
+                        disabled={!canEditTaskFields}
+                      >
+                        <SelectTrigger
+                          className={cn(
+                            showMobileHeader
+                              ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default'
+                              : 'h-9',
+                            showMobileHeader && !canEditTask && 'opacity-60'
+                          )}
+                          aria-required="true"
+                          title={canEditTaskFields ? undefined : editLockTitle}
+                        >
+                          <SelectValue>
+                            <div className={cn('flex items-center gap-2', showMobileHeader && 'font-bold text-sm text-foreground')}>
+                              <StatusDot color={currentStatusColor} />
+                              {currentStatusLabel}
+                            </div>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              <div className="flex items-center gap-2">
+                                <StatusDot color={option.color} />
+                                {option.label}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                {/* Modules */}
-                <div className="space-y-1.5">
-                  <Label className={cn(
-                    'text-xs text-muted-foreground flex items-center gap-1.5',
-                    showMobileHeader && 'uppercase tracking-wider font-medium'
-                  )}>
-                    {!showMobileHeader && <Tag className="h-3 w-3" />}
-                    Modules
-                  </Label>
-                  <div
-                    className={cn(
-                      'min-h-9 flex w-full flex-wrap items-center gap-2 text-sm transition-colors',
-                      showMobileHeader
-                        ? ''
-                        : 'rounded-md border border-input bg-transparent px-3 py-1.5 ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
-                      canEditTaskFields ? 'cursor-pointer hover:border-primary/50' : 'cursor-not-allowed',
-                      !canEditTask && 'opacity-60'
-                    )}
-                    title={canEditTaskFields ? undefined : editLockTitle}
-                    onClick={() => canEditTaskFields && setIsModulePopoverOpen(true)}
-                  >
-                    {(editedTask.moduleIds || []).length === 0 && (
-                      <span className="text-muted-foreground text-xs">Select modules...</span>
-                    )}
-                    {(editedTask.moduleIds || []).map((moduleId) => {
-                      const module = modules?.find(m => m.id === moduleId);
-                      if (!module) return null;
-                      return (
-                        <Badge key={module.id} variant="secondary" className="max-w-full px-2 py-0.5 gap-1.5 h-6 hover:bg-secondary/80 transition-colors cursor-default">
-                          <span className="text-xs font-normal truncate max-w-[120px]">{module.name}</span>
-                          <button
+                    {/* Start Date */}
+                    <div className="space-y-1.5">
+                      <Label className={cn(
+                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                        showMobileHeader && 'uppercase tracking-wider font-medium'
+                      )}>
+                        {!showMobileHeader && <CalendarIcon className="h-3 w-3" />}
+                        Start Date
+                        {!showMobileHeader && <span className="text-destructive">*</span>}
+                      </Label>
+                      <Popover open={isStartDatePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsStartDatePopoverOpen(open)}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant={showMobileHeader ? 'ghost' : 'outline'}
                             disabled={!canEditTaskFields}
                             title={canEditTaskFields ? undefined : editLockTitle}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const updatedIds = (editedTask.moduleIds || []).filter(id => id !== module.id);
-                              setEditedTask(prev => ({
-                                ...prev,
-                                moduleIds: updatedIds,
-                                moduleId: updatedIds[0] || undefined,
-                                module: updatedIds.length > 0
-                                  ? (modules.find(m => m.id === updatedIds[0])?.type || prev.module)
-                                  : undefined,
-                                updatedAt: new Date().toISOString()
-                              }));
-                            }}
                             className={cn(
-                              'ml-auto text-muted-foreground hover:text-foreground transition-colors outline-none',
-                              !canEditTaskFields && 'cursor-not-allowed opacity-60'
+                              showMobileHeader
+                                ? 'h-auto w-auto p-0 justify-start text-left font-bold text-sm text-foreground hover:bg-transparent disabled:opacity-100 disabled:pointer-events-none'
+                                : 'w-full justify-start text-left font-normal h-9 px-3',
+                              !editedTask.startDate && 'text-muted-foreground',
+                              showMobileHeader && !canEditTask && 'opacity-60'
                             )}
                           >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      );
-                    })}
-                    <Popover open={isModulePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsModulePopoverOpen(open)}>
-                      <PopoverTrigger asChild>
-                        <button
-                          disabled={!canEditTaskFields}
-                          title={canEditTaskFields ? undefined : editLockTitle}
-                          onClick={(e) => e.stopPropagation()}
-                          className={cn(
-                            'h-6 w-6 rounded-full p-0 border border-dashed border-muted-foreground/50 hover:border-solid hover:border-primary hover:text-primary transition-all bg-transparent shadow-none focus:ring-0 [&>svg]:hidden flex items-center justify-center',
-                            !canEditTaskFields && 'cursor-not-allowed opacity-60'
-                          )}
-                        >
-                          <span>
-                            <Plus className="h-3 w-3" />
+                            {editedTask.startDate
+                              ? format(new Date(editedTask.startDate), showMobileHeader ? 'MMM d' : 'PPP')
+                              : 'Pick a date'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align={isMobile ? "center" : "start"}>
+                          <Calendar
+                            mode="single"
+                            selected={editedTask.startDate ? new Date(editedTask.startDate) : undefined}
+                            onSelect={(date) => {
+                              handleFieldChange('startDate', toDateOnly(date || undefined));
+                              setIsStartDatePopoverOpen(false);
+                            }}
+                            disabled={(date) => {
+                              if (editedTask.dueDate) {
+                                return isAfter(date, parseISO(editedTask.dueDate));
+                              }
+                              return false;
+                            }}
+                            initialFocus
+                            className="p-3 pointer-events-auto"
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    {/* Due Date */}
+                    <div className="space-y-1.5">
+                      <Label className={cn(
+                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                        showMobileHeader && 'uppercase tracking-wider font-medium'
+                      )}>
+                        {!showMobileHeader && <CalendarIcon className="h-3 w-3" />}
+                        Due Date {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
+                      </Label>
+                      <Popover open={isDueDatePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsDueDatePopoverOpen(open)}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant={showMobileHeader ? 'ghost' : 'outline'}
+                            aria-required="true"
+                            disabled={!canEditTaskFields}
+                            title={canEditTaskFields ? undefined : editLockTitle}
+                            className={cn(
+                              showMobileHeader
+                                ? 'h-auto w-auto p-0 justify-start text-left font-bold text-sm text-foreground hover:bg-transparent disabled:opacity-100 disabled:pointer-events-none'
+                                : 'w-full justify-start text-left font-normal h-9 px-3',
+                              !editedTask.dueDate && 'text-muted-foreground',
+                              showMobileHeader && !canEditTask && 'opacity-60'
+                            )}
+                          >
+                            {editedTask.dueDate
+                              ? format(new Date(editedTask.dueDate), showMobileHeader ? 'MMM d' : 'PPP')
+                              : 'Set date'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align={isMobile ? "center" : "start"}>
+                          <Calendar
+                            mode="single"
+                            selected={editedTask.dueDate ? new Date(editedTask.dueDate) : undefined}
+                            onSelect={(date) => {
+                              handleFieldChange('dueDate', toDateOnly(date || undefined));
+                              setIsDueDatePopoverOpen(false);
+                            }}
+                            disabled={(date) => {
+                              if (editedTask.startDate) {
+                                return isBefore(date, parseISO(editedTask.startDate));
+                              }
+                              return false;
+                            }}
+                            initialFocus
+                            className="p-3 pointer-events-auto"
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    {/* Reported By */}
+                    {(mode === 'create' ? profile : editedTask.createdBy) && (
+                      <div className="space-y-1.5">
+                        <Label className={cn(
+                          'text-xs text-muted-foreground flex items-center gap-1.5',
+                          showMobileHeader && 'uppercase tracking-wider font-medium'
+                        )}>
+                          {!showMobileHeader && <User className="h-3 w-3" />}
+                          Reported By
+                        </Label>
+                        <div className={cn(
+                          'flex items-center gap-2 overflow-hidden',
+                          showMobileHeader ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
+                        )}>
+                          <Avatar className="h-5 w-5 shrink-0">
+                            <AvatarFallback className="text-[9px]">
+                              {mode === 'create'
+                                ? (profile?.initials || (profile?.name || '').slice(0, 2).toUpperCase())
+                                : editedTask.createdBy?.initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span
+                            className={cn('text-sm truncate min-w-0', showMobileHeader && 'font-bold text-foreground')}
+                            title={mode === 'create'
+                              ? (profile?.name || profile?.email)
+                              : editedTask.createdBy?.name}
+                          >
+                            {mode === 'create'
+                              ? (profile?.name || profile?.email)
+                              : editedTask.createdBy?.name}
                           </span>
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="p-0 w-[240px] max-h-[--radix-popover-content-available-height] overflow-hidden" align="start">
-                        <Command>
-                          <CommandInput placeholder="Search modules..." />
-                          <CommandList className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto">
-                            <CommandEmpty className="py-2 px-2">
-                              <div className="text-sm text-center py-2 text-muted-foreground">
-                                No modules found.
-                              </div>
-                              {onAddModule && (
-                                <button
-                                  className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-                                  onClick={() => {
-                                    onAddModule();
-                                    setIsModulePopoverOpen(false);
-                                  }}
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                  Create New Module
-                                </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Modified By */}
+                    {mode !== 'create' && editedTask.updatedBy && (
+                      <div className="space-y-1.5">
+                        <Label className={cn(
+                          'text-xs text-muted-foreground flex items-center gap-1.5',
+                          showMobileHeader && 'uppercase tracking-wider font-medium'
+                        )}>
+                          {!showMobileHeader && <Pencil className="h-3 w-3" />}
+                          Modified By
+                          <HoverCard openDelay={150} closeDelay={100}>
+                            <HoverCardTrigger asChild>
+                              <Info className="h-3 w-3 cursor-help" />
+                            </HoverCardTrigger>
+                            <HoverCardContent
+                              side="bottom"
+                              align="start"
+                              sideOffset={8}
+                              className="w-[280px] p-3 text-xs space-y-2 max-h-[240px] overflow-y-auto"
+                            >
+                              {editedTask.changeHistory && editedTask.changeHistory.length > 0 ? (
+                                editedTask.changeHistory.map((entry, idx) => (
+                                  <div key={idx} className={idx > 0 ? 'pt-2 border-t border-border/50' : ''}>
+                                    <p className="font-medium">{entry.userName}</p>
+                                    {formatModifiedFields(entry.fields) && (
+                                      <p>Changed: {formatModifiedFields(entry.fields)}</p>
+                                    )}
+                                    <p className="text-muted-foreground">{format(parseISO(entry.at), 'MMM d, yyyy • h:mm a')}</p>
+                                  </div>
+                                ))
+                              ) : (
+                                <div>
+                                  <p className="font-medium">{editedTask.updatedBy.name}</p>
+                                  {editedTask.updatedAt && (
+                                    <p className="text-muted-foreground">{format(parseISO(editedTask.updatedAt), 'MMM d, yyyy • h:mm a')}</p>
+                                  )}
+                                </div>
                               )}
-                            </CommandEmpty>
-                            <CommandGroup heading="Available Modules">
-                              {modules
-                                .filter(m => !(editedTask.moduleIds || []).includes(m.id))
-                                .map((module) => (
-                                  <CommandItem
-                                    key={module.id}
-                                    value={module.name}
-                                    onSelect={() => {
-                                      const isFirst = (editedTask.moduleIds || []).length === 0;
-                                      const updatedIds = [...(editedTask.moduleIds || []), module.id];
-                                      setEditedTask(prev => {
-                                        const updated = {
-                                          ...prev,
-                                          moduleIds: updatedIds,
-                                          moduleId: isFirst ? module.id : prev.moduleId,
-                                          module: isFirst ? module.type : prev.module,
-                                          updatedAt: new Date().toISOString()
-                                        };
-                                        if (mode !== 'create') {
-                                          onUpdate(updated);
-                                        }
-                                        return updated;
-                                      });
-                                      setIsModulePopoverOpen(false);
-                                    }}
-                                    className="cursor-pointer min-w-0"
-                                  >
-                                    <div className="flex flex-col min-w-0 w-full">
-                                      <span className="truncate block">{module.name}</span>
-                                    </div>
-                                  </CommandItem>
-                                ))}
-                            </CommandGroup>
-                            {onAddModule && (
-                              <>
-                                <Separator />
-                                <CommandGroup>
-                                  <CommandItem
-                                    onSelect={() => {
-                                      onAddModule();
-                                      setIsModulePopoverOpen(false);
-                                    }}
-                                    className="cursor-pointer text-primary"
-                                  >
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Create New Module
-                                  </CommandItem>
+                            </HoverCardContent>
+                          </HoverCard>
+                        </Label>
+                        <div className={cn(
+                          'flex items-center gap-2 overflow-hidden',
+                          showMobileHeader ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
+                        )}>
+                          <Avatar className="h-5 w-5 shrink-0">
+                            <AvatarFallback className="text-[9px]">
+                              {editedTask.updatedBy.initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <TooltipProvider delayDuration={150}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className={cn('text-sm truncate min-w-0', showMobileHeader && 'font-bold text-foreground')}>
+                                  {editedTask.updatedBy.name}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="text-xs">
+                                {editedTask.updatedBy.name}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Priority */}
+                    <div className="space-y-1.5">
+                      <Label className={cn(
+                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                        showMobileHeader && 'uppercase tracking-wider font-medium'
+                      )}>
+                        {!showMobileHeader && <AlertTriangle className="h-3 w-3" />}
+                        Priority {!showMobileHeader && <span className="text-destructive" aria-hidden="true">*</span>}
+                      </Label>
+                      <Select
+                        value={editedTask.priority}
+                        onValueChange={(value) => handleFieldChange('priority', value as Priority)}
+                        disabled={!canEditTaskFields}
+                      >
+                        <SelectTrigger
+                          className={cn(
+                            showMobileHeader
+                              ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default'
+                              : 'h-9',
+                            showMobileHeader && !canEditTask && 'opacity-60'
+                          )}
+                          aria-required="true"
+                          title={canEditTaskFields ? undefined : editLockTitle}
+                        >
+                          <SelectValue>
+                            <Badge className={cn('text-xs gap-1', ISSUE_SEVERITY_DISPLAY[editedTask.priority].color)}>
+                              {(() => {
+                                const PriorityIcon = ISSUE_SEVERITY_DISPLAY[editedTask.priority].icon;
+                                return <PriorityIcon className="h-3 w-3" />;
+                              })()}
+                              {ISSUE_SEVERITY_DISPLAY[editedTask.priority].label}
+                            </Badge>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ISSUE_SEVERITY_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              <Badge className={cn('text-xs gap-1', option.color)}>
+                                <option.icon className="h-3 w-3" />
+                                {option.label}
+                              </Badge>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Milestone */}
+                    {milestones.length > 0 && (
+                      <div className="space-y-1.5">
+                        <Label className={cn(
+                          'text-xs text-muted-foreground flex items-center gap-1.5',
+                          showMobileHeader && 'uppercase tracking-wider font-medium'
+                        )}>
+                          {!showMobileHeader && <Target className="h-3 w-3" />}
+                          Milestone
+                        </Label>
+                        <Select
+                          value={editedTask.milestoneId || 'none'}
+                          onValueChange={(value) => handleFieldChange('milestoneId', value === 'none' ? undefined : value)}
+                          disabled={!canEditTaskFields}
+                        >
+                          <SelectTrigger
+                            className={cn(
+                              showMobileHeader
+                                ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default'
+                                : 'h-9',
+                              showMobileHeader && !canEditTask && 'opacity-60'
+                            )}
+                            title={canEditTaskFields ? undefined : editLockTitle}
+                          >
+                            <SelectValue placeholder="No Milestone" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No Milestone</SelectItem>
+                            {milestones.map((milestone) => (
+                              <SelectItem key={milestone.id} value={milestone.id}>{milestone.title}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Project — only shown when explicitly provided (e.g. My Day, which aggregates tasks across projects) */}
+                    {projectName && (
+                      <div className="space-y-1.5">
+                        <Label className={cn(
+                          'text-xs text-muted-foreground flex items-center gap-1.5',
+                          showMobileHeader && 'uppercase tracking-wider font-medium'
+                        )}>
+                          {!showMobileHeader && <FolderKanban className="h-3 w-3" />}
+                          Project
+                        </Label>
+                        <div className={cn(
+                          'flex items-center gap-2',
+                          showMobileHeader ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
+                        )}>
+                          <span className={cn('text-sm truncate', showMobileHeader && 'font-bold text-foreground')}>{projectName}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Modules */}
+                    <div className="space-y-1.5">
+                      <Label className={cn(
+                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                        showMobileHeader && 'uppercase tracking-wider font-medium'
+                      )}>
+                        {!showMobileHeader && <Tag className="h-3 w-3" />}
+                        Modules
+                      </Label>
+                      <div
+                        className={cn(
+                          'min-h-9 flex w-full flex-wrap items-center gap-2 text-sm transition-colors',
+                          showMobileHeader
+                            ? ''
+                            : 'rounded-md border border-input bg-transparent px-3 py-1.5 ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
+                          canEditTaskFields ? 'cursor-pointer hover:border-primary/50' : 'cursor-not-allowed',
+                          !canEditTask && 'opacity-60'
+                        )}
+                        title={canEditTaskFields ? undefined : editLockTitle}
+                        onClick={() => canEditTaskFields && setIsModulePopoverOpen(true)}
+                      >
+                        {(editedTask.moduleIds || []).length === 0 && (
+                          <span className="text-muted-foreground text-xs">Select modules...</span>
+                        )}
+                        {(editedTask.moduleIds || []).map((moduleId) => {
+                          const module = modules?.find(m => m.id === moduleId);
+                          if (!module) return null;
+                          return (
+                            <Badge key={module.id} variant="secondary" className="max-w-full px-2 py-0.5 gap-1.5 h-6 hover:bg-secondary/80 transition-colors cursor-default">
+                              <span className="text-xs font-normal truncate max-w-[120px]">{module.name}</span>
+                              <button
+                                disabled={!canEditTaskFields}
+                                title={canEditTaskFields ? undefined : editLockTitle}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const updatedIds = (editedTask.moduleIds || []).filter(id => id !== module.id);
+                                  setEditedTask(prev => ({
+                                    ...prev,
+                                    moduleIds: updatedIds,
+                                    moduleId: updatedIds[0] || undefined,
+                                    module: updatedIds.length > 0
+                                      ? (modules.find(m => m.id === updatedIds[0])?.type || prev.module)
+                                      : prev.module,
+                                    updatedAt: new Date().toISOString()
+                                  }));
+                                }}
+                                className={cn(
+                                  'ml-auto text-muted-foreground hover:text-foreground transition-colors outline-none',
+                                  !canEditTaskFields && 'cursor-not-allowed opacity-60'
+                                )}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          );
+                        })}
+                        <Popover open={isModulePopoverOpen} onOpenChange={(open) => canEditTaskFields && setIsModulePopoverOpen(open)}>
+                          <PopoverTrigger asChild>
+                            <button
+                              disabled={!canEditTaskFields}
+                              title={canEditTaskFields ? undefined : editLockTitle}
+                              onClick={(e) => e.stopPropagation()}
+                              className={cn(
+                                'h-6 w-6 rounded-full p-0 border border-dashed border-muted-foreground/50 hover:border-solid hover:border-primary hover:text-primary transition-all bg-transparent shadow-none focus:ring-0 [&>svg]:hidden flex items-center justify-center',
+                                !canEditTaskFields && 'cursor-not-allowed opacity-60'
+                              )}
+                            >
+                              <span>
+                                <Plus className="h-3 w-3" />
+                              </span>
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="p-0 w-[240px] max-h-[--radix-popover-content-available-height] overflow-hidden" align="start">
+                            <Command>
+                              <CommandInput placeholder="Search modules..." />
+                              <CommandList className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto">
+                                <CommandEmpty className="py-2 px-2">
+                                  <div className="text-sm text-center py-2 text-muted-foreground">
+                                    No modules found.
+                                  </div>
+                                  {onAddModule && (
+                                    <button
+                                      className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                                      onClick={() => {
+                                        onAddModule();
+                                        setIsModulePopoverOpen(false);
+                                      }}
+                                    >
+                                      <Plus className="h-3.5 w-3.5" />
+                                      Create New Module
+                                    </button>
+                                  )}
+                                </CommandEmpty>
+                                <CommandGroup heading="Available Modules">
+                                  {modules
+                                    .filter(m => !(editedTask.moduleIds || []).includes(m.id))
+                                    .map((module) => (
+                                      <CommandItem
+                                        key={module.id}
+                                        value={module.name}
+                                        onSelect={() => {
+                                          const isFirst = (editedTask.moduleIds || []).length === 0;
+                                          const updatedIds = [...(editedTask.moduleIds || []), module.id];
+                                          setEditedTask(prev => {
+                                            const updated = {
+                                              ...prev,
+                                              moduleIds: updatedIds,
+                                              moduleId: isFirst ? module.id : prev.moduleId,
+                                              module: isFirst ? module.type : prev.module,
+                                              updatedAt: new Date().toISOString()
+                                            };
+                                            if (mode !== 'create') {
+                                              onUpdate(updated);
+                                            }
+                                            return updated;
+                                          });
+                                          setIsModulePopoverOpen(false);
+                                        }}
+                                        className="cursor-pointer min-w-0"
+                                      >
+                                        <div className="flex flex-col min-w-0 w-full">
+                                          <span className="truncate block">{module.name}</span>
+                                        </div>
+                                      </CommandItem>
+                                    ))}
                                 </CommandGroup>
+                                {onAddModule && (
+                                  <>
+                                    <Separator />
+                                    <CommandGroup>
+                                      <CommandItem
+                                        onSelect={() => {
+                                          onAddModule();
+                                          setIsModulePopoverOpen(false);
+                                        }}
+                                        className="cursor-pointer text-primary"
+                                      >
+                                        <Plus className="mr-2 h-4 w-4" />
+                                        Create New Module
+                                      </CommandItem>
+                                    </CommandGroup>
+                                  </>
+                                )}
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+
+                    {/* Tags — spans 2 cols */}
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label className={cn(
+                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                        showMobileHeader && 'uppercase tracking-wider font-medium'
+                      )}>
+                        {!showMobileHeader && <Tag className="h-3 w-3" />}
+                        Tags
+                      </Label>
+                      <div className={cn(
+                        'min-h-9 flex w-full flex-wrap items-center gap-2 text-sm',
+                        showMobileHeader ? '' : 'rounded-md border border-input bg-transparent px-3 py-1.5'
+                      )}>
+                        {editedTask.tags.map((tag, index) => (
+                          <Badge
+                            key={`${tag}-${index}`}
+                            className="gap-1 pr-1.5 text-white border-transparent hover:opacity-90"
+                            style={{ backgroundColor: getTagColor(tag) }}
+                          >
+                            {editingTagIndex === index ? (
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Input
+                                  autoFocus
+                                  value={editingTagValue}
+                                  onChange={(e) => setEditingTagValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      saveEditedTag();
+                                    }
+                                  }}
+                                  className="h-6 w-28 bg-background px-2 text-xs text-foreground"
+                                />
+                                <Button type="button" size="icon" variant="ghost" className="h-5 w-5 hover:bg-black/10" onClick={saveEditedTag}>
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <span>{tag}</span>
+                                {!isMobileFieldsLocked && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="rounded p-0.5 hover:bg-black/10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingTagIndex(index);
+                                        setEditingTagValue(tag);
+                                        setEditingTagOriginal(tag);
+                                      }}
+                                      aria-label={`Edit tag ${tag}`}
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="rounded p-0.5 hover:bg-black/10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleFieldChange('tags', editedTask.tags.filter((_, tagIndex) => tagIndex !== index));
+                                      }}
+                                      aria-label={`Remove tag ${tag}`}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </>
+                                )}
                               </>
                             )}
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                          </Badge>
+                        ))}
+
+                        {!isMobileFieldsLocked && (
+                          <Popover
+                            open={isTagPopoverOpen}
+                            onOpenChange={(open) => {
+                              setIsTagPopoverOpen(open);
+                              if (!open) {
+                                setTagSearch('');
+                                setEditingTagIndex(null);
+                                setEditingTagValue('');
+                                setEditingTagOriginal(null);
+                              }
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <button className="h-6 w-6 rounded-full border border-dashed border-muted-foreground/40 hover:border-primary hover:text-primary flex items-center justify-center transition-colors text-muted-foreground">
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="p-0 w-[240px] flex flex-col overflow-hidden" align="start">
+                              <div className="p-2 border-b">
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    placeholder="Search or create tag…"
+                                    value={tagSearch}
+                                    onChange={(e) => setTagSearch(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        addTag(tagSearch);
+                                      }
+                                    }}
+                                    className="h-7 text-sm"
+                                    autoFocus
+                                  />
+                                </div>
+                              </div>
+
+                              {availableTagSuggestions.length > 0 && (
+                                <div className="max-h-[180px] overflow-y-auto p-1">
+                                  {availableTagSuggestions
+                                    .filter(tag => !tagSearch.trim() || tag.toLowerCase().includes(tagSearch.toLowerCase()))
+                                    .map((tag) => (
+                                      <button
+                                        key={tag}
+                                        type="button"
+                                        className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2"
+                                        onClick={() => addTag(tag)}
+                                      >
+                                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getTagColor(tag) }} />
+                                        {tag}
+                                      </button>
+                                    ))}
+                                </div>
+                              )}
+
+                              <div className="border-t p-1.5">
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded transition-colors",
+                                    tagSearch.trim() && !availableTagSuggestions.some(t => t.toLowerCase() === tagSearch.trim().toLowerCase())
+                                      ? "text-primary hover:bg-primary/10 cursor-pointer"
+                                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                                  )}
+                                  onClick={() => addTag(tagSearch)}
+                                >
+                                  <Plus className="h-3 w-3 shrink-0" />
+                                  {tagSearch.trim() && !availableTagSuggestions.some(t => t.toLowerCase() === tagSearch.trim().toLowerCase())
+                                    ? <span>Create <strong>"{tagSearch.trim()}"</strong></span>
+                                    : <span>Create new tag…</span>
+                                  }
+                                </button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Description Section */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className={cn('text-sm font-medium', showMobileHeader && 'text-xs uppercase tracking-wider text-muted-foreground')}>Description</Label>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="task-advanced-mode" className="text-xs text-muted-foreground cursor-pointer">Advanced Editor</Label>
+                    <Switch
+                      id="task-advanced-mode"
+                      checked={isAdvancedDescription}
+                      onCheckedChange={setIsAdvancedDescription}
+                      disabled={!canEditTaskFields}
+                      className={cn(showMobileHeader && 'disabled:opacity-100 disabled:cursor-pointer', showMobileHeader && !canEditTask && 'opacity-60')}
+                    />
+                  </div>
+                </div>
+                {isAdvancedDescription ? (
+                  <div
+                    className={cn(
+                      'min-h-[200px] border rounded-md p-4 bg-background',
+                      !canEditTask && 'opacity-60 cursor-not-allowed'
+                    )}
+                    title={canEditTaskFields ? undefined : editLockTitle}
+                  >
+                    <SlashBlockEditor
+                      key={editedTask.id || 'create'}
+                      readOnly={!canEditTaskFields}
+                      initialBlocks={editedTask.descriptionBlocks}
+                      onChange={(blocks) => handleFieldChange('descriptionBlocks', blocks as any)}
+                    />
+                  </div>
+                ) : (
+                  <Textarea
+                    value={editedTask.description || ''}
+                    onChange={(e) => handleFieldChange('description', e.target.value)}
+                    placeholder="Describe the task in detail..."
+                    className={cn(
+                      'min-h-[150px] resize-none',
+                      showMobileHeader && 'disabled:opacity-100 disabled:cursor-default',
+                      showMobileHeader && !canEditTask && 'opacity-60'
+                    )}
+                    disabled={!canEditTaskFields}
+                    title={canEditTaskFields ? undefined : editLockTitle}
+                  />
+                )}
+              </section>
+
+              <Separator />
+
+              {/* Checklist Section */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className={cn(
+                    'text-sm font-medium text-muted-foreground flex items-center gap-2',
+                    showMobileHeader && 'text-xs uppercase tracking-wider'
+                  )}>
+                    {!showMobileHeader && <CheckSquare className="h-4 w-4" />}
+                    Checklist
+                    {checklist.length > 0 && (
+                      <span className="text-xs normal-case">({completedItems}/{checklist.length})</span>
+                    )}
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="show-checklist-in-board-view"
+                      checked={showChecklistInBoardView}
+                      onCheckedChange={(checked) => handleToggleChecklistBoardViewForAll(checked === true)}
+                      disabled={checklist.length === 0}
+                    />
+                    <Label
+                      htmlFor="show-checklist-in-board-view"
+                      className={cn(
+                        "text-sm font-normal",
+                        checklist.length === 0 ? "text-muted-foreground/60 cursor-not-allowed" : "cursor-pointer"
+                      )}
+                    >
+                      Show in board view
+                    </Label>
                   </div>
                 </div>
 
-                {/* Tags — spans 2 cols */}
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label className={cn(
-                    'text-xs text-muted-foreground flex items-center gap-1.5',
-                    showMobileHeader && 'uppercase tracking-wider font-medium'
-                  )}>
-                    {!showMobileHeader && <Tag className="h-3 w-3" />}
-                    Tags
-                  </Label>
-                  <div className={cn(
-                    'min-h-9 flex w-full flex-wrap items-center gap-2 text-sm',
-                    showMobileHeader ? '' : 'rounded-md border border-input bg-transparent px-3 py-1.5'
-                  )}>
-                    {editedTask.tags.map((tag, index) => (
-                      <Badge
-                        key={`${tag}-${index}`}
-                        className="gap-1 pr-1.5 text-white border-transparent hover:opacity-90"
-                        style={{ backgroundColor: getTagColor(tag) }}
-                      >
-                        {editingTagIndex === index ? (
-                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                {checklist.length > 0 && !isMobile && (
+                  <Progress value={checklistProgress} className="h-2" />
+                )}
+
+                <div className="space-y-2">
+                  {!isMobileFieldsLocked && (
+                    <div className="flex items-center gap-2 mb-4">
+                      <Input
+                        placeholder="Add checklist item..."
+                        value={newChecklistItem}
+                        onChange={(e) => setNewChecklistItem(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddChecklistItem()}
+                        className="flex-1"
+                      />
+                      <Button size="sm" onClick={handleAddChecklistItem}>
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className={cn(showMobileHeader && checklist.length > 0 && 'border rounded-xl divide-y')}>
+                    {checklist.map((item) => (
+                      <div key={item.id} className={cn('flex items-center gap-3 group', showMobileHeader && 'px-3 py-2.5')}>
+                        <Checkbox
+                          checked={item.completed}
+                          onCheckedChange={() => handleToggleChecklistItem(item.id)}
+                          disabled={isMobileFieldsLocked}
+                          className={cn(
+                            showMobileHeader && 'h-5 w-5 rounded-md data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 disabled:opacity-100 disabled:cursor-default'
+                          )}
+                        />
+                        {editingChecklistId === item.id ? (
+                          <div className="flex-1 flex items-center gap-2">
                             <Input
                               autoFocus
-                              value={editingTagValue}
-                              onChange={(e) => setEditingTagValue(e.target.value)}
+                              value={editingChecklistValue}
+                              onChange={(e) => setEditingChecklistValue(e.target.value)}
                               onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  saveEditedTag();
-                                }
+                                if (e.key === 'Enter') handleSaveEditChecklist();
+                                if (e.key === 'Escape') handleCancelEditChecklist();
                               }}
-                              className="h-6 w-28 bg-background px-2 text-xs text-foreground"
+                              className="h-8"
                             />
-                            <Button type="button" size="icon" variant="ghost" className="h-5 w-5 hover:bg-black/10" onClick={saveEditedTag}>
-                              <Check className="h-3 w-3" />
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSaveEditChecklist}>
+                              <Check className="h-4 w-4 text-green-600" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancelEditChecklist}>
+                              <X className="h-4 w-4 text-muted-foreground" />
                             </Button>
                           </div>
                         ) : (
                           <>
-                            <span>{tag}</span>
+                            <span className={cn('flex-1 text-sm', item.completed && 'line-through text-muted-foreground')}>
+                              {item.text}
+                            </span>
                             {!isMobileFieldsLocked && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="rounded p-0.5 hover:bg-black/10"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingTagIndex(index);
-                                    setEditingTagValue(tag);
-                                    setEditingTagOriginal(tag);
-                                  }}
-                                  aria-label={`Edit tag ${tag}`}
+                              <div className={cn('flex items-center gap-1', showMobileHeader ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => handleStartEditChecklist(item)}
                                 >
-                                  <Pencil className="h-3 w-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded p-0.5 hover:bg-black/10"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleFieldChange('tags', editedTask.tags.filter((_, tagIndex) => tagIndex !== index));
-                                  }}
-                                  aria-label={`Remove tag ${tag}`}
+                                  <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => handleRemoveChecklistItem(item.id)}
                                 >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </>
+                                  <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                </Button>
+                              </div>
                             )}
                           </>
                         )}
-                      </Badge>
+                      </div>
                     ))}
-
-                    {!isMobileFieldsLocked && (
-                    <Popover
-                      open={isTagPopoverOpen}
-                      onOpenChange={(open) => {
-                        setIsTagPopoverOpen(open);
-                        if (!open) {
-                          setTagSearch('');
-                          setEditingTagIndex(null);
-                          setEditingTagValue('');
-                          setEditingTagOriginal(null);
-                        }
-                      }}
-                    >
-                      <PopoverTrigger asChild>
-                        <button className="h-6 w-6 rounded-full border border-dashed border-muted-foreground/40 hover:border-primary hover:text-primary flex items-center justify-center transition-colors text-muted-foreground">
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="p-0 w-[240px] flex flex-col overflow-hidden" align="start">
-                        <div className="p-2 border-b">
-                          <div className="flex items-center gap-2">
-                            <Input
-                              placeholder="Search or create tag…"
-                              value={tagSearch}
-                              onChange={(e) => setTagSearch(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  addTag(tagSearch);
-                                }
-                              }}
-                              className="h-7 text-sm"
-                              autoFocus
-                            />
-                          </div>
-                        </div>
-
-                        {availableTagSuggestions.length > 0 && (
-                          <div className="max-h-[180px] overflow-y-auto p-1">
-                            {availableTagSuggestions
-                              .filter(tag => !tagSearch.trim() || tag.toLowerCase().includes(tagSearch.toLowerCase()))
-                              .map((tag) => (
-                                <button
-                                  key={tag}
-                                  type="button"
-                                  className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2"
-                                  onClick={() => addTag(tag)}
-                                >
-                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getTagColor(tag) }} />
-                                  {tag}
-                                </button>
-                              ))}
-                          </div>
-                        )}
-
-                        <div className="border-t p-1.5">
-                          <button
-                            type="button"
-                            className={cn(
-                              "w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded transition-colors",
-                              tagSearch.trim() && !availableTagSuggestions.some(t => t.toLowerCase() === tagSearch.trim().toLowerCase())
-                                ? "text-primary hover:bg-primary/10 cursor-pointer"
-                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                            )}
-                            onClick={() => addTag(tagSearch)}
-                          >
-                            <Plus className="h-3 w-3 shrink-0" />
-                            {tagSearch.trim() && !availableTagSuggestions.some(t => t.toLowerCase() === tagSearch.trim().toLowerCase())
-                              ? <span>Create <strong>"{tagSearch.trim()}"</strong></span>
-                              : <span>Create new tag…</span>
-                            }
-                          </button>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    )}
                   </div>
                 </div>
-              </div>
-              </div>
-            </div>
+              </section>
 
-            <Separator />
+              <Separator />
 
-            {/* Description Section */}
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className={cn('text-sm font-medium', showMobileHeader && 'text-xs uppercase tracking-wider text-muted-foreground')}>Description</Label>
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="task-advanced-mode" className="text-xs text-muted-foreground cursor-pointer">Advanced Editor</Label>
-                  <Switch
-                    id="task-advanced-mode"
-                    checked={isAdvancedDescription}
-                    onCheckedChange={setIsAdvancedDescription}
-                    disabled={!canEditTaskFields}
-                    className={cn(showMobileHeader && 'disabled:opacity-100 disabled:cursor-pointer', showMobileHeader && !canEditTask && 'opacity-60')}
-                  />
-                </div>
-              </div>
-              {isAdvancedDescription ? (
-                <div
-                  className={cn(
-                    'min-h-[200px] border rounded-md p-4 bg-background',
-                    !canEditTask && 'opacity-60 cursor-not-allowed'
-                  )}
-                  title={canEditTaskFields ? undefined : editLockTitle}
-                >
-                  <SlashBlockEditor
-                    key={editedTask.id || 'create'}
-                    readOnly={!canEditTaskFields}
-                    initialBlocks={editedTask.descriptionBlocks}
-                    onChange={(blocks) => handleFieldChange('descriptionBlocks', blocks as any)}
-                  />
-                </div>
-              ) : (
-                <Textarea
-                  value={editedTask.description || ''}
-                  onChange={(e) => handleFieldChange('description', e.target.value)}
-                  placeholder="Describe the task in detail..."
-                  className={cn(
-                    'min-h-[150px] resize-none',
-                    showMobileHeader && 'disabled:opacity-100 disabled:cursor-default',
-                    showMobileHeader && !canEditTask && 'opacity-60'
-                  )}
-                  disabled={!canEditTaskFields}
-                  title={canEditTaskFields ? undefined : editLockTitle}
-                />
-              )}
-            </section>
-
-            <Separator />
-
-            {/* Checklist Section */}
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
+              {/* Attachments Section */}
+              <section className="space-y-3">
                 <h3 className={cn(
                   'text-sm font-medium text-muted-foreground flex items-center gap-2',
-                  showMobileHeader && 'text-xs uppercase tracking-wider'
+                  showMobileHeader && 'text-xs uppercase tracking-wider justify-between'
                 )}>
-                  {!showMobileHeader && <CheckSquare className="h-4 w-4" />}
-                  Checklist
-                  {checklist.length > 0 && (
-                    <span className="text-xs normal-case">({completedItems}/{checklist.length})</span>
-                  )}
+                  <span className="flex items-center gap-2">
+                    {!showMobileHeader && <Paperclip className="h-4 w-4" />}
+                    Attachments
+                  </span>
+                  {showMobileHeader && attachments.length > 0 && <span>{attachments.length}</span>}
                 </h3>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="show-checklist-in-board-view"
-                    checked={showChecklistInBoardView}
-                    onCheckedChange={(checked) => handleToggleChecklistBoardViewForAll(checked === true)}
-                    disabled={checklist.length === 0}
-                  />
-                  <Label
-                    htmlFor="show-checklist-in-board-view"
-                    className={cn(
-                      "text-sm font-normal",
-                      checklist.length === 0 ? "text-muted-foreground/60 cursor-not-allowed" : "cursor-pointer"
-                    )}
-                  >
-                    Show in board view
-                  </Label>
-                </div>
-              </div>
 
-              {checklist.length > 0 && (
-                <Progress value={checklistProgress} className="h-2" />
-              )}
-
-              <div className="space-y-2">
-                {!isMobileFieldsLocked && (
-                  <div className="flex items-center gap-2 mb-4">
-                    <Input
-                      placeholder="Add checklist item..."
-                      value={newChecklistItem}
-                      onChange={(e) => setNewChecklistItem(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddChecklistItem()}
-                      className="flex-1"
-                    />
-                    <Button size="sm" onClick={handleAddChecklistItem}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-
-                <div className={cn(showMobileHeader && checklist.length > 0 && 'border rounded-xl divide-y')}>
-                {checklist.map((item) => (
-                  <div key={item.id} className={cn('flex items-center gap-3 group', showMobileHeader && 'px-3 py-2.5')}>
-                    <Checkbox
-                      checked={item.completed}
-                      onCheckedChange={() => handleToggleChecklistItem(item.id)}
-                      disabled={isMobileFieldsLocked}
-                      className={cn(
-                        showMobileHeader && 'h-5 w-5 rounded-md data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 disabled:opacity-100 disabled:cursor-default'
-                      )}
-                    />
-                    {editingChecklistId === item.id ? (
-                      <div className="flex-1 flex items-center gap-2">
-                        <Input
-                          autoFocus
-                          value={editingChecklistValue}
-                          onChange={(e) => setEditingChecklistValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEditChecklist();
-                            if (e.key === 'Escape') handleCancelEditChecklist();
-                          }}
-                          className="h-8"
-                        />
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSaveEditChecklist}>
-                          <Check className="h-4 w-4 text-green-600" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancelEditChecklist}>
-                          <X className="h-4 w-4 text-muted-foreground" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        <span className={cn('flex-1 text-sm', item.completed && 'line-through text-muted-foreground')}>
-                          {item.text}
-                        </span>
-                        {!isMobileFieldsLocked && (
+                <div className="space-y-2">
+                  {attachments.map((attachment) => {
+                    const FileIcon = getFileIcon(attachment.fileType);
+                    const viewUrl = resolveFileUrl(attachment.url) ?? attachment.url;
+                    return (
+                      <div
+                        key={attachment.id}
+                        className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 group cursor-pointer hover:bg-muted"
+                        onClick={() => setPreviewingFile({ url: viewUrl, fileName: attachment.filename, mimeType: attachment.fileType })}
+                      >
+                        <FileIcon className="h-8 w-8 text-muted-foreground" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{attachment.filename}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatFileSize(attachment.fileSize)} • Uploaded by {attachment.uploadedBy.name}
+                          </p>
+                        </div>
                         <div className={cn('flex items-center gap-1', showMobileHeader ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6"
-                            onClick={() => handleStartEditChecklist(item)}
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const a = document.createElement('a');
+                              a.href = viewUrl;
+                              a.download = attachment.filename;
+                              a.click();
+                            }}
                           >
-                            <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                            <Download className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => handleRemoveChecklistItem(item.id)}
-                          >
-                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                          </Button>
-                        </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
-                </div>
-              </div>
-            </section>
-
-            <Separator />
-
-            {/* Attachments Section */}
-            <section className="space-y-3">
-              <h3 className={cn(
-                'text-sm font-medium text-muted-foreground flex items-center gap-2',
-                showMobileHeader && 'text-xs uppercase tracking-wider justify-between'
-              )}>
-                <span className="flex items-center gap-2">
-                  {!showMobileHeader && <Paperclip className="h-4 w-4" />}
-                  Attachments
-                </span>
-                {showMobileHeader && attachments.length > 0 && <span>{attachments.length}</span>}
-              </h3>
-
-              <div className="space-y-2">
-                {attachments.map((attachment) => {
-                  const FileIcon = getFileIcon(attachment.fileType);
-                  const viewUrl = resolveFileUrl(attachment.url) ?? attachment.url;
-                  const isImage = attachment.fileType.startsWith('image/') && !failedThumbnails.has(attachment.id);
-                  return (
-                    <div
-                      key={attachment.id}
-                      className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 group cursor-pointer hover:bg-muted"
-                      onClick={() => setPreviewingFile({ url: viewUrl, fileName: attachment.filename, mimeType: attachment.fileType })}
-                    >
-                      {isImage ? (
-                        <img
-                          src={viewUrl}
-                          alt={attachment.filename}
-                          className="h-8 w-8 rounded object-cover shrink-0 border"
-                          onError={() => setFailedThumbnails(prev => new Set(prev).add(attachment.id))}
-                        />
-                      ) : (
-                        <FileIcon className="h-8 w-8 text-muted-foreground shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{attachment.filename}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatFileSize(attachment.fileSize)} • Uploaded by {attachment.uploadedBy.name}
-                        </p>
-                      </div>
-                      <div className={cn('flex items-center gap-1', showMobileHeader ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const a = document.createElement('a');
-                            a.href = viewUrl;
-                            a.download = attachment.filename;
-                            a.click();
-                          }}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        {!isMobileFieldsLocked && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveAttachment(attachment.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                        </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Pending files (create mode only) */}
-                {mode === 'create' && pendingFiles.length > 0 && (
-                  <div className="space-y-1">
-                    {pendingFiles.map((f, i) => {
-                      const previewUrl = pendingFileUrls[i];
-                      const isImage = f.type.startsWith('image/');
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            "flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm",
-                            isImage && previewUrl && "cursor-pointer hover:bg-muted"
+                          {!isMobileFieldsLocked && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveAttachment(attachment.id);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                            </Button>
                           )}
-                          onClick={() => {
-                            if (isImage && previewUrl) {
-                              setPreviewingFile({ url: previewUrl, fileName: f.name, mimeType: f.type });
-                            }
-                          }}
-                        >
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Pending files (create mode only) */}
+                  {mode === 'create' && pendingFiles.length > 0 && (
+                    <div className="space-y-1">
+                      {pendingFiles.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm">
                           <div className="flex items-center gap-2 min-w-0">
-                            {isImage && previewUrl ? (
-                              <img
-                                src={previewUrl}
-                                alt={f.name}
-                                className="h-10 w-10 rounded object-cover shrink-0 border"
-                              />
-                            ) : (
-                              <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            )}
+                            <File className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <span className="truncate">{f.name}</span>
                             <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
                           </div>
@@ -2438,543 +2406,542 @@ export const TaskDetailModal = ({
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 shrink-0"
-                            onClick={(e) => { e.stopPropagation(); setPendingFiles(prev => prev.filter((_, idx) => idx !== i)); }}
+                            onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))}
                           >
                             <X className="h-3 w-3" />
                           </Button>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {!isMobileFieldsLocked && (
-                <div className="flex items-center justify-center w-full">
-                  <label
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    className={cn(
-                    "flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
-                    isDragging ? "border-primary bg-primary/10" : "bg-muted/20 hover:bg-muted/40",
-                    isUploading && "opacity-50 pointer-events-none"
-                  )}>
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        {isUploading ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : (
-                          <Upload className="h-5 w-5" />
-                        )}
-                        <span className="text-sm font-medium">
-                          {isUploading ? 'Uploading...' : 'Add Attachment'}
-                        </span>
-                      </div>
-                      {!isUploading && <p className="text-xs text-muted-foreground mt-1">or drag and drop, or paste image</p>}
+                      ))}
                     </div>
-                    <input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,video/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
-                  </label>
+                  )}
+
+                  {!isMobileFieldsLocked && (
+                    <div className="flex items-center justify-center w-full">
+                      <label
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={cn(
+                          "flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
+                          isDragging ? "border-primary bg-primary/10" : "bg-muted/20 hover:bg-muted/40",
+                          isUploading && "opacity-50 pointer-events-none"
+                        )}>
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            {isUploading ? (
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                            ) : (
+                              <Upload className="h-5 w-5" />
+                            )}
+                            <span className="text-sm font-medium">
+                              {isUploading ? 'Uploading...' : 'Add Attachment'}
+                            </span>
+                          </div>
+                          {!isUploading && <p className="text-xs text-muted-foreground mt-1">or drag and drop, or paste image</p>}
+                        </div>
+                        <input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,video/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                      </label>
+                    </div>
+                  )}
                 </div>
-                )}
-              </div>
-            </section>
+              </section>
 
-            <Separator />
+              <Separator />
 
-            {/* Video Links Section */}
-            <section className="space-y-3">
-              <h3 className={cn(
-                'text-sm font-medium text-muted-foreground flex items-center gap-2',
-                showMobileHeader && 'text-xs uppercase tracking-wider justify-between'
-              )}>
-                <span className="flex items-center gap-2">
-                  {!showMobileHeader && <Video className="h-4 w-4" />}
-                  Videos
-                </span>
-                {showMobileHeader && videoLinks.length > 0 && <span>{videoLinks.length}</span>}
-              </h3>
+              {/* Video Links Section */}
+              <section className="space-y-3">
+                <h3 className={cn(
+                  'text-sm font-medium text-muted-foreground flex items-center gap-2',
+                  showMobileHeader && 'text-xs uppercase tracking-wider justify-between'
+                )}>
+                  <span className="flex items-center gap-2">
+                    {!showMobileHeader && <Video className="h-4 w-4" />}
+                    Videos
+                  </span>
+                  {showMobileHeader && videoLinks.length > 0 && <span>{videoLinks.length}</span>}
+                </h3>
 
-              <div className="space-y-2">
-                {videoLinks.map((vl) => {
-                  const thumbnail = getVideoThumbnail(vl.url);
-                  return (
-                    <div
-                      key={vl.id}
-                      className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 group cursor-pointer hover:bg-muted"
-                      onClick={() => setPreviewingFile({ url: vl.url, fileName: vl.title || vl.url })}
-                    >
-                      <div className="relative h-10 w-16 rounded overflow-hidden bg-black/20 shrink-0 flex items-center justify-center">
-                        {thumbnail ? (
-                          <img src={thumbnail} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <Video className="h-5 w-5 text-muted-foreground" />
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="bg-black/50 rounded-full p-1">
-                            <Play className="h-3 w-3 text-white fill-white" />
+                <div className="space-y-2">
+                  {videoLinks.map((vl) => {
+                    const thumbnail = getVideoThumbnail(vl.url);
+                    return (
+                      <div
+                        key={vl.id}
+                        className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 group cursor-pointer hover:bg-muted"
+                        onClick={() => setPreviewingFile({ url: vl.url, fileName: vl.title || vl.url })}
+                      >
+                        <div className="relative h-10 w-16 rounded overflow-hidden bg-black/20 shrink-0 flex items-center justify-center">
+                          {thumbnail ? (
+                            <img src={thumbnail} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Video className="h-5 w-5 text-muted-foreground" />
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-black/50 rounded-full p-1">
+                              <Play className="h-3 w-3 text-white fill-white" />
+                            </div>
                           </div>
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{vl.title || vl.url}</p>
+                          <p className="text-xs text-muted-foreground truncate">{vl.url}</p>
+                        </div>
+                        {!isMobileFieldsLocked && (
+                          <div className={cn('flex items-center gap-1', showMobileHeader ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveVideoLink(vl.id);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{vl.title || vl.url}</p>
-                        <p className="text-xs text-muted-foreground truncate">{vl.url}</p>
-                      </div>
-                      {!isMobileFieldsLocked && (
-                      <div className={cn('flex items-center gap-1', showMobileHeader ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveVideoLink(vl.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                        </Button>
-                      </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
 
-                {/* Uploaded video files in pending mode */}
-                {mode === 'create' && pendingFiles.filter(f => f.type.startsWith('video/')).length > 0 && (
-                  <div className="space-y-1">
-                    {pendingFiles.filter(f => f.type.startsWith('video/')).map((f, i) => (
-                      <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate">{f.name}</span>
-                          <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
+                  {/* Uploaded video files in pending mode */}
+                  {mode === 'create' && pendingFiles.filter(f => f.type.startsWith('video/')).length > 0 && (
+                    <div className="space-y-1">
+                      {pendingFiles.filter(f => f.type.startsWith('video/')).map((f, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate">{f.name}</span>
+                            <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!isMobileFieldsLocked && (
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Paste video URL…"
+                        value={videoLinkInput}
+                        onChange={(e) => setVideoLinkInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddVideoLink(); } }}
+                        className="text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddVideoLink}
+                        disabled={!videoLinkInput.trim()}
+                        className="shrink-0"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* Dependencies Section */}
+              <section className="space-y-4">
+                <h3 className={cn(
+                  'text-sm font-medium text-muted-foreground flex items-center gap-2',
+                  showMobileHeader && 'text-xs uppercase tracking-wider'
+                )}>
+                  {!showMobileHeader && <Link2 className="h-4 w-4" />}
+                  Dependencies
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Blocking To */}
+                  <div className={cn('space-y-3', showMobileHeader && 'border rounded-xl p-3')}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-priority-high" />
+                      <Label className="text-xs font-medium">Blocking To</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Tasks that depend on this task</p>
+
+                    <div className="space-y-2">
+                      {!isMobileFieldsLocked && (
+                        <div className="flex gap-2">
+                          <Popover open={isBlockingTaskPopoverOpen} onOpenChange={setIsBlockingTaskPopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={isBlockingTaskPopoverOpen}
+                                className="flex-1 justify-start font-normal text-muted-foreground"
+                              >
+                                Select task...
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="p-0 w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] overflow-hidden" align="start">
+                              <Command>
+                                <CommandInput placeholder="Search tasks..." />
+                                <CommandList
+                                  className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto"
+                                >
+                                  <CommandEmpty>
+                                    {availableTasksForBlocking.length === 0 ? "No available tasks" : "No results found."}
+                                  </CommandEmpty>
+                                  <CommandGroup>
+                                    {availableTasksForBlocking.map((t) => (
+                                      <CommandItem
+                                        key={t.id}
+                                        value={t.title}
+                                        onSelect={() => {
+                                          handleAddBlockingTask(t.id);
+                                          setIsBlockingTaskPopoverOpen(false);
+                                        }}
+                                        className="cursor-pointer"
+                                      >
+                                        {t.title}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      )}
+
+                      {showMobileHeader && blockingToTaskIds.length === 0 && (
+                        <p className="text-sm text-muted-foreground rounded-md border border-dashed px-3 py-2">
+                          This task isn't blocking anything.
+                        </p>
+                      )}
+                      {blockingToTaskIds.map((taskId) => {
+                        const depTask = getTaskById(taskId);
+                        if (!depTask) return null;
+                        return (
+                          <div
+                            key={taskId}
+                            className="flex items-center justify-between p-2 bg-muted/50 rounded-lg group"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className={cn(
+                                'w-2 h-2 rounded-full',
+                                statusOptions.find(s => s.value === depTask.status)?.color || 'bg-muted-foreground/60'
+                              )} />
+                              <span className="text-sm truncate">{depTask.title}</span>
+                            </div>
+                            {!isMobileFieldsLocked && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                onClick={() => handleRemoveBlockingTask(taskId)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Blocked By */}
+                  <div className={cn('space-y-3', showMobileHeader && 'border rounded-xl p-3')}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-status-blocked" />
+                      <Label className="text-xs font-medium">Blocked By</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Tasks that must complete first</p>
+
+                    <div className="space-y-2">
+                      {!isMobileFieldsLocked && (
+                        <div className="flex gap-2">
+                          <Popover open={isBlockedByTaskPopoverOpen} onOpenChange={setIsBlockedByTaskPopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={isBlockedByTaskPopoverOpen}
+                                className="flex-1 justify-start font-normal text-muted-foreground"
+                              >
+                                Select task...
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="p-0 w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] overflow-hidden" align="start">
+                              <Command>
+                                <CommandInput placeholder="Search tasks..." />
+                                <CommandList
+                                  className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto"
+                                >
+                                  <CommandEmpty>
+                                    {availableTasksForBlockedBy.length === 0 ? "No available tasks" : "No results found."}
+                                  </CommandEmpty>
+                                  <CommandGroup>
+                                    {availableTasksForBlockedBy.map((t) => (
+                                      <CommandItem
+                                        key={t.id}
+                                        value={t.title}
+                                        onSelect={() => {
+                                          handleAddBlockedByTask(t.id);
+                                          setIsBlockedByTaskPopoverOpen(false);
+                                        }}
+                                        className="cursor-pointer"
+                                      >
+                                        {t.title}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      )}
+
+                      {showMobileHeader && editedTask.blockedBy.length === 0 && (
+                        <p className="text-sm text-muted-foreground rounded-md border border-dashed px-3 py-2">
+                          This task has no blockers.
+                        </p>
+                      )}
+                      {editedTask.blockedBy.map((taskId) => {
+                        const depTask = getTaskById(taskId);
+                        if (!depTask) return null;
+                        return (
+                          <div
+                            key={taskId}
+                            className="flex items-center justify-between p-2 bg-muted/50 rounded-lg group"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className={cn(
+                                'w-2 h-2 rounded-full',
+                                statusOptions.find(s => s.value === depTask.status)?.color || 'bg-muted-foreground/60'
+                              )} />
+                              <span className="text-sm truncate">{depTask.title}</span>
+                            </div>
+                            {!isMobileFieldsLocked && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                onClick={() => handleRemoveBlockedByTask(taskId)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* Comments Section */}
+              <section className="space-y-4">
+                <h3 className={cn(
+                  'text-sm font-medium flex items-center gap-2',
+                  showMobileHeader && 'text-xs uppercase tracking-wider text-muted-foreground justify-between'
+                )}>
+                  <span className="flex items-center gap-2">
+                    {!showMobileHeader && <MessageSquare className="h-4 w-4" />}
+                    Comments
+                  </span>
+                  {showMobileHeader ? <span>{comments.length}</span> : `(${comments.length})`}
+                </h3>
+
+                <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                  {comments.map((comment) => {
+                    const isOwnComment = profile?.id === comment.author.id;
+                    const isEditingThisComment = editingCommentId === comment.id;
+                    return (
+                      <div key={comment.id} className="flex gap-3 p-3 bg-muted/50 rounded-lg group">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">
+                            {comment.author.initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{comment.author.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}
+                            </span>
+                            {isOwnComment && !isEditingThisComment && (
+                              <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  className="rounded p-0.5 text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
+                                  onClick={() => handleStartEditComment(comment)}
+                                  aria-label="Edit comment"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+                                  onClick={() => setDeletingCommentId(comment.id)}
+                                  aria-label="Delete comment"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {isEditingThisComment ? (
+                            <div className="space-y-2">
+                              <Textarea
+                                autoFocus
+                                value={editingCommentValue}
+                                onChange={(e) => setEditingCommentValue(e.target.value)}
+                                className="min-h-[60px] text-sm"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                    e.preventDefault();
+                                    handleSaveEditComment();
+                                  }
+                                }}
+                              />
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={handleSaveEditComment} disabled={!editingCommentValue.trim()}>
+                                  Save
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={handleCancelEditComment}>
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">{comment.content}</p>
+                          )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
 
-                {!isMobileFieldsLocked && (
                 <div className="flex gap-2">
-                  <Input
-                    placeholder="Paste YouTube, Vimeo, or direct video URL…"
-                    value={videoLinkInput}
-                    onChange={(e) => setVideoLinkInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddVideoLink(); } }}
-                    className="text-sm"
+                  <Textarea
+                    placeholder="Add a comment..."
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    className="min-h-[80px]"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddVideoLink}
-                    disabled={!videoLinkInput.trim()}
-                    className="shrink-0"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add
+                  <Button className="h-auto" onClick={handleAddComment} disabled={!newComment.trim()}>
+                    <Send className="h-4 w-4" />
                   </Button>
                 </div>
-                )}
-              </div>
-            </section>
-
-            <Separator />
-
-            {/* Dependencies Section */}
-            <section className="space-y-4">
-              <h3 className={cn(
-                'text-sm font-medium text-muted-foreground flex items-center gap-2',
-                showMobileHeader && 'text-xs uppercase tracking-wider'
-              )}>
-                {!showMobileHeader && <Link2 className="h-4 w-4" />}
-                Dependencies
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {/* Blocking To */}
-                <div className={cn('space-y-3', showMobileHeader && 'border rounded-xl p-3')}>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-priority-high" />
-                    <Label className="text-xs font-medium">Blocking To</Label>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Tasks that depend on this task</p>
-
-                  <div className="space-y-2">
-                    {!isMobileFieldsLocked && (
-                    <div className="flex gap-2">
-                      <Popover open={isBlockingTaskPopoverOpen} onOpenChange={setIsBlockingTaskPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={isBlockingTaskPopoverOpen}
-                            className="flex-1 justify-start font-normal text-muted-foreground"
-                          >
-                            Select task...
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="p-0 w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] overflow-hidden" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search tasks..." />
-                            <CommandList
-                              className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto"
-                            >
-                              <CommandEmpty>
-                                {availableTasksForBlocking.length === 0 ? "No available tasks" : "No results found."}
-                              </CommandEmpty>
-                              <CommandGroup>
-                                {availableTasksForBlocking.map((t) => (
-                                  <CommandItem
-                                    key={t.id}
-                                    value={t.title}
-                                    onSelect={() => {
-                                      handleAddBlockingTask(t.id);
-                                      setIsBlockingTaskPopoverOpen(false);
-                                    }}
-                                    className="cursor-pointer"
-                                  >
-                                    {t.title}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                    )}
-
-                    {showMobileHeader && blockingToTaskIds.length === 0 && (
-                      <p className="text-sm text-muted-foreground rounded-md border border-dashed px-3 py-2">
-                        This task isn't blocking anything.
-                      </p>
-                    )}
-                    {blockingToTaskIds.map((taskId) => {
-                      const depTask = getTaskById(taskId);
-                      if (!depTask) return null;
-                      return (
-                        <div
-                          key={taskId}
-                          className="flex items-center justify-between p-2 bg-muted/50 rounded-lg group"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={cn(
-                              'w-2 h-2 rounded-full',
-                              statusOptions.find(s => s.value === depTask.status)?.color || 'bg-muted-foreground/60'
-                            )} />
-                            <span className="text-sm truncate">{depTask.title}</span>
-                          </div>
-                          {!isMobileFieldsLocked && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            onClick={() => handleRemoveBlockingTask(taskId)}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Blocked By */}
-                <div className={cn('space-y-3', showMobileHeader && 'border rounded-xl p-3')}>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-status-blocked" />
-                    <Label className="text-xs font-medium">Blocked By</Label>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Tasks that must complete first</p>
-
-                  <div className="space-y-2">
-                    {!isMobileFieldsLocked && (
-                    <div className="flex gap-2">
-                      <Popover open={isBlockedByTaskPopoverOpen} onOpenChange={setIsBlockedByTaskPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={isBlockedByTaskPopoverOpen}
-                            className="flex-1 justify-start font-normal text-muted-foreground"
-                          >
-                            Select task...
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="p-0 w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] overflow-hidden" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search tasks..." />
-                            <CommandList
-                              className="max-h-[calc(var(--radix-popover-content-available-height)_-_45px)] overflow-y-auto"
-                            >
-                              <CommandEmpty>
-                                {availableTasksForBlockedBy.length === 0 ? "No available tasks" : "No results found."}
-                              </CommandEmpty>
-                              <CommandGroup>
-                                {availableTasksForBlockedBy.map((t) => (
-                                  <CommandItem
-                                    key={t.id}
-                                    value={t.title}
-                                    onSelect={() => {
-                                      handleAddBlockedByTask(t.id);
-                                      setIsBlockedByTaskPopoverOpen(false);
-                                    }}
-                                    className="cursor-pointer"
-                                  >
-                                    {t.title}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                    )}
-
-                    {showMobileHeader && editedTask.blockedBy.length === 0 && (
-                      <p className="text-sm text-muted-foreground rounded-md border border-dashed px-3 py-2">
-                        This task has no blockers.
-                      </p>
-                    )}
-                    {editedTask.blockedBy.map((taskId) => {
-                      const depTask = getTaskById(taskId);
-                      if (!depTask) return null;
-                      return (
-                        <div
-                          key={taskId}
-                          className="flex items-center justify-between p-2 bg-muted/50 rounded-lg group"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={cn(
-                              'w-2 h-2 rounded-full',
-                              statusOptions.find(s => s.value === depTask.status)?.color || 'bg-muted-foreground/60'
-                            )} />
-                            <span className="text-sm truncate">{depTask.title}</span>
-                          </div>
-                          {!isMobileFieldsLocked && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            onClick={() => handleRemoveBlockedByTask(taskId)}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <Separator />
-
-            {/* Comments Section */}
-            <section className="space-y-4">
-              <h3 className={cn(
-                'text-sm font-medium flex items-center gap-2',
-                showMobileHeader && 'text-xs uppercase tracking-wider text-muted-foreground justify-between'
-              )}>
-                <span className="flex items-center gap-2">
-                  {!showMobileHeader && <MessageSquare className="h-4 w-4" />}
-                  Comments
-                </span>
-                {showMobileHeader ? <span>{comments.length}</span> : `(${comments.length})`}
-              </h3>
-
-              <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                {comments.map((comment) => {
-                  const isOwnComment = profile?.id === comment.author.id;
-                  const isEditingThisComment = editingCommentId === comment.id;
-                  return (
-                    <div key={comment.id} className="flex gap-3 p-3 bg-muted/50 rounded-lg group">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="text-xs">
-                          {comment.author.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{comment.author.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}
-                          </span>
-                          {isOwnComment && !isEditingThisComment && (
-                            <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                type="button"
-                                className="rounded p-0.5 text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
-                                onClick={() => handleStartEditComment(comment)}
-                                aria-label="Edit comment"
-                              >
-                                <Pencil className="h-3 w-3" />
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-                                onClick={() => setDeletingCommentId(comment.id)}
-                                aria-label="Delete comment"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        {isEditingThisComment ? (
-                          <div className="space-y-2">
-                            <Textarea
-                              autoFocus
-                              value={editingCommentValue}
-                              onChange={(e) => setEditingCommentValue(e.target.value)}
-                              className="min-h-[60px] text-sm"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                                  e.preventDefault();
-                                  handleSaveEditComment();
-                                }
-                              }}
-                            />
-                            <div className="flex gap-2">
-                              <Button size="sm" onClick={handleSaveEditComment} disabled={!editingCommentValue.trim()}>
-                                Save
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={handleCancelEditComment}>
-                                Cancel
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">{comment.content}</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex gap-2">
-                <Textarea
-                  placeholder="Add a comment..."
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  className="min-h-[80px]"
-                />
-                <Button className="h-auto" onClick={handleAddComment} disabled={!newComment.trim()}>
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </section>
-          </div>
-        </ScrollArea>
-        {mode === 'create' && (
-          <div className="p-4 border-t flex justify-end gap-2 bg-background z-10 w-full shrink-0">
-            <Button variant="outline" onClick={attemptClose} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={!canSubmitTask || isSaving}>
-              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Task
-            </Button>
-          </div>
-        )}
-        {mode === 'view' && showMobileHeader && isMobileEditMode && (
-          <div className="px-4 py-3 border-t bg-background shrink-0">
-            <Button
-              className="w-full"
-              onClick={handleUpdateTask}
-              disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
-            >
-              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Update Task
-            </Button>
-          </div>
-        )}
-        {mode === 'view' && !showMobileHeader && (
-          <div className="p-4 border-t flex items-center justify-between gap-2 bg-background z-10 w-full">
-            {/* Delete button on the bottom left — only the task creator or a project/organization Admin can delete */}
-            {onDelete ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={!canDeleteTask}
-                title={canDeleteTask ? 'Delete this task' : deleteLockTitle}
-                className={cn(
-                  'text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2',
-                  !canDeleteTask && 'cursor-not-allowed opacity-60'
-                )}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Task
-              </Button>
-            ) : (
-              <div />
-            )}
-            <div className="flex gap-2">
+              </section>
+            </div>
+          </ScrollArea>
+          {mode === 'create' && (
+            <div className="p-4 border-t flex justify-end gap-2 bg-background z-10 w-full shrink-0">
               <Button variant="outline" onClick={attemptClose} disabled={isSaving}>
                 Cancel
               </Button>
+              <Button onClick={handleCreate} disabled={!canSubmitTask || isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create Task
+              </Button>
+            </div>
+          )}
+          {mode === 'view' && showMobileHeader && isMobileEditMode && (
+            <div className="px-4 py-3 border-t bg-background shrink-0">
               <Button
+                className="w-full"
                 onClick={handleUpdateTask}
                 disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
-                title={canEditTask ? undefined : editLockTitle}
               >
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Update Task
               </Button>
             </div>
-          </div>
-        )}
-      </DialogContent>
-      <ConfirmationDialog
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        onConfirm={handleDelete}
-        title="Delete Task"
-        description="Are you sure you want to delete this task? This action cannot be undone."
-        confirmText="Delete"
-        variant="destructive"
+          )}
+          {mode === 'view' && !showMobileHeader && (
+            <div className="p-4 border-t flex items-center justify-between gap-2 bg-background z-10 w-full">
+              {/* Delete button on the bottom left — only the task creator or a project/organization Admin can delete */}
+              {onDelete ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={!canDeleteTask}
+                  title={canDeleteTask ? 'Delete this task' : deleteLockTitle}
+                  className={cn(
+                    'text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2',
+                    !canDeleteTask && 'cursor-not-allowed opacity-60'
+                  )}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Task
+                </Button>
+              ) : (
+                <div />
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={attemptClose} disabled={isSaving}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUpdateTask}
+                  disabled={isSaving || !editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask}
+                  title={canEditTask ? undefined : editLockTitle}
+                >
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Update Task
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+        <ConfirmationDialog
+          open={showDeleteConfirm}
+          onOpenChange={setShowDeleteConfirm}
+          onConfirm={handleDelete}
+          title="Delete Task"
+          description="Are you sure you want to delete this task? This action cannot be undone."
+          confirmText="Delete"
+          variant="destructive"
+        />
+        <ConfirmationDialog
+          open={!!deletingCommentId}
+          onOpenChange={(open) => !open && setDeletingCommentId(null)}
+          onConfirm={handleDeleteComment}
+          title="Delete Comment"
+          description="Are you sure you want to delete this comment? This action cannot be undone."
+          confirmText="Delete"
+          variant="destructive"
+        />
+        <ConfirmationDialog
+          open={showUnsavedConfirm}
+          onOpenChange={setShowUnsavedConfirm}
+          onConfirm={handleCancel}
+          title="Discard changes?"
+          description="You have unsaved changes. Are you sure you want to discard them?"
+          confirmText="Discard"
+          cancelText="Keep Editing"
+          variant="destructive"
+          extraActionText={isMobile ? "Update Task" : undefined}
+          onExtraAction={isMobile ? () => {
+            if (!editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask) {
+              toast.error('Please fix required fields before updating.');
+              return;
+            }
+            handleUpdateTask();
+          } : undefined}
+        />
+      </Dialog>
+      <FilePreviewDialog
+        file={previewingFile}
+        files={[
+          ...attachments.map(a => ({ url: resolveFileUrl(a.url) ?? a.url, fileName: a.filename, mimeType: a.fileType })),
+          ...videoLinks.map(v => ({ url: v.url, fileName: v.title || v.url })),
+        ]}
+        onClose={() => setPreviewingFile(null)}
       />
-      <ConfirmationDialog
-        open={!!deletingCommentId}
-        onOpenChange={(open) => !open && setDeletingCommentId(null)}
-        onConfirm={handleDeleteComment}
-        title="Delete Comment"
-        description="Are you sure you want to delete this comment? This action cannot be undone."
-        confirmText="Delete"
-        variant="destructive"
-      />
-      <ConfirmationDialog
-        open={showUnsavedConfirm}
-        onOpenChange={setShowUnsavedConfirm}
-        onConfirm={handleCancel}
-        title="Discard changes?"
-        description="You have unsaved changes. Are you sure you want to discard them?"
-        confirmText="Discard"
-        cancelText="Keep Editing"
-        variant="destructive"
-        extraActionText={isMobile ? "Update Task" : undefined}
-        onExtraAction={isMobile ? () => {
-          if (!editedTask.title || !editedTask.dueDate || isBlockedWithoutDependencies || !canEditTask) {
-            toast.error('Please fix required fields before updating.');
-            return;
-          }
-          handleUpdateTask();
-        } : undefined}
-      />
-    </Dialog>
-    <FilePreviewDialog
-      file={previewingFile}
-      files={[
-        ...attachments.map(a => ({ url: resolveFileUrl(a.url) ?? a.url, fileName: a.filename, mimeType: a.fileType })),
-        ...videoLinks.map(v => ({ url: v.url, fileName: v.title || v.url })),
-      ]}
-      onClose={() => setPreviewingFile(null)}
-    />
     </>
   );
 }

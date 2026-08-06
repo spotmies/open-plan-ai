@@ -1,5 +1,5 @@
 import { useState, useCallback, memo } from 'react';
-import { Task, Milestone } from '@/types';
+import { Task, Milestone, Priority } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -19,7 +19,7 @@ interface VirtualListViewProps {
   onBatchUpdate?: (updates: Array<{ id: string; updates: Partial<Task> }>) => void;
 }
 
-const statusColors = {
+const statusColors: Record<string, string> = {
   todo: 'bg-status-todo/20 text-muted-foreground',
   'in-progress': 'bg-status-in-progress/20 text-status-in-progress',
   review: 'bg-status-review/20 text-status-review',
@@ -27,7 +27,7 @@ const statusColors = {
   blocked: 'bg-status-blocked/20 text-status-blocked',
 };
 
-const priorityColors = {
+const priorityColors: Record<Priority, string> = {
   critical: 'bg-priority-critical/20 text-priority-critical',
   major: 'bg-priority-high/20 text-priority-high',
   minor: 'bg-priority-medium/20 text-priority-medium',
@@ -157,12 +157,12 @@ export function VirtualListView({ tasks, milestones = [], onTaskClick, onUpdate,
         comparison = a.title.localeCompare(b.title);
         break;
       case 'status': {
-        const statusOrder = { 'blocked': 0, 'in-progress': 1, 'review': 2, 'todo': 3, 'done': 4 };
-        comparison = (statusOrder[a.status] || 0) - (statusOrder[b.status] || 0);
+        const statusOrder: Record<string, number> = { 'blocked': 0, 'in-progress': 1, 'review': 2, 'todo': 3, 'done': 4 };
+        comparison = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
         break;
       }
       case 'priority': {
-        const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        const priorityOrder: Record<Priority, number> = { critical: 0, major: 1, minor: 2, trivial: 3 };
         comparison = priorityOrder[a.priority] - priorityOrder[b.priority];
         break;
       }
@@ -191,7 +191,7 @@ export function VirtualListView({ tasks, milestones = [], onTaskClick, onUpdate,
     overscan: 10,
   });
 
-  const getMilestoneName = useCallback((milestoneId?: string) => {
+  const getMilestoneName = useCallback((milestoneId?: string | null) => {
     if (!milestoneId) return null;
     const milestone = milestones.find(m => m.id === milestoneId);
     return milestone?.title || null;

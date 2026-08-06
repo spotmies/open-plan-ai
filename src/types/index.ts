@@ -135,6 +135,7 @@ export interface Task {
   id: string;
   title: string;
   description?: string;
+  descriptionBlocks?: any[]; // For advanced editor state
   status: TaskStatus;
   priority: Priority;
   module: ModuleType;

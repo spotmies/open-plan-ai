@@ -6,11 +6,29 @@ import {
   getCategoryMeta,
 } from '../bomData';
 
+const ALL_REQUIRED_HEADERS = [
+  'Part Number', 'Part Name', 'Description', 'Category',
+  'Manufacturer', 'MPN', 'Supplier', 'Unit Price',
+  'Lead Time (weeks)', 'Quantity', 'UOM',
+];
+
+const FULL_ROW_TEMPLATE = {
+  'Part Number': 'EV-001',
+  'Part Name': 'Widget',
+  'Description': 'Widget desc',
+  'Category': 'connector',
+  'Manufacturer': 'ACME',
+  'MPN': 'ACME-001',
+  'Supplier': 'Digikey',
+  'Unit Price': '10',
+  'Lead Time (weeks)': '2',
+  'Quantity': '3',
+  'UOM': 'EA',
+};
+
 describe('checkColumnMappingConfidence', () => {
   it('is confident when all required columns match known aliases', () => {
-    const result = checkColumnMappingConfidence([
-      'Part Number', 'Description', 'Category', 'Quantity', 'UOM',
-    ]);
+    const result = checkColumnMappingConfidence(ALL_REQUIRED_HEADERS);
     expect(result.confident).toBe(true);
     expect(result.unmatchedRequired).toEqual([]);
   });
@@ -24,9 +42,7 @@ describe('checkColumnMappingConfidence', () => {
   });
 
   it('stays confident when only an optional column is missing', () => {
-    const result = checkColumnMappingConfidence([
-      'Part Number', 'Description', 'Category', 'Quantity',
-    ]);
+    const result = checkColumnMappingConfidence(ALL_REQUIRED_HEADERS);
     expect(result.confident).toBe(true);
   });
 });
@@ -43,10 +59,29 @@ describe('applyColumnMapping', () => {
 
   it('produces rows that validate identically through parseSubcomponentImportRows', () => {
     const rawRows = [{
-      'Item No.': 'EV-001', 'Item Desc': 'Widget', 'Type': 'connector', 'Qty': '3',
+      ...FULL_ROW_TEMPLATE,
+      'Item No.': 'EV-001',
+      'Item Desc': 'Widget',
+      'Type': 'connector',
+      'Qty': '3',
     }];
+    delete (rawRows[0] as Record<string, unknown>)['Part Number'];
+    delete (rawRows[0] as Record<string, unknown>)['Description'];
+    delete (rawRows[0] as Record<string, unknown>)['Category'];
+    delete (rawRows[0] as Record<string, unknown>)['Quantity'];
+
     const mapping = {
-      'Item No.': 'Part Number', 'Item Desc': 'Description', 'Type': 'Category', 'Qty': 'Quantity',
+      'Item No.': 'Part Number',
+      'Item Desc': 'Description',
+      'Type': 'Category',
+      'Qty': 'Quantity',
+      'Part Name': 'Part Name',
+      'Manufacturer': 'Manufacturer',
+      'MPN': 'MPN',
+      'Supplier': 'Supplier',
+      'Unit Price': 'Unit Price',
+      'Lead Time (weeks)': 'Lead Time (weeks)',
+      'UOM': 'UOM',
     };
 
     const mapped = applyColumnMapping(rawRows, mapping);
@@ -62,7 +97,11 @@ describe('applyColumnMapping', () => {
 describe('parseSubcomponentImportRows — custom categories', () => {
   it('accepts a custom category not in the known preset list', () => {
     const rows = [{
-      'Part Number': 'PCB-001', 'Description': '4-layer FR4 PCB', 'Category': 'pcb', 'Quantity': '1',
+      ...FULL_ROW_TEMPLATE,
+      'Part Number': 'PCB-001',
+      'Description': '4-layer FR4 PCB',
+      'Category': 'pcb',
+      'Quantity': '1',
     }];
 
     const [parsed] = parseSubcomponentImportRows(rows, []);
@@ -73,7 +112,11 @@ describe('parseSubcomponentImportRows — custom categories', () => {
 
   it('still requires a non-empty category', () => {
     const rows = [{
-      'Part Number': 'PCB-001', 'Description': '4-layer FR4 PCB', 'Category': '', 'Quantity': '1',
+      ...FULL_ROW_TEMPLATE,
+      'Part Number': 'PCB-001',
+      'Description': '4-layer FR4 PCB',
+      'Category': '',
+      'Quantity': '1',
     }];
 
     const [parsed] = parseSubcomponentImportRows(rows, []);

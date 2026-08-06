@@ -19,6 +19,7 @@ export interface BackendUser {
   timezone: string;
   emailVerified: boolean;
   createdAt: string;
+  role?: string;
 }
 
 export interface AuthTokens {

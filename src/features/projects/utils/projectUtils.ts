@@ -40,7 +40,8 @@ export function getMilestoneModules(milestone: Milestone, modules: Module[]): Mo
 export function getBlockingIssues(taskId: string, issues: Issue[]): Issue[] {
   return issues.filter(issue =>
     issue.blocksTaskIds?.includes(taskId) &&
-    issue.status !== 'resolved'
+    issue.status !== 'resolved' &&
+    issue.status !== 'wont-fix'
   );
 }
 
@@ -50,7 +51,8 @@ export function getBlockingIssues(taskId: string, issues: Issue[]): Issue[] {
 export function getMilestoneIssues(milestoneId: string, issues: Issue[]): Issue[] {
   return issues.filter(issue =>
     issue.blocksMilestoneIds?.includes(milestoneId) &&
-    issue.status !== 'resolved'
+    issue.status !== 'resolved' &&
+    issue.status !== 'wont-fix'
   );
 }
 

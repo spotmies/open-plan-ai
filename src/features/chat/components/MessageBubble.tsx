@@ -247,7 +247,7 @@ function LinkifiedText({ text, query, isOwn = false }: { text: string; query?: s
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              'underline break-all hover:opacity-80 font-medium',
+              'underline break-all hover:opacity-80 font-medium cursor-pointer',
               isOwn ? 'text-blue-100 dark:text-blue-800' : 'text-blue-500 dark:text-blue-400'
             )}
           >
@@ -891,7 +891,12 @@ export function MessageBubble({
             <div
               className={cn(
                 'relative rounded-2xl px-3 py-2 text-sm leading-relaxed max-w-full min-w-0 overflow-hidden break-words [overflow-wrap:anywhere] touch-pan-y',
-                isDragging ? 'transition-none select-none cursor-grabbing ring-2 ring-primary/50 shadow-lg' : 'transition-transform duration-200 ease-out cursor-grab',
+                isDragging
+                  ? 'transition-none select-none cursor-grabbing ring-2 ring-primary/50 shadow-lg'
+                  : cn(
+                      'transition-transform duration-200 ease-out',
+                      isMobile ? 'cursor-grab' : 'cursor-text select-text'
+                    ),
                 isOwn
                   ? 'bg-primary text-primary-foreground rounded-br-md border border-primary/20'
                   : 'bg-muted text-foreground rounded-bl-md border border-border'

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useProjectStore, useSelectedProject, useProjectById, useAllTasks, useAllIssues } from '../useProjectStore';
+import { useProjectStore } from '../useProjectStore';
 import { Project, Task, Milestone, Issue } from '@/types';
 
 // Create mock data for testing
@@ -318,7 +318,7 @@ describe('useProjectStore', () => {
     });
 
     it('should create issues array if it does not exist', () => {
-      const { addIssue, projects } = useProjectStore.getState();
+      const { addIssue } = useProjectStore.getState();
       // Project initially has no issues array (undefined)
 
       addIssue('proj-1', createMockIssue('issue-1', 'First Issue', 'proj-1'));

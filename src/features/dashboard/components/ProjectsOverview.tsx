@@ -44,7 +44,7 @@ export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOvervie
   const remaining = ranked.length - fitCount;
 
   return (
-    <Card className="h-full min-h-0 flex flex-col overflow-hidden">
+    <Card className="flex flex-col">
       <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
         <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
           <PanelIcon icon={FolderKanban} color="#2563EB" />
@@ -52,14 +52,14 @@ export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOvervie
         </CardTitle>
         <Button variant="ghost" size="sm" className="shrink-0" asChild>
           <Link to="/projects" className="text-muted-foreground hover:text-foreground">
-            {isMobile ? 'All' : 'All projects'}
+            {isMobile ? 'View All' : 'All projects'}
             <ArrowRight className="h-4 w-4 ml-1" />
           </Link>
         </Button>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col px-3 md:px-6 overflow-x-hidden">
+      <CardContent className="flex flex-col px-3 md:px-6 pb-4">
         {ranked.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
+          <div className="flex flex-col items-center justify-center text-center animate-fade-in py-8">
             <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
               <FolderOpen className="h-6 w-6 text-muted-foreground/50" />
             </div>
@@ -81,7 +81,7 @@ export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOvervie
               </span>{' '}
               need attention
             </div>
-            <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden divide-y divide-border/50">
+            <div ref={containerRef} className="divide-y divide-border/50">
               {ranked.map(({ project, health }) => (
                 isMobile ? (
                   <Link
