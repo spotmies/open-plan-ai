@@ -21,9 +21,10 @@ import { config } from '@/config';
 // BroadcastChannel so waiting tabs can flush their queues.
 
 const LOCK_KEY = 'auth_refresh_lock';
-// TTL must exceed the Axios network timeout (15 s) so a slow-but-live tab never
-// has its lock stolen by an impatient one.
-const LOCK_TTL_MS = 20_000;
+// TTL must exceed the worst-case refresh time: up to REFRESH_MAX_ATTEMPTS
+// network round-trips (15 s Axios timeout each) plus jittered backoff between
+// them, so a slow-but-live tab never has its lock stolen by an impatient one.
+const LOCK_TTL_MS = 35_000;
 
 function tryAcquireLock(): boolean {
   try {
@@ -149,6 +150,46 @@ const SKIP_REFRESH_URLS = [
   '/auth/verify-otp',
 ];
 
+// ─── Refresh retry (transient-failure tolerance) ─────────────────────────────
+//
+// A 429 (shared rate-limit headroom briefly exhausted) or a network/5xx blip
+// on /auth/refresh does not mean the session is invalid — but treating it as
+// a hard failure used to force-logout a perfectly healthy session. Only a
+// definitive 401/403 response (the refresh token itself was rejected) skips
+// the retry and fails immediately.
+
+const REFRESH_MAX_ATTEMPTS = 2;
+const REFRESH_RETRY_BASE_DELAY_MS = 500;
+
+function isRetryableRefreshError(err: unknown): boolean {
+  const e = err as { response?: { status?: number } };
+  if (!e?.response) return true; // network error / timeout — worth one retry
+  const status = e.response.status;
+  return status === 429 || status >= 500;
+}
+
+function jitteredBackoff(attempt: number): number {
+  const base = REFRESH_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+  return base + Math.random() * base * 0.5;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function postRefreshWithRetry(): Promise<void> {
+  for (let attempt = 1; attempt <= REFRESH_MAX_ATTEMPTS; attempt++) {
+    try {
+      await axios.post(`${config.api.baseUrl}/auth/refresh`, {}, { withCredentials: true });
+      return;
+    } catch (err) {
+      const isLastAttempt = attempt === REFRESH_MAX_ATTEMPTS;
+      if (isLastAttempt || !isRetryableRefreshError(err)) throw err;
+      await sleep(jitteredBackoff(attempt));
+    }
+  }
+}
+
 // ─── Shared refresh flow ────────────────────────────────────────────────────
 //
 // Performs (or waits out) a cross-tab-coordinated token refresh. Used by the
@@ -184,8 +225,9 @@ export function refreshAccessToken(): Promise<boolean> {
   // ── Case 3: this tab holds the lock — perform the refresh ────────────────
   // POST /auth/refresh with no body — the browser sends the httpOnly
   // refresh-token cookie automatically. The backend rotates both cookies.
-  return axios
-    .post(`${config.api.baseUrl}/auth/refresh`, {}, { withCredentials: true })
+  // Transient failures (429/5xx/network) get one jittered retry before this
+  // is treated as a real session failure — see postRefreshWithRetry().
+  return postRefreshWithRetry()
     .then(() => {
       releaseLock();
       isRefreshing = false;

@@ -46,7 +46,9 @@ export const issuesService = {
     if (issue.severity) payload.severity = issue.severity;
     if (issue.status) payload.status = issue.status;
     if ((issue as any).moduleId) payload.moduleId = (issue as any).moduleId;
-    if ((issue as any).dueDate) payload.dueDate = (issue as any).dueDate;
+    // Normalise dueDate to YYYY-MM-DD — the backend rejects full ISO timestamps
+    // (see the same normalisation in update() below).
+    if ((issue as any).dueDate) payload.dueDate = String((issue as any).dueDate).substring(0, 10);
     const assigneeIds = ((issue as any).assignees || []).map((a: any) => a.id).filter(Boolean);
     if (assigneeIds.length > 0) payload.assigneeIds = assigneeIds;
     const blocksTaskIds = (issue.blocksTaskIds || []).filter(Boolean);
