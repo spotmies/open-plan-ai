@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { useProject } from '@/hooks/useProjects';
+import { useProjectDetail } from '@/hooks/useProjectDetail';
 import type { OrgRole, ProjectRole } from '@/types';
 
 export interface EditableResource {
@@ -29,9 +29,13 @@ export interface ProjectPermissions {
 }
 
 /**
- * Centralized project-role permission hook. Reuses the existing useProject
- * query cache (shared with ProjectDetail/EditProject) rather than issuing a
- * new network call.
+ * Centralized project-role permission hook. Reuses the useProjectDetail
+ * query cache (shared with ProjectDetail) rather than issuing a new network
+ * call. Deliberately NOT useProject — that hook shares the same query key
+ * but a thinner queryFn (bare GET /projects/:id with no tasks/milestones/
+ * issues), and since React Query replaces rather than merges cached data,
+ * enabling it here would race with ProjectDetail's richer fetch and wipe
+ * out project.issues/tasks/milestones for any mounted board.
  *
  * `myRole` comes straight from the backend's `GET /projects/:id` response,
  * which resolves it the same way `requireProjectRole` does: a direct
@@ -45,7 +49,7 @@ export interface ProjectPermissions {
  */
 export function useProjectPermissions(projectId: string | undefined): ProjectPermissions {
   const { user } = useAuth();
-  const { data: project, isLoading } = useProject(projectId);
+  const { data: project, isLoading } = useProjectDetail(projectId);
 
   return useMemo(() => {
     const myProjectRole: ProjectRole | null = (project?.myRole as ProjectRole | undefined) ?? null;

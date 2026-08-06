@@ -49,6 +49,7 @@ import { TaskFiltersDropdown } from './components/TaskFiltersDropdown';
 import { ProjectTeamButton } from './components/ProjectTeamButton';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
+import { useProjectRealtime } from '@/hooks/useProjectRealtime';
 import { useOrganizationMembers, useProjectMembers } from '@/hooks/useProjectTeam';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
@@ -475,6 +476,9 @@ export default function ProjectDetail() {
 
   // Fetch project data using React Query
   const { data: project, isLoading, error } = useProjectDetail(id);
+  // Live-updates BOM/ECO/Issues caches from other users' actions, regardless
+  // of which tab is currently mounted (see useProjectRealtime.ts).
+  useProjectRealtime(id);
   const { data: projectModules = [] } = useProjectModules(id);
   const { data: organizationMembers = [] } = useOrganizationMembers(currentOrganization?.id);
   const { data: projectMembers = [] } = useProjectMembers(id);

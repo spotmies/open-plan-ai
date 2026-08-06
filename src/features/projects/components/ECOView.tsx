@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useECODetail } from '@/hooks/useECOs';
-import { useProjectRealtime } from '@/hooks/useProjectRealtime';
 import { ECOListItem, fromApiEcoDetail } from './ecoData';
 import { ECOListView } from './ECOListView';
 import { ECODetailView } from './ECODetailView';
@@ -26,8 +25,6 @@ export function ECOView({
   onOpenEcoIdChange?: (id: string | null) => void;
 }) {
   const [wizard, setWizard] = useState<WizardState>(null);
-
-  useProjectRealtime(projectId);
 
   useEffect(() => {
     if (newTrigger) {

@@ -25,10 +25,17 @@ const BOM_EVENTS = [
   'bom:status_changed',
 ] as const;
 
+const ISSUE_EVENTS = [
+  'issue:created',
+  'issue:updated',
+  'issue:status_changed',
+  'issue:deleted',
+] as const;
+
 /**
  * Joins the `project:{projectId}` socket room and invalidates the relevant
- * React Query caches when the backend emits BOM/ECO events into that room, so
- * changes from other tabs/users show up without a manual refresh.
+ * React Query caches when the backend emits BOM/ECO/Issue events into that
+ * room, so changes from other tabs/users show up without a manual refresh.
  */
 export function useProjectRealtime(projectId: string | undefined) {
   const queryClient = useQueryClient();
@@ -58,14 +65,27 @@ export function useProjectRealtime(projectId: string | undefined) {
       queryClient.invalidateQueries({ queryKey: queryKeys.bom.summary(projectId) });
     };
 
+    // Mirrors the invalidation set used by useCreateIssue/useUpdateIssue/useDeleteIssue
+    // in useIssues.ts, so other users' Issues tabs stay in sync the same way the
+    // creator's own tab already does via its local mutation cache invalidation.
+    const invalidateIssues = () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.openCount() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
+    };
+
     ECO_EVENTS.forEach((evt) => socket.on(evt, invalidateEco));
     BOM_EVENTS.forEach((evt) => socket.on(evt, invalidateBom));
+    ISSUE_EVENTS.forEach((evt) => socket.on(evt, invalidateIssues));
 
     return () => {
       socket.emit('leave-project', projectId);
       socket.off('connect', joinRoom);
       ECO_EVENTS.forEach((evt) => socket.off(evt, invalidateEco));
       BOM_EVENTS.forEach((evt) => socket.off(evt, invalidateBom));
+      ISSUE_EVENTS.forEach((evt) => socket.off(evt, invalidateIssues));
     };
   }, [projectId, queryClient]);
 }
