@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { ArrowUp, FileSpreadsheet, FileText, Paperclip, Square, X } from 'lucide-react';
+import { ArrowUp, FileSpreadsheet, FileText, Loader2, Mic, Paperclip, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { AssistantScopePopover } from './AssistantScopePopover';
+import { useSarvamDictation } from '../hooks/useSarvamDictation';
 import type { AssistantScope, AssistantFocusEntity } from '../assistantData';
 import type { Project } from '@/types';
 
@@ -56,6 +58,21 @@ export function AssistantComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const { dictationState, toggleDictation, stopForSend, isSupported: dictationSupported } = useSarvamDictation({
+    value,
+    onChange,
+    disabled,
+  });
+  const isDictating = dictationState === 'listening' || dictationState === 'connecting';
+
+  const handleSendClick = () => {
+    // Sending mid-dictation is allowed — the composer already reflects the
+    // live partial text by the time this fires, so just stop capturing and
+    // send whatever's there now.
+    if (isDictating) stopForSend();
+    onSend();
+  };
+
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -66,7 +83,7 @@ export function AssistantComposer({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      onSend();
+      handleSendClick();
     }
   };
 
@@ -143,31 +160,60 @@ export function AssistantComposer({
           />
         </div>
 
-        {isGenerating && onStop ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                onClick={onStop}
-                className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90"
-              >
-                <Square className="h-3.5 w-3.5 fill-current" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Stop generating</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Button
-            type="button"
-            size="icon"
-            onClick={onSend}
-            disabled={disabled || (!value.trim() && files.length === 0)}
-            className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
-          >
-            <ArrowUp className="h-4 w-4" />
-          </Button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {dictationSupported && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleDictation}
+                  disabled={disabled || dictationState === 'connecting'}
+                  className={cn(
+                    'h-8 w-8 rounded-full text-muted-foreground',
+                    dictationState === 'listening' && 'bg-destructive/10 text-destructive hover:bg-destructive/20 animate-pulse',
+                  )}
+                >
+                  {dictationState === 'connecting' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {dictationState === 'listening' ? 'Stop transcription' : 'Dictate with your mic'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {isGenerating && onStop ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={onStop}
+                  className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Stop generating</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              type="button"
+              size="icon"
+              onClick={handleSendClick}
+              disabled={disabled || (!value.trim() && files.length === 0)}
+              className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

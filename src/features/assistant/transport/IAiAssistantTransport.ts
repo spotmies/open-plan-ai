@@ -22,4 +22,21 @@ export interface IAiAssistantTransport {
   onDone(handler: (messageId: string) => void): Unsubscribe;
   onStopped(handler: (messageId: string | null) => void): Unsubscribe;
   onError(handler: (code: string, message: string) => void): Unsubscribe;
+
+  // ─── Voice dictation (Sarvam realtime STT) ───────────────────────────────
+  // Per-socket, not conversation-room-scoped — dictation happens in the
+  // composer before a conversation may even exist yet, and every event here
+  // is implicitly addressed to "whichever socket sent it" (like call:*
+  // signaling), so there's no join/leave pair the way conversations have.
+  startDictation(options?: { language?: string }): void;
+  sendAudioChunk(chunk: ArrayBuffer): void;
+  stopDictation(): void;
+
+  onSttReady(handler: () => void): Unsubscribe;
+  onSttPartial(handler: (text: string, utteranceIdx: number) => void): Unsubscribe;
+  onSttFinal(handler: (text: string, utteranceIdx: number) => void): Unsubscribe;
+  onSttSpeechStart(handler: (utteranceIdx: number) => void): Unsubscribe;
+  onSttSpeechEnd(handler: (utteranceIdx: number) => void): Unsubscribe;
+  onSttError(handler: (code: string, message: string, fatal: boolean) => void): Unsubscribe;
+  onSttStopped(handler: () => void): Unsubscribe;
 }

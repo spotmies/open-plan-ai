@@ -148,6 +148,12 @@ export interface AssistantMessage {
   role: AssistantMessageRole;
   content: string | null;
   attachments?: AiMessageAttachment[] | null;
+  // Raw backend tool-call payload (ai_messages.tool_calls). Shape depends on
+  // role: an assistant message that called a tool carries
+  // AssistantToolCall[]; the tool-role message that resolves a paused
+  // ask_user call carries a single { toolCallId, name } marker. Untyped here
+  // since only the ask_user recap below consumes it.
+  toolCalls?: unknown;
   createdAt: string;
 }
 
@@ -245,6 +251,62 @@ export interface AskUserQuestion {
   question: string;
   options: AskUserOption[];
   multiSelect: boolean;
+}
+
+/**
+ * True for the role='tool' message that resolves a paused ask_user call —
+ * created either by a real POST /answer or by the backend's 24h auto-expiry
+ * path (see ai-conversations.service.ts answerQuestion/maybeExpirePendingQuestion).
+ * Like present_card, this is content the transcript should show, not hidden
+ * tool-call plumbing.
+ */
+export function isAskUserAnswerMessage(message: AssistantMessage): boolean {
+  if (message.role !== 'tool') return false;
+  const marker = message.toolCalls as { name?: string } | null | undefined;
+  return !!marker && !Array.isArray(marker) && marker.name === 'ask_user';
+}
+
+/**
+ * Recovers the original question set from the assistant message that made
+ * the ask_user tool call (found via the answer message's parentId) — the
+ * answer message itself only persists the toolCallId, not the question
+ * text/options (see backend's askUser.tool.ts).
+ */
+export function extractAskUserQuestions(message: AssistantMessage | undefined): AskUserQuestion[] | null {
+  if (!message || message.role !== 'assistant') return null;
+  const calls = message.toolCalls as Array<{ function?: { name?: string; arguments?: string } }> | null;
+  if (!Array.isArray(calls)) return null;
+  const call = calls.find((c) => c?.function?.name === 'ask_user');
+  if (!call?.function?.arguments) return null;
+  try {
+    return (JSON.parse(call.function.arguments) as { questions: AskUserQuestion[] }).questions;
+  } catch {
+    return null;
+  }
+}
+
+export interface AskUserRecap {
+  question: AskUserQuestion;
+  answer: string;
+}
+
+/**
+ * Pairs each original question with the text the user actually picked, by
+ * position — the answer message's content is `${header}: ${selected}` lines
+ * in the same order the questions were asked (see AssistantQuestionCard's
+ * handleSubmit and the backend's answerQuestion). Returns null for the
+ * 24h-expiry notice, which isn't in that shape — callers should fall back to
+ * showing the raw content in that case.
+ */
+export function pairAskUserAnswers(questions: AskUserQuestion[], content: string | null): AskUserRecap[] | null {
+  if (!content) return null;
+  const lines = content.split('\n');
+  if (lines.length !== questions.length) return null;
+  return questions.map((question, i) => {
+    const prefix = `${question.header}: `;
+    const line = lines[i] ?? '';
+    return { question, answer: line.startsWith(prefix) ? line.slice(prefix.length) : line };
+  });
 }
 
 export type AssistantConversationStatus = 'active' | 'awaiting_input';

@@ -262,6 +262,7 @@ export const TaskDetailModal = ({
   });
 
   const [, setIsLoadingComments] = useState(false);
+  const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set());
   const [newChecklistItem, setNewChecklistItem] = useState('');
   const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null);
   const [editingChecklistValue, setEditingChecklistValue] = useState('');
@@ -282,6 +283,7 @@ export const TaskDetailModal = ({
   const [editingTagOriginal, setEditingTagOriginal] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingFileUrls, setPendingFileUrls] = useState<(string | null)[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
@@ -465,6 +467,12 @@ export const TaskDetailModal = ({
         .finally(() => setIsLoadingComments(false));
     }
   }, [isOpen, task?.id, mode]);
+
+  useEffect(() => {
+    const urls = pendingFiles.map(f => f.type.startsWith('image/') ? URL.createObjectURL(f) : null);
+    setPendingFileUrls(urls);
+    return () => { urls.forEach(url => { if (url) URL.revokeObjectURL(url); }); };
+  }, [pendingFiles]);
 
   // The task payload returned by the project/task endpoints never embeds
   // attachments (they live behind a separate uploads endpoint), so fetch them
@@ -2338,13 +2346,23 @@ export const TaskDetailModal = ({
                 {attachments.map((attachment) => {
                   const FileIcon = getFileIcon(attachment.fileType);
                   const viewUrl = resolveFileUrl(attachment.url) ?? attachment.url;
+                  const isImage = attachment.fileType.startsWith('image/') && !failedThumbnails.has(attachment.id);
                   return (
                     <div
                       key={attachment.id}
                       className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 group cursor-pointer hover:bg-muted"
                       onClick={() => setPreviewingFile({ url: viewUrl, fileName: attachment.filename, mimeType: attachment.fileType })}
                     >
-                      <FileIcon className="h-8 w-8 text-muted-foreground" />
+                      {isImage ? (
+                        <img
+                          src={viewUrl}
+                          alt={attachment.filename}
+                          className="h-8 w-8 rounded object-cover shrink-0 border"
+                          onError={() => setFailedThumbnails(prev => new Set(prev).add(attachment.id))}
+                        />
+                      ) : (
+                        <FileIcon className="h-8 w-8 text-muted-foreground shrink-0" />
+                      )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{attachment.filename}</p>
                         <p className="text-xs text-muted-foreground">
@@ -2387,23 +2405,46 @@ export const TaskDetailModal = ({
                 {/* Pending files (create mode only) */}
                 {mode === 'create' && pendingFiles.length > 0 && (
                   <div className="space-y-1">
-                    {pendingFiles.map((f, i) => (
-                      <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate">{f.name}</span>
-                          <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0"
-                          onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))}
+                    {pendingFiles.map((f, i) => {
+                      const previewUrl = pendingFileUrls[i];
+                      const isImage = f.type.startsWith('image/');
+                      return (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm",
+                            isImage && previewUrl && "cursor-pointer hover:bg-muted"
+                          )}
+                          onClick={() => {
+                            if (isImage && previewUrl) {
+                              setPreviewingFile({ url: previewUrl, fileName: f.name, mimeType: f.type });
+                            }
+                          }}
                         >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isImage && previewUrl ? (
+                              <img
+                                src={previewUrl}
+                                alt={f.name}
+                                className="h-10 w-10 rounded object-cover shrink-0 border"
+                              />
+                            ) : (
+                              <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            )}
+                            <span className="truncate">{f.name}</span>
+                            <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={(e) => { e.stopPropagation(); setPendingFiles(prev => prev.filter((_, idx) => idx !== i)); }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

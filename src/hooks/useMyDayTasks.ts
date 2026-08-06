@@ -17,18 +17,17 @@ function matchesFilter(status: DueDateStatus, filter: MyDayFilter): boolean {
 }
 
 /**
- * Fetch all tasks and issues assigned to the current user across all projects.
+ * Shared raw fetch of tasks and issues assigned to the current user across all projects.
  * Tasks come from the dedicated /tasks/me/all endpoint (includes projectName).
  * Issues have no equivalent org-wide "assigned to me" endpoint with assignees
  * populated (the org-wide /organizations/:orgId/issues route is a raw, unjoined
  * select used only by Calendar), so they're fanned out per-project instead —
  * same pattern as issuesService.getOpenCount().
  *
- * `filter` narrows the result to today's items or overdue items; the underlying
- * queries always fetch the full assigned set so switching filters is a client-side
- * recompute, not a refetch.
+ * Backs both useMyDayTasks and useCompletedTodayCount, so "completed today"
+ * counting doesn't force completed items to linger in the displayed lists.
  */
-export function useMyDayTasks(filter: MyDayFilter = 'all') {
+function useMyDayRawData() {
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const orgId = currentOrganization?.id;
@@ -58,12 +57,28 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
     staleTime: 30 * 1000,
   });
 
+  return { user, rawTasks, rawIssues, isLoading: tasksLoading || issuesLoading };
+}
+
+/**
+ * `filter` narrows the result to today's items, overdue items, or everything;
+ * the underlying queries always fetch the full assigned set so switching
+ * filters is a client-side recompute, not a refetch.
+ */
+export function useMyDayTasks(filter: MyDayFilter = 'all') {
+  const { user, rawTasks, rawIssues, isLoading } = useMyDayRawData();
+
   const data = useMemo((): MyDayItem[] => {
     if (!user?.id) return [];
 
-    // All tasks from /tasks/me/all are already assigned to the current user (filtered server-side)
+    // All tasks from /tasks/me/all are already assigned to the current user (filtered server-side).
+    // Completed tasks are excluded from Overdue/All, but the My Day (today) tab keeps items
+    // completed today so they show as done rather than vanishing mid-day.
     const taskItems: MyDayItem[] = rawTasks
-      .filter(task => matchesFilter(getDueDateStatus(task.dueDate), filter) && (task.status !== 'done' || isCompletedToday(task)))
+      .filter(task =>
+        matchesFilter(getDueDateStatus(task.dueDate), filter) &&
+        (task.status !== 'done' || (filter === 'today' && isCompletedToday(task)))
+      )
       .map(task => {
         const dueDateStatus = getDueDateStatus(task.dueDate);
         return {
@@ -87,16 +102,15 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
         } as MyDayItem;
       });
 
-    // Wont-fix issues never belong here. Resolved issues are excluded too,
-    // unless they were resolved today (mirrors the `task.status !== 'done'`
-    // carve-out above) — otherwise "Completed Today" has nothing to count.
+    // Wont-fix issues never belong here. Resolved issues are excluded from Overdue/All, but
+    // the My Day (today) tab keeps issues resolved today (mirrors the task carve-out above).
     const issueItems: MyDayItem[] = rawIssues
       .filter(({ issue }) => {
         const isAssignedToUser = issue.assignees?.some(a => a.id === user.id) ?? false;
         if (issue.status === 'wont-fix') return false;
         const isUnresolved = issue.status !== 'resolved';
         return isAssignedToUser &&
-          (isUnresolved || isCompletedToday(issue)) &&
+          (isUnresolved || (filter === 'today' && isCompletedToday(issue))) &&
           matchesFilter(getDueDateStatus(issue.dueDate), filter);
       })
       .map(({ issue, projectName }) => {
@@ -122,25 +136,36 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
     return [...taskItems, ...issueItems];
   }, [user?.id, rawTasks, rawIssues, filter]);
 
-  return { data, isLoading: tasksLoading || issuesLoading };
+  return { data, isLoading };
 }
 
 /**
  * Get count of tasks completed/resolved today.
- * Reuses the same 'all' item set as useMyDayTasks('all') — the org projects
- * list only ever returns taskCount/issueCount summaries, never the actual
- * task/issue arrays, so this must derive from the real per-item queries
- * rather than `project.tasks`/`project.issues` (which are always empty).
+ * Derives from the same raw task/issue queries as useMyDayTasks, independent
+ * of the displayed (non-done) item lists — the org projects list only ever
+ * returns taskCount/issueCount summaries, never the actual task/issue arrays,
+ * so this must derive from the real per-item queries rather than
+ * `project.tasks`/`project.issues` (which are always empty).
  */
 export function useCompletedTodayCount() {
-  const { data: allItems } = useMyDayTasks('all');
+  const { user, rawTasks, rawIssues } = useMyDayRawData();
 
   const data = useMemo(() => {
-    return allItems.filter(item =>
-      (item.status === 'done' || item.status === 'resolved') &&
-      isCompletedToday(item.originalTask || item.originalIssue)
+    if (!user?.id) return 0;
+
+    const doneTasksToday = rawTasks.filter(
+      task => task.status === 'done' && isCompletedToday(task)
     ).length;
-  }, [allItems]);
+
+    const resolvedIssuesToday = rawIssues.filter(
+      ({ issue }) =>
+        issue.status === 'resolved' &&
+        (issue.assignees?.some(a => a.id === user.id) ?? false) &&
+        isCompletedToday(issue)
+    ).length;
+
+    return doneTasksToday + resolvedIssuesToday;
+  }, [user?.id, rawTasks, rawIssues]);
 
   return { data };
 }

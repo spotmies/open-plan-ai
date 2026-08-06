@@ -3,8 +3,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { AssistantMessageBubble } from './AssistantMessageBubble';
 import { AssistantStatusLine } from './AssistantStatusLine';
 import { AssistantQuestionCard } from './AssistantQuestionCard';
+import { AssistantQuestionRecap } from './AssistantQuestionRecap';
 import { AssistantCardMessage } from './AssistantCardMessage';
-import { isPresentCardMessage, type AssistantCard, type AssistantMessage, type AskUserQuestion } from '../assistantData';
+import {
+  extractAskUserQuestions,
+  isAskUserAnswerMessage,
+  isPresentCardMessage,
+  pairAskUserAnswers,
+  type AssistantCard,
+  type AssistantMessage,
+  type AskUserQuestion,
+} from '../assistantData';
 import type { ToolStatusEntry } from '../hooks/useAssistantConversation';
 import type { MessageVersionInfo } from '../lib/messageBranches';
 
@@ -21,6 +30,30 @@ interface AssistantTranscriptProps {
   isAnswering: boolean;
   liveCard?: AssistantCard | null;
   onSendMessage?: (text: string) => void;
+}
+
+// Groups a run of messages between `user` rows and moves any present_card
+// rows to the end of that run, preserving relative order within each half.
+function reorderCardsAfterText(msgs: AssistantMessage[]): AssistantMessage[] {
+  const result: AssistantMessage[] = [];
+  let turnCards: AssistantMessage[] = [];
+  let turnOthers: AssistantMessage[] = [];
+  const flushTurn = () => {
+    result.push(...turnOthers, ...turnCards);
+    turnCards = [];
+    turnOthers = [];
+  };
+  for (const message of msgs) {
+    if (message.role === 'user') {
+      flushTurn();
+      result.push(message);
+      continue;
+    }
+    if (isPresentCardMessage(message)) turnCards.push(message);
+    else turnOthers.push(message);
+  }
+  flushTurn();
+  return result;
 }
 
 export function AssistantTranscript({
@@ -42,13 +75,20 @@ export function AssistantTranscript({
   const mountedRef = useRef(false);
   const lastUserMessageIdRef = useRef<string | null>(null);
   // tool-role messages are internal plumbing (the audit trail), not conversation content —
-  // except a present_card result, which IS the content, just persisted on a tool-role row
-  // (see the plan's "reuse ai_messages.content" persistence approach). assistant messages
-  // with no content are tool-call carriers (the model called a tool without emitting any
-  // text first) — nothing to show until the real answer arrives.
+  // except a present_card result, or an ask_user answer recap, which ARE content, just
+  // persisted on a tool-role row (see the plan's "reuse ai_messages.content" persistence
+  // approach). assistant messages with no content are tool-call carriers (the model called
+  // a tool without emitting any text first) — nothing to show until the real answer arrives.
   const visibleMessages = messages.filter(
-    (m) => isPresentCardMessage(m) || (m.role !== 'tool' && !!m.content?.trim()),
+    (m) => isPresentCardMessage(m) || isAskUserAnswerMessage(m) || (m.role !== 'tool' && !!m.content?.trim()),
   );
+  // The model calls present_card mid-turn, then keeps writing — so the card
+  // row is always persisted (and thus ordered) before the final text row.
+  // We want the opposite on screen (text first, card last, matching the
+  // live-streaming render below), so reorder for display only, per turn
+  // (a run of messages between user messages), without touching the
+  // underlying chronological array used elsewhere in this component.
+  const orderedMessages = reorderCardsAfterText(visibleMessages);
   // Once the REST refetch triggered by ai:card lands (which can happen mid-turn,
   // well before ai:done clears liveCard), the same card starts appearing in
   // visibleMessages too. Stop showing the transient liveCard once the persisted
@@ -96,11 +136,26 @@ export function AssistantTranscript({
   return (
     <ScrollArea className="flex-1 min-h-0">
       <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
-        {visibleMessages.map((message) => {
+        {orderedMessages.map((message) => {
           const setMessageRef = (el: HTMLDivElement | null) => {
             if (el) messageElRefs.current.set(message.id, el);
             else messageElRefs.current.delete(message.id);
           };
+
+          if (isAskUserAnswerMessage(message)) {
+            const parent = messages.find((m) => m.id === message.parentId);
+            const questions = extractAskUserQuestions(parent);
+            const recap = questions ? pairAskUserAnswers(questions, message.content) : null;
+            return (
+              <div key={message.id} ref={setMessageRef}>
+                {recap ? (
+                  <AssistantQuestionRecap recap={recap} />
+                ) : (
+                  <p className="text-xs italic text-muted-foreground">{message.content}</p>
+                )}
+              </div>
+            );
+          }
 
           if (isPresentCardMessage(message)) {
             let parsedCard: AssistantCard | null = null;

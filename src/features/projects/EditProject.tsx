@@ -53,7 +53,10 @@ import {
     ChevronDown,
     ChevronUp,
     Palette,
-    Eye
+    Eye,
+    EyeOff,
+    GripVertical,
+    LayoutGrid
 } from "lucide-react";
 import { format, isBefore, startOfMonth } from "date-fns";
 import { cn, isValidPhoneNumber } from "@/lib/utils";
@@ -78,7 +81,10 @@ import { chatService } from "@/services/chat.service";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryClient";
 import { logger } from '@/services/monitoring/logger';
-import type { ProjectRole } from "@/types";
+import type { ProjectRole, ProjectTabConfig } from "@/types";
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
+import { Switch } from "@/components/ui/switch";
+import { DEFAULT_PROJECT_TAB_CONFIG, PROJECT_TAB_DEFINITIONS, resolveProjectTabConfig } from "./projectTabsConfig";
 
 const projectTypes = [
     "Hardware Development",
@@ -229,6 +235,9 @@ const EditProject = () => {
     const [customDepartments, setCustomDepartments] = useState<Department[]>([]);
     const [newDeptName, setNewDeptName] = useState("");
     const [isAddDeptOpen, setIsAddDeptOpen] = useState(false);
+
+    // Tabs: per-project order + visibility of the project detail page's section tabs
+    const [tabConfig, setTabConfig] = useState<ProjectTabConfig[]>(DEFAULT_PROJECT_TAB_CONFIG);
 
     // Modules
     const [modules, setModules] = useState<ProjectModule[]>([]);
@@ -557,6 +566,20 @@ const EditProject = () => {
         );
     };
 
+    const handleTabVisibilityToggle = (tabId: ProjectTabConfig['id']) => {
+        setTabConfig(prev =>
+            prev.map(t => t.id === tabId ? { ...t, visible: !t.visible } : t)
+        );
+    };
+
+    const handleTabDragEnd = (result: DropResult) => {
+        if (!result.destination) return;
+        const reordered = Array.from(tabConfig);
+        const [moved] = reordered.splice(result.source.index, 1);
+        reordered.splice(result.destination.index, 0, moved);
+        setTabConfig(reordered.map((t, index) => ({ ...t, order: index })));
+    };
+
     const handleAddCustomDepartment = () => {
         if (newDeptName.trim()) {
             const newId = `custom-${Date.now()}`;
@@ -607,6 +630,9 @@ const EditProject = () => {
                     })));
                 }
             }
+
+            // Populating tab order/visibility
+            setTabConfig(resolveProjectTabConfig(project.tabConfig));
 
         }
     }, [project]);
@@ -835,6 +861,7 @@ const EditProject = () => {
                         clientContact: clientContact || undefined,
                         notes: notes || undefined,
                         departments: selectedDepartments,
+                        tabConfig,
                     },
                 });
             }
@@ -1532,6 +1559,79 @@ const EditProject = () => {
                                 </DialogContent>
                             </Dialog>
                         </div>
+                    </CardContent>
+                </Card>
+
+                {/* Project Tabs Section */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <LayoutGrid className="h-5 w-5 text-primary" />
+                            Project Tabs
+                        </CardTitle>
+                        <CardDescription>
+                            Drag to reorder the tabs shown on this project, or hide the ones this project doesn't need
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <DragDropContext onDragEnd={handleTabDragEnd}>
+                            <Droppable droppableId="project-tabs">
+                                {(provided) => (
+                                    <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
+                                        {tabConfig.map((tab, index) => {
+                                            const def = PROJECT_TAB_DEFINITIONS[tab.id];
+                                            const Icon = def.icon;
+                                            return (
+                                                <Draggable
+                                                    key={tab.id}
+                                                    draggableId={tab.id}
+                                                    index={index}
+                                                    isDragDisabled={!canManageProjectSettings}
+                                                >
+                                                    {(dragProvided, snapshot) => (
+                                                        <div
+                                                            ref={dragProvided.innerRef}
+                                                            {...dragProvided.draggableProps}
+                                                            className={cn(
+                                                                "flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 transition-colors",
+                                                                snapshot.isDragging && "shadow-md border-primary/50",
+                                                                !tab.visible && "opacity-60"
+                                                            )}
+                                                        >
+                                                            <span
+                                                                {...dragProvided.dragHandleProps}
+                                                                className={cn(
+                                                                    "text-muted-foreground shrink-0",
+                                                                    canManageProjectSettings ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed opacity-50"
+                                                                )}
+                                                            >
+                                                                <GripVertical className="h-4 w-4" />
+                                                            </span>
+                                                            <Icon className="h-4 w-4 text-primary shrink-0" />
+                                                            <span className="flex-1 text-sm font-medium">{def.label}</span>
+                                                            {tab.visible ? (
+                                                                <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                            ) : (
+                                                                <EyeOff className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                            )}
+                                                            <Switch
+                                                                checked={tab.visible}
+                                                                onCheckedChange={() => handleTabVisibilityToggle(tab.id)}
+                                                                disabled={!canManageProjectSettings}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </Draggable>
+                                            );
+                                        })}
+                                        {provided.placeholder}
+                                    </div>
+                                )}
+                            </Droppable>
+                        </DragDropContext>
+                        {tabConfig.every(t => !t.visible) && (
+                            <p className="text-xs text-destructive mt-2">At least one tab should stay visible.</p>
+                        )}
                     </CardContent>
                 </Card>
 

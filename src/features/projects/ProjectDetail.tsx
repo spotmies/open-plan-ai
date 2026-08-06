@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ListTodo, Boxes, Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Layers, Upload, Download, GitMerge, ChartGantt, ShieldAlert, ListChecks, Tag } from 'lucide-react';
+import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag } from 'lucide-react';
 import { BOMView } from './components/BOMView';
 import RequirementsView from './components/RequirementsView';
 import { ECOView } from './components/ECOView';
@@ -47,6 +47,7 @@ import { MilestoneDetailModal } from './components/MilestoneDetailModal';
 import { IssueDetailModal } from './components/IssueDetailModal';
 import { TaskFiltersDropdown } from './components/TaskFiltersDropdown';
 import { ProjectTeamButton } from './components/ProjectTeamButton';
+import { resolveProjectTabConfig, visibleOrderedTabDefinitions } from './projectTabsConfig';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
 import { useProjectRealtime } from '@/hooks/useProjectRealtime';
@@ -85,7 +86,7 @@ import { attachmentsService } from '@/services/attachments.service';
 import { chatService } from '@/services/chat.service';
 import { toast } from 'sonner';
 import { calculateProjectProgress, getModuleTasks, getModuleProgress } from './utils/projectUtils';
-import { ProjectSection, Module, TaskViewMode, TaskFilter, ModuleViewMode, Issue, Milestone, Task, IssueStatus, IssueSeverity, TeamMember, ProjectRole } from '@/types';
+import { ProjectSection, ProjectTabId, Module, TaskViewMode, TaskFilter, ModuleViewMode, Issue, Milestone, Task, IssueStatus, IssueSeverity, TeamMember, ProjectRole } from '@/types';
 import { logger } from '@/services/monitoring/logger';
 import { format } from 'date-fns';
 import { resolveFileUrl } from '@/utils/fileUrl';
@@ -505,6 +506,23 @@ export default function ProjectDetail() {
   const batchUpdateTasksMutation = useBatchUpdateTasks(id || '');
   const batchUpdateModulesMutation = useBatchUpdateModules(id || '');
   const updateProjectProgressMutation = useUpdateProjectProgress();
+
+  // Project-configurable tab order/visibility (set in Edit Project). Falls back
+  // to the default order with everything visible when the project has no saved config.
+  const visibleTabs = useMemo(
+    () => visibleOrderedTabDefinitions(resolveProjectTabConfig(project?.tabConfig)),
+    [project?.tabConfig]
+  );
+
+  // If the current section's tab has been hidden by the project's tab config,
+  // fall back to the first visible tab instead of rendering an unreachable section.
+  useEffect(() => {
+    if (!project || !tabParam || partId || ecoId || taskId || moduleId || milestoneId || issueId) return;
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.some((t) => t.id === tabParam)) {
+      navigate(`/projects/${id}/${visibleTabs[0].id}`, { replace: true });
+    }
+  }, [project, tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId, visibleTabs, navigate, id]);
 
   // Calculate active filter count - moved before early returns
   const activeFilterCount = useMemo(() => {
@@ -1178,6 +1196,19 @@ export default function ProjectDetail() {
   const openIssuesCount = project.issues?.filter(i => i.status !== 'resolved' && i.status !== 'wont-fix').length || 0;
   const criticalIssuesCount = project.issues?.filter(i => i.severity === 'critical' && i.status !== 'resolved' && i.status !== 'wont-fix').length || 0;
 
+  const tabBadges: Partial<Record<ProjectTabId, { count: number; variant: 'secondary' | 'destructive' }>> = {
+    tasks: { count: (project.tasks || []).length, variant: 'secondary' },
+    modules: { count: modules.length, variant: 'secondary' },
+    milestones: { count: (project.milestones || []).length, variant: 'secondary' },
+    ...(openIssuesCount > 0
+      ? { issues: { count: openIssuesCount, variant: criticalIssuesCount > 0 ? 'destructive' : 'secondary' } }
+      : {}),
+  };
+  const TAB_GRID_COLS_CLASS: Record<number, string> = {
+    1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3',
+    4: 'grid-cols-4', 5: 'grid-cols-5', 6: 'grid-cols-6',
+  };
+
   return (
     <>
       <div className="grid grid-cols-1 gap-6 animate-fade-in w-full min-w-0">
@@ -1188,141 +1219,37 @@ export default function ProjectDetail() {
             <div className="flex flex-row md:items-center justify-between gap-2 w-full sticky top-0 z-20 bg-background pb-1">
               {/* Left Side: Tabs */}
               <div className="flex-1 md:flex-none w-full md:w-auto py-1 min-w-0 md:mr-auto overflow-x-auto hide-scrollbar">
-                <TabsList className="bg-muted/50 grid grid-cols-6 min-w-[300px] md:min-w-0 w-full h-11 md:w-auto md:flex md:shrink-0">
-                  <TabsTrigger
-                    value="bom"
-                    className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
-                    title="Bill of Materials"
-                    onTouchStart={() => handleTabLongPressStart('bom')}
-                    onTouchEnd={handleTabLongPressEnd}
-                    onTouchCancel={handleTabLongPressEnd}
-                    onTouchMove={handleTabLongPressEnd}
-                  >
-                    <Layers className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
-                    {!isMobile && <span className="truncate">BOM</span>}
-                    {isMobile && longPressedTab === 'bom' && (
-                      <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
-                        BOM
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="eng-changes"
-                    className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
-                    title="Engineering Changes"
-                    onTouchStart={() => handleTabLongPressStart('eng-changes')}
-                    onTouchEnd={handleTabLongPressEnd}
-                    onTouchCancel={handleTabLongPressEnd}
-                    onTouchMove={handleTabLongPressEnd}
-                  >
-                    <GitMerge className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
-                    {!isMobile && <span className="truncate">Eng. Changes</span>}
-                    {isMobile && longPressedTab === 'eng-changes' && (
-                      <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
-                        Eng. Changes
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="tasks"
-                    className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
-                    title="Tasks"
-                    onTouchStart={() => handleTabLongPressStart('tasks')}
-                    onTouchEnd={handleTabLongPressEnd}
-                    onTouchCancel={handleTabLongPressEnd}
-                    onTouchMove={handleTabLongPressEnd}
-                  >
-                    <ListTodo className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
-                    {!isMobile && <span className="truncate">Tasks</span>}
-                    {!isMobile && (
-                      <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                        {(project.tasks || []).length}
-                      </Badge>
-                    )}
-                    {isMobile && longPressedTab === 'tasks' && (
-                      <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
-                        Tasks
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modules"
-                    className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
-                    title="Modules"
-                    onTouchStart={() => handleTabLongPressStart('modules')}
-                    onTouchEnd={handleTabLongPressEnd}
-                    onTouchCancel={handleTabLongPressEnd}
-                    onTouchMove={handleTabLongPressEnd}
-                  >
-                    <Boxes className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
-                    {!isMobile && <span className="truncate">Modules</span>}
-                    {!isMobile && (
-                      <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                        {modules.length}
-                      </Badge>
-                    )}
-                    {isMobile && longPressedTab === 'modules' && (
-                      <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
-                        Modules
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="milestones"
-                    className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
-                    title="Milestones"
-                    onTouchStart={() => handleTabLongPressStart('milestones')}
-                    onTouchEnd={handleTabLongPressEnd}
-                    onTouchCancel={handleTabLongPressEnd}
-                    onTouchMove={handleTabLongPressEnd}
-                  >
-                    <Flag className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
-                    {!isMobile && <span className="truncate">Milestones</span>}
-                    {!isMobile && (
-                      <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                        {(project.milestones || []).length}
-                      </Badge>
-                    )}
-                    {isMobile && longPressedTab === 'milestones' && (
-                      <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
-                        Milestones
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="issues"
-                    className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
-                    title="Issues"
-                    onTouchStart={() => handleTabLongPressStart('issues')}
-                    onTouchEnd={handleTabLongPressEnd}
-                    onTouchCancel={handleTabLongPressEnd}
-                    onTouchMove={handleTabLongPressEnd}
-                  >
-                    <AlertTriangle className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
-                    {!isMobile && <span className="truncate">Issues</span>}
-                    {!isMobile && openIssuesCount > 0 && (
-                      <Badge variant={criticalIssuesCount > 0 ? "destructive" : "secondary"} className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                        {openIssuesCount}
-                      </Badge>
-                    )}
-                    {isMobile && longPressedTab === 'issues' && (
-                      <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
-                        Issues
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  {/* <TabsTrigger value="requirements" className="gap-1 sm:gap-2 px-2 justify-center min-w-0 overflow-hidden" title="Requirements">
-                  <ListChecks className="h-4 w-4 shrink-0" />
-                  {!isMobile && <span className="truncate">Requirements</span>}
-                </TabsTrigger> */}
-                  {/* <TabsTrigger value="gate-reviews" className="gap-1 sm:gap-2 px-2 justify-center min-w-0 overflow-hidden" title="Phase Gate Tracker">
-                  <ChartGantt className="h-4 w-4 shrink-0" />
-                  {!isMobile && <span className="truncate">Gates</span>}
-                </TabsTrigger> */}
-                  {/* <TabsTrigger value="risk" className="gap-1 sm:gap-2 px-2 justify-center min-w-0 overflow-hidden" title="Risk & Issue Tracker">
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {!isMobile && <span className="truncate">Risk</span>}
-                </TabsTrigger> */}
+                <TabsList
+                  className={`bg-muted/50 grid ${TAB_GRID_COLS_CLASS[visibleTabs.length] || 'grid-cols-6'} min-w-[300px] md:min-w-0 w-full h-11 md:w-auto md:flex md:shrink-0`}
+                >
+                  {visibleTabs.map(({ id: tabId, label, title, icon: Icon }) => {
+                    const badge = tabBadges[tabId];
+                    return (
+                      <TabsTrigger
+                        key={tabId}
+                        value={tabId}
+                        className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
+                        title={title}
+                        onTouchStart={() => handleTabLongPressStart(tabId)}
+                        onTouchEnd={handleTabLongPressEnd}
+                        onTouchCancel={handleTabLongPressEnd}
+                        onTouchMove={handleTabLongPressEnd}
+                      >
+                        <Icon className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
+                        {!isMobile && <span className="truncate">{label}</span>}
+                        {!isMobile && badge && (
+                          <Badge variant={badge.variant} className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
+                            {badge.count}
+                          </Badge>
+                        )}
+                        {isMobile && longPressedTab === tabId && (
+                          <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
+                            {label}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    );
+                  })}
                 </TabsList>
               </div>
 

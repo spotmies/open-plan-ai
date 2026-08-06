@@ -265,6 +265,7 @@ export interface Project {
   clientContact?: string;
   notes?: string;
   departments?: string[];
+  tabConfig?: ProjectTabConfig[];
   myRole?: string;
   pinned?: boolean;
   createdBy?: string;
@@ -317,6 +318,14 @@ export type ProjectView = 'kanban' | 'timeline' | 'list' | 'dependencies' | 'mil
 
 // NEW: Section-based navigation for project detail
 export type ProjectSection = 'tasks' | 'modules' | 'milestones' | 'issues' | 'bom' | 'eng-changes' | 'gate-reviews' | 'risk';
+
+// Configurable tabs on the project detail page — order + visibility are per-project preferences
+export type ProjectTabId = 'bom' | 'eng-changes' | 'tasks' | 'modules' | 'milestones' | 'issues';
+export interface ProjectTabConfig {
+  id: ProjectTabId;
+  visible: boolean;
+  order: number;
+}
 export type TaskViewMode = 'kanban' | 'list';
 export type ModuleViewMode = 'kanban' | 'list';
 

@@ -6,11 +6,39 @@ import { AssistantPanel } from './components/AssistantPanel';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
+// `100vh`/`h-full` don't shrink when the on-screen keyboard opens on mobile,
+// so the composer (a plain flex child) ends up positioned below the visible
+// area, covered by the keyboard. Tracking `visualViewport` and sizing the
+// page to it keeps the composer glued to the keyboard's top edge.
+function useKeyboardAwareHeight(active: boolean) {
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      setHeight(null);
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setHeight(vv.height);
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, [active]);
+
+  return height;
+}
+
 export default function Assistant() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const keyboardAwareHeight = useKeyboardAwareHeight(isMobile);
 
   useEffect(() => {
     document.title = 'Assistant | Open Plan AI';
@@ -47,7 +75,10 @@ export default function Assistant() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div
+      className={cn('flex min-h-0 flex-col overflow-hidden', keyboardAwareHeight === null && 'h-full')}
+      style={keyboardAwareHeight !== null ? { height: keyboardAwareHeight } : undefined}
+    >
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-2">
         <button
           type="button"

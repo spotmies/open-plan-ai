@@ -131,4 +131,59 @@ export class SocketIOAiAssistantTransport implements IAiAssistantTransport {
     this.socket.on('ai:error', wrapped);
     return () => this.socket.off('ai:error', wrapped);
   }
+
+  // ─── Voice dictation (Sarvam realtime STT) ───────────────────────────────
+
+  startDictation(options?: { language?: string }): void {
+    this.socket.emit('stt:start', options ?? {});
+  }
+
+  sendAudioChunk(chunk: ArrayBuffer): void {
+    this.socket.emit('stt:audio', chunk);
+  }
+
+  stopDictation(): void {
+    this.socket.emit('stt:stop');
+  }
+
+  onSttReady(handler: () => void): Unsubscribe {
+    this.socket.on('stt:ready', handler);
+    return () => this.socket.off('stt:ready', handler);
+  }
+
+  onSttPartial(handler: (text: string, utteranceIdx: number) => void): Unsubscribe {
+    const wrapped = (payload: { text: string; utteranceIdx: number }) => handler(payload.text, payload.utteranceIdx);
+    this.socket.on('stt:partial', wrapped);
+    return () => this.socket.off('stt:partial', wrapped);
+  }
+
+  onSttFinal(handler: (text: string, utteranceIdx: number) => void): Unsubscribe {
+    const wrapped = (payload: { text: string; utteranceIdx: number }) => handler(payload.text, payload.utteranceIdx);
+    this.socket.on('stt:final', wrapped);
+    return () => this.socket.off('stt:final', wrapped);
+  }
+
+  onSttSpeechStart(handler: (utteranceIdx: number) => void): Unsubscribe {
+    const wrapped = (payload: { utteranceIdx: number }) => handler(payload.utteranceIdx);
+    this.socket.on('stt:speech-start', wrapped);
+    return () => this.socket.off('stt:speech-start', wrapped);
+  }
+
+  onSttSpeechEnd(handler: (utteranceIdx: number) => void): Unsubscribe {
+    const wrapped = (payload: { utteranceIdx: number }) => handler(payload.utteranceIdx);
+    this.socket.on('stt:speech-end', wrapped);
+    return () => this.socket.off('stt:speech-end', wrapped);
+  }
+
+  onSttError(handler: (code: string, message: string, fatal: boolean) => void): Unsubscribe {
+    const wrapped = (payload: { code: string; message: string; fatal: boolean }) =>
+      handler(payload.code, payload.message, payload.fatal);
+    this.socket.on('stt:error', wrapped);
+    return () => this.socket.off('stt:error', wrapped);
+  }
+
+  onSttStopped(handler: () => void): Unsubscribe {
+    this.socket.on('stt:stopped', handler);
+    return () => this.socket.off('stt:stopped', handler);
+  }
 }

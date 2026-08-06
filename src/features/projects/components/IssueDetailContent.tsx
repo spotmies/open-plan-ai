@@ -174,6 +174,7 @@ export function IssueDetailContent({
     // and hasn't switched it on yet. Uncontrolled callers (e.g. IssuePage) stay always-editable.
     const isMobileFieldsLocked = isMobileLayout && isMobileEditMode === false;
     const [editedIssue, setEditedIssue] = useState<Issue | null>(issue);
+    const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set());
     const [newComment, setNewComment] = useState('');
     const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
     const [isBlockingTaskPopoverOpen, setIsBlockingTaskPopoverOpen] = useState(false);
@@ -1491,7 +1492,7 @@ export function IssueDetailContent({
                             {attachments.map((attachment) => {
                                 const FileIcon = getFileIcon(attachment.fileType);
                                 const viewUrl = resolveFileUrl(attachment.url) ?? attachment.url;
-                                const isImage = attachment.fileType.startsWith('image/');
+                                const isImage = attachment.fileType.startsWith('image/') && !failedThumbnails.has(attachment.id);
                                 return (
                                     <div
                                         key={attachment.id}
@@ -1503,6 +1504,7 @@ export function IssueDetailContent({
                                                 src={viewUrl}
                                                 alt={attachment.filename}
                                                 className="h-8 w-8 rounded object-cover shrink-0 border"
+                                                onError={() => setFailedThumbnails(prev => new Set(prev).add(attachment.id))}
                                             />
                                         ) : (
                                             <FileIcon className="h-8 w-8 text-muted-foreground shrink-0" />
