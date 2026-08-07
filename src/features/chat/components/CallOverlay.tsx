@@ -7,7 +7,7 @@ import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsur
 import { meetWindow } from '../utils/meetWindow';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Phone, PhoneOff, Video, ExternalLink, Send, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Video, ExternalLink, Send, Loader2, Minimize2, Maximize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { finalizeCallCard } from '../utils/callCardRegistry';
@@ -70,6 +70,12 @@ function useDraggablePosition(cardRef: React.RefObject<HTMLDivElement>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Exposed so the card can re-clamp itself right after minimize/maximize —
+  // those resize the element without a window resize event, so a card
+  // dragged near an edge while minimized wouldn't otherwise get pulled back
+  // on-screen once it grows back to full size.
+  const reclamp = () => setPosition((p) => (p ? clamp(p.x, p.y) : p));
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const rect = cardRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -97,7 +103,7 @@ function useDraggablePosition(cardRef: React.RefObject<HTMLDivElement>) {
     });
   };
 
-  return { position, handlePointerDown, handlePointerMove, handlePointerUp };
+  return { position, handlePointerDown, handlePointerMove, handlePointerUp, reclamp };
 }
 
 /**
@@ -128,10 +134,25 @@ export function CallOverlay() {
 
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
   const [generatingLink, setGeneratingLink] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const timerRef = useRef<number | null>(null);
   const ringTimeoutRef = useRef<number | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const { position, handlePointerDown, handlePointerMove, handlePointerUp } = useDraggablePosition(cardRef);
+  const { position, handlePointerDown, handlePointerMove, handlePointerUp, reclamp } = useDraggablePosition(cardRef);
+
+  // Card shrinks/grows when toggling minimize — re-clamp so a card sitting
+  // near a screen edge while minimized doesn't end up stranded off-screen
+  // once it expands back to full size.
+  useEffect(() => {
+    reclamp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minimized]);
+
+  // Always start a fresh call maximized — minimizing is a per-call choice,
+  // not something that should carry over to the next incoming/outgoing call.
+  useEffect(() => {
+    if (callState === 'idle') setMinimized(false);
+  }, [callState]);
 
   const reachable = participants.filter((p) => p.connected);
   const unreachable = participants.filter((p) => !p.connected);
@@ -273,154 +294,263 @@ export function CallOverlay() {
     <div
       ref={cardRef}
       className={cn(
-        'fixed z-50 flex w-[380px] min-w-[300px] max-w-[520px] max-h-[80vh] min-h-[240px] resize flex-col gap-3 overflow-auto rounded-2xl border border-border bg-background p-4 shadow-2xl select-none animate-in fade-in duration-300',
+        'fixed z-50 select-none animate-in fade-in duration-300 border border-border bg-background shadow-2xl',
+        minimized
+          ? 'flex w-auto max-w-[300px] items-center gap-2 rounded-full p-2'
+          : 'flex w-[380px] min-w-[300px] max-w-[520px] max-h-[80vh] min-h-[240px] resize flex-col gap-3 overflow-auto rounded-2xl p-4',
         position ? '' : 'bottom-6 right-6 slide-in-from-bottom-4',
       )}
       style={position ? { top: position.y, left: position.x } : undefined}
     >
-      <div
-        className="flex items-center justify-between text-xs text-muted-foreground cursor-move touch-none"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        title="Drag to move"
-      >
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          <span>Google Meet Calling</span>
-        </div>
-        {callState === 'active' && (
-          <span className="font-mono text-foreground font-semibold bg-primary/10 px-2 py-0.5 rounded-full">
-            {formatTime(callDuration)}
-          </span>
-        )}
-      </div>
-
-      {showUnreachablePanel ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center py-2">
-          <div className="h-10 w-10 rounded-full bg-destructive/20 flex items-center justify-center text-destructive">
-            <PhoneOff className="h-5 w-5" />
-          </div>
-          <div>
-            <h4 className="font-semibold text-foreground mb-1 text-sm">
-              {unreachable.length > 1 ? 'No one is reachable' : 'Recipient Not Connected'}
-            </h4>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Invalid call as {unreachable.map((p) => p.name || 'Someone').join(', ') || 'they'} hasn't connected to
-              the Google Meet integration. Please send them a link instead.
-            </p>
-          </div>
-          <div className="flex gap-2 w-full mt-1">
-            <Button variant="outline" className="flex-1 border-border" onClick={reset} disabled={generatingLink}>
-              Close
-            </Button>
-            <Button variant="default" className="flex-1 gap-2" onClick={handleSendLink} disabled={generatingLink}>
-              {generatingLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Send Link
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-1 items-center gap-3">
-          <div className="relative h-14 w-14 shrink-0 rounded-full overflow-hidden border-2 border-primary/20 bg-muted shadow-md flex items-center justify-center">
-            <Avatar className="h-full w-full rounded-none">
-              <AvatarFallback className="text-lg font-semibold bg-gradient-to-br from-primary/10 to-primary/20 text-primary">
+      {minimized ? (
+        <>
+          <div
+            className="flex flex-1 min-w-0 items-center gap-2 cursor-move touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            title="Drag to move"
+          >
+            <Avatar className="h-8 w-8 shrink-0">
+              <AvatarFallback className="text-xs font-semibold bg-gradient-to-br from-primary/10 to-primary/20 text-primary">
                 {getInitials(primaryName)}
               </AvatarFallback>
             </Avatar>
-            {callState !== 'active' && (
-              <div className="absolute inset-0 rounded-full border-2 border-primary/60 animate-ping opacity-25 pointer-events-none" />
-            )}
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-foreground leading-tight">{groupLabel}</p>
+              <p className="truncate text-[10px] text-muted-foreground leading-tight">
+                {callState === 'incoming' && "Incoming call"}
+                {callState === 'outgoing' && (showUnreachablePanel ? 'Not connected' : 'Calling…')}
+                {callState === 'active' && formatTime(callDuration)}
+              </p>
+            </div>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-semibold text-foreground">{groupLabel}</h3>
-            <p className="mt-0.5 flex items-start gap-1.5 text-xs text-muted-foreground">
-              {callType === 'video' ? (
-                <Video className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+          <div className="flex shrink-0 items-center gap-1">
+            {callState === 'incoming' && (
+              <>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="h-8 w-8 rounded-full"
+                  onClick={handleDecline}
+                  title="Decline"
+                >
+                  <PhoneOff className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  className="h-8 w-8 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white"
+                  onClick={handleAccept}
+                  title="Accept"
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+            {callState === 'outgoing' &&
+              (showUnreachablePanel ? (
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8 rounded-full border-border"
+                  onClick={reset}
+                  title="Close"
+                >
+                  <PhoneOff className="h-3.5 w-3.5" />
+                </Button>
               ) : (
-                <Phone className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-              )}
-              <span className="min-w-0 break-words">
-                {callState === 'incoming' && `'${primaryName}' is trying to connect with you`}
-                {callState === 'outgoing' && `Trying to connect to '${primaryName}'`}
-                {callState === 'active' && `Connected — call in progress via Google Meet`}
-              </span>
-            </p>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="h-8 w-8 rounded-full"
+                  onClick={handleEnd}
+                  title="Cancel call"
+                >
+                  <PhoneOff className="h-3.5 w-3.5" />
+                </Button>
+              ))}
             {callState === 'active' && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                The audio/video happens in the Google Meet tab — reopen it if you closed it.
-              </p>
-            )}
-            {unreachable.length > 0 && callState !== 'active' && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {unreachable.map((p) => p.name || 'Someone').join(', ')} hasn't connected Google Meet and won't be
-                notified.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!showUnreachablePanel && (
-        <div className="flex items-center justify-end gap-2">
-          {callState === 'incoming' && (
-            <>
               <Button
                 size="icon"
                 variant="destructive"
-                className="h-10 w-10 rounded-full shadow hover:scale-105 transition-all"
-                onClick={handleDecline}
-                title="Decline"
+                className="h-8 w-8 rounded-full"
+                onClick={handleEnd}
+                title="Hang up"
               >
-                <PhoneOff className="h-4 w-4" />
+                <PhoneOff className="h-3.5 w-3.5" />
               </Button>
-              <Button
-                size="icon"
-                className="h-10 w-10 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow hover:scale-105 transition-all"
-                onClick={handleAccept}
-                title="Accept"
-              >
-                <Phone className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-
-          {callState === 'outgoing' && (
+            )}
             <Button
               size="icon"
-              variant="destructive"
-              className="h-10 w-10 rounded-full shadow hover:scale-105 transition-all"
-              onClick={handleEnd}
-              title="Cancel call"
+              variant="ghost"
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+              onClick={() => setMinimized(false)}
+              title="Maximize"
             >
-              <PhoneOff className="h-4 w-4" />
+              <Maximize2 className="h-3.5 w-3.5" />
             </Button>
-          )}
+          </div>
+        </>
+      ) : (
+        <>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div
+            className="flex min-w-0 flex-1 items-center gap-2 cursor-move touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            title="Drag to move"
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary animate-pulse" />
+            <span className="truncate">Google Meet Calling</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {callState === 'active' && (
+              <span className="font-mono text-foreground font-semibold bg-primary/10 px-2 py-0.5 rounded-full">
+                {formatTime(callDuration)}
+              </span>
+            )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+              onClick={() => setMinimized(true)}
+              title="Minimize"
+            >
+              <Minimize2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
 
-          {callState === 'active' && (
-            <>
-              <Button
-                variant="outline"
-                className="gap-2 rounded-full border-green-600 bg-green-600 text-white hover:bg-green-700 hover:text-white"
-                onClick={handleReopenMeet}
-              >
-                <ExternalLink className="h-4 w-4" />
-                Reopen Meet
+        {showUnreachablePanel ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center py-2">
+            <div className="h-10 w-10 rounded-full bg-destructive/20 flex items-center justify-center text-destructive">
+              <PhoneOff className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground mb-1 text-sm">
+                {unreachable.length > 1 ? 'No one is reachable' : 'Recipient Not Connected'}
+              </h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Invalid call as {unreachable.map((p) => p.name || 'Someone').join(', ') || 'they'} hasn't connected to
+                the Google Meet integration. Please send them a link instead.
+              </p>
+            </div>
+            <div className="flex gap-2 w-full mt-1">
+              <Button variant="outline" className="flex-1 border-border" onClick={reset} disabled={generatingLink}>
+                Close
               </Button>
+              <Button variant="default" className="flex-1 gap-2" onClick={handleSendLink} disabled={generatingLink}>
+                {generatingLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Send Link
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center gap-3">
+            <div className="relative h-14 w-14 shrink-0 rounded-full overflow-hidden border-2 border-primary/20 bg-muted shadow-md flex items-center justify-center">
+              <Avatar className="h-full w-full rounded-none">
+                <AvatarFallback className="text-lg font-semibold bg-gradient-to-br from-primary/10 to-primary/20 text-primary">
+                  {getInitials(primaryName)}
+                </AvatarFallback>
+              </Avatar>
+              {callState !== 'active' && (
+                <div className="absolute inset-0 rounded-full border-2 border-primary/60 animate-ping opacity-25 pointer-events-none" />
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate text-sm font-semibold text-foreground">{groupLabel}</h3>
+              <p className="mt-0.5 flex items-start gap-1.5 text-xs text-muted-foreground">
+                {callType === 'video' ? (
+                  <Video className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+                ) : (
+                  <Phone className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+                )}
+                <span className="min-w-0 break-words">
+                  {callState === 'incoming' && `'${primaryName}' is trying to connect with you`}
+                  {callState === 'outgoing' && `Trying to connect to '${primaryName}'`}
+                  {callState === 'active' && `Connected — call in progress via Google Meet`}
+                </span>
+              </p>
+              {callState === 'active' && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  The audio/video happens in the Google Meet tab — reopen it if you closed it.
+                </p>
+              )}
+              {unreachable.length > 0 && callState !== 'active' && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {unreachable.map((p) => p.name || 'Someone').join(', ')} hasn't connected Google Meet and won't be
+                  notified.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!showUnreachablePanel && (
+          <div className="flex items-center justify-end gap-2">
+            {callState === 'incoming' && (
+              <>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="h-10 w-10 rounded-full shadow hover:scale-105 transition-all"
+                  onClick={handleDecline}
+                  title="Decline"
+                >
+                  <PhoneOff className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  className="h-10 w-10 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow hover:scale-105 transition-all"
+                  onClick={handleAccept}
+                  title="Accept"
+                >
+                  <Phone className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+
+            {callState === 'outgoing' && (
               <Button
                 size="icon"
                 variant="destructive"
                 className="h-10 w-10 rounded-full shadow hover:scale-105 transition-all"
                 onClick={handleEnd}
-                title="Hang up"
+                title="Cancel call"
               >
                 <PhoneOff className="h-4 w-4" />
               </Button>
-            </>
-          )}
-        </div>
+            )}
+
+            {callState === 'active' && (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2 rounded-full border-green-600 bg-green-600 text-white hover:bg-green-700 hover:text-white"
+                  onClick={handleReopenMeet}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Reopen Meet
+                </Button>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="h-10 w-10 rounded-full shadow hover:scale-105 transition-all"
+                  onClick={handleEnd}
+                  title="Hang up"
+                >
+                  <PhoneOff className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+        </>
       )}
     </div>
   );

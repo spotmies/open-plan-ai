@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { activeCallStorage } from '../utils/activeCallStorage';
 
 export type CallState = 'idle' | 'outgoing' | 'incoming' | 'active';
 export type CallType = 'audio' | 'video';
@@ -73,8 +74,45 @@ const idleState = {
   callStartedAt: null as number | null,
 };
 
-export const useCallStore = create<CallStoreState>((set) => ({
-  ...idleState,
+/** Persists the fields needed to redraw the overlay after a reload — see activeCallStorage.ts. */
+function persistIfActive(state: CallStoreState): void {
+  if (state.callState === 'active' && state.callId && state.conversationId && state.callType && state.meetingUri && state.callStartedAt) {
+    activeCallStorage.save({
+      callId: state.callId,
+      conversationId: state.conversationId,
+      callType: state.callType,
+      meetingUri: state.meetingUri,
+      isGroup: state.isGroup,
+      participants: state.participants,
+      callerName: state.callerName,
+      callStartedAt: state.callStartedAt,
+    });
+  }
+}
+
+// Restore an in-progress call (if any) so a page reload doesn't tear down the
+// overlay while the Google Meet tab is still going. Duration is derived from
+// the persisted start time, same as the normal tick, so time spent reloading
+// isn't lost.
+const restoredCall = activeCallStorage.load();
+const initialState = restoredCall
+  ? {
+      ...idleState,
+      callState: 'active' as CallState,
+      callId: restoredCall.callId,
+      conversationId: restoredCall.conversationId,
+      callType: restoredCall.callType,
+      meetingUri: restoredCall.meetingUri,
+      isGroup: restoredCall.isGroup,
+      participants: restoredCall.participants,
+      callerName: restoredCall.callerName,
+      callDuration: Math.floor((Date.now() - restoredCall.callStartedAt) / 1000),
+      callStartedAt: restoredCall.callStartedAt,
+    }
+  : idleState;
+
+export const useCallStore = create<CallStoreState>((set, get) => ({
+  ...initialState,
 
   startOutgoingCall: ({ callId, conversationId, callType, meetingUri, participants, isGroup }) =>
     set({
@@ -102,12 +140,20 @@ export const useCallStore = create<CallStoreState>((set) => ({
       isGroup,
     }),
 
-  markActive: () => set({ callState: 'active', callDuration: 0, callStartedAt: Date.now() }),
+  markActive: () => {
+    set({ callState: 'active', callDuration: 0, callStartedAt: Date.now() });
+    persistIfActive(get());
+  },
 
-  reset: () => set({ ...idleState }),
+  reset: () => {
+    activeCallStorage.clear();
+    set({ ...idleState });
+  },
 
-  removeParticipant: (userId) =>
-    set((state) => ({ participants: state.participants.filter((p) => p.id !== userId) })),
+  removeParticipant: (userId) => {
+    set((state) => ({ participants: state.participants.filter((p) => p.id !== userId) }));
+    persistIfActive(get());
+  },
 
   toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
   toggleCamera: () => set((state) => ({ isCameraOff: !state.isCameraOff })),

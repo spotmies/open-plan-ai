@@ -252,6 +252,14 @@ function AppShell() {
               }
             />
             <Route
+              path="/assistant/:conversationId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
+                  <Assistant />
+                </Suspense>
+              }
+            />
+            <Route
               path="/calendar"
               element={
                 <Suspense fallback={<AppLayoutSkeleton variant="calendar" />}>

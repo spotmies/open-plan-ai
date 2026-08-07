@@ -178,115 +178,121 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp }: AssistantC
   const footerText = `${card.sources.length} source${card.sources.length === 1 ? '' : 's'} · ${asOf}`;
 
   return (
-    <div>
-      <Card className={cn('overflow-hidden', kind.washClass)}>
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex min-w-0 items-start gap-2.5">
-              <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', kind.chipClass)}>
-                <kind.Icon className="h-4 w-4" />
+    // The leading spacer matches AssistantMessageBubble's h-7 w-7 avatar +
+    // gap-2.5, so the card lines up under the assistant's text bubble
+    // instead of under the avatar icon above it.
+    <div className="flex items-start gap-2.5">
+      <div className="h-7 w-7 shrink-0" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <Card className={cn('overflow-hidden', kind.washClass)}>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-start gap-2.5">
+                <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', kind.chipClass)}>
+                  <kind.Icon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className={cn('text-[10px] font-semibold uppercase tracking-wide', kind.kickerClass)}>{kind.kicker}</p>
+                  <h4 className="truncate text-base font-semibold text-foreground">{card.title}</h4>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className={cn('text-[10px] font-semibold uppercase tracking-wide', kind.kickerClass)}>{kind.kicker}</p>
-                <h4 className="truncate text-base font-semibold text-foreground">{card.title}</h4>
-              </div>
+              {card.badge && (
+                <Badge variant="secondary" className="shrink-0">
+                  {card.badge}
+                </Badge>
+              )}
             </div>
-            {card.badge && (
-              <Badge variant="secondary" className="shrink-0">
-                {card.badge}
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
+          </CardHeader>
 
-        <CardContent className="space-y-4 pt-0">
-          {card.type === 'status' && (
-            <>
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <div className="text-3xl font-bold text-foreground">{Math.round(card.metricValue)}%</div>
-                  <p className="text-xs text-muted-foreground">{card.metricLabel ?? 'Complete'}</p>
-                </div>
-                <div className="flex items-end gap-4">
-                  {card.taskCount && (
-                    <div className="text-right">
-                      <div className="text-lg font-semibold text-foreground">
-                        {card.taskCount.completed} / {card.taskCount.total}
-                      </div>
-                      <p className="text-xs text-muted-foreground">tasks done</p>
-                    </div>
-                  )}
-                  {card.stage && (
-                    <div className="text-right">
-                      <div className="text-sm font-semibold capitalize text-foreground">{card.stage}</div>
-                      <p className="text-xs text-muted-foreground">stage</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <Progress value={card.metricValue} />
-            </>
-          )}
-
-          {card.type === 'bom' && (
-            <>
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {card.rolledUpCost != null ? formatCurrency(card.rolledUpCost) : '—'}
+          <CardContent className="space-y-4 pt-0">
+            {card.type === 'status' && (
+              <>
+                <div className="flex items-end justify-between gap-4">
+                  <div>
+                    <div className="text-3xl font-bold text-foreground">{Math.round(card.metricValue)}%</div>
+                    <p className="text-xs text-muted-foreground">{card.metricLabel ?? 'Complete'}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">rolled-up cost / unit</p>
+                  <div className="flex items-end gap-4">
+                    {card.taskCount && (
+                      <div className="text-right">
+                        <div className="text-lg font-semibold text-foreground">
+                          {card.taskCount.completed} / {card.taskCount.total}
+                        </div>
+                        <p className="text-xs text-muted-foreground">tasks done</p>
+                      </div>
+                    )}
+                    {card.stage && (
+                      <div className="text-right">
+                        <div className="text-sm font-semibold capitalize text-foreground">{card.stage}</div>
+                        <p className="text-xs text-muted-foreground">stage</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-foreground">{card.totalLines} lines</div>
-                  <p className="text-xs text-muted-foreground">{card.clearToBuildPct}% clear-to-build</p>
+                <Progress value={card.metricValue} />
+              </>
+            )}
+
+            {card.type === 'bom' && (
+              <>
+                <div className="flex items-end justify-between gap-4">
+                  <div>
+                    <div className="text-2xl font-bold text-foreground">
+                      {card.rolledUpCost != null ? formatCurrency(card.rolledUpCost) : '—'}
+                    </div>
+                    <p className="text-xs text-muted-foreground">rolled-up cost / unit</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-foreground">{card.totalLines} lines</div>
+                    <p className="text-xs text-muted-foreground">{card.clearToBuildPct}% clear-to-build</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {card.singleSourcedCount > 0 && <BomFlagCountBadge flag="single_sourced" count={card.singleSourcedCount} />}
+                  {card.longLeadCount > 0 && <BomFlagCountBadge flag="long_lead" count={card.longLeadCount} />}
+                  {card.missingMfrPnCount > 0 && <BomFlagCountBadge flag="missing_mfr_pn" count={card.missingMfrPnCount} />}
+                  {card.missingApprovalCount > 0 && (
+                    <BomFlagCountBadge flag="missing_approval" count={card.missingApprovalCount} />
+                  )}
+                </div>
+              </>
+            )}
+
+            {card.items.length > 0 ? (
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {card.itemsLabel ?? 'Items'}
+                </p>
+                <div className="divide-y divide-border">
+                  {card.type === 'bom'
+                    ? card.items.map((item) => <BomCardItemRow key={item.id} item={item} />)
+                    : card.items.map((item) => <CardItemRow key={item.id} item={item} />)}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {card.singleSourcedCount > 0 && <BomFlagCountBadge flag="single_sourced" count={card.singleSourcedCount} />}
-                {card.longLeadCount > 0 && <BomFlagCountBadge flag="long_lead" count={card.longLeadCount} />}
-                {card.missingMfrPnCount > 0 && <BomFlagCountBadge flag="missing_mfr_pn" count={card.missingMfrPnCount} />}
-                {card.missingApprovalCount > 0 && (
-                  <BomFlagCountBadge flag="missing_approval" count={card.missingApprovalCount} />
-                )}
-              </div>
-            </>
-          )}
+            ) : (
+              card.emptyText && <p className="text-sm text-muted-foreground">{card.emptyText}</p>
+            )}
+          </CardContent>
 
-          {card.items.length > 0 ? (
-            <div>
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {card.itemsLabel ?? 'Items'}
-              </p>
-              <div className="divide-y divide-border">
-                {card.type === 'bom'
-                  ? card.items.map((item) => <BomCardItemRow key={item.id} item={item} />)
-                  : card.items.map((item) => <CardItemRow key={item.id} item={item} />)}
-              </div>
-            </div>
-          ) : (
-            card.emptyText && <p className="text-sm text-muted-foreground">{card.emptyText}</p>
-          )}
-        </CardContent>
+          <CardFooter className="border-t border-border py-3 text-xs text-muted-foreground">{footerText}</CardFooter>
+        </Card>
 
-        <CardFooter className="border-t border-border py-3 text-xs text-muted-foreground">{footerText}</CardFooter>
-      </Card>
-
-      {card.followUps && card.followUps.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {card.followUps.map((text) => (
-            <Button
-              key={text}
-              variant="outline"
-              size="sm"
-              className="h-7 rounded-full text-xs"
-              onClick={() => onFollowUp(text)}
-            >
-              {text}
-            </Button>
-          ))}
-        </div>
-      )}
+        {card.followUps && card.followUps.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {card.followUps.map((text) => (
+              <Button
+                key={text}
+                variant="outline"
+                size="sm"
+                className="h-7 rounded-full text-xs"
+                onClick={() => onFollowUp(text)}
+              >
+                {text}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

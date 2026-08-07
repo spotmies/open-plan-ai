@@ -47,8 +47,11 @@ export function AssistantConversationList({
   const [pendingDelete, setPendingDelete] = useState<AssistantConversationSummary | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
-  const pinned = conversations.filter((c) => c.pinned);
-  const rest = conversations.filter((c) => !c.pinned);
+  const sorted = [...conversations].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+  const pinned = sorted.filter((c) => c.pinned);
+  const rest = sorted.filter((c) => !c.pinned);
 
   const handleTogglePin = (conversation: AssistantConversationSummary) => {
     updateConversation.mutate(

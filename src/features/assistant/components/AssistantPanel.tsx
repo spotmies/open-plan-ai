@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FolderPlus, Paperclip, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,6 +13,7 @@ import { AssistantTranscript } from './AssistantTranscript';
 import {
   ASSISTANT_CATEGORIES,
   ASSISTANT_SUGGESTIONS,
+  buildAskSuggestions,
   scopeLabelToBackend,
   type AssistantScope,
   type AssistantFocusEntity,
@@ -36,7 +37,7 @@ export function AssistantPanel({
 }: AssistantPanelProps) {
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
-  const { data: projects = [] } = useProjects();
+  const { data: projects = [], isLoading: projectsLoading } = useProjects();
 
   const [value, setValue] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -45,6 +46,8 @@ export function AssistantPanel({
   const [focusEntities, setFocusEntities] = useState<AssistantFocusEntity[]>([]);
   const [justSubmitted, setJustSubmitted] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const dragCounterRef = useRef(0);
 
   const {
     messages,
@@ -81,6 +84,7 @@ export function AssistantPanel({
   const isWidget = variant === 'widget';
   const hasActiveConversation = !!conversationId;
   const visibleCategories = ASSISTANT_CATEGORIES.filter((category) => !category.hidden);
+  const askSuggestions = useMemo(() => buildAskSuggestions(projects), [projects]);
 
   // Clear the composer whenever the active conversation identity changes
   // (new conversation, or switching to a different past one from the
@@ -179,6 +183,40 @@ export function AssistantPanel({
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // dragenter/dragleave fire for every child element the pointer crosses, so
+  // a plain boolean flickers off mid-drag whenever it passes over a nested
+  // node. A depth counter keeps the overlay on until the pointer has left
+  // every nested element, i.e. the counter is back to 0.
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragCounterRef.current += 1;
+    setIsDraggingFile(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDraggingFile(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingFile(false);
+    if (isBusy) return;
+    const dropped = Array.from(e.dataTransfer.files ?? []);
+    if (dropped.length > 0) handleFilesAdd(dropped);
+  };
+
   const effectivelyStreaming = isStreaming || justSubmitted;
   const isBusy = createConversation.isPending || effectivelyStreaming || isUploading;
   // Stop only ever targets an existing conversation's turn — the brief
@@ -200,7 +238,21 @@ export function AssistantPanel({
     : messages;
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col', className)}>
+    <div
+      className={cn('relative flex h-full min-h-0 flex-col', className)}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDraggingFile && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-background/90 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2 text-primary">
+            <Paperclip className="h-8 w-8" />
+            <p className="text-sm font-semibold">Drop files to attach</p>
+          </div>
+        </div>
+      )}
       {hasActiveConversation ? (
         <AssistantTranscript
           key={conversationId ?? 'new'}
@@ -246,7 +298,21 @@ export function AssistantPanel({
             </div>
 
             {visibleCategories.map((category) => {
-              const suggestions = ASSISTANT_SUGGESTIONS.filter((s) => s.category === category.id);
+              if (category.id === 'ask' && !projectsLoading && projects.length === 0) {
+                return (
+                  <div key={category.id} className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {category.label}
+                    </p>
+                    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-3.5 py-6 text-center">
+                      <FolderPlus className="h-5 w-5 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Add some projects to start chatting about them.</p>
+                    </div>
+                  </div>
+                );
+              }
+              const suggestions =
+                category.id === 'ask' ? askSuggestions : ASSISTANT_SUGGESTIONS.filter((s) => s.category === category.id);
               if (suggestions.length === 0) return null;
               return (
                 <div key={category.id} className="space-y-2">

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Copy, Pencil, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { AssistantMarkdown } from './AssistantMarkdown';
 import { fileIconFor } from './AssistantComposer';
 import type { AiMessageAttachment } from '../assistantData';
 import type { MessageVersionInfo } from '../lib/messageBranches';
@@ -226,16 +227,15 @@ export function AssistantMessageBubble({
         <Sparkles className="h-3.5 w-3.5" />
       </div>
       <div className={cn('flex min-w-0 flex-col items-start gap-1', isCompact ? 'flex-1' : 'max-w-[80%]')}>
-        <div
+        <AssistantMarkdown
+          content={content}
           className={cn(
-            'min-w-0 whitespace-pre-wrap text-sm text-foreground',
+            'text-foreground',
             isCompact
               ? 'w-full rounded-lg border border-border bg-card px-3.5 py-3'
               : 'rounded-2xl rounded-tl-sm bg-muted px-4 py-2.5',
           )}
-        >
-          {content}
-        </div>
+        />
         {!isOptimistic && (
           <button
             type="button"

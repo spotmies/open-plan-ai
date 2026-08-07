@@ -14,6 +14,7 @@ import {
   Wand2,
   type LucideIcon,
 } from 'lucide-react';
+import type { Project } from '@/types';
 
 export type AssistantCategoryId = 'ask' | 'act' | 'build';
 
@@ -61,12 +62,6 @@ export interface AssistantSuggestion {
 }
 
 export const ASSISTANT_SUGGESTIONS: AssistantSuggestion[] = [
-  // Ask
-  { id: 'ask-status', category: 'ask', icon: Activity, text: "What's the status of Smart Patient Vital Monitor?" },
-  { id: 'ask-blocking', category: 'ask', icon: Shield, text: "What's blocking Smart Patient Vital Monitor?" },
-  { id: 'ask-single-sourced', category: 'ask', icon: Layers, text: 'Which BOM lines are single-sourced?' },
-  { id: 'ask-req-coverage', category: 'ask', icon: ListChecks, text: "How's requirements coverage looking for Smart Patient Vital Monitor?" },
-  { id: 'ask-req-rework', category: 'ask', icon: Sparkles, text: 'Which requirements need rework before approval?' },
   // Act
   { id: 'act-create-task', category: 'act', icon: ClipboardCheck, text: 'Create a task "power tree review" under Power module, assign Sam, due Friday' },
   { id: 'act-move-gate', category: 'act', icon: Flag, text: 'Move the DVT gate to March 12' },
@@ -77,6 +72,27 @@ export const ASSISTANT_SUGGESTIONS: AssistantSuggestion[] = [
   { id: 'build-new-project', category: 'build', icon: LayoutGrid, text: 'Create a new project from these documents' },
   { id: 'build-requirements', category: 'build', icon: LayoutGrid, text: 'Create requirements for this project from these notes' },
 ];
+
+/**
+ * Ask-category suggestions, generated from the org's real projects instead
+ * of a fixed example project name. Spreads the project-specific templates
+ * across up to the first 3 projects (round-robin) for variety when the org
+ * has more than one; the two scope-agnostic templates always default to
+ * "All projects" (AssistantPanel's initial composer scope) so they don't
+ * need a project name at all. Returns [] when there are no projects yet —
+ * callers should show an empty state instead of this list in that case.
+ */
+export function buildAskSuggestions(projects: Pick<Project, 'name'>[]): AssistantSuggestion[] {
+  if (projects.length === 0) return [];
+  const nameAt = (i: number) => projects[i % projects.length].name;
+  return [
+    { id: 'ask-status', category: 'ask', icon: Activity, text: `What's the status of ${nameAt(0)}?` },
+    { id: 'ask-blocking', category: 'ask', icon: Shield, text: `What's blocking ${nameAt(1)}?` },
+    { id: 'ask-req-coverage', category: 'ask', icon: ListChecks, text: `How's requirements coverage looking for ${nameAt(2)}?` },
+    { id: 'ask-single-sourced', category: 'ask', icon: Layers, text: 'Which BOM lines are single-sourced?' },
+    { id: 'ask-req-rework', category: 'ask', icon: Sparkles, text: 'Which requirements need rework before approval?' },
+  ];
+}
 
 // ─── Real conversation/message types (Phase 1 — Ask, read-only) ───────────────
 // Replaces the earlier mock array below — the assistant now talks to a real

@@ -5,7 +5,13 @@ import { queryKeys } from '@/lib/queryClient';
 import { assistantService } from '@/services/assistant.service';
 import { aiAssistantTransport } from '../transport';
 import { buildMessagePath } from '../lib/messageBranches';
-import type { AskUserQuestion, AssistantCard, AssistantMessage, AiMessageAttachment } from '../assistantData';
+import type {
+  AskUserQuestion,
+  AssistantCard,
+  AssistantConversationSummary,
+  AssistantMessage,
+  AiMessageAttachment,
+} from '../assistantData';
 
 export interface ToolStatusEntry {
   id: string;
@@ -75,6 +81,18 @@ export function useAssistantConversation(conversationId: string | null) {
     if (!conversationId) return;
     queryClient.invalidateQueries({ queryKey: queryKeys.assistant.conversation(conversationId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.assistant.conversations() });
+  }, [conversationId, queryClient]);
+
+  // Bumps the conversation's updatedAt in the sidebar list cache the instant
+  // the user sends/edits a message, so it reorders to the top immediately
+  // instead of waiting on the invalidate() round-trip above.
+  const touchConversationInList = useCallback(() => {
+    if (!conversationId) return;
+    queryClient.setQueryData<AssistantConversationSummary[]>(
+      queryKeys.assistant.conversations(),
+      (old) =>
+        old?.map((c) => (c.id === conversationId ? { ...c, updatedAt: new Date().toISOString() } : c)),
+    );
   }, [conversationId, queryClient]);
 
   useEffect(() => {
@@ -165,6 +183,7 @@ export function useAssistantConversation(conversationId: string | null) {
       sentMessageCountRef.current = query.data?.messages.length ?? 0;
       setOptimisticMessage(message);
       setOptimisticAttachments(attachments?.length ? attachments : null);
+      touchConversationInList();
     },
     onSuccess: () => {
       stoppedRef.current = false;
@@ -188,6 +207,7 @@ export function useAssistantConversation(conversationId: string | null) {
     onMutate: ({ messageId, content }) => {
       editCountRef.current = query.data?.messages.length ?? 0;
       setEditingMessage({ id: messageId, content });
+      touchConversationInList();
     },
     onSuccess: () => {
       stoppedRef.current = false;

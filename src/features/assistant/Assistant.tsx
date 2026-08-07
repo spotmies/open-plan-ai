@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Menu } from 'lucide-react';
 import { AssistantConversationList } from './components/AssistantConversationList';
 import { AssistantPanel } from './components/AssistantPanel';
@@ -34,7 +34,8 @@ function useKeyboardAwareHeight(active: boolean) {
 }
 
 export default function Assistant() {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const { conversationId } = useParams<{ conversationId?: string }>();
+  const activeId = conversationId ?? null;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -45,30 +46,42 @@ export default function Assistant() {
     return () => { document.title = 'Open Plan AI'; };
   }, []);
 
-  const handleSelect = (id: string) => {
-    setActiveId(id);
+  // Each selection pushes its own history entry (rather than replacing), so
+  // clicking through several past conversations and then hitting the
+  // browser's back button steps back through them in the exact order they
+  // were opened — matching ChatGPT's /c/:id behavior.
+  const handleSelect = useCallback((id: string) => {
+    navigate(`/assistant/${id}`);
     setDrawerOpen(false);
-  };
+  }, [navigate]);
 
-  const handleNewConversation = () => {
-    setActiveId(null);
+  const handleNewConversation = useCallback(() => {
+    navigate('/assistant');
     setDrawerOpen(false);
-  };
+  }, [navigate]);
+
+  // The very first message of a brand-new conversation creates it server-side
+  // before any id exists; once that resolves, reflect it in the URL so a
+  // refresh (or a later back-navigation) lands back on this same chat instead
+  // of a blank composer.
+  const handleConversationCreated = useCallback((id: string) => {
+    navigate(`/assistant/${id}`);
+  }, [navigate]);
 
   if (!isMobile) {
     return (
       <div className="flex h-full min-h-0">
         <AssistantConversationList
           activeId={activeId}
-          onSelect={setActiveId}
-          onNewConversation={() => setActiveId(null)}
-          onActiveDeleted={() => setActiveId(null)}
+          onSelect={handleSelect}
+          onNewConversation={handleNewConversation}
+          onActiveDeleted={handleNewConversation}
         />
         <AssistantPanel
           variant="page"
           className="flex-1 min-w-0"
           conversationId={activeId}
-          onConversationCreated={setActiveId}
+          onConversationCreated={handleConversationCreated}
         />
       </div>
     );
@@ -109,7 +122,7 @@ export default function Assistant() {
         variant="page"
         className="flex-1 min-w-0"
         conversationId={activeId}
-        onConversationCreated={setActiveId}
+        onConversationCreated={handleConversationCreated}
       />
 
       {drawerOpen && (
@@ -129,7 +142,7 @@ export default function Assistant() {
           activeId={activeId}
           onSelect={handleSelect}
           onNewConversation={handleNewConversation}
-          onActiveDeleted={() => setActiveId(null)}
+          onActiveDeleted={handleNewConversation}
         />
       </div>
     </div>

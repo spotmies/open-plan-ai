@@ -1,5 +1,13 @@
 let current: Window | null = null;
 
+// Stable target name (not '_blank') so that if this tab reloads mid-call —
+// losing the in-memory `current` handle, but not closing the still-running
+// Meet tab — clicking "Reopen Meet" re-targets the same already-open tab
+// instead of spawning a duplicate. window.open(url, name) always navigates
+// the target, so this has no downside versus '_blank' when no such window
+// exists yet: it just opens a normal new tab, same as before.
+const MEET_WINDOW_NAME = 'openplan-google-meet';
+
 function escapeHtml(str: string): string {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   return str.replace(/[&<>"']/g, (c) => map[c]);
@@ -83,7 +91,7 @@ export const meetWindow = {
       current.location.href = uri;
       current.focus();
     } else {
-      current = window.open(uri, '_blank');
+      current = window.open(uri, MEET_WINDOW_NAME);
     }
     return current;
   },
