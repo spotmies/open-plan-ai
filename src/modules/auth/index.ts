@@ -7,8 +7,9 @@
 // Context + hook
 export { AuthProvider, AuthContext, useAuth } from './AuthContext';
 
-// Route guard
+// Route guards
 export { ProtectedRoute } from './components/ProtectedRoute';
+export { GuestRoute } from './components/GuestRoute';
 
 // Pages (consumed by the router in src/app/router.tsx)
 export { default as LoginPage }            from './components/Login';
