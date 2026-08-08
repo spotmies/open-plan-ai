@@ -79,7 +79,7 @@ export function ForwardMessageDialog({ open, onOpenChange, conversations, messag
         {message && (
           <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             {isImageMessage ? <FileImage className="h-3.5 w-3.5 shrink-0" /> : isFileMessage ? <FileText className="h-3.5 w-3.5 shrink-0" /> : null}
-            <span className="truncate">
+            <span className="min-w-0 flex-1 truncate">
               {isImageMessage
                 ? extraCount > 0 ? `${extraCount + 1} photos` : 'Photo'
                 : isFileMessage ? 'File attachment' : message.content}

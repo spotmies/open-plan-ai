@@ -250,20 +250,20 @@ export default function Dashboard() {
         ) : (
           <>
             {/* Dashboard Stats */}
-            {/* <DashboardStats
+            <DashboardStats
               portfolio={{ onTrack: onTrackCount, total: dashboardProjects.length }}
               eco={{ open: ecoAgg.open, awaitingMyAction: ecoAgg.awaitingMyAction }}
               bom={{ pct: bomAgg.pct, pending: bomAgg.pending }}
               nextGate={nextGate ? { days: nextGate.days, label: nextGate.name } : null}
-            /> */}
+            />
 
             {/* Dashboard Welcome / Greeting Container */}
-            {/* {isMobile && (
+            {isMobile && (
               <DashboardGreeting name={firstName} attentionCount={atRiskCount + bomAgg.rejected} />
-            )} */}
+            )}
 
             {/* Needs Attention Card */}
-            {/* {isMobile && (
+            {isMobile && (
               <NeedsAttentionCard
                 overdueProject={mostOverdueProject ? {
                   id: mostOverdueProject.project.id,
@@ -274,20 +274,25 @@ export default function Dashboard() {
                 atRiskCount={atRiskCount}
                 bomRejected={bomAgg.rejected}
               />
-            )} */}
+            )}
 
-            <div className="grid gap-3 md:gap-4 lg:grid-cols-3 items-start">
-              <div>
+            <div
+              ref={gridRef}
+              style={{ ['--dashboard-grid-h' as string]: gridHeight ? `${gridHeight}px` : 'auto' }}
+              className="grid gap-3 md:gap-4 lg:grid-cols-3 items-start lg:items-stretch lg:h-[var(--dashboard-grid-h)] lg:min-h-0"
+            >
+              <div className="lg:h-full lg:min-h-0 flex flex-col">
                 <ProjectsOverview projects={dashboardProjects} atRiskProjectIds={atRiskProjectIds} />
               </div>
-              <div>
+              <div className="flex flex-col lg:self-start">
                 <EngineeringChangesSummary projectIds={projectIds} projects={dashboardProjects} />
               </div>
-              <div className="flex flex-col space-y-4 md:space-y-3">
+              <div className="flex flex-col space-y-4 md:space-y-3 lg:h-full lg:min-h-0">
                 <BomReadiness projectIds={projectIds} projects={dashboardProjects} />
                 <ActivityFeed
                   activities={activityItems}
                   isLoading={activitiesLoading || isLoading}
+                  className="flex-1 min-h-0"
                 />
               </div>
             </div>

@@ -21,6 +21,7 @@ interface MessageAreaProps {
   reactionMap?: Record<string, MessageReaction[]>;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string, senderName: string) => void;
+  onDeleteMessageForMe?: (messageId: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReplyMessage?: (message: ChatMessage) => void;
   onForwardMessage?: (messages: ChatMessage[]) => void;
@@ -34,7 +35,7 @@ interface MessageAreaProps {
 
 export function MessageArea({
   messages, conversation, hasMore, onLoadMore, readReceiptMap, reactionMap,
-  onEditMessage, onDeleteMessage, onToggleReaction, onReplyMessage, onForwardMessage,
+  onEditMessage, onDeleteMessage, onDeleteMessageForMe, onToggleReaction, onReplyMessage, onForwardMessage,
   filterMode, pinnedMessageIds, favouriteMessageIds, onTogglePin, onToggleFavourite,
 }: MessageAreaProps) {
   const { user } = useAuth();
@@ -227,6 +228,7 @@ export function MessageArea({
                         isPinned={pinnedMessageIds?.has(last.id)}
                         isFavourited={favouriteMessageIds?.has(last.id)}
                         onDelete={onDeleteMessage}
+                        onDeleteForMe={onDeleteMessageForMe}
                         onToggleReaction={onToggleReaction}
                         onReply={onReplyMessage}
                         onForward={onForwardMessage}
@@ -270,6 +272,7 @@ export function MessageArea({
                     isFavourited={favouriteMessageIds?.has(msg.id)}
                     onEdit={onEditMessage}
                     onDelete={onDeleteMessage}
+                    onDeleteForMe={onDeleteMessageForMe}
                     onToggleReaction={onToggleReaction}
                     onReply={onReplyMessage}
                     onForward={onForwardMessage ? (message) => onForwardMessage([message]) : undefined}

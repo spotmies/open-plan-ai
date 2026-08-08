@@ -1,13 +1,14 @@
-import { MessageSquare, MessagesSquare } from 'lucide-react';
+import { MessageSquare, MessagesSquare, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface EmptyStateProps {
-  type: 'no-selection' | 'no-conversations' | 'no-messages';
+  type: 'no-selection' | 'no-conversations' | 'no-messages' | 'error';
   onCreateGroup?: () => void;
+  onRetry?: () => void;
   description?: string;
 }
 
-export function EmptyState({ type, onCreateGroup, description }: EmptyStateProps) {
+export function EmptyState({ type, onCreateGroup, onRetry, description }: EmptyStateProps) {
   const config = {
     'no-selection': {
       icon: MessageSquare,
@@ -23,6 +24,11 @@ export function EmptyState({ type, onCreateGroup, description }: EmptyStateProps
       icon: MessageSquare,
       title: 'No messages yet',
       description: 'Send the first message to start the conversation',
+    },
+    'error': {
+      icon: AlertCircle,
+      title: 'Couldn’t load messages',
+      description: 'Something went wrong while fetching this conversation. Please try again.',
     },
   }[type];
 
@@ -45,6 +51,17 @@ export function EmptyState({ type, onCreateGroup, description }: EmptyStateProps
             onClick={onCreateGroup}
           >
             + Create new Group
+          </Button>
+        )}
+        {type === 'error' && onRetry && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={onRetry}
+          >
+            Retry
           </Button>
         )}
       </div>

@@ -41,6 +41,7 @@ interface MediaGroupBubbleProps {
   isPinned?: boolean;
   isFavourited?: boolean;
   onDelete?: (messageId: string, senderName: string) => void;
+  onDeleteForMe?: (messageId: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReply?: (message: ChatMessage) => void;
   onForward?: (messages: ChatMessage[]) => void;
@@ -168,7 +169,7 @@ function tileClass(index: number, count: number): string {
 export function MediaGroupBubble({
   messages, showSenderInfo, showTimestamp, isGroupChat, currentUserId,
   readReceipts, otherMembersCount, reactions, reactionUsers, isPinned, isFavourited,
-  onDelete, onToggleReaction, onReply, onForward, onTogglePin, onToggleFavourite,
+  onDelete, onDeleteForMe, onToggleReaction, onReply, onForward, onTogglePin, onToggleFavourite,
 }: MediaGroupBubbleProps) {
   const timezone = useUserTimezone();
   const isMobile = useIsMobile();
@@ -207,8 +208,13 @@ export function MediaGroupBubble({
     onToggleReaction?.(last.id, emoji);
     setIsReactionPickerOpen(false);
   };
-  const handleDeleteAll = () => {
+  const handleDeleteAllForEveryone = () => {
     messages.forEach((m) => onDelete?.(m.id, m.senderName));
+    setShowDeleteConfirm(false);
+  };
+
+  const handleDeleteAllForMe = () => {
+    messages.forEach((m) => onDeleteForMe?.(m.id));
     setShowDeleteConfirm(false);
   };
 
@@ -339,12 +345,10 @@ export function MediaGroupBubble({
                     {isFavourited ? 'Remove from Favourites' : 'Add to Favourites'}
                   </DropdownMenuItem>
                 )}
-                {canModify && (
-                  <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="cursor-pointer text-destructive focus:text-destructive">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete {messages.length} photos
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="cursor-pointer text-destructive focus:text-destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete {messages.length > 1 ? `${messages.length} photos` : 'photo'}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -457,11 +461,18 @@ export function MediaGroupBubble({
       <ConfirmationDialog
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
-        onConfirm={handleDeleteAll}
-        title={`Delete ${messages.length} Photos`}
-        description="Are you sure you want to delete these photos? They will show as deleted to everyone in the chat."
-        confirmText="Delete"
+        onConfirm={canModify ? handleDeleteAllForEveryone : handleDeleteAllForMe}
+        title={messages.length > 1 ? `Delete ${messages.length} photos?` : 'Delete photo?'}
+        description={
+          canModify
+            ? 'Choose whether to remove these just for you, or for everyone in the chat.'
+            : 'This removes the photos from your view only — other people in the chat will still see them.'
+        }
+        confirmText={canModify ? 'Delete for everyone' : 'Delete for me'}
+        cancelText="Cancel"
         variant="destructive"
+        extraActionText={canModify ? 'Delete for me' : undefined}
+        onExtraAction={canModify ? handleDeleteAllForMe : undefined}
       />
     </div>
   );

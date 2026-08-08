@@ -225,9 +225,9 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
                       key={`${file.name}-${index}`}
                       className="flex items-center justify-between gap-2 text-sm bg-muted/50 border rounded-md px-3 py-1.5"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
                         <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate font-medium text-xs">{file.name}</span>
+                        <span className="min-w-0 flex-1 truncate font-medium text-xs">{file.name}</span>
                         <span className="text-[10px] text-muted-foreground shrink-0">
                           ({(file.size / 1024).toFixed(0)}KB)
                         </span>

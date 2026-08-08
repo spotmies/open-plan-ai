@@ -12,15 +12,78 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGoogleMeetStatus } from '@/features/integrations/hooks/useGoogleMeetStatus';
 import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsureGoogleMeetToken';
 import { googleMeetService } from '@/services/googleMeet.service';
 import { logger } from '@/services/monitoring/logger';
 import { Conversation } from '../types';
-import { Calendar, Clock, Loader2, Users } from 'lucide-react';
+import { Calendar, Clock, Loader2, Repeat, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, addMinutes } from 'date-fns';
+
+type RepeatFrequency = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+type DailyMode = 'everyday' | 'specific';
+
+// RFC 5545 BYDAY codes, displayed Monday-first per product spec.
+const DAYS_OF_WEEK = [
+  { rrule: 'MO', label: 'Monday', short: 'M' },
+  { rrule: 'TU', label: 'Tuesday', short: 'T' },
+  { rrule: 'WE', label: 'Wednesday', short: 'W' },
+  { rrule: 'TH', label: 'Thursday', short: 'T' },
+  { rrule: 'FR', label: 'Friday', short: 'F' },
+  { rrule: 'SA', label: 'Saturday', short: 'S' },
+  { rrule: 'SU', label: 'Sunday', short: 'S' },
+] as const;
+
+// Canonical (Mon-first) ordering of whichever BYDAY codes the user picked,
+// independent of the order they clicked them in.
+function orderSelectedDays(days: string[]): string[] {
+  return DAYS_OF_WEEK.filter((d) => days.includes(d.rrule)).map((d) => d.rrule);
+}
+
+/** Builds the RFC 5545 RRULE line Google Calendar expects, or null for a one-off meeting. */
+function buildRecurrenceRule(freq: RepeatFrequency, dailyMode: DailyMode, days: string[]): string | null {
+  switch (freq) {
+    case 'none':
+      return null;
+    case 'daily':
+      if (dailyMode === 'everyday') return 'RRULE:FREQ=DAILY';
+      // "Daily, on specific days" is the same shape as a weekly recurrence
+      // restricted to those weekdays — that's how Google's own Calendar UI
+      // represents it too.
+      return days.length > 0 ? `RRULE:FREQ=WEEKLY;BYDAY=${orderSelectedDays(days).join(',')}` : null;
+    case 'weekly':
+      return 'RRULE:FREQ=WEEKLY';
+    case 'monthly':
+      return 'RRULE:FREQ=MONTHLY';
+    case 'yearly':
+      return 'RRULE:FREQ=YEARLY';
+  }
+}
+
+/** Human-readable summary of the recurrence, for the chat confirmation message. */
+function describeRecurrence(freq: RepeatFrequency, dailyMode: DailyMode, days: string[]): string | null {
+  switch (freq) {
+    case 'none':
+      return null;
+    case 'daily':
+      if (dailyMode === 'everyday') return 'Every day';
+      if (days.length === 0) return null;
+      return `Weekly on ${orderSelectedDays(days)
+        .map((code) => DAYS_OF_WEEK.find((d) => d.rrule === code)?.label.slice(0, 3))
+        .join(', ')}`;
+    case 'weekly':
+      return 'Weekly';
+    case 'monthly':
+      return 'Monthly';
+    case 'yearly':
+      return 'Yearly';
+  }
+}
 
 interface ScheduleMeetingDialogProps {
   conversation: Conversation;
@@ -51,6 +114,9 @@ export function ScheduleMeetingDialog({
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<Record<string, boolean>>({});
+  const [repeatFreq, setRepeatFreq] = useState<RepeatFrequency>('none');
+  const [dailyMode, setDailyMode] = useState<DailyMode>('everyday');
+  const [recurDays, setRecurDays] = useState<string[]>([]);
 
   // Prefill values when dialog opens
   useEffect(() => {
@@ -66,6 +132,10 @@ export function ScheduleMeetingDialog({
       setStartTime(format(start, 'HH:mm'));
       setEndDate(format(end, 'yyyy-MM-dd'));
       setEndTime(format(end, 'HH:mm'));
+
+      setRepeatFreq('none');
+      setDailyMode('everyday');
+      setRecurDays([]);
 
       // Select other members by default (excluding "You")
       const membersMap: Record<string, boolean> = {};
@@ -99,6 +169,14 @@ export function ScheduleMeetingDialog({
       return;
     }
 
+    if (repeatFreq === 'daily' && dailyMode === 'specific' && recurDays.length === 0) {
+      toast.error('Please select at least one day for the recurring meeting.');
+      return;
+    }
+
+    const recurrenceRule = buildRecurrenceRule(repeatFreq, dailyMode, recurDays);
+    const recurrenceSummary = describeRecurrence(repeatFreq, dailyMode, recurDays);
+
     setLoading(true);
     try {
       const token = await ensureFreshToken();
@@ -117,19 +195,25 @@ export function ScheduleMeetingDialog({
         startTime: startDateTime.toISOString(),
         endTime: endDateTime.toISOString(),
         attendees,
+        recurrence: recurrenceRule ? [recurrenceRule] : undefined,
       });
 
       // Format human-friendly schedule details
       const dateStr = format(startDateTime, 'EEEE, MMMM d, yyyy');
       const timeStr = `${format(startDateTime, 'h:mm a')} - ${format(endDateTime, 'h:mm a')}`;
-      
-      const messageContent = `📅 Scheduled Google Meet: ${title}\n🕒 Time: ${dateStr} at ${timeStr}\n🔗 Join Meet: ${result.meetingUri}\n📅 Calendar Event: ${result.htmlLink}`;
+      const repeatLine = recurrenceSummary ? `\n🔁 Repeats: ${recurrenceSummary}` : '';
+
+      const messageContent = `📅 Scheduled Google Meet: ${title}\n🕒 Time: ${dateStr} at ${timeStr}${repeatLine}\n🔗 Join Meet: ${result.meetingUri}\n📅 Calendar Event: ${result.htmlLink}`;
 
       if (onMeetingScheduled) {
         await onMeetingScheduled(messageContent);
       }
 
-      toast.success('Meeting scheduled and event created in Google Calendar!');
+      toast.success(
+        recurrenceSummary
+          ? `Recurring meeting scheduled (${recurrenceSummary}) in Google Calendar!`
+          : 'Meeting scheduled and event created in Google Calendar!'
+      );
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to schedule meeting.';
@@ -142,7 +226,7 @@ export function ScheduleMeetingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[480px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5 text-primary" />
@@ -216,6 +300,76 @@ export function ScheduleMeetingDialog({
                 disabled={loading}
               />
             </div>
+          </div>
+
+          {/* Recurrence */}
+          <div className="space-y-2">
+            <Label htmlFor="repeat-freq" className="flex items-center gap-1.5 text-sm font-medium">
+              <Repeat className="h-4 w-4 text-muted-foreground" />
+              Repeat
+            </Label>
+            <Select
+              value={repeatFreq}
+              onValueChange={(value) => setRepeatFreq(value as RepeatFrequency)}
+              disabled={loading}
+            >
+              <SelectTrigger id="repeat-freq">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Does not repeat</SelectItem>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+                <SelectItem value="yearly">Yearly</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {repeatFreq === 'daily' && (
+              <div className="space-y-2.5 pt-1 pl-1">
+                <RadioGroup
+                  value={dailyMode}
+                  onValueChange={(value) => setDailyMode(value as DailyMode)}
+                  className="flex items-center gap-4"
+                  disabled={loading}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="everyday" id="daily-everyday" />
+                    <label htmlFor="daily-everyday" className="text-sm font-medium cursor-pointer">
+                      Every day
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="specific" id="daily-specific" />
+                    <label htmlFor="daily-specific" className="text-sm font-medium cursor-pointer">
+                      Select specific days
+                    </label>
+                  </div>
+                </RadioGroup>
+
+                {dailyMode === 'specific' && (
+                  <ToggleGroup
+                    type="multiple"
+                    value={recurDays}
+                    onValueChange={(value) => setRecurDays(value)}
+                    disabled={loading}
+                    className="justify-start flex-wrap gap-1.5"
+                  >
+                    {DAYS_OF_WEEK.map((day) => (
+                      <ToggleGroupItem
+                        key={day.rrule}
+                        value={day.rrule}
+                        aria-label={day.label}
+                        title={day.label}
+                        className="h-8 w-8 rounded-full p-0 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                      >
+                        {day.short}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Members / Attendees Selection */}

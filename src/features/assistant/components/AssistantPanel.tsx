@@ -7,6 +7,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useProjects } from '@/hooks/useProjects';
 import { cn } from '@/lib/utils';
 import { assistantService } from '@/services/assistant.service';
+import { ASSISTANT_MAX_ATTACHMENTS } from './AssistantAttachments';
 import { AssistantComposer } from './AssistantComposer';
 import { AssistantSuggestionRow } from './AssistantSuggestionRow';
 import { AssistantTranscript } from './AssistantTranscript';
@@ -176,7 +177,14 @@ export function AssistantPanel({
   };
 
   const handleFilesAdd = (added: File[]) => {
-    setFiles((prev) => [...prev, ...added]);
+    setFiles((prev) => {
+      const combined = [...prev, ...added];
+      if (combined.length > ASSISTANT_MAX_ATTACHMENTS) {
+        toast.warning(`Only ${ASSISTANT_MAX_ATTACHMENTS} files allowed. Extra file(s) were skipped.`);
+        return combined.slice(0, ASSISTANT_MAX_ATTACHMENTS);
+      }
+      return combined;
+    });
   };
 
   const handleFileRemove = (index: number) => {

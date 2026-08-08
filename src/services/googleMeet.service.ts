@@ -8,6 +8,9 @@ export interface ScheduleEventParams {
   startTime: string; // ISO string
   endTime: string; // ISO string
   attendees: string[]; // List of emails
+  // RFC 5545 RRULE line(s), e.g. ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"].
+  // Omit for a one-off (non-repeating) meeting.
+  recurrence?: string[];
 }
 
 export interface GoogleMeetStatus {
@@ -122,19 +125,41 @@ export const googleMeetService = {
   },
 
   /**
-   * Schedules a Calendar Event with a Google Meet conference link attached.
-   * POST https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1
+   * Schedules a Calendar Event with a Google Meet link attached.
+   * POST https://www.googleapis.com/calendar/v3/calendars/primary/events
+   *
+   * "primary" always resolves to the calendar of whichever Google account
+   * `accessToken` belongs to — i.e. the account connected in Integrations,
+   * which is looked up per-app-user on the backend (see
+   * useEnsureGoogleMeetToken). That holds regardless of the signed-in app
+   * user's own email, and regardless of `params.recurrence` — a recurring
+   * event is still a single POST; Google expands it into instances on the
+   * connected account's calendar.
+   *
+   * Deliberately does NOT use Calendar's `conferenceData.createRequest` to
+   * spin up the Meet space. That path creates a space with no way to
+   * request `accessType: 'OPEN'`, and — because the space ends up owned by
+   * Calendar's own service rather than this OAuth client — it can't be
+   * patched open afterward via the Meet API either (the
+   * `meetings.space.created` scope only covers spaces the app created
+   * directly, and a PATCH against one Calendar created 404s/403s silently).
+   * The result was scheduled meetings always defaulting to Google's TRUSTED
+   * join policy ("ask to join") no matter what we sent. Creating the space
+   * ourselves via `createInstantMeeting` first — the same call already
+   * proven to produce an open space — and attaching its link as the event's
+   * location/description is the only reliable way to guarantee open access.
    */
   async scheduleCalendarMeeting(
     accessToken: string,
     params: ScheduleEventParams
   ): Promise<{ htmlLink: string; meetingUri: string }> {
     try {
-      const requestId = Math.random().toString(36).substring(2) + Date.now().toString(36);
-      
+      const { meetingUri } = await this.createInstantMeeting(accessToken);
+
       const body = {
         summary: params.title,
-        description: 'Scheduled via Open Plan AI Google Meet Integration',
+        description: `Scheduled via Open Plan AI Google Meet Integration\n\nJoin: ${meetingUri}`,
+        location: meetingUri,
         // startTime/endTime are already full UTC ISO strings (trailing "Z"),
         // which fully and unambiguously specify the instant on their own.
         // We deliberately omit `timeZone` here: Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -144,25 +169,28 @@ export const googleMeetService = {
         // field-less 400 "Bad Request". timeZone only matters for
         // interpreting ambiguous local times or recurring-event DST rules —
         // neither applies to a single one-off meeting with an explicit Z offset.
+        //
+        // Recurring events are the exception: Google requires `timeZone` on
+        // `start`/`end` whenever `recurrence` is set — it needs a zone to
+        // expand the RRULE into instances (400 "Missing time zone definition
+        // for start time" otherwise). We pass the fixed IANA name "UTC"
+        // rather than the resolved local zone, since startTime/endTime are
+        // already normalized to UTC and "UTC" can't hit the legacy-alias
+        // rejection above.
         start: {
           dateTime: params.startTime,
+          ...(params.recurrence && params.recurrence.length > 0 ? { timeZone: 'UTC' } : {}),
         },
         end: {
           dateTime: params.endTime,
+          ...(params.recurrence && params.recurrence.length > 0 ? { timeZone: 'UTC' } : {}),
         },
+        ...(params.recurrence && params.recurrence.length > 0 ? { recurrence: params.recurrence } : {}),
         attendees: params.attendees.map((email) => ({ email })),
-        conferenceData: {
-          createRequest: {
-            requestId,
-            conferenceSolutionKey: {
-              type: 'hangoutsMeet', // Automatically creates a Google Meet link
-            },
-          },
-        },
       };
 
       const response = await fetch(
-        'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events',
         {
           method: 'POST',
           headers: {
@@ -178,16 +206,10 @@ export const googleMeetService = {
       }
 
       const data = await response.json();
-      
-      // Extract the Meet link from conferenceData entry
-      const entry = data.conferenceData?.entryPoints?.find(
-        (ep: any) => ep.entryPointType === 'video'
-      );
-      const meetingUri = entry?.uri || data.hangoutLink || '';
 
       return {
         htmlLink: data.htmlLink, // Calendar event link
-        meetingUri,             // The Google Meet link
+        meetingUri,             // The Google Meet link — guaranteed OPEN access
       };
     } catch (error) {
       logger.error('Failed to schedule calendar meeting:', error);

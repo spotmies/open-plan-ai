@@ -253,11 +253,15 @@ export const chatService = {
   },
 
   async editMessage(messageId: string, newContent: string): Promise<void> {
-    await apiClient.patch(ENDPOINTS.COMMENTS.UPDATE(messageId), { content: newContent });
+    await apiClient.patch(ENDPOINTS.MESSAGES.UPDATE(messageId), { content: newContent });
   },
 
   async deleteMessage(messageId: string, _senderName: string): Promise<void> {
     await apiClient.delete(ENDPOINTS.MESSAGES.DELETE(messageId));
+  },
+
+  async deleteMessageForMe(messageId: string): Promise<void> {
+    await apiClient.delete(ENDPOINTS.MESSAGES.DELETE_FOR_ME(messageId));
   },
 
   async markConversationAsRead(conversationId: string): Promise<void> {

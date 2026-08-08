@@ -1,19 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { ArrowUp, FileSpreadsheet, FileText, Loader2, Mic, Paperclip, Square, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowUp, Loader2, Mic, Paperclip, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { AssistantScopePopover } from './AssistantScopePopover';
+import { ASSISTANT_MAX_ATTACHMENTS, AssistantAttachmentGrid, type AssistantAttachmentItem } from './AssistantAttachments';
 import { useSarvamDictation } from '../hooks/useSarvamDictation';
 import type { AssistantScope, AssistantFocusEntity } from '../assistantData';
 import type { Project } from '@/types';
-
-const SPREADSHEET_EXTENSIONS = ['xlsx', 'xls', 'csv'];
-
-export function fileIconFor(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return SPREADSHEET_EXTENSIONS.includes(ext) ? FileSpreadsheet : FileText;
-}
 
 interface AssistantComposerProps {
   value: string;
@@ -65,6 +59,25 @@ export function AssistantComposer({
   });
   const isDictating = dictationState === 'listening' || dictationState === 'connecting';
 
+  // Object URLs for staged (not-yet-uploaded) files — power both the thumbnail grid
+  // and the full-size preview dialog before the attachment has a real fileUrl.
+  const [fileUrls, setFileUrls] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = files.map((file) => URL.createObjectURL(file));
+    setFileUrls(urls);
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [files]);
+
+  const attachmentItems: AssistantAttachmentItem[] = files.map((file, i) => ({
+    key: `${file.name}-${i}`,
+    name: file.name,
+    mimeType: file.type || null,
+    sizeBytes: file.size,
+    previewUrl: fileUrls[i] ?? '',
+  }));
+
   const handleSendClick = () => {
     // Sending mid-dictation is allowed — the composer already reflects the
     // live partial text by the time this fires, so just stop capturing and
@@ -94,30 +107,26 @@ export function AssistantComposer({
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = Array.from(e.clipboardData?.files ?? []);
+    if (pasted.length === 0) return;
+    // A copied image/doc arrives as clipboardData.files with no text
+    // counterpart, but a copied file path or table cell can carry both —
+    // only swallow the keystroke when there's actually a file to attach.
+    e.preventDefault();
+    onFilesAdd(pasted);
+  };
+
   return (
     <div className="rounded-2xl border border-border bg-background p-3 shadow-sm">
       {files.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {files.map((file, i) => {
-            const FileIcon = fileIconFor(file.name);
-            return (
-              <div
-                key={`${file.name}-${i}`}
-                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-xs"
-              >
-                <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="max-w-[160px] truncate font-medium text-foreground">{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => onFileRemove(i)}
-                  className="text-muted-foreground transition-colors hover:text-foreground"
-                  title="Remove"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
+        <div className="mb-2">
+          <AssistantAttachmentGrid
+            items={attachmentItems}
+            onRemove={onFileRemove}
+            onAddMore={() => fileInputRef.current?.click()}
+            maxFiles={ASSISTANT_MAX_ATTACHMENTS}
+          />
         </div>
       )}
 
@@ -126,6 +135,7 @@ export function AssistantComposer({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder={placeholder}
         rows={1}
         disabled={disabled}

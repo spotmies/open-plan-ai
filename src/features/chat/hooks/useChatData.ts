@@ -101,6 +101,7 @@ export function useMessages(conversationId: string | null) {
 
   const [messages, setMessages] = useState<ChatMessage[]>(cached?.messages ?? []);
   const [loading, setLoading] = useState(!hasCachedData && !!conversationId);
+  const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(cached?.hasMore ?? true);
   const [readOnly, setReadOnly] = useState(false);
   const [readOnlyNotice, setReadOnlyNotice] = useState<string | null>(null);
@@ -128,6 +129,7 @@ export function useMessages(conversationId: string | null) {
       setMessages([]);
       setHasMore(true);
       setLoading(false);
+      setError(null);
       setReadOnly(false);
       setReadOnlyNotice(null);
       setLeftAt(null);
@@ -135,6 +137,7 @@ export function useMessages(conversationId: string | null) {
       return;
     }
     let cancelled = false;
+    setError(null);
 
     const setFromAccessState = (state: ConversationAccessState) => {
       if (cancelled) return;
@@ -234,7 +237,10 @@ export function useMessages(conversationId: string | null) {
         })
         .catch((err) => {
           logger.error('Failed to fetch messages:', err);
-          if (!cancelled) setLoading(false);
+          if (!cancelled) {
+            setLoading(false);
+            setError('Failed to load messages. Please try again.');
+          }
         });
     }
 
@@ -497,8 +503,10 @@ export function useMessages(conversationId: string | null) {
       setMessages(data);
       setHasMore(data.length === PAGE_SIZE);
       setCachedMessages(conversationId, data, data.length === PAGE_SIZE);
+      setError(null);
     } catch (err) {
       logger.error('Failed to refetch messages:', err);
+      setError('Failed to load messages. Please try again.');
     }
   }, [conversationId, setCachedMessages]);
 
@@ -529,7 +537,7 @@ export function useMessages(conversationId: string | null) {
     return result.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [messages, pendingMessages, conversationId]);
 
-  return { messages: combinedMessages, loading, hasMore, loadMore, refetchMessages, sendMessage, readOnly, readOnlyNotice };
+  return { messages: combinedMessages, loading, error, hasMore, loadMore, refetchMessages, sendMessage, readOnly, readOnlyNotice };
 }
 
 export function useReactions(messages: ChatMessage[], currentUserId?: string, conversationId?: string | null) {

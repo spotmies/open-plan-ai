@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -46,12 +46,17 @@ export function AssistantConversationList({
   const [renameValue, setRenameValue] = useState('');
   const [pendingDelete, setPendingDelete] = useState<AssistantConversationSummary | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const sorted = [...conversations].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
-  const pinned = sorted.filter((c) => c.pinned);
-  const rest = sorted.filter((c) => !c.pinned);
+  const query = searchQuery.trim().toLowerCase();
+  const filtered = query
+    ? sorted.filter((c) => (c.title || 'New conversation').toLowerCase().includes(query))
+    : sorted;
+  const pinned = filtered.filter((c) => c.pinned);
+  const rest = filtered.filter((c) => !c.pinned);
 
   const handleTogglePin = (conversation: AssistantConversationSummary) => {
     updateConversation.mutate(
@@ -136,6 +141,20 @@ export function AssistantConversationList({
         </DropdownMenu>
       </div>
 
+      {conversations.length > 0 && (
+        <div className="px-3 pb-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search conversations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-8 text-sm"
+            />
+          </div>
+        </div>
+      )}
+
       <ScrollArea className="flex-1 min-h-0 px-2">
         <div className="space-y-1 pb-2">
           {isLoading &&
@@ -144,6 +163,12 @@ export function AssistantConversationList({
           {!isLoading && conversations.length === 0 && (
             <p className="px-2 py-4 text-center text-xs text-muted-foreground">
               No conversations yet — ask the assistant something to get started.
+            </p>
+          )}
+
+          {!isLoading && conversations.length > 0 && filtered.length === 0 && (
+            <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+              No conversations match "{searchQuery.trim()}".
             </p>
           )}
 

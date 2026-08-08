@@ -21,12 +21,12 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Activity } from '@/types';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { PanelIcon } from './PanelIcon';
-import { useFitCount } from '../hooks/useFitCount';
 
 interface ActivityFeedProps {
   activities: Activity[];
@@ -185,12 +185,10 @@ const activitySection: Record<string, string> = {
 export function ActivityFeed({ activities, isLoading, className }: ActivityFeedProps) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { containerRef, fitCount } = useFitCount(activities.length);
-  const remaining = activities.length - fitCount;
 
   if (isLoading) {
     return (
-      <Card className={cn('min-h-0 overflow-hidden', className)}>
+      <Card className={cn('flex flex-col h-full min-h-0 overflow-hidden', className)}>
         <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
           <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
             <PanelIcon icon={ActivityIcon} color="#2563EB" />
@@ -214,22 +212,20 @@ export function ActivityFeed({ activities, isLoading, className }: ActivityFeedP
   }
 
   return (
-    <Card className={cn('flex flex-col', className)}>
+    <Card className={cn('flex flex-col h-full min-h-0 overflow-hidden', className)}>
       <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
         <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
           <PanelIcon icon={ActivityIcon} color="#2563EB" />
           <span className="truncate">Recent Activity</span>
         </CardTitle>
-        {remaining > 0 && (
-          <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground hover:text-foreground" asChild>
-            <Link to="/notifications">
-              View all
-              <ArrowRight className="h-4 w-4 ml-1" />
-            </Link>
-          </Button>
-        )}
+        <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground hover:text-foreground" asChild>
+          <Link to="/notifications">
+            View all
+            <ArrowRight className="h-4 w-4 ml-1" />
+          </Link>
+        </Button>
       </CardHeader>
-      <CardContent className="flex flex-col px-3 md:px-6 pb-4">
+      <CardContent className="flex flex-col flex-1 min-h-0 px-3 md:px-6 pb-4">
         {activities.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center animate-fade-in">
             <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-3">
@@ -241,7 +237,8 @@ export function ActivityFeed({ activities, isLoading, className }: ActivityFeedP
             </p>
           </div>
         ) : (
-          <div ref={containerRef} className="space-y-1">
+          <ScrollArea className="flex-1 min-h-0">
+          <div className="space-y-1">
             {activities.map((activity) => {
               const Icon = activityIcons[activity.type] || ActivityIcon;
               const colorClass = activityColors[activity.type] || 'text-muted-foreground bg-muted';
@@ -338,6 +335,7 @@ export function ActivityFeed({ activities, isLoading, className }: ActivityFeedP
               );
             })}
           </div>
+          </ScrollArea>
         )}
       </CardContent>
     </Card>
