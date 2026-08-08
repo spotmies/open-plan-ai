@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { apiClient } from '@/services/api/client';
+import { apiClient, scheduleProactiveRefresh, clearProactiveRefresh } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
 import { config } from '@/config';
 
@@ -20,6 +20,8 @@ export interface BackendUser {
   emailVerified: boolean;
   createdAt: string;
   role?: string;
+  /** Only present on GET /auth/me — remaining access-token TTL in seconds. */
+  expiresIn?: number;
 }
 
 export interface AuthTokens {
@@ -49,7 +51,9 @@ export const authService = {
 
   async login(email: string, password: string): Promise<AuthResponse> {
     // The backend sets both tokens as httpOnly cookies; nothing to store here.
-    return apiClient.post<AuthResponse>(ENDPOINTS.AUTH.LOGIN, { email, password });
+    const result = await apiClient.post<AuthResponse>(ENDPOINTS.AUTH.LOGIN, { email, password });
+    scheduleProactiveRefresh(result.expiresIn);
+    return result;
   },
 
   /**
@@ -67,13 +71,20 @@ export const authService = {
       const url = (path: string) => `${config.api.baseUrl}${path}`;
       try {
         const res = await axios.get(url(ENDPOINTS.AUTH.ME), opts);
-        return res.data.data as BackendUser;
+        const user = res.data.data as BackendUser;
+        // The access token was still valid — /auth/me reports its remaining
+        // TTL so the proactive scheduler can pick up where a prior tab/session
+        // left off instead of waiting for the next reactive 401.
+        if (typeof user.expiresIn === 'number') scheduleProactiveRefresh(user.expiresIn);
+        return user;
       } catch {
         // access cookie missing/expired — fall through to a single refresh attempt
       }
       try {
-        await axios.post(url(ENDPOINTS.AUTH.REFRESH), {}, opts);
+        const refreshRes = await axios.post(url(ENDPOINTS.AUTH.REFRESH), {}, opts);
         const res = await axios.get(url(ENDPOINTS.AUTH.ME), opts);
+        const expiresIn = refreshRes.data?.data?.expiresIn as number | undefined;
+        if (typeof expiresIn === 'number') scheduleProactiveRefresh(expiresIn);
         return res.data.data as BackendUser;
       } catch {
         return null;
@@ -91,6 +102,8 @@ export const authService = {
       await apiClient.post(ENDPOINTS.AUTH.LOGOUT);
     } catch {
       // Ignore network/401 errors — the user is logging out regardless.
+    } finally {
+      clearProactiveRefresh();
     }
   },
 
@@ -112,7 +125,9 @@ export const authService = {
 
   async verifyOtp(email: string, otp: string): Promise<AuthResponse> {
     // Backend sets both tokens as httpOnly cookies on success.
-    return apiClient.post<AuthResponse>(ENDPOINTS.AUTH.VERIFY_OTP, { email, otp });
+    const result = await apiClient.post<AuthResponse>(ENDPOINTS.AUTH.VERIFY_OTP, { email, otp });
+    scheduleProactiveRefresh(result.expiresIn);
+    return result;
   },
 
   async getMe(): Promise<BackendUser> {

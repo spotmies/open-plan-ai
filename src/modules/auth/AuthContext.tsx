@@ -2,6 +2,7 @@ import React, { createContext, useEffect, useRef, useState, useCallback, useCont
 import { io, Socket } from 'socket.io-client';
 import { authService, BackendUser, SignUpMetadata } from './services/auth.service';
 import { apiClient } from '@/shared/api/client';
+import { clearProactiveRefresh } from '@/services/api/client';
 import { ENDPOINTS } from '@/shared/api/endpoints';
 import { config } from '@/config';
 import { setSentryUser, clearSentryUser } from '@/infrastructure/monitoring/sentry';
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       socket.disconnect();
       authSocketRef.current = null;
       clearSentryUser();
+      clearProactiveRefresh();
       setUser(null);
       setPendingVerificationEmail(null);
       window.location.href = '/login';

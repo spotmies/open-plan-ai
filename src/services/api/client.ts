@@ -53,12 +53,13 @@ let bc: BroadcastChannel | null = null;
 function initBC(): void {
   if (bc || typeof BroadcastChannel === 'undefined') return;
   bc = new BroadcastChannel('auth:refresh');
-  bc.onmessage = ({ data }: MessageEvent<{ type: 'SUCCESS' | 'FAILURE' }>) => {
+  bc.onmessage = ({ data }: MessageEvent<{ type: 'SUCCESS' | 'FAILURE'; expiresIn?: number }>) => {
     cancelCrossTabTimer();
     isRefreshing = false;
     if (data.type === 'SUCCESS') {
       notifyTokenRefreshed();
       flushQueue(false);
+      if (typeof data.expiresIn === 'number') scheduleProactiveRefresh(data.expiresIn);
     } else {
       flushQueue(true);
       redirectToLogin();
@@ -66,8 +67,8 @@ function initBC(): void {
   };
 }
 
-function broadcast(type: 'SUCCESS' | 'FAILURE'): void {
-  bc?.postMessage({ type });
+function broadcast(type: 'SUCCESS' | 'FAILURE', expiresIn?: number): void {
+  bc?.postMessage({ type, expiresIn });
 }
 
 // ─── Token-refreshed notification ──────────────────────────────────────────────
@@ -177,17 +178,75 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function postRefreshWithRetry(): Promise<void> {
+async function postRefreshWithRetry(): Promise<number | undefined> {
   for (let attempt = 1; attempt <= REFRESH_MAX_ATTEMPTS; attempt++) {
     try {
-      await axios.post(`${config.api.baseUrl}/auth/refresh`, {}, { withCredentials: true });
-      return;
+      const res = await axios.post(`${config.api.baseUrl}/auth/refresh`, {}, { withCredentials: true });
+      return res.data?.data?.expiresIn as number | undefined;
     } catch (err) {
       const isLastAttempt = attempt === REFRESH_MAX_ATTEMPTS;
       if (isLastAttempt || !isRetryableRefreshError(err)) throw err;
       await sleep(jitteredBackoff(attempt));
     }
   }
+  return undefined;
+}
+
+// ─── Proactive sliding refresh ────────────────────────────────────────────────
+//
+// The reactive 401-triggered refresh above only fires once the access token has
+// already expired, and only if the user happens to make a request right then.
+// A user who stays on one screen for 15+ minutes without triggering a new
+// fetch (React Query won't refetch already-fresh cached data, and
+// refetchOnWindowFocus is off) sees nothing renew until their next
+// interaction. This schedules a refresh shortly before the access token's
+// actual expiry — as long as the tab is visible — so a continuously-open,
+// actively-used session renews itself and effectively never hits a 401.
+// Callers: login/verify-otp/bootstrap (via authService, using the expiresIn
+// each of those responses carries) and every successful refresh above.
+
+const PROACTIVE_REFRESH_BUFFER_SECONDS = 60; // refresh this long before actual expiry
+const PROACTIVE_REFRESH_MIN_DELAY_MS = 5_000;
+
+let proactiveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let proactiveRefreshPendingVisibility = false;
+
+function onVisibleRunPendingProactiveRefresh(): void {
+  if (document.visibilityState !== 'visible' || !proactiveRefreshPendingVisibility) return;
+  proactiveRefreshPendingVisibility = false;
+  document.removeEventListener('visibilitychange', onVisibleRunPendingProactiveRefresh);
+  void refreshAccessToken();
+}
+
+export function scheduleProactiveRefresh(expiresInSeconds: number): void {
+  if (proactiveRefreshTimer) {
+    clearTimeout(proactiveRefreshTimer);
+    proactiveRefreshTimer = null;
+  }
+  const delay = Math.max(
+    (expiresInSeconds - PROACTIVE_REFRESH_BUFFER_SECONDS) * 1000,
+    PROACTIVE_REFRESH_MIN_DELAY_MS,
+  );
+  proactiveRefreshTimer = setTimeout(() => {
+    proactiveRefreshTimer = null;
+    if (document.visibilityState === 'visible') {
+      void refreshAccessToken();
+    } else {
+      // Backgrounded tabs get their timers throttled/coalesced by the browser
+      // anyway — wait for the user to come back instead of firing blind.
+      proactiveRefreshPendingVisibility = true;
+      document.addEventListener('visibilitychange', onVisibleRunPendingProactiveRefresh);
+    }
+  }, delay);
+}
+
+export function clearProactiveRefresh(): void {
+  if (proactiveRefreshTimer) {
+    clearTimeout(proactiveRefreshTimer);
+    proactiveRefreshTimer = null;
+  }
+  proactiveRefreshPendingVisibility = false;
+  document.removeEventListener('visibilitychange', onVisibleRunPendingProactiveRefresh);
 }
 
 // ─── Shared refresh flow ────────────────────────────────────────────────────
@@ -228,12 +287,13 @@ export function refreshAccessToken(): Promise<boolean> {
   // Transient failures (429/5xx/network) get one jittered retry before this
   // is treated as a real session failure — see postRefreshWithRetry().
   return postRefreshWithRetry()
-    .then(() => {
+    .then((expiresIn) => {
       releaseLock();
       isRefreshing = false;
-      broadcast('SUCCESS');
+      broadcast('SUCCESS', expiresIn);
       notifyTokenRefreshed();
       flushQueue(false);
+      if (typeof expiresIn === 'number') scheduleProactiveRefresh(expiresIn);
       return true;
     })
     .catch(() => {
