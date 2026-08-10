@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/toaster";
@@ -13,6 +13,8 @@ import { OrganizationProvider } from "@/contexts/OrganizationContext";
 import { useUserStore } from "@/stores/useUserStore";
 import { ChatNotificationsProvider } from "@/features/chat/providers/ChatNotificationsProvider";
 import { AssistantWidget } from "@/features/assistant/components/AssistantWidget";
+import { initializeGA, setUserId } from "@/services/analytics";
+import { usePageTracking } from "@/hooks/usePageTracking";
 
 // ── Auth module (new canonical location) ──────────────────────────────────────
 import {
@@ -68,6 +70,8 @@ function ProjectLegacyTabRedirect() {
 }
 
 function AppShell() {
+  usePageTracking();
+
   return (
     <>
       <ChatNotificationsProvider />
@@ -298,6 +302,10 @@ function AppShell() {
 
 const App = () => {
   const storedTheme = useUserStore.getState().preferences.theme;
+
+  useEffect(() => {
+    initializeGA();
+  }, []);
 
   return (
     <ThemeProvider attribute="class" defaultTheme={storedTheme} enableSystem disableTransitionOnChange>
