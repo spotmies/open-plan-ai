@@ -202,6 +202,27 @@ export interface BomCardItem {
   flagDetail?: string;
 }
 
+// Modules and milestones get their own item shapes too — a progress meter,
+// not a severity dot/assignee/id-badge row (see BomCardItem's own comment
+// for the same reasoning, established when "bom" was added).
+export interface ModuleCardItem {
+  id: string;
+  name: string;
+  taskCount: number;
+  progress: number;
+}
+
+export interface MilestoneCardItem {
+  id: string;
+  title: string;
+  /** Real raw backend status value (lowercase/underscored) — the UI derives its own overdue/on-track dot color from this + dueDate, never a model-supplied "at risk" label. */
+  status: string;
+  dueDate?: string;
+  progress: number;
+  linkedTaskCount: number;
+  completedTaskCount: number;
+}
+
 interface AssistantCardBase {
   title: string;
   badge?: string;
@@ -223,9 +244,13 @@ export interface AssistantStatusCard extends AssistantCardBase {
   stage?: ProjectStage;
 }
 
+/** Purely cosmetic heading/icon selector for a "list" card — a closed enum the model picks from, never free text. Undefined/'general' keeps the existing plain "Summary" (or danger-tone "Blockers & Risks") heading. */
+export type AssistantListSubject = 'tasks' | 'issues' | 'general';
+
 export interface AssistantListCard extends AssistantCardBase {
   type: 'list';
   items: CardItem[];
+  subject?: AssistantListSubject;
 }
 
 export interface AssistantBomCard extends AssistantCardBase {
@@ -240,7 +265,99 @@ export interface AssistantBomCard extends AssistantCardBase {
   missingApprovalCount: number;
 }
 
-export type AssistantCard = AssistantStatusCard | AssistantListCard | AssistantBomCard;
+export interface AssistantModuleListCard extends AssistantCardBase {
+  type: 'module_list';
+  items: ModuleCardItem[];
+}
+
+export interface AssistantMilestoneListCard extends AssistantCardBase {
+  type: 'milestone_list';
+  items: MilestoneCardItem[];
+}
+
+// ─── Single-record "detail" cards ──────────────────────────────────────────
+// One real record's own profile, not a list — no `badge`/`items`: the
+// reference code next to the title is derived here from the real `id` (or,
+// for an ECO, shown verbatim from the real `num`), never a model-supplied
+// string, so nothing shown there can be an invented code.
+
+interface AssistantDetailCardBase {
+  title: string;
+  description?: string;
+  tone?: CardTone;
+  followUps?: string[];
+  sources: string[];
+}
+
+export interface AssistantTaskDetailCard extends AssistantDetailCardBase {
+  type: 'task_detail';
+  id: string;
+  status: string;
+  priority?: CardSeverity;
+  startDate?: string;
+  dueDate?: string;
+  assignees?: string[];
+  hasDependency?: boolean;
+}
+
+export interface AssistantIssueDetailCard extends AssistantDetailCardBase {
+  type: 'issue_detail';
+  id: string;
+  status: string;
+  severity?: CardSeverity;
+  category?: string;
+  module?: string;
+  reportedBy?: string;
+  reportedAt?: string;
+  dueDate?: string;
+}
+
+export type EcoChangeClass = 'I' | 'II' | 'III';
+
+export interface AssistantEcoDetailCard extends AssistantDetailCardBase {
+  type: 'eco_detail';
+  /** The ECO's real human-facing code (e.g. "ECO-2026-047") — shown as the reference badge as-is. */
+  num: string;
+  status: string;
+  priority?: string;
+  changeClass?: EcoChangeClass;
+  targetDate?: string;
+  owner?: string;
+  originatingEcr?: string;
+}
+
+export interface AssistantModuleDetailCard extends AssistantDetailCardBase {
+  type: 'module_detail';
+  id: string;
+  moduleType?: string;
+  status?: string;
+  progress?: number;
+  taskCount?: number;
+  owner?: string;
+}
+
+export type AssistantCard =
+  | AssistantStatusCard
+  | AssistantListCard
+  | AssistantBomCard
+  | AssistantModuleListCard
+  | AssistantMilestoneListCard
+  | AssistantTaskDetailCard
+  | AssistantIssueDetailCard
+  | AssistantEcoDetailCard
+  | AssistantModuleDetailCard;
+
+const PRESENT_CARD_TYPES = new Set<AssistantCard['type']>([
+  'status',
+  'list',
+  'bom',
+  'module_list',
+  'milestone_list',
+  'task_detail',
+  'issue_detail',
+  'eco_detail',
+  'module_detail',
+]);
 
 /**
  * A present_card result is persisted like any other tool message (role='tool',
@@ -251,7 +368,7 @@ export function isPresentCardMessage(message: AssistantMessage): boolean {
   if (message.role !== 'tool' || !message.content) return false;
   try {
     const parsed = JSON.parse(message.content) as { type?: unknown };
-    return parsed?.type === 'status' || parsed?.type === 'list' || parsed?.type === 'bom';
+    return typeof parsed?.type === 'string' && PRESENT_CARD_TYPES.has(parsed.type as AssistantCard['type']);
   } catch {
     return false;
   }

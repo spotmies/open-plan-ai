@@ -122,23 +122,26 @@ export function AssistantConversationList({
           <Plus className="h-4 w-4" />
           New conversation
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive gap-2"
-              disabled={conversations.length === 0}
-              onClick={() => setConfirmDeleteAll(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete all conversations
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Hidden: "Delete all conversations" dropdown menu. Unhide by restoring this block. */}
+        {false && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive gap-2"
+                disabled={conversations.length === 0}
+                onClick={() => setConfirmDeleteAll(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete all conversations
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {conversations.length > 0 && (
