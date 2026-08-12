@@ -102,15 +102,6 @@ export const dashboardService = {
     }
   },
 
-  async getUpcomingMilestones(orgId: string, limit = 5): Promise<Milestone[]> {
-    try {
-      const { milestonesService } = await import('./milestones.service');
-      return milestonesService.getUpcoming(orgId, limit);
-    } catch {
-      return [];
-    }
-  },
-
   async getProjectSummaries(orgId: string): Promise<ProjectSummary[]> {
     try {
       const projects = await apiClient.get<ProjectSummary[]>(ENDPOINTS.PROJECTS.LIST(orgId));

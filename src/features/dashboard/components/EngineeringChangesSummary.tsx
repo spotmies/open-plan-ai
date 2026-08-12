@@ -3,7 +3,6 @@ import { ArrowRight, GitMerge, GitPullRequest } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useOrgEcoAggregate, useOrgEcoStatusCounts, useOrgAwaitingEcos } from '../hooks/useOrgAggregates';
 import { MAIN_STATUSES, STATUS_LABEL, statusMeta, type ECOStatus } from '@/features/projects/components/ecoData';
-import type { ApiEcoListItem } from '@/hooks/useECOs';
 import { PanelIcon } from './PanelIcon';
 import { ProjectPickerPopover } from './ProjectPickerPopover';
 import { useFitCount } from '../hooks/useFitCount';
@@ -11,7 +10,6 @@ import type { Project } from '@/types';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface EngineeringChangesSummaryProps {
-  projectIds: string[];
   projects: Project[];
 }
 
@@ -31,15 +29,15 @@ function StageBar({ status, count, max }: { status: ECOStatus; count: number; ma
   );
 }
 
-export function EngineeringChangesSummary({ projectIds, projects }: EngineeringChangesSummaryProps) {
+export function EngineeringChangesSummary({ projects }: EngineeringChangesSummaryProps) {
   const isMobile = useIsMobile();
-  const { isLoading: aggLoading, open, firstPassPct, avgCycleDays } = useOrgEcoAggregate(projectIds);
-  const { isLoading: statusLoading, ecos } = useOrgEcoStatusCounts(projectIds);
-  const { isLoading: awaitingLoading, awaiting } = useOrgAwaitingEcos(projectIds);
+  const { isLoading: aggLoading, open, firstPassPct, avgCycleDays } = useOrgEcoAggregate();
+  const { isLoading: statusLoading, countByStatus } = useOrgEcoStatusCounts();
+  const { isLoading: awaitingLoading, awaiting } = useOrgAwaitingEcos();
 
   const counts = MAIN_STATUSES.map((s) => ({
     status: s,
-    count: ecos.filter((e: ApiEcoListItem) => e.status.toUpperCase() === s).length,
+    count: countByStatus[s] ?? 0,
   }));
   const max = Math.max(1, ...counts.map((c) => c.count));
   const nonEmptyCounts = counts.filter((c) => c.count > 0);

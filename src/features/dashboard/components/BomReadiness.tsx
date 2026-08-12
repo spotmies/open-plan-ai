@@ -7,7 +7,6 @@ import { ProjectPickerPopover } from './ProjectPickerPopover';
 import type { Project } from '@/types';
 
 interface BomReadinessProps {
-  projectIds: string[];
   projects: Project[];
 }
 
@@ -34,8 +33,8 @@ function BomDonut({ pct }: { pct: number }) {
   );
 }
 
-export function BomReadiness({ projectIds, projects }: BomReadinessProps) {
-  const { isLoading, total, approved, pending, rejected, pct } = useOrgBomAggregate(projectIds);
+export function BomReadiness({ projects }: BomReadinessProps) {
+  const { isLoading, total, approved, pending, rejected, pct } = useOrgBomAggregate();
 
   return (
     <Card>

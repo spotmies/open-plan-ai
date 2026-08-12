@@ -19,17 +19,6 @@ export function useMilestone(milestoneId: string) {
   });
 }
 
-export function useUpcomingMilestones(limit?: number) {
-  const { currentOrganization } = useOrganization();
-  const orgId = currentOrganization?.id;
-
-  return useQuery({
-    queryKey: [...queryKeys.milestones.all, 'upcoming', orgId, limit] as const,
-    queryFn: () => milestonesService.getUpcoming(orgId!, limit),
-    enabled: !!orgId,
-  });
-}
-
 export function useCreateMilestone() {
   const queryClient = useQueryClient();
 

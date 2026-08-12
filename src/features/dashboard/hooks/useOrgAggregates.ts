@@ -1,13 +1,87 @@
-import { useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
-import { bomService } from '@/services/bom.service';
 import { queryKeys } from '@/lib/queryClient';
-import type { ApiEcoStats, ApiEcoListItem } from '@/hooks/useECOs';
+import { useOrganization } from '@/contexts/OrganizationContext';
 
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { page: number; limit: number; total: number; totalPages: number };
+/**
+ * Org-wide dashboard aggregates, in one request.
+ *
+ * These hooks used to take `projectIds` and fan out with `useQueries`, issuing
+ * an ECO-stats, ECO-list and BOM-summary call per project — plus a second copy
+ * of the ECO list under a different query key. For an org with N projects that
+ * was 4N requests on every dashboard load, all of them queued behind the
+ * browser's 6-connections-per-host limit. The backend now computes the same
+ * numbers in SQL at `GET /organizations/:orgId/dashboard`, so the cost no
+ * longer scales with project count.
+ *
+ * The `projectIds` parameters are gone deliberately: the server derives scope
+ * itself (and applies the same admin/member visibility rule as the project
+ * list), so callers can't accidentally aggregate over a partial page.
+ */
+
+export interface OrgDashboardAwaitingEco {
+  id: string;
+  num: string;
+  title: string;
+  projectId: string;
+}
+
+export interface OrgDashboardMilestone {
+  id: string;
+  title: string;
+  dueDate: string;
+  projectId: string;
+}
+
+export interface OrgDashboardResponse {
+  eco: {
+    open: number;
+    awaitingMyAction: number;
+    firstPassPct: number | null;
+    avgCycleDays: number | null;
+    byStatus: Record<string, number>;
+    awaiting: OrgDashboardAwaitingEco[];
+  };
+  bom: { total: number; approved: number; pending: number; rejected: number };
+  upcomingMilestones: OrgDashboardMilestone[];
+  atRiskProjectIds: string[];
+}
+
+const EMPTY: OrgDashboardResponse = {
+  eco: {
+    open: 0,
+    awaitingMyAction: 0,
+    firstPassPct: null,
+    avgCycleDays: null,
+    byStatus: {},
+    awaiting: [],
+  },
+  bom: { total: 0, approved: 0, pending: 0, rejected: 0 },
+  upcomingMilestones: [],
+  atRiskProjectIds: [],
+};
+
+/**
+ * The one query every dashboard panel reads from. React Query dedupes by key,
+ * so the panels below can each call this without producing extra requests.
+ */
+export function useOrgDashboard() {
+  const { currentOrganization } = useOrganization();
+  const orgId = currentOrganization?.id;
+
+  const query = useQuery({
+    queryKey: queryKeys.dashboard.overview(orgId),
+    queryFn: () => apiClient.get<OrgDashboardResponse>(ENDPOINTS.ORGANIZATIONS.DASHBOARD(orgId!)),
+    enabled: !!orgId,
+  });
+
+  return {
+    // `isLoading` is false while the org itself is still resolving (the query
+    // is disabled then), so fold that in — otherwise panels flash zeros.
+    isLoading: query.isLoading || (!!orgId && query.isPending),
+    data: query.data ?? EMPTY,
+  };
 }
 
 // ── ECO aggregate across all org projects ──────────────────────────────────────
@@ -20,87 +94,40 @@ export interface OrgEcoAggregate {
   avgCycleDays: number | null;
 }
 
-function fetchEcoStats(projectId: string): Promise<ApiEcoStats> {
-  return apiClient.get<ApiEcoStats>(ENDPOINTS.ECOS.STATS(projectId));
-}
-
-export type EcoWithProject = ApiEcoListItem & { projectId: string };
-
-function fetchEcoList(projectId: string): Promise<PaginatedResponse<ApiEcoListItem>> {
-  return apiClient.raw
-    .get(ENDPOINTS.ECOS.LIST(projectId), { params: { limit: 100 } })
-    .then((r) => ({ data: r.data.data, meta: r.data.meta }));
-}
-
-function fetchEcoListWithProject(projectId: string): Promise<EcoWithProject[]> {
-  return fetchEcoList(projectId).then((res) => res.data.map((e) => ({ ...e, projectId })));
-}
-
-export function useOrgEcoAggregate(projectIds: string[]): OrgEcoAggregate {
-  const statsQueries = useQueries({
-    queries: projectIds.map((id) => ({
-      queryKey: queryKeys.ecos.stats(id),
-      queryFn: () => fetchEcoStats(id),
-    })),
-  });
-
-  const listQueries = useQueries({
-    queries: projectIds.map((id) => ({
-      queryKey: queryKeys.ecos.list(id, { limit: 100 }),
-      queryFn: () => fetchEcoList(id),
-    })),
-  });
-
-  const isLoading = statsQueries.some((q) => q.isLoading) || listQueries.some((q) => q.isLoading);
-
-  const open = statsQueries.reduce((sum, q) => sum + (q.data?.openEcos ?? 0), 0);
-  const awaitingMyAction = statsQueries.reduce((sum, q) => sum + (q.data?.awaitingMyAction ?? 0), 0);
-
-  const allEcos = listQueries.flatMap((q) => q.data?.data ?? []);
-  const total = allEcos.length;
-  const reworked = allEcos.filter((e) => e.status === 'rework').length;
-  const firstPassPct = total > 0 ? Math.round(((total - reworked) / total) * 100) : null;
-
-  // Weighted average across projects: each project's avgCycleDays is itself an
-  // average over cycleSampleCount released/verified/closed ECOs (see getEcoStats).
-  const cycleSampleTotal = statsQueries.reduce((sum, q) => sum + (q.data?.cycleSampleCount ?? 0), 0);
-  const cycleDaySum = statsQueries.reduce(
-    (sum, q) => sum + (q.data?.avgCycleDays ?? 0) * (q.data?.cycleSampleCount ?? 0),
-    0,
-  );
-  const avgCycleDays = cycleSampleTotal > 0 ? Math.round(cycleDaySum / cycleSampleTotal) : null;
-
-  return { isLoading, open, awaitingMyAction, firstPassPct, avgCycleDays };
+export function useOrgEcoAggregate(): OrgEcoAggregate {
+  const { isLoading, data } = useOrgDashboard();
+  return {
+    isLoading,
+    open: data.eco.open,
+    awaitingMyAction: data.eco.awaitingMyAction,
+    firstPassPct: data.eco.firstPassPct,
+    avgCycleDays: data.eco.avgCycleDays,
+  };
 }
 
 // ── ECO pipeline-by-stage counts across all org projects ───────────────────────
 
-export function useOrgEcoStatusCounts(projectIds: string[]) {
-  const listQueries = useQueries({
-    queries: projectIds.map((id) => ({
-      queryKey: queryKeys.ecos.list(id, { limit: 100 }),
-      queryFn: () => fetchEcoList(id),
-    })),
-  });
+/**
+ * Counts keyed by the frontend's UPPERCASE status vocabulary. The backend
+ * sends lowercase (`in_review`), matching the enum-case convention used by the
+ * ecoData/bomData adapters.
+ */
+export function useOrgEcoStatusCounts(): { isLoading: boolean; countByStatus: Record<string, number> } {
+  const { isLoading, data } = useOrgDashboard();
 
-  const isLoading = listQueries.some((q) => q.isLoading);
-  const allEcos = listQueries.flatMap((q) => q.data?.data ?? []);
-  return { isLoading, ecos: allEcos };
+  const countByStatus: Record<string, number> = {};
+  for (const [status, count] of Object.entries(data.eco.byStatus)) {
+    countByStatus[status.toUpperCase()] = count;
+  }
+
+  return { isLoading, countByStatus };
 }
 
 // ── ECOs awaiting the current user's approval, across all org projects ─────────
 
-export function useOrgAwaitingEcos(projectIds: string[]) {
-  const listQueries = useQueries({
-    queries: projectIds.map((id) => ({
-      queryKey: [...queryKeys.ecos.list(id, { limit: 100 }), 'withProject'],
-      queryFn: () => fetchEcoListWithProject(id),
-    })),
-  });
-
-  const isLoading = listQueries.some((q) => q.isLoading);
-  const awaiting = listQueries.flatMap((q) => q.data ?? []).filter((e) => e.awaitingMe);
-  return { isLoading, awaiting };
+export function useOrgAwaitingEcos(): { isLoading: boolean; awaiting: OrgDashboardAwaitingEco[] } {
+  const { isLoading, data } = useOrgDashboard();
+  return { isLoading, awaiting: data.eco.awaiting };
 }
 
 // ── BOM aggregate across all org projects ──────────────────────────────────────
@@ -114,20 +141,15 @@ export interface OrgBomAggregate {
   pct: number; // approved / total, 0 when total is 0
 }
 
-export function useOrgBomAggregate(projectIds: string[]): OrgBomAggregate {
-  const summaryQueries = useQueries({
-    queries: projectIds.map((id) => ({
-      queryKey: queryKeys.bom.summary(id),
-      queryFn: () => bomService.getSummary(id),
-    })),
-  });
-
-  const isLoading = summaryQueries.some((q) => q.isLoading);
-  const total = summaryQueries.reduce((sum, q) => sum + (q.data?.totalNodes ?? 0), 0);
-  const approved = summaryQueries.reduce((sum, q) => sum + (q.data?.approvedCount ?? 0), 0);
-  const pending = summaryQueries.reduce((sum, q) => sum + (q.data?.pendingCount ?? 0), 0);
-  const rejected = summaryQueries.reduce((sum, q) => sum + (q.data?.rejectedCount ?? 0), 0);
-  const pct = total > 0 ? Math.round((approved / total) * 100) : 0;
-
-  return { isLoading, total, approved, pending, rejected, pct };
+export function useOrgBomAggregate(): OrgBomAggregate {
+  const { isLoading, data } = useOrgDashboard();
+  const { total, approved, pending, rejected } = data.bom;
+  return {
+    isLoading,
+    total,
+    approved,
+    pending,
+    rejected,
+    pct: total > 0 ? Math.round((approved / total) * 100) : 0,
+  };
 }

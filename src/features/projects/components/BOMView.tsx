@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Layers, Search, Filter, List, LayoutGrid, Share2,
   CheckCircle, Clock, DollarSign, ChevronRight, ChevronDown, Hash, X, User, Plus, Check, Download, ExternalLink,
@@ -927,6 +928,8 @@ export function BOMView({
 }: BOMViewProps) {
   const selected = selectedId;
   const setSelected = (id: string | null) => onSelectedIdChange?.(id);
+  const [searchParams] = useSearchParams();
+  const fallbackPartId = searchParams.get('partId');
   const [addChoiceOpen, setAddChoiceOpen] = useState(false);
   const [addManualOpen, setAddManualOpen] = useState(false);
   const [addImportOpen, setAddImportOpen] = useState(false);
@@ -1231,8 +1234,12 @@ export function BOMView({
   if (treeLoading) return <BOMViewSkeleton />;
 
   // Detail view
-  if (selected) {
-    const node = bomFind(selected, rootNodes);
+  if (selected || fallbackPartId) {
+    // The node id we were sent (e.g. from an ECO's "Affected Parts" list) can
+    // go stale if the BOM node was deleted/recreated since the reference was
+    // captured — fall back to the part's stable id, which survives that.
+    const node = (selected && bomFind(selected, rootNodes))
+      || (fallbackPartId ? allNodes.find(n => n._partId === fallbackPartId) ?? null : null);
     if (node) return (
       <BOMDetailScreen
         node={node}

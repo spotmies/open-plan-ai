@@ -561,11 +561,12 @@ function AffectedParts({ detail, projectId }: { detail: ECODetail; projectId: st
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-col min-w-0">
                 <span
-                  className={cn(
-                    'text-[12px] font-mono font-semibold text-blue-500',
-                    p.bomNodeId && 'cursor-pointer hover:underline',
+                  className="text-[12px] font-mono font-semibold text-blue-500 cursor-pointer hover:underline"
+                  onClick={() => navigate(
+                    p.bomNodeId
+                      ? `/projects/${projectId}/bom/${p.bomNodeId}?partId=${p.partId}`
+                      : `/projects/${projectId}/bom?partId=${p.partId}`,
                   )}
-                  onClick={() => p.bomNodeId && navigate(`/projects/${projectId}/bom/${p.bomNodeId}`)}
                 >
                   {p.pn}
                 </span>

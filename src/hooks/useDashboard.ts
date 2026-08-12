@@ -25,17 +25,6 @@ export function useRecentActivity(limit?: number) {
   });
 }
 
-export function useUpcomingDashboardMilestones(limit?: number) {
-  const { currentOrganization } = useOrganization();
-  const orgId = currentOrganization?.id;
-
-  return useQuery({
-    queryKey: queryKeys.dashboard.milestones(orgId, limit),
-    queryFn: () => dashboardService.getUpcomingMilestones(orgId!, limit),
-    enabled: !!orgId,
-  });
-}
-
 export function useProjectSummaries() {
   const { currentOrganization } = useOrganization();
   const orgId = currentOrganization?.id;

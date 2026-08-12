@@ -107,16 +107,9 @@ export const milestonesService = {
     return fromApi(data);
   },
 
-  async getUpcoming(orgId: string, limit: number = 5): Promise<Milestone[]> {
-    const { projectsService } = await import('./projects.service');
-    const projects = await projectsService.getAll(orgId);
-    if (!projects.length) return [];
-    const allResults = await Promise.all(projects.map(p => this.getByProjectId(p.id).catch(() => [])));
-    const now = new Date().toISOString();
-    return allResults
-      .flat()
-      .filter(m => m.due_date && m.due_date > now && m.status !== 'completed')
-      .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''))
-      .slice(0, limit);
-  },
+  // getUpcoming() used to live here. It re-fetched the org's project list, then
+  // pulled *every* milestone of *every* project only to filter and slice a
+  // handful client-side — 1 + N requests to render a few rows. Org-wide
+  // upcoming milestones now come from GET /organizations/:orgId/dashboard
+  // (see useOrgDashboard); use that instead of reintroducing a fan-out here.
 };

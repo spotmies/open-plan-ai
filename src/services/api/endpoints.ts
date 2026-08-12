@@ -38,6 +38,7 @@ export const ENDPOINTS = {
     REPORTS_OVERVIEW: (orgId: string) => `/organizations/${orgId}/reports/overview`,
     ALL_TASKS: (orgId: string) => `/organizations/${orgId}/tasks`,
     ALL_ISSUES: (orgId: string) => `/organizations/${orgId}/issues`,
+    DASHBOARD: (orgId: string) => `/organizations/${orgId}/dashboard`,
     LOGO: (orgId: string) => `/organizations/${orgId}/logo`,
   },
   // Projects

@@ -125,6 +125,8 @@ export const queryKeys = {
     activity: (orgId?: string, limit?: number) => [...queryKeys.dashboard.all, 'activity', orgId, limit] as const,
     milestones: (orgId?: string, limit?: number) => [...queryKeys.dashboard.all, 'milestones', orgId, limit] as const,
     projects: (orgId?: string) => [...queryKeys.dashboard.all, 'projects', orgId] as const,
+    // Single org-wide aggregate backing the ECO / BOM / milestone panels.
+    overview: (orgId?: string) => [...queryKeys.dashboard.all, 'overview', orgId] as const,
   },
 
   // Organizations

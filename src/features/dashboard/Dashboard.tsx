@@ -6,9 +6,9 @@ import { EngineeringChangesSummary } from './components/EngineeringChangesSummar
 import { BomReadiness } from './components/BomReadiness';
 import { DashboardGreeting } from './components/DashboardGreeting';
 import { NeedsAttentionCard } from './components/NeedsAttentionCard';
-import { useOrgEcoAggregate, useOrgBomAggregate } from './hooks/useOrgAggregates';
+import { useOrgDashboard, useOrgEcoAggregate, useOrgBomAggregate } from './hooks/useOrgAggregates';
 import { useAvailableHeight } from './hooks/useAvailableHeight';
-import { useRecentActivity, useUpcomingDashboardMilestones } from '@/hooks/useDashboard';
+import { useRecentActivity } from '@/hooks/useDashboard';
 import { useProjects } from '@/hooks/useProjects';
 import { projectHealth } from './utils/projectHealth';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
@@ -39,16 +39,16 @@ export default function Dashboard() {
   const [newOrgForm, setNewOrgForm] = useState({ name: '', description: '' });
 
   const { data: activities, isLoading: activitiesLoading } = useRecentActivity(10);
-  const { data: milestones, isLoading: milestonesLoading } = useUpcomingDashboardMilestones(50);
   const { data: projects, isLoading: projectsLoading } = useProjects();
 
-  const projectIds = useMemo(() => (projects ?? []).map((p) => p.id), [projects]);
-  const ecoAgg = useOrgEcoAggregate(projectIds);
-  const bomAgg = useOrgBomAggregate(projectIds);
+  // One org-wide aggregate request feeds the ECO, BOM and milestone panels.
+  const { data: orgDashboard, isLoading: orgDashboardLoading } = useOrgDashboard();
+  const ecoAgg = useOrgEcoAggregate();
+  const bomAgg = useOrgBomAggregate();
 
   // Include org loading so we show the skeleton (not a flash of zeros / empty
   // states) while the org resolves and the org-scoped queries are still disabled.
-  const isLoading = orgLoading || activitiesLoading || milestonesLoading || projectsLoading;
+  const isLoading = orgLoading || activitiesLoading || orgDashboardLoading || projectsLoading;
 
   const handleCreateOrg = async () => {
     if (!newOrgForm.name.trim()) {
@@ -136,31 +136,23 @@ export default function Dashboard() {
   });
 
   // Projects with an overdue, incomplete milestone are flagged "at risk" for the
-  // Project Management RAG calc — the dashboard milestones API has no atRisk flag,
-  // so derive it from due date the same way UpcomingMilestones does inline.
-  const atRiskProjectIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const m of milestones ?? []) {
-      const dueIso = m.due_date ?? m.dueDate;
-      const pid = m.project_id ?? m.projectId;
-      if (!dueIso || !pid || m.status === 'completed') continue;
-      if (new Date(dueIso).getTime() < Date.now()) ids.add(pid);
-    }
-    return ids;
-  }, [milestones]);
+  // Project Management RAG calc. This used to be derived client-side from the
+  // upcoming-milestones list, which by definition never contains an overdue one
+  // — so the set was always empty and no project was ever flagged. The server
+  // now answers it directly.
+  const atRiskProjectIds = useMemo(
+    () => new Set(orgDashboard.atRiskProjectIds),
+    [orgDashboard.atRiskProjectIds],
+  );
 
+  // Nearest upcoming milestone. The list arrives already filtered to future,
+  // incomplete milestones and sorted by due date, so the head is the next gate.
   const nextGate = useMemo(() => {
-    const upcoming = (milestones ?? [])
-      .map((m) => {
-        const dueIso = m.due_date ?? m.dueDate;
-        if (!dueIso) return null;
-        const days = Math.round((new Date(dueIso).getTime() - Date.now()) / 86400000);
-        return days >= 0 ? { days, name: m.name } : null;
-      })
-      .filter((x): x is { days: number; name: string } => x != null)
-      .sort((a, b) => a.days - b.days);
-    return upcoming[0] ?? null;
-  }, [milestones]);
+    const next = orgDashboard.upcomingMilestones[0];
+    if (!next) return null;
+    const days = Math.round((new Date(next.dueDate).getTime() - Date.now()) / 86400000);
+    return { days, name: next.title };
+  }, [orgDashboard.upcomingMilestones]);
 
   const dashboardProjects = useMemo(() => projects ?? [], [projects]);
   const onTrackCount = useMemo(
@@ -285,10 +277,10 @@ export default function Dashboard() {
                 <ProjectsOverview projects={dashboardProjects} atRiskProjectIds={atRiskProjectIds} />
               </div>
               <div className="flex flex-col lg:self-start">
-                <EngineeringChangesSummary projectIds={projectIds} projects={dashboardProjects} />
+                <EngineeringChangesSummary projects={dashboardProjects} />
               </div>
               <div className="flex flex-col space-y-4 md:space-y-3 lg:h-full lg:min-h-0">
-                <BomReadiness projectIds={projectIds} projects={dashboardProjects} />
+                <BomReadiness projects={dashboardProjects} />
                 <ActivityFeed
                   activities={activityItems}
                   isLoading={activitiesLoading || isLoading}

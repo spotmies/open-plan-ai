@@ -222,6 +222,7 @@ export interface DiffRow {
 
 export interface ECOPart {
   pn: string;
+  partId: string;
   bomNodeId?: string;
   name?: string;
   desc: string;
@@ -728,6 +729,7 @@ export function fromApiEcoListItem(raw: ApiEcoListItem): ECOListItem {
 function fromApiPart(raw: ApiEcoPart): ECOPart {
   return {
     pn:       raw.partNumber,
+    partId:   raw.partId,
     bomNodeId: raw.bomNodeId ?? undefined,
     name:     raw.name,
     desc:   raw.description,
