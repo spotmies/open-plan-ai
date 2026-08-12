@@ -20,6 +20,7 @@ export interface BackendUser {
   emailVerified: boolean;
   createdAt: string;
   role?: string;
+  platformRole?: string;
   /** Only present on GET /auth/me — remaining access-token TTL in seconds. */
   expiresIn?: number;
 }

@@ -37,8 +37,8 @@ export function validateAttachments(files: File[]): string | null {
   return null;
 }
 
-const SUPPORT_API_URL = 'https://api.openplanai.com/api/v1';
-const SUPPORT_API_KEY = 'sk_live_Rk-9j8ZiValp99G4roSSR3KQT9t3Mbda';
+const SUPPORT_API_URL = config.support.apiUrl || config.api.baseUrl;
+const SUPPORT_API_KEY = config.support.apiKey || '';
 
 export async function submitBugReport(input: SubmitBugReportInput): Promise<string> {
   const attachments = await Promise.all(

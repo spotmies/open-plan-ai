@@ -38,6 +38,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // from JS — bootstrap() probes the session (and refreshes if needed).
         const me = await authService.bootstrap();
         if (me) {
+          const pRole = me.platformRole?.toLowerCase();
+          if (pRole && pRole !== 'none') {
+            await authService.logout().catch(() => {});
+            setUser(null);
+            return;
+          }
           setUser(me);
           setSentryUser(me.id, me.email);
         }
@@ -86,6 +92,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshProfile = useCallback(async () => {
     try {
       const me = await authService.getMe();
+      const pRole = me.platformRole?.toLowerCase();
+      if (pRole && pRole !== 'none') {
+        await authService.logout().catch(() => {});
+        setUser(null);
+        window.location.href = '/login';
+        return;
+      }
       setUser(me);
     } catch {
       // ignore — token may have expired, interceptor handles redirect
@@ -95,6 +108,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     try {
       const result = await authService.login(email, password);
+      const pRole = result.user.platformRole?.toLowerCase();
+      if (pRole && pRole !== 'none') {
+        await authService.logout().catch(() => {});
+        return {
+          error: new Error(
+            'This account is a platform administrator. Please sign in at the Admin Console (admin.openplanai.com).',
+          ),
+        };
+      }
       setUser(result.user);
       setSentryUser(result.user.id, result.user.email);
       setPendingVerificationEmail(null);
@@ -114,7 +136,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { error: null, requiresVerification: true, email };
         }
       }
-      const message = err instanceof Error ? err.message : 'Login failed';
+      const serverMessage = axiosErr?.response?.data?.error?.message;
+      const message = serverMessage || (err instanceof Error ? err.message : 'Login failed');
       return { error: new Error(message) };
     }
   }, []);

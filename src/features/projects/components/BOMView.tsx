@@ -930,6 +930,7 @@ export function BOMView({
   const setSelected = (id: string | null) => onSelectedIdChange?.(id);
   const [searchParams] = useSearchParams();
   const fallbackPartId = searchParams.get('partId');
+  const fallbackPn = searchParams.get('pn');
   const [addChoiceOpen, setAddChoiceOpen] = useState(false);
   const [addManualOpen, setAddManualOpen] = useState(false);
   const [addImportOpen, setAddImportOpen] = useState(false);
@@ -1234,12 +1235,16 @@ export function BOMView({
   if (treeLoading) return <BOMViewSkeleton />;
 
   // Detail view
-  if (selected || fallbackPartId) {
-    // The node id we were sent (e.g. from an ECO's "Affected Parts" list) can
-    // go stale if the BOM node was deleted/recreated since the reference was
-    // captured — fall back to the part's stable id, which survives that.
+  if (selected || fallbackPartId || fallbackPn) {
+    // The node/part id we were sent (e.g. from an ECO's "Affected Parts" list)
+    // can point at a soft-deleted BOM row if the part was removed/re-added
+    // since the reference was captured — those ids stay resolvable server-side
+    // (the row still exists, just deleted) but never appear in the live tree.
+    // Part number is the one thing guaranteed unique among *live* parts, so it
+    // is the most reliable fallback once the id-based lookups come up empty.
     const node = (selected && bomFind(selected, rootNodes))
-      || (fallbackPartId ? allNodes.find(n => n._partId === fallbackPartId) ?? null : null);
+      || (fallbackPartId ? allNodes.find(n => n._partId === fallbackPartId) ?? null : null)
+      || (fallbackPn ? allNodes.find(n => n.pn === fallbackPn) ?? null : null);
     if (node) return (
       <BOMDetailScreen
         node={node}

@@ -19,6 +19,9 @@ export interface Organization {
   description: string | null;
   settings: Record<string, unknown>;
   myRole: OrgRole | null;
+  status?: 'active' | 'suspended';
+  suspendedReason?: string | null;
+  suspendedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -562,11 +562,14 @@ function AffectedParts({ detail, projectId }: { detail: ECODetail; projectId: st
               <div className="flex flex-col min-w-0">
                 <span
                   className="text-[12px] font-mono font-semibold text-blue-500 cursor-pointer hover:underline"
-                  onClick={() => navigate(
-                    p.bomNodeId
-                      ? `/projects/${projectId}/bom/${p.bomNodeId}?partId=${p.partId}`
-                      : `/projects/${projectId}/bom?partId=${p.partId}`,
-                  )}
+                  onClick={() => {
+                    const params = new URLSearchParams({ partId: p.partId, pn: p.pn });
+                    navigate(
+                      p.bomNodeId
+                        ? `/projects/${projectId}/bom/${p.bomNodeId}?${params}`
+                        : `/projects/${projectId}/bom?${params}`,
+                    );
+                  }}
                 >
                   {p.pn}
                 </span>

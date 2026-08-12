@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { SuspendedOrgBanner } from './components/SuspendedOrgBanner';
 import { DashboardStats } from './components/DashboardStats';
 import { ActivityFeed } from './components/ActivityFeed';
 import { ProjectsOverview } from './components/ProjectsOverview';
@@ -241,6 +242,9 @@ export default function Dashboard() {
           <AppLayoutSkeleton variant="dashboard" />
         ) : (
           <>
+            {/* Suspended Organization Banner */}
+            <SuspendedOrgBanner onOpenCreateDialog={() => setCreateDialogOpen(true)} />
+
             {/* Dashboard Stats */}
             <DashboardStats
               portfolio={{ onTrack: onTrackCount, total: dashboardProjects.length }}
