@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, Forward, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Star, Eye } from 'lucide-react';
+import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, Forward, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Bookmark, Eye } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { FilePreviewDialog } from '@/components/FilePreviewDialog';
 import { Button } from '@/components/ui/button';
@@ -524,16 +524,6 @@ export function MessageBubble({
   // Touch devices don't fire hover reliably, so the toolbar is opened by tapping the bubble instead.
   const [isMobileToolbarOpen, setIsMobileToolbarOpen] = useState(false);
 
-  // Swipe-to-reply: drag the bubble horizontally past DRAG_REPLY_THRESHOLD to trigger reply.
-  const [dragX, setDragX] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-  const dragAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
-  const dragXRef = useRef(0);
-  const hasDraggedRef = useRef(false);
-  const DRAG_REPLY_THRESHOLD = 60;
-  const DRAG_MAX = 80;
-
   const getReactorNames = useCallback((r: MessageReaction) => {
     return r.userIds.map((id) => {
       if (id === currentUserId) return 'You';
@@ -566,60 +556,7 @@ export function MessageBubble({
   };
 
   const handleBubbleClick = () => {
-    // Swallow the click that follows a drag so it doesn't also toggle the mobile toolbar.
-    if (hasDraggedRef.current) {
-      hasDraggedRef.current = false;
-      return;
-    }
     handleBubbleTap();
-  };
-
-  // dragDirection: bubble slides toward the empty side of the screen, uncovering the
-  // reply icon parked underneath it (own bubbles hug the right edge so they drag left;
-  // others hug the left edge so they drag right).
-  const dragDirection = isOwn ? -1 : 1;
-
-  const handleDragPointerDown = (e: React.PointerEvent) => {
-    if (isDeleted || isEditing || e.pointerType === 'mouse' && e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('button, a, textarea, input, [role="button"]')) return;
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
-    dragAxisRef.current = null;
-  };
-
-  const handleDragPointerMove = (e: React.PointerEvent) => {
-    if (!dragStartRef.current) return;
-    const dx = e.clientX - dragStartRef.current.x;
-    const dy = e.clientY - dragStartRef.current.y;
-
-    if (dragAxisRef.current === null) {
-      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-      dragAxisRef.current = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
-      if (dragAxisRef.current === 'horizontal') {
-        setIsDragging(true);
-        hasDraggedRef.current = true;
-        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-      }
-    }
-
-    if (dragAxisRef.current !== 'horizontal') return;
-    e.preventDefault();
-    const signedDx = dx * dragDirection;
-    const clamped = Math.max(0, Math.min(DRAG_MAX, signedDx));
-    dragXRef.current = clamped;
-    setDragX(clamped);
-  };
-
-  const endDrag = (e: React.PointerEvent) => {
-    if (dragAxisRef.current === 'horizontal') {
-      if (dragXRef.current >= DRAG_REPLY_THRESHOLD) onReply?.(message);
-      try { (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
-    }
-    dragStartRef.current = null;
-    dragAxisRef.current = null;
-    dragXRef.current = 0;
-    setIsDragging(false);
-    setDragX(0);
   };
 
   useEffect(() => {
@@ -845,8 +782,8 @@ export function MessageBubble({
                 )}
                 {!isDeleted && onToggleFavourite && (
                   <DropdownMenuItem onClick={() => onToggleFavourite(message.id)} className="cursor-pointer">
-                    <Star className={cn('h-4 w-4 mr-2', isFavourited && 'fill-amber-500 text-amber-500')} />
-                    {isFavourited ? 'Remove from Favourites' : 'Add to Favourites'}
+                    <Bookmark className={cn('h-4 w-4 mr-2', isFavourited && 'fill-amber-500 text-amber-500')} />
+                    {isFavourited ? 'Remove from Saved' : 'Save message'}
                   </DropdownMenuItem>
                 )}
                 {canModify && !isFile && (
@@ -867,46 +804,16 @@ export function MessageBubble({
             </DropdownMenu>
           </div>
 
-          {/* Reply icon, parked behind the bubble and uncovered as it drags away */}
-          {!isEditing && (
-            <div
-              className={cn('absolute inset-y-0 flex items-center pointer-events-none', isOwn ? 'right-2' : 'left-2')}
-              style={{
-                opacity: Math.min(1, dragX / DRAG_REPLY_THRESHOLD),
-                transform: `scale(${0.6 + 0.4 * Math.min(1, dragX / DRAG_REPLY_THRESHOLD)})`,
-              }}
-            >
-              <span
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-full transition-colors',
-                  dragX >= DRAG_REPLY_THRESHOLD ? 'bg-primary text-primary-foreground' : 'bg-primary/15 text-primary'
-                )}
-              >
-                <Reply className="h-3.5 w-3.5" />
-              </span>
-            </div>
-          )}
-
           {/* Message bubble content */}
           <div
             className={cn(
-              'relative rounded-2xl px-3 py-2 text-sm leading-relaxed max-w-full min-w-0 overflow-hidden break-words [overflow-wrap:anywhere] touch-pan-y',
-              isDragging
-                ? 'transition-none select-none cursor-grabbing ring-2 ring-primary/50 shadow-lg'
-                : cn(
-                    'transition-transform duration-200 ease-out',
-                    isMobile ? 'cursor-grab' : 'cursor-text select-text'
-                  ),
+              'relative rounded-2xl px-3 py-2 text-sm leading-relaxed max-w-full min-w-0 overflow-hidden break-words [overflow-wrap:anywhere]',
+              isMobile ? 'cursor-pointer' : 'cursor-text select-text',
               isOwn
                 ? 'bg-primary text-primary-foreground rounded-br-md border border-primary/20'
                 : 'bg-muted text-foreground rounded-bl-md border border-border'
             )}
-            style={{ transform: `translateX(${dragX * dragDirection}px)` }}
             onClick={handleBubbleClick}
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
           >
             {message.replyToMessage && (
               <div
@@ -1004,17 +911,23 @@ export function MessageBubble({
         {showTimestamp && (
           <span className="text-[10px] text-muted-foreground mt-0.5 px-1 flex items-center gap-1">
             {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
-            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
+            {isFavourited && <Bookmark className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Saved" />}
+            {message.isEdited && <span>Edited</span>}
             {formatMessageTimestamp(message.createdAt, timezone)}
-            {message.isEdited && ' (edited)'}
             {isOwn && renderStatusIcon()}
           </span>
         )}
-        {!showTimestamp && isOwn && (
-          <span className="text-[10px] mt-0.5 px-1 flex items-center justify-end gap-1">
+        {!showTimestamp && (isOwn || message.isEdited) && (
+          <span
+            className={cn(
+              'text-[10px] text-muted-foreground mt-0.5 px-1 flex items-center gap-1',
+              isOwn ? 'justify-end' : 'justify-start'
+            )}
+          >
             {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
-            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
-            {renderStatusIcon()}
+            {isFavourited && <Bookmark className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Saved" />}
+            {message.isEdited && <span>Edited</span>}
+            {isOwn && renderStatusIcon()}
           </span>
         )}
       </div>

@@ -31,18 +31,23 @@ interface MessageAreaProps {
   favouriteMessageIds?: Set<string>;
   onTogglePin?: (messageId: string) => void;
   onToggleFavourite?: (messageId: string) => void;
+  /** Scrolls to and briefly highlights this message once it's loaded (paging older history if needed). */
+  highlightMessageId?: string | null;
+  onHighlightHandled?: () => void;
 }
 
 export function MessageArea({
   messages, conversation, hasMore, onLoadMore, readReceiptMap, reactionMap,
   onEditMessage, onDeleteMessage, onDeleteMessageForMe, onToggleReaction, onReplyMessage, onForwardMessage,
   filterMode, pinnedMessageIds, favouriteMessageIds, onTogglePin, onToggleFavourite,
+  highlightMessageId, onHighlightHandled,
 }: MessageAreaProps) {
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevConvIdRef = useRef<string | null>(null);
   const prevMessageCountRef = useRef(0);
   const atBottomRef = useRef(true);
+  const highlightedRef = useRef<string | null>(null);
   const isGroup = conversation.type === 'group';
   const searchQuery = useChatStore((s) => s.messageSearchQuery);
 
@@ -102,6 +107,28 @@ export function MessageArea({
     return new Map(messages.map((message) => [message.id, message]));
   }, [messages]);
 
+  // Jumping to a message from the Saved panel: page older history until the
+  // target is loaded, then scroll to it and flash a highlight. The revert timeout
+  // runs as a one-shot DOM side effect (not tied to this effect's cleanup) so
+  // clearing highlightMessageId right after finding the message can't cancel it.
+  useEffect(() => {
+    if (!highlightMessageId || highlightedRef.current === highlightMessageId) return;
+    const target = messageById.get(highlightMessageId);
+    if (!target) {
+      if (hasMore && onLoadMore) onLoadMore();
+      return;
+    }
+    highlightedRef.current = highlightMessageId;
+    const el = document.getElementById(`msg-${highlightMessageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'background-color 1.2s ease';
+      el.style.backgroundColor = 'rgba(251, 191, 36, 0.25)';
+      window.setTimeout(() => { el.style.backgroundColor = ''; }, 1000);
+    }
+    onHighlightHandled?.();
+  }, [highlightMessageId, messageById, hasMore, onLoadMore, onHighlightHandled]);
+
   const otherMembersCount = useMemo(
     () => conversation.members.filter((m) => m.id !== user?.id).length,
     [conversation.members, user?.id]
@@ -123,7 +150,7 @@ export function MessageArea({
     if (filterMode === 'favourites') {
       return (
         <div className="flex-1 flex items-center justify-center text-center text-sm text-muted-foreground px-8">
-          No favourite messages yet. Star a message to save it here.
+          No saved messages yet. Save a message to see it here.
         </div>
       );
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Bell, LogOut, FileText, UserPlus, Download, Image, Pencil, Check, Loader2, Camera, Trash2, Shield, ShieldOff, ChevronLeft, ChevronRight, Pin, Star } from 'lucide-react';
+import { X, Bell, LogOut, FileText, UserPlus, Download, Image, Pencil, Check, Loader2, Camera, Trash2, Shield, ShieldOff, ChevronLeft, ChevronRight, Pin, Bookmark } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -760,7 +760,7 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
 
           <Separator />
 
-          {/* Pinned & Favourite messages */}
+          {/* Pinned & Saved messages */}
           <div className="space-y-1">
             <button
               type="button"
@@ -777,8 +777,8 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
               onClick={onShowFavourites}
               className="w-full flex items-center gap-2.5 p-2 -mx-2 rounded-md hover:bg-muted transition-colors text-left"
             >
-              <Star className="h-4 w-4 text-amber-500 shrink-0" />
-              <span className="text-sm flex-1">Favourite Messages</span>
+              <Bookmark className="h-4 w-4 text-amber-500 shrink-0" />
+              <span className="text-sm flex-1">Saved Messages</span>
               <span className="text-xs text-muted-foreground">{favouriteCount}</span>
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
             </button>

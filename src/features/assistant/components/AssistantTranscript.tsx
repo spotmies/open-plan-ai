@@ -30,6 +30,8 @@ interface AssistantTranscriptProps {
   isAnswering: boolean;
   liveCard?: AssistantCard | null;
   onSendMessage?: (text: string) => void;
+  /** Public/shared-view rendering: no card navigation, no follow-up chips. Editing/version-nav are already inert whenever onEditMessage/onSelectVersion are omitted. */
+  readOnly?: boolean;
 }
 
 // Groups a run of messages between `user` rows and moves any present_card
@@ -69,6 +71,7 @@ export function AssistantTranscript({
   isAnswering,
   liveCard,
   onSendMessage,
+  readOnly = false,
 }: AssistantTranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -167,7 +170,12 @@ export function AssistantTranscript({
             if (!parsedCard) return null;
             return (
               <div key={message.id} ref={setMessageRef}>
-                <AssistantCardMessage card={parsedCard} createdAt={message.createdAt} onFollowUp={onSendMessage} />
+                <AssistantCardMessage
+                  card={parsedCard}
+                  createdAt={message.createdAt}
+                  onFollowUp={onSendMessage}
+                  readOnly={readOnly}
+                />
               </div>
             );
           }
@@ -202,7 +210,7 @@ export function AssistantTranscript({
         )}
 
         {liveCard && !lastVisibleIsCard && (
-          <AssistantCardMessage card={liveCard} createdAt={null} onFollowUp={onSendMessage} />
+          <AssistantCardMessage card={liveCard} createdAt={null} onFollowUp={onSendMessage} readOnly={readOnly} />
         )}
 
         {pendingQuestions && (

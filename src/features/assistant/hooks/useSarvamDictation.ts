@@ -60,6 +60,11 @@ export function useSarvamDictation({ value, onChange, disabled }: UseSarvamDicta
   valueRef.current = value;
 
   const baseTextRef = useRef('');
+  // What we last wrote via onChange — lets a partial/final handler tell "nothing
+  // changed" apart from "the user edited the textarea since our last update" (e.g.
+  // deleted a sentence). On divergence we rebase onto their edit instead of
+  // reappending text they just deleted.
+  const lastEmittedRef = useRef('');
   const lastCommittedIdxRef = useRef(-1);
   // Guards against a partial/final arriving after we've already torn the
   // segment down (stop/send/unmount) but before the socket handler unsub runs.
@@ -157,6 +162,7 @@ export function useSarvamDictation({ value, onChange, disabled }: UseSarvamDicta
     }
 
     baseTextRef.current = valueRef.current;
+    lastEmittedRef.current = valueRef.current;
     lastCommittedIdxRef.current = -1;
     activeRef.current = true;
 
@@ -165,12 +171,17 @@ export function useSarvamDictation({ value, onChange, disabled }: UseSarvamDicta
     unsubsRef.current = [
       aiAssistantTransport.onSttPartial((text, idx) => {
         if (!activeRef.current || idx <= lastCommittedIdxRef.current) return;
-        onChangeRef.current(joinText(baseTextRef.current, text));
+        if (valueRef.current !== lastEmittedRef.current) baseTextRef.current = valueRef.current;
+        const next = joinText(baseTextRef.current, text);
+        lastEmittedRef.current = next;
+        onChangeRef.current(next);
       }),
       aiAssistantTransport.onSttFinal((text, idx) => {
         if (!activeRef.current || idx <= lastCommittedIdxRef.current) return;
         lastCommittedIdxRef.current = idx;
+        if (valueRef.current !== lastEmittedRef.current) baseTextRef.current = valueRef.current;
         baseTextRef.current = joinText(baseTextRef.current, text);
+        lastEmittedRef.current = baseTextRef.current;
         onChangeRef.current(baseTextRef.current);
       }),
       aiAssistantTransport.onSttError((code, message, fatal) => {
@@ -201,10 +212,10 @@ export function useSarvamDictation({ value, onChange, disabled }: UseSarvamDicta
     }
   }, [dictationState, endSegment, startDictation]);
 
-  /** Used by the composer's Send button: stop capturing without flipping back to the idle mic icon (a different UI state — sending — takes over immediately). */
+  /** Used by the composer's Send button: stop capturing and flip the mic icon back to idle — it's a separate button from send/stop, so it needs its own reset. */
   const stopForSend = useCallback(() => {
     if (dictationState === 'listening' || dictationState === 'connecting') {
-      endSegment({ silent: true });
+      endSegment();
     }
   }, [dictationState, endSegment]);
 

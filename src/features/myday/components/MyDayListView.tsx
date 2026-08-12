@@ -4,6 +4,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { cn } from '@/lib/utils';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -84,6 +91,8 @@ const statusOrder: Record<string, number> = {
 
 type SortField = 'title' | 'type' | 'status' | 'priority' | 'project' | 'dueDate';
 type SortDirection = 'asc' | 'desc';
+
+const DESKTOP_PAGE_SIZE = 10;
 
 export function MyDayListView({
   tasks,
@@ -196,6 +205,20 @@ export function MyDayListView({
   useEffect(() => {
     setMobileVisibleCount(10);
     setIsLoadingMore(false);
+  }, [allTasks]);
+
+  // Pagination state for desktop table view
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(allTasks.length / DESKTOP_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedTasks = useMemo(
+    () => allTasks.slice((safeCurrentPage - 1) * DESKTOP_PAGE_SIZE, safeCurrentPage * DESKTOP_PAGE_SIZE),
+    [allTasks, safeCurrentPage]
+  );
+
+  // Reset to page 1 whenever the underlying task list or sort order changes
+  useEffect(() => {
+    setCurrentPage(1);
   }, [allTasks]);
 
   // Observer to load 10 more tasks when scrolling near bottom on mobile
@@ -337,7 +360,7 @@ export function MyDayListView({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {allTasks.map((task) => (
+          {paginatedTasks.map((task) => (
             <TableRow
               key={task.id}
               className="cursor-pointer hover:bg-muted/50"
@@ -455,6 +478,38 @@ export function MyDayListView({
           ))}
         </TableBody>
       </Table>
+
+      {totalPages > 1 && (
+        <div className="flex flex-col items-center gap-2 py-4 border-t">
+          <p className="text-xs text-muted-foreground">
+            Page {safeCurrentPage} of {totalPages} ({allTasks.length} items)
+          </p>
+          <Pagination className="mx-0 w-auto">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (safeCurrentPage > 1) setCurrentPage(safeCurrentPage - 1);
+                  }}
+                  className={cn(safeCurrentPage <= 1 && 'pointer-events-none opacity-50')}
+                />
+              </PaginationItem>
+              <PaginationItem>
+                <PaginationNext
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (safeCurrentPage < totalPages) setCurrentPage(safeCurrentPage + 1);
+                  }}
+                  className={cn(safeCurrentPage >= totalPages && 'pointer-events-none opacity-50')}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
     </div>
   );
 }

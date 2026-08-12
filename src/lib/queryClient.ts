@@ -196,5 +196,6 @@ export const queryKeys = {
     all:          ['assistant'] as const,
     conversations: () => [...queryKeys.assistant.all, 'conversations'] as const,
     conversation: (id: string) => [...queryKeys.assistant.all, 'conversation', id] as const,
+    shared:       (shareId: string) => [...queryKeys.assistant.all, 'shared', shareId] as const,
   },
 };

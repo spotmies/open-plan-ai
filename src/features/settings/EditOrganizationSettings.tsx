@@ -289,7 +289,7 @@ const EditOrganizationSettings = () => {
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  JPG, PNG, GIF or SVG. Max 2MB. Recommended size: 200x200px.
+                  JPG, PNG, GIF or SVG. Max 5MB. Recommended size: 200x200px.
                 </p>
               </div>
             </div>

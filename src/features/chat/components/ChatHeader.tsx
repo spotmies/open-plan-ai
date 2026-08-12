@@ -1,4 +1,4 @@
-import { ArrowLeft, Phone, Search, UserPlus, Video, X, CalendarDays, Link, Loader2, AlertCircle, Info, Pin, Star } from 'lucide-react';
+import { ArrowLeft, Phone, Search, UserPlus, Video, X, CalendarDays, Link, Loader2, AlertCircle, Info, Pin, Bookmark } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -333,10 +333,10 @@ export function ChatHeader({
           {filterMode === 'pinned' ? (
             <Pin className="h-4 w-4 text-primary shrink-0" />
           ) : (
-            <Star className="h-4 w-4 text-amber-500 shrink-0 fill-amber-500" />
+            <Bookmark className="h-4 w-4 text-amber-500 shrink-0 fill-amber-500" />
           )}
           <h3 className="text-sm font-semibold truncate">
-            {filterMode === 'pinned' ? `Pinned Messages (${pinnedCount})` : `Favourite Messages (${favouriteCount})`}
+            {filterMode === 'pinned' ? `Pinned Messages (${pinnedCount})` : `Saved Messages (${favouriteCount})`}
           </h3>
         </div>
       </div>
@@ -441,8 +441,8 @@ export function ChatHeader({
                 {pinnedCount > 0 && <span className="ml-auto text-xs text-muted-foreground">{pinnedCount}</span>}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onShowFavourites} className="gap-2 cursor-pointer">
-                <Star className="h-4 w-4 text-amber-500" />
-                Favourite Messages
+                <Bookmark className="h-4 w-4 text-amber-500" />
+                Saved Messages
                 {favouriteCount > 0 && <span className="ml-auto text-xs text-muted-foreground">{favouriteCount}</span>}
               </DropdownMenuItem>
             </DropdownMenuContent>

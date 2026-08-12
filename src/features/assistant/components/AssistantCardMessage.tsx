@@ -15,7 +15,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Children, type ReactNode } from 'react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
+import { differenceInCalendarDays, format, formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
@@ -25,20 +26,46 @@ import { cn } from '@/lib/utils';
 import type {
   AssistantCard,
   AssistantListCard,
+  AssistantListSubject,
   BomCardFlag,
   BomCardItem,
   CardItem,
+  CardItemEntityType,
   CardSeverity,
   ModuleCardItem,
   MilestoneCardItem,
   ProjectStage,
 } from '../assistantData';
 
+// Same route shapes used for chat entity tags (MessageBubble.tsx's
+// ENTITY_TAG_ROUTE) and the dashboard activity feed (ActivityFeed.tsx's
+// entityDeepLink) — deliberately reimplemented here rather than imported,
+// matching this codebase's small-per-feature-helper convention (see the
+// SEVERITY_DOT_CLASS comment above).
+const ENTITY_DEEP_LINK: Record<CardItemEntityType, (projectId: string, entityId: string) => string> = {
+  task: (projectId, entityId) => `/projects/${projectId}/tasks/${entityId}`,
+  issue: (projectId, entityId) => `/projects/${projectId}/issues/${entityId}`,
+  milestone: (projectId, entityId) => `/projects/${projectId}/milestones/${entityId}`,
+  hardware_module: (projectId, entityId) => `/projects/${projectId}/modules/${entityId}`,
+  bom_node: (projectId, entityId) => `/projects/${projectId}/bom/${entityId}`,
+  eco: (projectId, entityId) => `/projects/${projectId}/eng-changes/${entityId}`,
+};
+
+// Shared hover/click affordance for a clickable card row — same treatment
+// ActivityFeed uses for its deep-linkable activity rows.
+const CLICKABLE_ROW_CLASS = 'cursor-pointer -mx-2 rounded-md px-2 hover:bg-muted/40';
+
 interface AssistantCardMessageProps {
   card: AssistantCard;
   /** Real persisted timestamp, or null for the fleeting live render before the REST refetch lands. */
   createdAt: string | null;
-  onFollowUp: (text: string) => void;
+  // Optional (not just "sometimes falsy") so a consumer that has no way to
+  // send a follow-up message at all — the public shared-conversation view —
+  // can omit it outright rather than pass a function that would need to be
+  // a silent no-op. The chip row itself is gated on this being present.
+  onFollowUp?: (text: string) => void;
+  /** Public/shared-view rendering: no card-header or item-row navigation, no follow-up chips (anonymous visitors can't reach authenticated /projects/:id/... routes anyway). */
+  readOnly?: boolean;
 }
 
 // Feature-local — deliberately reimplemented rather than imported from
@@ -88,11 +115,30 @@ function shortId(id: string): string {
   return id.replace(/-/g, '').slice(0, 8).toUpperCase();
 }
 
+// Task/issue dueDate is a plain SQL DATE ("2026-08-11", no time component) —
+// `new Date(dueDate)` parses that as UTC midnight, which for any timezone
+// ahead of UTC (e.g. IST) is already hours in the past for most of that same
+// local calendar day. Combined with a raw ms/86400000 division (which drifts
+// with time-of-day instead of snapping to whole days), a task due "today"
+// was showing as "1d overdue" well before local midnight. Mirrors
+// myDayUtils.ts's parseDueDateSafe, which exists for exactly this reason.
+function parseDueDateLocal(dueDate: string): Date | null {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate);
+  if (dateOnly) {
+    const [, year, month, day] = dateOnly;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+  const parsed = new Date(dueDate);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function dueLabel(dueDate: string | undefined): string | null {
   if (!dueDate) return null;
-  const due = new Date(dueDate);
-  if (Number.isNaN(due.getTime())) return null;
-  const days = Math.round((due.getTime() - Date.now()) / 86400000);
+  const due = parseDueDateLocal(dueDate);
+  if (!due) return null;
+  // Whole-calendar-day difference (local time), not a raw ms/24h division —
+  // see parseDueDateLocal above for why that drifted by up to a day.
+  const days = differenceInCalendarDays(due, new Date());
   if (days < 0) return `${Math.abs(days)}d overdue`;
   if (days === 0) return 'due today';
   return `due in ${days}d`;
@@ -104,10 +150,9 @@ function titleCase(value: string): string {
 }
 
 function dateRangeLabel(startDate: string | undefined, dueDate: string | undefined): string | null {
-  const start = startDate ? new Date(startDate) : null;
-  const due = dueDate ? new Date(dueDate) : null;
-  const validStart = start && !Number.isNaN(start.getTime()) ? start : null;
-  const validDue = due && !Number.isNaN(due.getTime()) ? due : null;
+  // Both are plain DATE columns — see parseDueDateLocal above.
+  const validStart = startDate ? parseDueDateLocal(startDate) : null;
+  const validDue = dueDate ? parseDueDateLocal(dueDate) : null;
   if (validStart && validDue) return `${format(validStart, 'd MMM')} – ${format(validDue, 'd MMM')}`;
   if (validDue) return `Due ${format(validDue, 'MMM d')}`;
   if (validStart) return `Started ${format(validStart, 'MMM d')}`;
@@ -343,13 +388,34 @@ function cardHasItems(
   return card.type === 'status' || card.type === 'list' || card.type === 'bom' || card.type === 'module_list' || card.type === 'milestone_list';
 }
 
-function CardItemRow({ item }: { item: CardItem }) {
+// `subject` is only ever set for a "list" card (see AssistantListCard) —
+// used as a fallback when the item itself has no explicit entityType (e.g.
+// a card persisted before that field existed). A "status" card, or a "list"
+// card with subject 'general'/unset, has no reliable fallback since its
+// items can mix entity types — those rows just aren't clickable without an
+// explicit item.entityType.
+function CardItemRow({
+  item,
+  subject,
+  readOnly,
+}: {
+  item: CardItem;
+  subject?: AssistantListSubject;
+  readOnly?: boolean;
+}) {
+  const navigate = useNavigate();
   const due = dueLabel(item.dueDate);
   const metaLine = [item.contextLabel, due].filter(Boolean).join(' · ');
   const primaryAssignee = item.assignees?.[0];
+  const entityType = item.entityType ?? (subject === 'tasks' ? 'task' : subject === 'issues' ? 'issue' : undefined);
+  const target =
+    !readOnly && entityType && item.projectId ? ENTITY_DEEP_LINK[entityType](item.projectId, item.id) : undefined;
 
   return (
-    <div className="flex items-center gap-2.5 py-2">
+    <div
+      className={cn('flex items-center gap-2.5 py-2 transition-colors', target && CLICKABLE_ROW_CLASS)}
+      onClick={target ? () => navigate(target) : undefined}
+    >
       {item.severity && <span className={cn('h-2 w-2 shrink-0 rounded-full', SEVERITY_DOT_CLASS[item.severity])} />}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
@@ -394,10 +460,15 @@ function BomFlagCountBadge({ flag, count }: { flag: BomCardFlag; count: number }
   );
 }
 
-function BomCardItemRow({ item }: { item: BomCardItem }) {
+function BomCardItemRow({ item, readOnly }: { item: BomCardItem; readOnly?: boolean }) {
+  const navigate = useNavigate();
   const meta = BOM_FLAG_META[item.flag];
+  const target = !readOnly && item.projectId ? ENTITY_DEEP_LINK.bom_node(item.projectId, item.id) : undefined;
   return (
-    <div className="flex items-center gap-2.5 py-2">
+    <div
+      className={cn('flex items-center gap-2.5 py-2 transition-colors', target && CLICKABLE_ROW_CLASS)}
+      onClick={target ? () => navigate(target) : undefined}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="shrink-0 font-mono text-xs text-blue-600 dark:text-blue-400">{item.partNumber}</span>
@@ -413,9 +484,14 @@ function BomCardItemRow({ item }: { item: BomCardItem }) {
   );
 }
 
-function ModuleListItemRow({ item }: { item: ModuleCardItem }) {
+function ModuleListItemRow({ item, readOnly }: { item: ModuleCardItem; readOnly?: boolean }) {
+  const navigate = useNavigate();
+  const target = !readOnly && item.projectId ? ENTITY_DEEP_LINK.hardware_module(item.projectId, item.id) : undefined;
   return (
-    <div className="flex items-center gap-2.5 py-2">
+    <div
+      className={cn('flex items-center gap-2.5 py-2 transition-colors', target && CLICKABLE_ROW_CLASS)}
+      onClick={target ? () => navigate(target) : undefined}
+    >
       <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
       <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{item.name}</p>
       <span className="shrink-0 text-xs text-muted-foreground">
@@ -430,23 +506,29 @@ function ModuleListItemRow({ item }: { item: ModuleCardItem }) {
 
 function milestoneDotClass(item: MilestoneCardItem, isDone: boolean): string {
   if (isDone) return 'bg-green-500';
-  const due = item.dueDate ? new Date(item.dueDate) : null;
-  if (due && !Number.isNaN(due.getTime()) && due.getTime() < Date.now()) return 'bg-destructive';
+  // See parseDueDateLocal/dueLabel above — same date-only-as-UTC pitfall, so
+  // a milestone due today wouldn't flip red before local midnight.
+  const due = item.dueDate ? parseDueDateLocal(item.dueDate) : null;
+  if (due && differenceInCalendarDays(due, new Date()) < 0) return 'bg-destructive';
   return 'bg-muted-foreground';
 }
 
-function MilestoneListItemRow({ item }: { item: MilestoneCardItem }) {
+function MilestoneListItemRow({ item, readOnly }: { item: MilestoneCardItem; readOnly?: boolean }) {
+  const navigate = useNavigate();
   const isDone = STATUS_DONE_WORDS.has(item.status.toLowerCase());
-  const due = item.dueDate ? new Date(item.dueDate) : null;
-  const validDue = due && !Number.isNaN(due.getTime()) ? due : null;
+  const validDue = item.dueDate ? parseDueDateLocal(item.dueDate) : null;
   const metaParts = [
     validDue ? format(validDue, 'MMM d, yyyy') : null,
     isDone ? null : dueLabel(item.dueDate),
     `${item.completedTaskCount}/${item.linkedTaskCount} tasks`,
   ].filter(Boolean);
+  const target = !readOnly && item.projectId ? ENTITY_DEEP_LINK.milestone(item.projectId, item.id) : undefined;
 
   return (
-    <div className="flex items-center gap-2.5 py-2">
+    <div
+      className={cn('flex items-center gap-2.5 py-2 transition-colors', target && CLICKABLE_ROW_CLASS)}
+      onClick={target ? () => navigate(target) : undefined}
+    >
       <span className={cn('h-2 w-2 shrink-0 rounded-full', milestoneDotClass(item, isDone))} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
@@ -457,10 +539,31 @@ function MilestoneListItemRow({ item }: { item: MilestoneCardItem }) {
   );
 }
 
-export function AssistantCardMessage({ card, createdAt, onFollowUp }: AssistantCardMessageProps) {
+// Deep-link for a single-record "_detail" card's own header — distinct from
+// the item-row links above, since a "_detail" card has no items array, just
+// its own top-level id/projectId (num+id for eco_detail — see
+// ecoDetailCardArgsSchema's comment on the backend for why both are needed).
+function detailCardTarget(card: AssistantCard): string | undefined {
+  switch (card.type) {
+    case 'task_detail':
+      return card.projectId ? ENTITY_DEEP_LINK.task(card.projectId, card.id) : undefined;
+    case 'issue_detail':
+      return card.projectId ? ENTITY_DEEP_LINK.issue(card.projectId, card.id) : undefined;
+    case 'eco_detail':
+      return card.projectId && card.id ? ENTITY_DEEP_LINK.eco(card.projectId, card.id) : undefined;
+    case 'module_detail':
+      return card.projectId ? ENTITY_DEEP_LINK.hardware_module(card.projectId, card.id) : undefined;
+    default:
+      return undefined;
+  }
+}
+
+export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: AssistantCardMessageProps) {
+  const navigate = useNavigate();
   const { formatCurrency } = useCurrency();
   const kind = resolveCardKindMeta(card);
   const badge = headerBadge(card);
+  const detailTarget = readOnly ? undefined : detailCardTarget(card);
   const asOf = createdAt
     ? `as of ${format(new Date(createdAt), 'MMM d')} · ${formatDistanceToNow(new Date(createdAt), { addSuffix: true })}`
     : 'just now';
@@ -474,7 +577,10 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp }: AssistantC
       <div className="h-7 w-7 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <Card className={cn('overflow-hidden', kind.washClass)}>
-          <CardHeader className="pb-3">
+          <CardHeader
+            className={cn('pb-3 transition-colors', detailTarget && 'cursor-pointer hover:bg-muted/30')}
+            onClick={detailTarget ? () => navigate(detailTarget) : undefined}
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="flex min-w-0 items-start gap-2.5">
                 <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', kind.chipClass)}>
@@ -676,11 +782,18 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp }: AssistantC
                     {card.itemsLabel ?? 'Items'}
                   </p>
                   <div className="divide-y divide-border">
-                    {card.type === 'bom' && card.items.map((item) => <BomCardItemRow key={item.id} item={item} />)}
-                    {card.type === 'module_list' && card.items.map((item) => <ModuleListItemRow key={item.id} item={item} />)}
-                    {card.type === 'milestone_list' && card.items.map((item) => <MilestoneListItemRow key={item.id} item={item} />)}
-                    {(card.type === 'status' || card.type === 'list') &&
-                      card.items.map((item) => <CardItemRow key={item.id} item={item} />)}
+                    {card.type === 'bom' &&
+                      card.items.map((item) => <BomCardItemRow key={item.id} item={item} readOnly={readOnly} />)}
+                    {card.type === 'module_list' &&
+                      card.items.map((item) => <ModuleListItemRow key={item.id} item={item} readOnly={readOnly} />)}
+                    {card.type === 'milestone_list' &&
+                      card.items.map((item) => <MilestoneListItemRow key={item.id} item={item} readOnly={readOnly} />)}
+                    {card.type === 'status' &&
+                      card.items.map((item) => <CardItemRow key={item.id} item={item} readOnly={readOnly} />)}
+                    {card.type === 'list' &&
+                      card.items.map((item) => (
+                        <CardItemRow key={item.id} item={item} subject={card.subject} readOnly={readOnly} />
+                      ))}
                   </div>
                 </div>
               ) : (
@@ -691,7 +804,7 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp }: AssistantC
           <CardFooter className="border-t border-border py-3 text-xs text-muted-foreground">{footerText}</CardFooter>
         </Card>
 
-        {card.followUps && card.followUps.length > 0 && (
+        {!readOnly && onFollowUp && card.followUps && card.followUps.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {card.followUps.map((text) => (
               <Button

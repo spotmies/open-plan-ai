@@ -48,6 +48,9 @@ function computeInitials(name: string): string {
 function mapChatMessage(raw: any): ChatMessage {
   const fileUrl = raw.fileUrl ?? raw.file_url ?? null;
   const resolvedFileUrl = fileUrl ? (resolveFileUrl(fileUrl) ?? fileUrl) : undefined;
+  const createdAt = raw.createdAt ?? raw.created_at ?? new Date().toISOString();
+  const updatedAt = raw.updatedAt ?? raw.updated_at ?? createdAt;
+  const deletedAt = raw.deletedAt ?? raw.deleted_at ?? undefined;
 
   return {
     id: raw.id,
@@ -67,10 +70,10 @@ function mapChatMessage(raw: any): ChatMessage {
       mimeType: raw.fileMimeType ?? raw.file_mime_type ?? '',
     }] : (raw.attachments ?? []),
     entityTags: raw.entityTags ?? raw.entity_tags ?? [],
-    createdAt: raw.createdAt ?? raw.created_at ?? new Date().toISOString(),
-    updatedAt: raw.updatedAt ?? raw.updated_at ?? raw.createdAt ?? new Date().toISOString(),
-    isEdited: false,
-    deletedAt: raw.deletedAt ?? raw.deleted_at ?? undefined,
+    createdAt,
+    updatedAt,
+    isEdited: updatedAt !== createdAt && !deletedAt,
+    deletedAt,
     replyToMessageId: raw.replyToMessageId ?? raw.reply_to_message_id ?? undefined,
   };
 }
@@ -149,6 +152,7 @@ function mapConversation(raw: any): Conversation {
     lastMessageAt: raw.updatedAt ?? raw.lastMessageAt ?? raw.createdAt ?? new Date().toISOString(),
     createdAt: raw.createdAt ?? new Date().toISOString(),
     unreadCount: raw.unreadCount ?? 0,
+    isFavourite: raw.isFavourite ?? raw.is_favourite ?? false,
   };
 }
 
@@ -297,6 +301,14 @@ export const chatService = {
     await apiClient.delete(ENDPOINTS.CONVERSATIONS.BY_ID(conversationId));
   },
 
+  async toggleConversationFavourite(conversationId: string): Promise<{ action: 'added' | 'removed' }> {
+    return apiClient.post(ENDPOINTS.CONVERSATIONS.FAVOURITE_TOGGLE(conversationId), {});
+  },
+
+  async hideConversation(conversationId: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.CONVERSATIONS.HIDE(conversationId), {});
+  },
+
   async updateMemberRole(
     conversationId: string,
     userId: string,
@@ -368,6 +380,11 @@ export const chatService = {
 
   async getFavouriteMessages(conversationId: string): Promise<FavouriteMessage[]> {
     const data = await apiClient.get<any[]>(ENDPOINTS.FAVOURITES.LIST(conversationId));
+    return (data || []).map(mapFavouriteMessage);
+  },
+
+  async getAllFavouriteMessages(): Promise<FavouriteMessage[]> {
+    const data = await apiClient.get<any[]>(ENDPOINTS.FAVOURITES.LIST_ALL);
     return (data || []).map(mapFavouriteMessage);
   },
 

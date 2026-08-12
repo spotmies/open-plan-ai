@@ -50,3 +50,25 @@ export function useDeleteAllAssistantConversations() {
     },
   });
 }
+
+// Also serves as "update link" — calling it again on an already-shared
+// conversation keeps the same shareId but refreshes the snapshot content.
+export function useShareAssistantConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => assistantService.shareConversation(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.assistant.conversations() });
+    },
+  });
+}
+
+export function useUnshareAssistantConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => assistantService.unshareConversation(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.assistant.conversations() });
+    },
+  });
+}

@@ -181,6 +181,9 @@ export type CardTone = 'default' | 'danger';
 /** Matches the backend's real projects.stage enum exactly — never the design mock's fabricated EVT/DVT/PVT/MP gate names. */
 export type ProjectStage = 'concept' | 'design' | 'development' | 'testing' | 'production';
 
+/** Matches presentCard.tool.ts's cardItemSchema.entityType — which query_project_data entity a status/list item came from, since those two card types can mix entity types (e.g. a blockers/risks list mixing tasks and issues). Used to pick the right deep-link route in AssistantCardMessage. */
+export type CardItemEntityType = 'task' | 'issue' | 'milestone' | 'hardware_module' | 'bom_node' | 'eco';
+
 export interface CardItem {
   id: string;
   title: string;
@@ -188,6 +191,9 @@ export interface CardItem {
   contextLabel?: string;
   dueDate?: string;
   assignees?: string[];
+  /** Absent on cards persisted before this field existed — those rows just aren't clickable. */
+  projectId?: string;
+  entityType?: CardItemEntityType;
 }
 
 export type BomCardFlag = 'single_sourced' | 'long_lead' | 'missing_mfr_pn' | 'missing_approval';
@@ -200,6 +206,8 @@ export interface BomCardItem {
   flag: BomCardFlag;
   /** Short precomputed display detail, e.g. "16w" for a long-lead part. */
   flagDetail?: string;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
 }
 
 // Modules and milestones get their own item shapes too — a progress meter,
@@ -210,6 +218,8 @@ export interface ModuleCardItem {
   name: string;
   taskCount: number;
   progress: number;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
 }
 
 export interface MilestoneCardItem {
@@ -221,6 +231,8 @@ export interface MilestoneCardItem {
   progress: number;
   linkedTaskCount: number;
   completedTaskCount: number;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
 }
 
 interface AssistantCardBase {
@@ -292,6 +304,8 @@ interface AssistantDetailCardBase {
 export interface AssistantTaskDetailCard extends AssistantDetailCardBase {
   type: 'task_detail';
   id: string;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
   status: string;
   priority?: CardSeverity;
   startDate?: string;
@@ -303,6 +317,8 @@ export interface AssistantTaskDetailCard extends AssistantDetailCardBase {
 export interface AssistantIssueDetailCard extends AssistantDetailCardBase {
   type: 'issue_detail';
   id: string;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
   status: string;
   severity?: CardSeverity;
   category?: string;
@@ -318,6 +334,10 @@ export interface AssistantEcoDetailCard extends AssistantDetailCardBase {
   type: 'eco_detail';
   /** The ECO's real human-facing code (e.g. "ECO-2026-047") — shown as the reference badge as-is. */
   num: string;
+  /** The ECO's real DB id — absent on cards persisted before this field existed, or if the model omitted it; needed alongside `num` to deep-link (num alone can't build a route). */
+  id?: string;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
   status: string;
   priority?: string;
   changeClass?: EcoChangeClass;
@@ -329,6 +349,8 @@ export interface AssistantEcoDetailCard extends AssistantDetailCardBase {
 export interface AssistantModuleDetailCard extends AssistantDetailCardBase {
   type: 'module_detail';
   id: string;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
   moduleType?: string;
   status?: string;
   progress?: number;
@@ -453,11 +475,27 @@ export interface AssistantConversationSummary {
   focusEntities: AssistantFocusEntity[] | null;
   pinned: boolean;
   pinnedAt: string | null;
+  shareId: string | null;
+  sharedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface AssistantConversationDetail extends AssistantConversationSummary {
   pendingQuestions: AskUserQuestion[] | null;
+  messages: AssistantMessage[];
+}
+
+// ─── Share (public read-only link) ─────────────────────────────────────────
+// Matches the backend's SharedConversationResponse — a frozen copy of the
+// conversation as it looked at share time, returned by the public,
+// unauthenticated GET /ai/conversations/shared/:shareId. See
+// SharedConversation.tsx, the only consumer of this shape.
+export interface AssistantSharedConversation {
+  title: string | null;
+  scope: BackendAiScope;
+  projectName: string | null;
+  ownerName: string | null;
+  sharedAt: string;
   messages: AssistantMessage[];
 }

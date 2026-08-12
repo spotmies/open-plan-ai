@@ -3,6 +3,7 @@ import { ENDPOINTS } from './api/endpoints';
 import type {
   AssistantConversationSummary,
   AssistantConversationDetail,
+  AssistantSharedConversation,
   BackendAiScope,
   AssistantFocusEntity,
   AiMessageAttachment,
@@ -50,6 +51,18 @@ export const assistantService = {
     apiClient.post(ENDPOINTS.AI_CONVERSATIONS.ANSWER(id), input),
 
   stopTurn: (id: string) => apiClient.post<{ stopped: boolean }>(ENDPOINTS.AI_CONVERSATIONS.STOP(id), {}),
+
+  // Creates (first call) or refreshes (already shared — same link, new
+  // content) a public share link.
+  shareConversation: (id: string) =>
+    apiClient.post<{ shareId: string; sharedAt: string }>(ENDPOINTS.AI_CONVERSATIONS.SHARE(id), {}),
+
+  unshareConversation: (id: string) => apiClient.delete<void>(ENDPOINTS.AI_CONVERSATIONS.SHARE(id)),
+
+  // Public, unauthenticated — no cookie/session required. Used only by the
+  // standalone SharedConversation page.
+  getSharedConversation: (shareId: string) =>
+    apiClient.get<AssistantSharedConversation>(ENDPOINTS.AI_CONVERSATIONS.SHARED(shareId)),
 
   // Uploads an ad-hoc Ask composer attachment ahead of sending the message it
   // belongs to. Metadata-only response (no DB row yet) — the caller passes it

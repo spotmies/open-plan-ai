@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { useProjects } from '@/hooks/useProjects';
 import { AssistantConversationRow } from './AssistantConversationRow';
+import { AssistantShareDialog } from './AssistantShareDialog';
 import {
   useAssistantConversations,
   useUpdateAssistantConversation,
@@ -46,6 +47,7 @@ export function AssistantConversationList({
   const [renameValue, setRenameValue] = useState('');
   const [pendingDelete, setPendingDelete] = useState<AssistantConversationSummary | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [sharingConversation, setSharingConversation] = useState<AssistantConversationSummary | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const sorted = [...conversations].sort(
@@ -112,6 +114,7 @@ export function AssistantConversationList({
         setRenameValue(c.title || '');
       }}
       onRequestDelete={setPendingDelete}
+      onRequestShare={setSharingConversation}
     />
   );
 
@@ -241,6 +244,11 @@ export function AssistantConversationList({
         description={`This will permanently delete all ${conversations.length} conversation${conversations.length === 1 ? '' : 's'}, including pinned ones.`}
         confirmText="Delete all"
         variant="destructive"
+      />
+
+      <AssistantShareDialog
+        conversation={sharingConversation}
+        onOpenChange={(open) => !open && setSharingConversation(null)}
       />
     </div>
   );

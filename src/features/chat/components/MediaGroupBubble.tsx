@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, Forward, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Star } from 'lucide-react';
+import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, Forward, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Bookmark } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -341,8 +341,8 @@ export function MediaGroupBubble({
                 )}
                 {onToggleFavourite && (
                   <DropdownMenuItem onClick={() => onToggleFavourite(last.id)} className="cursor-pointer">
-                    <Star className={cn('h-4 w-4 mr-2', isFavourited && 'fill-amber-500 text-amber-500')} />
-                    {isFavourited ? 'Remove from Favourites' : 'Add to Favourites'}
+                    <Bookmark className={cn('h-4 w-4 mr-2', isFavourited && 'fill-amber-500 text-amber-500')} />
+                    {isFavourited ? 'Remove from Saved' : 'Save message'}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="cursor-pointer text-destructive focus:text-destructive">
@@ -444,7 +444,7 @@ export function MediaGroupBubble({
         {showTimestamp && (
           <span className="text-[10px] text-muted-foreground mt-0.5 px-1 flex items-center gap-1">
             {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
-            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
+            {isFavourited && <Bookmark className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Saved" />}
             {formatMessageTimestamp(last.createdAt, timezone)}
             {isOwn && renderStatusIcon()}
           </span>
@@ -452,7 +452,7 @@ export function MediaGroupBubble({
         {!showTimestamp && isOwn && (
           <span className="text-[10px] mt-0.5 px-1 flex items-center justify-end gap-1">
             {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
-            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
+            {isFavourited && <Bookmark className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Saved" />}
             {renderStatusIcon()}
           </span>
         )}

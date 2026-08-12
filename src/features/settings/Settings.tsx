@@ -673,7 +673,7 @@ const Settings = () => {
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              JPG, PNG, GIF or SVG. Max 2MB. Recommended size: 200x200px.
+                              JPG, PNG, GIF or SVG. Max 5MB. Recommended size: 200x200px.
                             </p>
                           </div>
                         )}
@@ -860,7 +860,7 @@ const Settings = () => {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        JPG, PNG or GIF. Max 2MB.
+                        JPG, PNG or GIF. Max 5MB.
                       </p>
                     </div>
                   </div>

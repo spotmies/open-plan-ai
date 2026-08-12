@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarHeader } from './components/CalendarHeader';
 import { CalendarFilters } from './components/CalendarFilters';
+import { ScheduleMeetDialog } from './components/ScheduleMeetDialog';
 import { CalendarMonthView } from './components/CalendarMonthView';
 import { CalendarWeekView } from './components/CalendarWeekView';
 import { CalendarDayView } from './components/CalendarDayView';
@@ -30,6 +31,8 @@ import { parse, format as formatDate, isValid } from 'date-fns';
 import { toast } from 'sonner';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { logger } from '@/services/monitoring/logger';
+import { Button } from '@/components/ui/button';
+import { Video } from 'lucide-react';
 
 // Convert a DB milestone row to calendar event
 function dbMilestoneToCalendarEvent(m: any, projectName: string): CalendarEvent | null {
@@ -180,6 +183,9 @@ const CalendarPage: React.FC = () => {
 
   // Filter state remains local as it's complex and might be too long for URL
   const [filters, setFilters] = React.useState<CalendarFilter>({});
+
+  // "Schedule a meet" dialog state
+  const [scheduleMeetOpen, setScheduleMeetOpen] = React.useState(false);
 
   // Build project map for lookups
   const projectMap = useMemo(
@@ -451,13 +457,24 @@ const CalendarPage: React.FC = () => {
             onNavigateNext={handleNavigateNext}
             onNavigateToday={handleNavigateToday}
             actions={
-              <CalendarFilters
-                filters={filters}
-                onFiltersChange={setFilters}
-                projects={projectsForFilter as any}
-                teamMembers={teamMembers}
-                hideActiveFilters
-              />
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 h-9 rounded-lg"
+                  onClick={() => setScheduleMeetOpen(true)}
+                >
+                  <Video className="h-4 w-4" />
+                  <span className="hidden sm:inline">Schedule a meet</span>
+                </Button>
+                <CalendarFilters
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                  projects={projectsForFilter as any}
+                  teamMembers={teamMembers}
+                  hideActiveFilters
+                />
+              </>
             }
           />
 
@@ -504,6 +521,11 @@ const CalendarPage: React.FC = () => {
       </div>
 
       {sharedModals}
+      <ScheduleMeetDialog
+        open={scheduleMeetOpen}
+        onOpenChange={setScheduleMeetOpen}
+        teamMembers={teamMembers}
+      />
     </>
   );
 };

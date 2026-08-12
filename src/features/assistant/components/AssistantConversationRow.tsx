@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from 'date-fns';
-import { MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Pin, PinOff, Share2, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -14,6 +14,7 @@ interface AssistantConversationRowProps {
   onTogglePin: (conversation: AssistantConversationSummary) => void;
   onRequestRename: (conversation: AssistantConversationSummary) => void;
   onRequestDelete: (conversation: AssistantConversationSummary) => void;
+  onRequestShare: (conversation: AssistantConversationSummary) => void;
 }
 
 export function AssistantConversationRow({
@@ -24,6 +25,7 @@ export function AssistantConversationRow({
   onTogglePin,
   onRequestRename,
   onRequestDelete,
+  onRequestShare,
 }: AssistantConversationRowProps) {
   return (
     <button
@@ -51,6 +53,10 @@ export function AssistantConversationRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem className="gap-2" onClick={() => onRequestShare(conversation)}>
+              <Share2 className="h-3.5 w-3.5" />
+              Share
+            </DropdownMenuItem>
             <DropdownMenuItem className="gap-2" onClick={() => onTogglePin(conversation)}>
               {conversation.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
               {conversation.pinned ? 'Unpin' : 'Pin'}

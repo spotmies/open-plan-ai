@@ -74,7 +74,71 @@ export function useConversations() {
   // updates) are handled once app-wide by ChatNotificationsProvider — this hook only
   // reads the resulting store state so it stays in sync wherever it's used.
 
-  return { conversations, loading, refetch: () => fetchConversations(true) };
+  const toggleConversationFavourite = useCallback(async (conversationId: string) => {
+    const current = useChatStore.getState().conversations;
+    const wasFavourite = current.find((c) => c.id === conversationId)?.isFavourite ?? false;
+    setConversations(current.map((c) => (c.id === conversationId ? { ...c, isFavourite: !wasFavourite } : c)));
+    try {
+      await chatService.toggleConversationFavourite(conversationId);
+    } catch (err) {
+      logger.error('Failed to toggle chat favourite:', err);
+      toast.error('Failed to update favourite');
+      const reverted = useChatStore.getState().conversations;
+      setConversations(reverted.map((c) => (c.id === conversationId ? { ...c, isFavourite: wasFavourite } : c)));
+    }
+  }, [setConversations]);
+
+  const hideConversation = useCallback(async (conversationId: string) => {
+    const previous = useChatStore.getState().conversations;
+    setConversations(previous.filter((c) => c.id !== conversationId));
+    try {
+      await chatService.hideConversation(conversationId);
+    } catch (err) {
+      logger.error('Failed to delete chat:', err);
+      toast.error('Failed to delete chat');
+      setConversations(previous);
+    }
+  }, [setConversations]);
+
+  const toggleMute = useCallback(async (conversationId: string, userId: string) => {
+    const conv = useChatStore.getState().conversations.find((c) => c.id === conversationId);
+    const wasEnabled = conv?.members.find((m) => m.id === userId)?.notificationsEnabled ?? true;
+    const applyLocal = (enabled: boolean) => {
+      const latest = useChatStore.getState().conversations;
+      setConversations(latest.map((c) => (
+        c.id === conversationId
+          ? { ...c, members: c.members.map((m) => (m.id === userId ? { ...m, notificationsEnabled: enabled } : m)) }
+          : c
+      )));
+    };
+    applyLocal(!wasEnabled);
+    try {
+      await chatService.updateNotificationSettings(conversationId, !wasEnabled);
+    } catch (err) {
+      logger.error('Failed to toggle mute:', err);
+      toast.error('Failed to update notification settings');
+      applyLocal(wasEnabled);
+    }
+  }, [setConversations]);
+
+  const markConversationRead = useCallback(async (conversationId: string) => {
+    useChatStore.getState().markAsRead(conversationId);
+    try {
+      await chatService.markConversationAsRead(conversationId);
+    } catch (err) {
+      logger.error('Failed to mark conversation as read:', err);
+    }
+  }, []);
+
+  return {
+    conversations,
+    loading,
+    refetch: () => fetchConversations(true),
+    toggleConversationFavourite,
+    hideConversation,
+    toggleMute,
+    markConversationRead,
+  };
 }
 
 /**
@@ -749,4 +813,40 @@ export function useFavouriteMessages(conversationId: string | null) {
   const favouriteIds = useMemo(() => new Set(favouriteMessages.map((m) => m.id)), [favouriteMessages]);
 
   return { favouriteMessages, favouriteIds, loadingFavourites, toggleFavourite, refetchFavourites: fetchFavouriteMessages };
+}
+
+/**
+ * The Teams-style global "Saved" view — every message the user has favourited
+ * across all of their conversations, not just the one currently open.
+ */
+export function useGlobalFavourites() {
+  const [messages, setMessages] = useState<FavouriteMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await chatService.getAllFavouriteMessages();
+      setMessages(data);
+    } catch (err) {
+      logger.error('Failed to fetch saved messages:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  const removeFavourite = useCallback(async (messageId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    try {
+      await chatService.toggleFavourite(messageId);
+    } catch (err) {
+      logger.error('Failed to remove saved message:', err);
+      toast.error('Failed to remove saved message');
+      refetch();
+    }
+  }, [refetch]);
+
+  return { messages, loading, refetch, removeFavourite };
 }

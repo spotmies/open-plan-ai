@@ -108,6 +108,7 @@ export interface Conversation {
   lastMessageAt: string;
   createdAt: string;
   unreadCount?: number;
+  isFavourite?: boolean;
 }
 
 export interface ReachableUser {

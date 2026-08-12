@@ -7,14 +7,55 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { Conversation, ChatMessage } from '../types';
+import { chatService } from '@/services/chat.service';
+import { logger } from '@/services/monitoring/logger';
+import { toast } from 'sonner';
+import { Conversation, ChatMessage, ReachableUser } from '../types';
 
 interface ForwardMessageDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversations: Conversation[];
+  reachableUsers: ReachableUser[];
   messages: ChatMessage[] | null;
   onForward: (targetConversationIds: string[]) => Promise<void>;
+}
+
+// Org members with no existing DM get a synthetic `user:{id}` target id so the
+// list can include people you've never messaged; resolved to a real
+// conversation id (via getOrCreateDM) only when forwarding is confirmed.
+const USER_TARGET_PREFIX = 'user:';
+
+interface ForwardTarget {
+  id: string;
+  name: string;
+  initials: string;
+  avatarUrl?: string;
+  isGroup: boolean;
+}
+
+function ForwardTargetRow({ target, isSelected, onToggle }: { target: ForwardTarget; isSelected: boolean; onToggle: (id: string) => void }) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 w-full p-2.5 rounded-lg transition-colors cursor-pointer group hover:bg-muted/50',
+        isSelected && 'bg-primary/5',
+      )}
+      onClick={() => onToggle(target.id)}
+    >
+      <Checkbox
+        checked={isSelected}
+        className="data-[state=checked]:bg-primary data-[state=checked]:border-primary pointer-events-none"
+      />
+      <Avatar className="h-8 w-8">
+        <AvatarImage src={target.avatarUrl} alt={target.name} className="object-cover" />
+        <AvatarFallback className={cn('text-xs', target.isGroup && 'bg-primary/10 text-primary')}>
+          {target.initials}
+        </AvatarFallback>
+      </Avatar>
+      <span className="text-sm font-medium truncate flex-1 min-w-0">{target.name}</span>
+    </div>
+  );
 }
 
 function conversationDisplay(conversation: Conversation, currentUserId?: string) {
@@ -32,7 +73,7 @@ function conversationDisplay(conversation: Conversation, currentUserId?: string)
   return { name, initials, avatarUrl };
 }
 
-export function ForwardMessageDialog({ open, onOpenChange, conversations, messages, onForward }: ForwardMessageDialogProps) {
+export function ForwardMessageDialog({ open, onOpenChange, conversations, reachableUsers, messages, onForward }: ForwardMessageDialogProps) {
   const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -44,10 +85,32 @@ export function ForwardMessageDialog({ open, onOpenChange, conversations, messag
     setSelectedIds([]);
   }, [open]);
 
-  const filtered = useMemo(() => {
+  const conversationTargets = useMemo<ForwardTarget[]>(() => conversations.map((c) => {
+    const { name, initials, avatarUrl } = conversationDisplay(c, user?.id);
+    return { id: c.id, name, initials, avatarUrl, isGroup: c.type === 'group' };
+  }), [conversations, user?.id]);
+
+  // Org members with no existing DM — kept as a separate, alphabetized group so
+  // they're visible even when the conversation list above pushes them off-screen.
+  const orgMemberTargets = useMemo<ForwardTarget[]>(() => {
+    const existingDmMemberIds = new Set(
+      conversations.filter((c) => c.type === 'dm').flatMap((c) => c.members.map((m) => m.id))
+    );
+    return reachableUsers
+      .filter((u) => !existingDmMemberIds.has(u.id))
+      .map((u) => ({ id: `${USER_TARGET_PREFIX}${u.id}`, name: u.name, initials: u.initials, avatarUrl: u.avatarUrl, isGroup: false }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [conversations, reachableUsers]);
+
+  const filteredConversations = useMemo(() => {
     const q = search.toLowerCase();
-    return conversations.filter((c) => conversationDisplay(c, user?.id).name.toLowerCase().includes(q));
-  }, [search, conversations, user?.id]);
+    return conversationTargets.filter((t) => t.name.toLowerCase().includes(q));
+  }, [search, conversationTargets]);
+
+  const filteredOrgMembers = useMemo(() => {
+    const q = search.toLowerCase();
+    return orgMemberTargets.filter((t) => t.name.toLowerCase().includes(q));
+  }, [search, orgMemberTargets]);
 
   const toggleConversation = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
@@ -62,7 +125,19 @@ export function ForwardMessageDialog({ open, onOpenChange, conversations, messag
     if (selectedIds.length === 0) return;
     setIsForwarding(true);
     try {
-      await onForward(selectedIds);
+      let resolvedIds: string[];
+      try {
+        resolvedIds = await Promise.all(
+          selectedIds.map((id) =>
+            id.startsWith(USER_TARGET_PREFIX) ? chatService.getOrCreateDM(id.slice(USER_TARGET_PREFIX.length)) : Promise.resolve(id)
+          )
+        );
+      } catch (err) {
+        logger.error('Failed to start conversation with selected user:', err);
+        toast.error('Failed to start conversation');
+        return;
+      }
+      await onForward(resolvedIds);
       onOpenChange(false);
     } finally {
       setIsForwarding(false);
@@ -89,39 +164,40 @@ export function ForwardMessageDialog({ open, onOpenChange, conversations, messag
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search conversations..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input placeholder="Search people or conversations..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
         <div className="max-h-[300px] overflow-y-auto space-y-1">
-          {filtered.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">No conversations found</p>
+          {filteredConversations.length === 0 && filteredOrgMembers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No results found</p>
           ) : (
-            filtered.map((conversation) => {
-              const { name, initials, avatarUrl } = conversationDisplay(conversation, user?.id);
-              const isSelected = selectedIds.includes(conversation.id);
-              return (
-                <div
-                  key={conversation.id}
-                  className={cn(
-                    'flex items-center gap-3 w-full p-2.5 rounded-lg transition-colors cursor-pointer group hover:bg-muted/50',
-                    isSelected && 'bg-primary/5',
+            <>
+              {filteredConversations.map((target) => (
+                <ForwardTargetRow
+                  key={target.id}
+                  target={target}
+                  isSelected={selectedIds.includes(target.id)}
+                  onToggle={toggleConversation}
+                />
+              ))}
+              {filteredOrgMembers.length > 0 && (
+                <>
+                  {filteredConversations.length > 0 && (
+                    <div className="px-2.5 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                      People
+                    </div>
                   )}
-                  onClick={() => toggleConversation(conversation.id)}
-                >
-                  <Checkbox
-                    checked={isSelected}
-                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary pointer-events-none"
-                  />
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={avatarUrl} alt={name} className="object-cover" />
-                    <AvatarFallback className={cn('text-xs', conversation.type === 'group' && 'bg-primary/10 text-primary')}>
-                      {initials}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm font-medium truncate flex-1 min-w-0">{name}</span>
-                </div>
-              );
-            })
+                  {filteredOrgMembers.map((target) => (
+                    <ForwardTargetRow
+                      key={target.id}
+                      target={target}
+                      isSelected={selectedIds.includes(target.id)}
+                      onToggle={toggleConversation}
+                    />
+                  ))}
+                </>
+              )}
+            </>
           )}
         </div>
 
