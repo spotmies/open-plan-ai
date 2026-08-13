@@ -351,8 +351,10 @@ export interface TaskFilter {
   moduleIds?: string[];
   assignee?: string[];
   assignedBy?: string[];
+  updatedBy?: string[];
   milestoneId?: string;
   dueDate?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
+  dueDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides dueDate preset
   tags?: string[];
   hasBlockers?: boolean;
 }

@@ -137,7 +137,13 @@ export function useCreateIssue(projectId: string) {
       queryClient.setQueryData(queryKeys.projects.detail(projectId), (old: any) =>
         old ? { ...old, issues: [...(old.issues || []), createdIssue] } : old
       );
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
+      // refetchType: 'none' — the detail cache above is already patched with the
+      // new issue, so an immediate refetch here only serves other (unmounted)
+      // consumers of queryKeys.projects.root. Forcing it right away would abort
+      // the project-detail query's in-flight combined fetch (see useProjectDetail.ts),
+      // which shares one AbortSignal across its tasks/milestones/issues sub-requests
+      // and shows up in devtools as those requests being cancelled and re-fired.
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.root, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
@@ -368,11 +374,13 @@ export function useUpdateModule(projectId: string) {
   return useMutation({
     mutationFn: ({ moduleId, updates }: { moduleId: string; updates: ModuleUpdate }) =>
       modulesService.update(moduleId, updates),
+    // No success toast: the module detail modal autosaves per field on
+    // blur/select-change, so a toast here would fire on every single field
+    // edit instead of once for the overall edit session.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
       queryClient.invalidateQueries({ queryKey: queryKeys.modules.list(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
-      toast.success('Module updated successfully');
     },
     onError: () => {
       toast.error('Failed to update module');

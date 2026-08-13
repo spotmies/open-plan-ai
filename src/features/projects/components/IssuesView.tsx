@@ -56,8 +56,11 @@ interface IssuesViewProps {
   statusFilter?: string[]; // status keys from the project's issue buckets (custom, not a fixed enum)
   assigneeFilter?: string[];
   assignedByFilter?: string[];
+  updatedByFilter?: string[];
   dueDateFilter?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
+  dueDateCustomFilter?: string;
   reportedDateFilter?: 'today' | 'this-week' | 'this-month';
+  reportedDateCustomFilter?: string;
   tagsFilter?: string[];
   isAddDialogOpen?: boolean;
   onAddDialogClose?: () => void;
@@ -141,8 +144,11 @@ export function IssuesView({
   statusFilter: externalStatusFilter = [],
   assigneeFilter: externalAssigneeFilter = [],
   assignedByFilter: externalAssignedByFilter = [],
+  updatedByFilter: externalUpdatedByFilter = [],
   dueDateFilter: externalDueDateFilter,
+  dueDateCustomFilter: externalDueDateCustomFilter,
   reportedDateFilter: externalReportedDateFilter,
+  reportedDateCustomFilter: externalReportedDateCustomFilter,
   tagsFilter: externalTagsFilter = [],
   isAddDialogOpen: externalIsAddDialogOpen,
   onAddDialogClose,
@@ -192,8 +198,11 @@ export function IssuesView({
   const statusFilter = externalStatusFilter ?? internalStatusFilter;
   const assigneeFilter = externalAssigneeFilter;
   const assignedByFilter = externalAssignedByFilter;
+  const updatedByFilter = externalUpdatedByFilter;
   const dueDateFilter = externalDueDateFilter;
+  const dueDateCustomFilter = externalDueDateCustomFilter;
   const reportedDateFilter = externalReportedDateFilter;
+  const reportedDateCustomFilter = externalReportedDateCustomFilter;
   const tagsFilter = externalTagsFilter;
 
   useEffect(() => {
@@ -249,10 +258,15 @@ export function IssuesView({
       (issue.assignees?.some(a => assigneeFilter.includes(a.id)));
     const matchesAssignedBy = !assignedByFilter.length ||
       assignedByFilter.includes(issue.reportedBy.id);
+    const matchesUpdatedBy = !updatedByFilter.length ||
+      (!!issue.updatedBy && updatedByFilter.includes(issue.updatedBy.id));
     const matchesTags = !tagsFilter.length ||
       (issue.tags?.some(tag => tagsFilter.includes(tag)) ?? false);
     let matchesDueDate = true;
-    if (dueDateFilter) {
+    if (dueDateCustomFilter) {
+      const issueDueDate = issue.dueDate ? new Date(issue.dueDate) : null;
+      matchesDueDate = !!issueDueDate && issueDueDate.toDateString() === new Date(dueDateCustomFilter).toDateString();
+    } else if (dueDateFilter) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const issueDueDate = issue.dueDate ? new Date(issue.dueDate) : null;
@@ -282,7 +296,10 @@ export function IssuesView({
       }
     }
     let matchesReportedDate = true;
-    if (reportedDateFilter) {
+    if (reportedDateCustomFilter) {
+      const issueReportedDate = issue.reportedAt ? new Date(issue.reportedAt) : null;
+      matchesReportedDate = !!issueReportedDate && issueReportedDate.toDateString() === new Date(reportedDateCustomFilter).toDateString();
+    } else if (reportedDateFilter) {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       const todayEnd = new Date();
@@ -306,7 +323,7 @@ export function IssuesView({
       }
     }
 
-    return matchesSearch && matchesSeverity && matchesStatus && matchesAssignee && matchesAssignedBy && matchesTags && matchesDueDate && matchesReportedDate;
+    return matchesSearch && matchesSeverity && matchesStatus && matchesAssignee && matchesAssignedBy && matchesUpdatedBy && matchesTags && matchesDueDate && matchesReportedDate;
   });
 
   // Sort by severity (critical first), then by date

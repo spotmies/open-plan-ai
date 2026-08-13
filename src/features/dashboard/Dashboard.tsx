@@ -280,7 +280,7 @@ export default function Dashboard() {
               <div className="lg:h-full lg:min-h-0 flex flex-col">
                 <ProjectsOverview projects={dashboardProjects} atRiskProjectIds={atRiskProjectIds} />
               </div>
-              <div className="flex flex-col lg:self-start">
+              <div className="lg:h-full lg:min-h-0 flex flex-col">
                 <EngineeringChangesSummary projects={dashboardProjects} />
               </div>
               <div className="flex flex-col space-y-4 md:space-y-3 lg:h-full lg:min-h-0">

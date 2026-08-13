@@ -86,16 +86,26 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
   }
 
   if (event.type === 'issue') {
+    const isResolved = event.issueStatus === 'resolved' || event.issueStatus === 'wont-fix';
     return (
       <div
         onClick={onClick}
         className={cn(
           'flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer transition-colors',
-          'bg-destructive/5 hover:bg-destructive/10 border border-destructive/20'
+          isResolved
+            ? 'bg-green-500/5 hover:bg-green-500/10 border border-green-500/20'
+            : 'bg-destructive/5 hover:bg-destructive/10 border border-destructive/20'
         )}
       >
-        <AlertCircle className={cn('h-3 w-3 flex-shrink-0', severityColors[event.severity || 'major'])} />
-        <span className="text-xs font-medium text-destructive truncate flex-1 min-w-0">
+        {isResolved ? (
+          <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-green-600" />
+        ) : (
+          <AlertCircle className={cn('h-3 w-3 flex-shrink-0', severityColors[event.severity || 'major'])} />
+        )}
+        <span className={cn(
+          'text-xs font-medium truncate flex-1 min-w-0',
+          isResolved ? 'text-green-600 line-through' : 'text-destructive'
+        )}>
           {event.title}
         </span>
         {!isCompact && event.projectName && (
@@ -103,7 +113,7 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
             {event.projectName}
           </Badge>
         )}
-        {!isCompact && event.severity && (
+        {!isCompact && event.severity && !isResolved && (
           <Badge variant="outline" className="text-[10px] h-4 shrink-0 bg-destructive/10 text-destructive border-destructive/20">
             {event.severity}
           </Badge>

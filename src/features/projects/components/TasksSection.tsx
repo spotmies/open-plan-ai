@@ -149,8 +149,10 @@ export function TasksSection({
     if (filters.moduleIds?.length || filters.module?.length) count++;
     if (filters.assignee?.length) count++;
     if (filters.assignedBy?.length) count++;
+    if (filters.updatedBy?.length) count++;
     if (filters.milestoneId) count++;
     if (filters.dueDate) count++;
+    if (filters.dueDateCustom) count++;
     if (filters.tags?.length) count++;
     if (filters.hasBlockers) count++;
     return count;
@@ -223,6 +225,12 @@ export function TasksSection({
         if (createdById && !filters.assignedBy.includes(createdById)) return false;
       }
 
+      // Updated By filter
+      if (filters.updatedBy?.length) {
+        const updatedById = task.updatedBy?.id;
+        if (!updatedById || !filters.updatedBy.includes(updatedById)) return false;
+      }
+
       // Milestone filter
       if (filters.milestoneId) {
         if (filters.milestoneId === 'none') {
@@ -232,8 +240,13 @@ export function TasksSection({
         }
       }
 
-      // Due date filter
-      if (filters.dueDate) {
+      // Exact due date filter (calendar-picked, takes precedence over preset)
+      if (filters.dueDateCustom) {
+        const taskDueDate = task.dueDate ? new Date(task.dueDate) : null;
+        if (!taskDueDate || taskDueDate.toDateString() !== new Date(filters.dueDateCustom).toDateString()) {
+          return false;
+        }
+      } else if (filters.dueDate) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const taskDueDate = task.dueDate ? new Date(task.dueDate) : null;

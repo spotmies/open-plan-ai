@@ -14,7 +14,7 @@ import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { categorizeMyDayItems, MyDayItem } from './utils/myDayUtils';
 import { Task, Issue, TaskStatus, IssueStatus, MyDayGroupBy, MyDayFilter, MyTasksColumnFilters } from '@/types';
 import { useMyDayTasks, useCompletedTodayCount } from '@/hooks/useMyDayTasks';
-import { useUpdateTask, useBatchUpdateTasks, useCreatePersonalTask } from '@/hooks/useTasks';
+import { useUpdateTask, useBatchUpdateTasks, useCreatePersonalTask, useDeleteTask } from '@/hooks/useTasks';
 import { useUpdateIssue } from '@/hooks/useIssues';
 import { useProjects } from '@/hooks/useProjects';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
@@ -53,6 +53,7 @@ export default function MyDay() {
   const { data: userTasks = [], isLoading: tasksLoading } = useMyDayTasks(filter);
   const { data: overdueTasks = [] } = useMyDayTasks('overdue');
   const { data: todayTasks = [] } = useMyDayTasks('today');
+  const todayActiveCount = todayTasks.length;
   // Stat tiles reflect the full assigned set, not just the active tab — otherwise
   // e.g. the default "today" tab makes every surviving item `isDueToday`, which the
   // categorizer treats as "needs attention", so "Ready to Work" could never be > 0.
@@ -65,6 +66,7 @@ export default function MyDay() {
   const batchUpdateTasksMutation = useBatchUpdateTasks();
   const updateIssueMutation = useUpdateIssue();
   const createPersonalTaskMutation = useCreatePersonalTask();
+  const deleteTaskMutation = useDeleteTask();
 
   // The assignee picker for a personal task only ever offers the current
   // user — personal tasks are private to their creator, who is always the
@@ -218,6 +220,21 @@ export default function MyDay() {
     }
   };
 
+  const handleTaskDelete = async (taskId: string) => {
+    const item = userTasks.find(t => t.id === taskId) ?? allDayItems.find(t => t.id === taskId);
+    // Personal (no-project) tasks carry projectId === '' — only bail if the
+    // task itself couldn't be resolved, not on a falsy-but-valid projectId.
+    if (!item && selectedTask?.id !== taskId) return;
+    const projectId = item?.projectId ?? selectedTask?.projectId ?? '';
+    try {
+      await deleteTaskMutation.mutateAsync({ projectId, taskId });
+      toast.success('Task deleted');
+    } catch (error) {
+      logger.error('Failed to delete task:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete task');
+    }
+  };
+
   const handleCloseIssueModal = () => {
     setIsIssueModalOpen(false);
     setSelectedIssue(null);
@@ -276,9 +293,9 @@ export default function MyDay() {
             <TabsList className="h-9 p-1 shrink-0 gap-2">
               <TabsTrigger value="today" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
                 My Day
-                {todayTasks.length > 0 && filter !== 'today' && (
+                {todayActiveCount > 0 && filter !== 'today' && (
                   <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
-                    {todayTasks.length}
+                    {todayActiveCount}
                   </span>
                 )}
               </TabsTrigger>
@@ -304,11 +321,11 @@ export default function MyDay() {
 
             <Button
               size="sm"
-              className="gap-1.5 sm:gap-2 h-9 rounded-lg px-2.5 sm:px-3 text-xs sm:text-sm order-1 sm:order-2"
+              className="gap-1 h-9 rounded-lg px-2.5 sm:px-3 text-xs sm:text-sm order-1 sm:order-2"
               onClick={() => setIsAddTaskOpen(true)}
             >
               <Plus className="h-4 w-4" />
-              Add<span className="hidden sm:inline">&nbsp;Task</span>
+              Add<span className="hidden sm:inline"> Task</span>
             </Button>
           </div>
         </div>
@@ -366,6 +383,7 @@ export default function MyDay() {
           assignableMembers={selectedTask.projectId ? activeProjectMembers : selfAsAssignableMember}
           statusOptions={selectedTask.projectId ? undefined : PERSONAL_TASK_STATUS_OPTIONS}
           projectName={selectedTaskProject?.name ?? (selectedTask.projectId ? undefined : 'Personal')}
+          onDelete={handleTaskDelete}
           onUpdate={async (updatedTask) => {
             try {
               const item = userTasks.find(t => t.id === updatedTask.id);

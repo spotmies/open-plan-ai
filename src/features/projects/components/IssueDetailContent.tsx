@@ -176,6 +176,9 @@ export function IssueDetailContent({
     const [editedIssue, setEditedIssue] = useState<Issue | null>(issue);
     const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set());
     const [newComment, setNewComment] = useState('');
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const [editingCommentValue, setEditingCommentValue] = useState('');
+    const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
     const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
     const [isBlockingTaskPopoverOpen, setIsBlockingTaskPopoverOpen] = useState(false);
     const [isBlockedByTaskPopoverOpen, setIsBlockedByTaskPopoverOpen] = useState(false);
@@ -610,6 +613,61 @@ export function IssueDetailContent({
         }
     };
 
+    const handleStartEditComment = (comment: Comment) => {
+        setEditingCommentId(comment.id);
+        setEditingCommentValue(comment.content);
+    };
+
+    const handleCancelEditComment = () => {
+        setEditingCommentId(null);
+        setEditingCommentValue('');
+    };
+
+    const handleSaveEditComment = async () => {
+        if (!editingCommentId || !editingCommentValue.trim()) return;
+        const commentId = editingCommentId;
+        const content = editingCommentValue.trim();
+
+        if (mode !== 'create') {
+            try {
+                await commentsService.update(commentId, content);
+            } catch {
+                toast.error('Failed to update comment');
+                return;
+            }
+        }
+
+        setEditedIssue(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                comments: (prev.comments || []).map(c => c.id === commentId ? { ...c, content } : c),
+            };
+        });
+        setEditingCommentId(null);
+        setEditingCommentValue('');
+    };
+
+    const handleDeleteComment = async () => {
+        if (!deletingCommentId) return;
+        const commentId = deletingCommentId;
+        setDeletingCommentId(null);
+
+        if (mode !== 'create') {
+            try {
+                await commentsService.delete(commentId);
+            } catch {
+                toast.error('Failed to delete comment');
+                return;
+            }
+        }
+
+        setEditedIssue(prev => {
+            if (!prev) return prev;
+            return { ...prev, comments: (prev.comments || []).filter(c => c.id !== commentId) };
+        });
+    };
+
     return (
         <div className="flex flex-col h-full bg-background">
             {/* Header with Title and Metadata */}
@@ -650,6 +708,16 @@ export function IssueDetailContent({
                     }}
                     title="Delete Issue"
                     description="Are you sure you want to delete this issue? This action cannot be undone."
+                    confirmText="Delete"
+                    variant="destructive"
+                />
+
+                <ConfirmationDialog
+                    open={!!deletingCommentId}
+                    onOpenChange={(open) => !open && setDeletingCommentId(null)}
+                    onConfirm={handleDeleteComment}
+                    title="Delete Comment"
+                    description="Are you sure you want to delete this comment? This action cannot be undone."
                     confirmText="Delete"
                     variant="destructive"
                 />
@@ -1418,12 +1486,12 @@ export function IssueDetailContent({
 
                             <div className={cn(isMobileLayout && checklist.length > 0 && 'border rounded-xl divide-y')}>
                             {checklist.map((item) => (
-                                <div key={item.id} className={cn('flex items-center gap-3 group', isMobileLayout && 'px-3 py-2.5')}>
+                                <div key={item.id} className={cn('flex items-start gap-3 group', isMobileLayout && 'px-3 py-2.5')}>
                                     <Checkbox
                                         checked={item.completed}
                                         onCheckedChange={() => handleToggleChecklistItem(item.id)}
                                         disabled={isMobileFieldsLocked}
-                                        className={cn(isMobileLayout && 'h-5 w-5 rounded-md data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 disabled:opacity-100 disabled:cursor-default')}
+                                        className={cn('mt-0.5', isMobileLayout && 'h-5 w-5 rounded-md data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 disabled:opacity-100 disabled:cursor-default')}
                                     />
                                     {editingChecklistId === item.id ? (
                                         <div className="flex-1 flex items-center gap-2">
@@ -1446,11 +1514,11 @@ export function IssueDetailContent({
                                         </div>
                                     ) : (
                                         <>
-                                            <span className={cn('flex-1 text-sm', item.completed && 'line-through text-muted-foreground')}>
+                                            <span className={cn('flex-1 text-sm pt-0.5', item.completed && 'line-through text-muted-foreground')}>
                                                 {item.text}
                                             </span>
                                             {!isMobileFieldsLocked && (
-                                            <div className={cn('flex items-center gap-1', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                                            <div className={cn('flex items-center gap-1 mt-0.5', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
@@ -1970,24 +2038,73 @@ export function IssueDetailContent({
                         </h3>
 
                         <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                            {comments.map((comment) => (
-                                <div key={comment.id} className="flex gap-3 p-3 bg-muted/50 rounded-lg">
-                                    <Avatar className="h-8 w-8">
-                                        <AvatarFallback className="text-xs">
-                                            {comment.author.initials}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <div className="flex-1 space-y-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm font-medium">{comment.author.name}</span>
-                                            <span className="text-xs text-muted-foreground">
-                                                {format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}
-                                            </span>
+                            {comments.map((comment) => {
+                                const isOwnComment = profile?.id === comment.author.id;
+                                const isEditingThisComment = editingCommentId === comment.id;
+                                return (
+                                    <div key={comment.id} className="flex gap-3 p-3 bg-muted/50 rounded-lg group">
+                                        <Avatar className="h-8 w-8">
+                                            <AvatarFallback className="text-xs">
+                                                {comment.author.initials}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div className="flex-1 space-y-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-medium">{comment.author.name}</span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}
+                                                </span>
+                                                {isOwnComment && !isEditingThisComment && (
+                                                    <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            type="button"
+                                                            className="rounded p-0.5 text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
+                                                            onClick={() => handleStartEditComment(comment)}
+                                                            aria-label="Edit comment"
+                                                        >
+                                                            <Pencil className="h-3 w-3" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+                                                            onClick={() => setDeletingCommentId(comment.id)}
+                                                            aria-label="Delete comment"
+                                                        >
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {isEditingThisComment ? (
+                                                <div className="space-y-2">
+                                                    <Textarea
+                                                        autoFocus
+                                                        value={editingCommentValue}
+                                                        onChange={(e) => setEditingCommentValue(e.target.value)}
+                                                        className="min-h-[60px] text-sm"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                                                e.preventDefault();
+                                                                handleSaveEditComment();
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div className="flex gap-2">
+                                                        <Button size="sm" onClick={handleSaveEditComment} disabled={!editingCommentValue.trim()}>
+                                                            Save
+                                                        </Button>
+                                                        <Button size="sm" variant="outline" onClick={handleCancelEditComment}>
+                                                            Cancel
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-muted-foreground">{comment.content}</p>
+                                            )}
                                         </div>
-                                        <p className="text-sm text-muted-foreground">{comment.content}</p>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         <div className="flex gap-2">

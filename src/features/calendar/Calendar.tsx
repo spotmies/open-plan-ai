@@ -225,7 +225,7 @@ const CalendarPage: React.FC = () => {
     allTasks
       .filter(task => task.assignees?.some(a => a.id === user?.id))
       .forEach(task => {
-        const projectName = projectMap.get(task.projectId || '') || 'Unknown Project';
+        const projectName = task.projectId ? projectMap.get(task.projectId) || 'Unknown Project' : 'Personal';
         const event = taskToCalendarEvent(task, projectName);
         if (event) events.push(event);
       });

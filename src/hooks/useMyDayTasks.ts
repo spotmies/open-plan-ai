@@ -72,12 +72,12 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
     if (!user?.id) return [];
 
     // All tasks from /tasks/me/all are already assigned to the current user (filtered server-side).
-    // Completed tasks are excluded from Overdue/All, but the My Day (today) tab keeps items
-    // completed today so they show as done rather than vanishing mid-day.
+    // Completed tasks are excluded from every filter (today/overdue/all) so a task marked
+    // done disappears from the list immediately instead of lingering in My Day.
     const taskItems: MyDayItem[] = rawTasks
       .filter(task =>
         matchesFilter(getDueDateStatus(task.dueDate), filter) &&
-        (task.status !== 'done' || (filter === 'today' && isCompletedToday(task)))
+        task.status !== 'done'
       )
       .map(task => {
         const dueDateStatus = getDueDateStatus(task.dueDate);
@@ -102,15 +102,15 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
         } as MyDayItem;
       });
 
-    // Wont-fix issues never belong here. Resolved issues are excluded from Overdue/All, but
-    // the My Day (today) tab keeps issues resolved today (mirrors the task carve-out above).
+    // Wont-fix issues never belong here. Resolved issues are excluded from every filter
+    // (mirrors the task exclusion above) so a resolved issue disappears immediately too.
     const issueItems: MyDayItem[] = rawIssues
       .filter(({ issue }) => {
         const isAssignedToUser = issue.assignees?.some(a => a.id === user.id) ?? false;
         if (issue.status === 'wont-fix') return false;
         const isUnresolved = issue.status !== 'resolved';
         return isAssignedToUser &&
-          (isUnresolved || (filter === 'today' && isCompletedToday(issue))) &&
+          isUnresolved &&
           matchesFilter(getDueDateStatus(issue.dueDate), filter);
       })
       .map(({ issue, projectName }) => {

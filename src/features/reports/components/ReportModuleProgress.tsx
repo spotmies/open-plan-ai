@@ -1,4 +1,4 @@
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useMemo } from 'react';
 import { Layers } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -6,18 +6,13 @@ import { ModuleProgressItem } from '../utils/reportsUtils';
 
 interface ReportModuleProgressProps {
   data: ModuleProgressItem[];
-  onModuleClick?: (moduleId: string) => void;
 }
 
-export const ReportModuleProgress = memo(function ReportModuleProgress({ data = [], onModuleClick }: ReportModuleProgressProps) {
+export const ReportModuleProgress = memo(function ReportModuleProgress({ data = [] }: ReportModuleProgressProps) {
   const sortedData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
     return [...safeData].sort((a, b) => b.progress - a.progress);
   }, [data]);
-
-  const handleModuleClick = useCallback((moduleId: string) => {
-    onModuleClick?.(moduleId);
-  }, [onModuleClick]);
 
   return (
     <Card className="h-full">
@@ -37,8 +32,7 @@ export const ReportModuleProgress = memo(function ReportModuleProgress({ data = 
             {sortedData.map((item) => (
               <div
                 key={item.module.id}
-                className="cursor-pointer hover:bg-muted/50 p-2 -mx-2 rounded-lg transition-colors"
-                onClick={() => handleModuleClick(item.module.id)}
+                className="p-2 -mx-2 rounded-lg"
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">

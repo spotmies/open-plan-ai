@@ -255,14 +255,14 @@ export default function Projects() {
     });
   };
 
-  const isProjectOwner = selectedProjectDetails?.createdBy === user?.id;
-
   const canEditSelectedProject = (() => {
     if (!selectedProjectDetails || !user?.id) return false;
     if (selectedProjectDetails.createdBy === user.id) return true;
     const role = (selectedProjectDetails.myRole || '').toLowerCase();
     return role === 'admin';
   })();
+
+  const isProjectOwner = canEditSelectedProject;
 
   const canEditProject = (project: { createdBy?: string; myRole?: string }) => {
     if (!user?.id) return false;
@@ -331,6 +331,16 @@ export default function Projects() {
                   onChange={(e) => handleSearch(e.target.value)}
                   className="pl-9 pr-9 h-12 rounded-2xl bg-background border border-border/60 shadow-sm focus-visible:ring-1 focus-visible:ring-border"
                 />
+                {search && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-12 w-9 text-foreground/70 hover:text-foreground"
+                    onClick={() => handleSearch('')}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="relative flex-1 max-w-none md:max-w-sm">
@@ -339,8 +349,18 @@ export default function Projects() {
                   placeholder="Search projects..."
                   value={search}
                   onChange={(e) => handleSearch(e.target.value)}
-                  className="pl-9 h-10 md:h-9 rounded-xl md:rounded-md bg-background/80"
+                  className="pl-9 pr-9 h-10 md:h-9 rounded-xl md:rounded-md bg-background/80"
                 />
+                {search && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-10 md:h-9 w-9 text-foreground/70 hover:text-foreground"
+                    onClick={() => handleSearch('')}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             )}
 

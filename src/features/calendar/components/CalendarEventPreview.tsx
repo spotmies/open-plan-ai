@@ -52,6 +52,13 @@ const priorityLabels: Record<string, { label: string; className: string }> = {
   'trivial': { label: 'Trivial', className: 'bg-muted text-muted-foreground' },
 };
 
+const issueStatusLabels: Record<string, { label: string; className: string }> = {
+  'open': { label: 'Open', className: 'bg-destructive/10 text-destructive' },
+  'in-progress': { label: 'In Progress', className: 'bg-blue-500/10 text-blue-600' },
+  'resolved': { label: 'Resolved', className: 'bg-green-500/10 text-green-600' },
+  'wont-fix': { label: "Won't Fix", className: 'bg-muted text-muted-foreground' },
+};
+
 export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
   event,
   children,
@@ -75,6 +82,11 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
             {event.type === 'milestone' && event.completed && (
               <Badge variant="secondary" className="bg-green-500/10 text-green-600">
                 Completed
+              </Badge>
+            )}
+            {event.type === 'issue' && event.issueStatus && issueStatusLabels[event.issueStatus] && (
+              <Badge variant="secondary" className={issueStatusLabels[event.issueStatus].className}>
+                {issueStatusLabels[event.issueStatus].label}
               </Badge>
             )}
           </div>

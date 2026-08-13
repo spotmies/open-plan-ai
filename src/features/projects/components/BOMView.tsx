@@ -1317,7 +1317,7 @@ export function BOMView({
               className="bg-transparent border-none outline-none text-foreground text-sm w-full placeholder:text-muted-foreground"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={() => setSearch('')} className="text-foreground/70 hover:text-foreground transition-colors">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}

@@ -263,7 +263,6 @@ export function categorizeMyDayTasks(tasks: MyDayTask[]): {
     // Check if task needs attention
     const needsAttentionCheck =
       task.isOverdue ||
-      task.isDueToday ||
       task.priority === 'critical' ||
       task.priority === 'major' ||
       task.isBlockingOthers;
@@ -322,7 +321,6 @@ export function categorizeMyDayItems(items: MyDayItem[]): {
     // Check if item needs attention
     const needsAttentionCheck =
       item.isOverdue ||
-      item.isDueToday ||
       item.priority === 'critical' ||
       item.priority === 'major' ||
       item.isBlockingOthers;

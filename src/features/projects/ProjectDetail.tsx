@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag } from 'lucide-react';
+import { Flag, AlertTriangle, Users, Calendar, CalendarIcon, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag } from 'lucide-react';
 import { BOMView } from './components/BOMView';
 import RequirementsView from './components/RequirementsView';
 import { ECOView } from './components/ECOView';
@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { TasksSection, ViewControls } from './components/TasksSection';
 import { ModulesSection, ModuleViewControls } from './components/ModulesSection';
 import { MilestonesView } from './components/MilestonesView';
@@ -97,8 +98,11 @@ interface IssueFilter {
   severity?: IssueSeverity[];
   assigneeId?: string[];
   assignedById?: string[];
+  updatedById?: string[];
   dueDate?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
+  dueDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides dueDate preset
   reportedDate?: 'today' | 'this-week' | 'this-month';
+  reportedDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides reportedDate preset
   tags?: string[];
 }
 
@@ -292,6 +296,20 @@ function IssueViewControls({
               />
             </div>
 
+            {/* Updated By Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Updated By
+              </Label>
+              <MultiSelect
+                options={teamMembers.map(member => ({ value: member.id, label: member.name }))}
+                selected={filters.updatedById || []}
+                onChange={(values) => onFiltersChange({ ...filters, updatedById: values.length ? values : undefined })}
+                placeholder="All Members"
+              />
+            </div>
+
             {/* Tags Filter */}
             {allTags.length > 0 && (
               <div className="space-y-2">
@@ -314,25 +332,65 @@ function IssueViewControls({
                 <Clock className="h-3 w-3" />
                 Due Date
               </Label>
-              <Select
-                value={filters.dueDate ?? 'all'}
-                onValueChange={(v) => onFiltersChange({
-                  ...filters,
-                  dueDate: v === 'all' ? undefined : v as IssueFilter['dueDate'],
-                })}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue placeholder="Any Date" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Any Date</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="this-week">This Week</SelectItem>
-                  <SelectItem value="this-month">This Month</SelectItem>
-                  <SelectItem value="no-date">No Date</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-1">
+                <Select
+                  value={filters.dueDate ?? 'all'}
+                  onValueChange={(v) => onFiltersChange({
+                    ...filters,
+                    dueDate: v === 'all' ? undefined : v as IssueFilter['dueDate'],
+                    dueDateCustom: undefined,
+                  })}
+                >
+                  <SelectTrigger className="h-8 flex-1">
+                    <SelectValue placeholder="Any Date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any Date</SelectItem>
+                    <SelectItem value="overdue">Overdue</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                    <SelectItem value="no-date">No Date</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={filters.dueDateCustom ? 'secondary' : 'outline'}
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                    >
+                      <CalendarIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <CalendarPicker
+                      mode="single"
+                      selected={filters.dueDateCustom ? new Date(filters.dueDateCustom) : undefined}
+                      onSelect={(date) => onFiltersChange({
+                        ...filters,
+                        dueDateCustom: date ? format(date, 'yyyy-MM-dd') : undefined,
+                        dueDate: date ? undefined : filters.dueDate,
+                      })}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {filters.dueDateCustom && (
+                <div className="flex items-center justify-between pl-1">
+                  <span className="text-xs text-muted-foreground">{format(new Date(filters.dueDateCustom), 'PPP')}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1.5 text-xs"
+                    onClick={() => onFiltersChange({ ...filters, dueDateCustom: undefined })}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Reported Date Filter */}
@@ -341,23 +399,63 @@ function IssueViewControls({
                 <Clock className="h-3 w-3" />
                 Reported Date
               </Label>
-              <Select
-                value={filters.reportedDate ?? 'all'}
-                onValueChange={(v) => onFiltersChange({
-                  ...filters,
-                  reportedDate: v === 'all' ? undefined : v as IssueFilter['reportedDate'],
-                })}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue placeholder="Any Date" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Any Date</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="this-week">This Week</SelectItem>
-                  <SelectItem value="this-month">This Month</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-1">
+                <Select
+                  value={filters.reportedDate ?? 'all'}
+                  onValueChange={(v) => onFiltersChange({
+                    ...filters,
+                    reportedDate: v === 'all' ? undefined : v as IssueFilter['reportedDate'],
+                    reportedDateCustom: undefined,
+                  })}
+                >
+                  <SelectTrigger className="h-8 flex-1">
+                    <SelectValue placeholder="Any Date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any Date</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={filters.reportedDateCustom ? 'secondary' : 'outline'}
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                    >
+                      <CalendarIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <CalendarPicker
+                      mode="single"
+                      selected={filters.reportedDateCustom ? new Date(filters.reportedDateCustom) : undefined}
+                      onSelect={(date) => onFiltersChange({
+                        ...filters,
+                        reportedDateCustom: date ? format(date, 'yyyy-MM-dd') : undefined,
+                        reportedDate: date ? undefined : filters.reportedDate,
+                      })}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {filters.reportedDateCustom && (
+                <div className="flex items-center justify-between pl-1">
+                  <span className="text-xs text-muted-foreground">{format(new Date(filters.reportedDateCustom), 'PPP')}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1.5 text-xs"
+                    onClick={() => onFiltersChange({ ...filters, reportedDateCustom: undefined })}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </PopoverContent>
@@ -672,8 +770,11 @@ export default function ProjectDetail() {
     if (issueFilters.severity?.length) count++;
     if (issueFilters.assigneeId?.length) count++;
     if (issueFilters.assignedById?.length) count++;
+    if (issueFilters.updatedById?.length) count++;
     if (issueFilters.dueDate !== undefined) count++;
+    if (issueFilters.dueDateCustom !== undefined) count++;
     if (issueFilters.reportedDate !== undefined) count++;
+    if (issueFilters.reportedDateCustom !== undefined) count++;
     if (issueFilters.tags?.length) count++;
     return count;
   }, [issueFilters]);
@@ -1215,8 +1316,9 @@ export default function ProjectDetail() {
 
         {/* Section Tabs - Entity-based navigation */}
         <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
+          <div className="sticky top-0 z-20 bg-background">
           {!partId && !ecoId && !isMobileModuleDetailOpen && (
-            <div className="flex flex-row md:items-center justify-between gap-2 w-full sticky top-0 z-20 bg-background pb-1">
+            <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
               {/* Left Side: Tabs */}
               <div className="flex-1 md:flex-none w-full md:w-auto py-1 min-w-0 md:mr-auto overflow-x-auto hide-scrollbar">
                 <TabsList
@@ -1365,13 +1467,13 @@ export default function ProjectDetail() {
                       placeholder="Search tasks..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 h-9 w-full bg-background rounded-lg"
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-lg"
                     />
                     {searchQuery && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-0 h-9 w-9 text-muted-foreground hover:text-foreground"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
                         onClick={() => setSearchQuery('')}
                       >
                         <X className="h-4 w-4" />
@@ -1416,13 +1518,13 @@ export default function ProjectDetail() {
                       placeholder="Search modules..."
                       value={moduleSearchQuery}
                       onChange={(e) => setModuleSearchQuery(e.target.value)}
-                      className="pl-9 h-9 w-full bg-background rounded-full md:rounded-lg"
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-full md:rounded-lg"
                     />
                     {moduleSearchQuery && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-0 h-9 w-9 text-muted-foreground hover:text-foreground"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
                         onClick={() => setModuleSearchQuery('')}
                       >
                         <X className="h-4 w-4" />
@@ -1457,13 +1559,13 @@ export default function ProjectDetail() {
                       placeholder="Search milestones..."
                       value={milestoneSearchQuery}
                       onChange={(e) => setMilestoneSearchQuery(e.target.value)}
-                      className="pl-9 h-9 w-full bg-background rounded-lg"
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-lg"
                     />
                     {milestoneSearchQuery && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-0 h-9 w-9 text-muted-foreground hover:text-foreground"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
                         onClick={() => setMilestoneSearchQuery('')}
                       >
                         <X className="h-4 w-4" />
@@ -1498,13 +1600,13 @@ export default function ProjectDetail() {
                       placeholder="Search issues..."
                       value={issueSearchQuery}
                       onChange={(e) => setIssueSearchQuery(e.target.value)}
-                      className="pl-9 h-9 w-full bg-background rounded-lg"
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-lg"
                     />
                     {issueSearchQuery && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-0 h-9 w-9 text-muted-foreground hover:text-foreground"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
                         onClick={() => setIssueSearchQuery('')}
                       >
                         <X className="h-4 w-4" />
@@ -1540,6 +1642,7 @@ export default function ProjectDetail() {
               )}
             </div>
           )}
+          </div>
 
           <TabsContent value="tasks" className="mt-6">
             <TasksSection
@@ -1610,8 +1713,11 @@ export default function ProjectDetail() {
               statusFilter={issueFilters.status}
               assigneeFilter={issueFilters.assigneeId}
               assignedByFilter={issueFilters.assignedById}
+              updatedByFilter={issueFilters.updatedById}
               dueDateFilter={issueFilters.dueDate}
+              dueDateCustomFilter={issueFilters.dueDateCustom}
               reportedDateFilter={issueFilters.reportedDate}
+              reportedDateCustomFilter={issueFilters.reportedDateCustom}
               tagsFilter={issueFilters.tags}
               isAddDialogOpen={isAddIssueDialogOpen}
               onAddDialogClose={() => setIsAddIssueDialogOpen(false)}

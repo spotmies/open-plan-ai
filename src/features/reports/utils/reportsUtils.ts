@@ -32,6 +32,12 @@ export interface StatusBreakdown {
   percentage: number;
 }
 
+export interface IssueStatusBreakdown {
+  status: string;
+  count: number;
+  percentage: number;
+}
+
 export interface MilestoneHealthItem {
   milestone: Milestone;
   status: 'on-track' | 'at-risk' | 'blocked' | 'complete';
@@ -263,6 +269,30 @@ export function getTaskStatusBreakdown(tasks: Task[]): StatusBreakdown[] {
   })).filter(item => item.count > 0);
 }
 
+// Get issue status breakdown
+export function getIssueStatusBreakdown(issues: Issue[]): IssueStatusBreakdown[] {
+  const total = issues.length;
+  if (total === 0) return [];
+
+  const statusOrder = ['open', 'in-progress', 'resolved', 'wont-fix'];
+  const counts = issues.reduce((acc, issue) => {
+    acc[issue.status] = (acc[issue.status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Known statuses first (in a fixed order), then any custom bucket keys.
+  const orderedStatuses = [
+    ...statusOrder,
+    ...Object.keys(counts).filter(status => !statusOrder.includes(status)),
+  ];
+
+  return orderedStatuses.map(status => ({
+    status,
+    count: counts[status] || 0,
+    percentage: Math.round(((counts[status] || 0) / total) * 100)
+  })).filter(item => item.count > 0);
+}
+
 // Get milestone health
 export function getMilestoneHealth(
   milestones: Milestone[],
@@ -483,4 +513,26 @@ export function getStatusLabel(status: TaskStatus): string {
     'blocked': 'Blocked'
   };
   return labels[status];
+}
+
+// Get issue status color
+export function getIssueStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    'open': 'hsl(var(--destructive))',
+    'in-progress': 'hsl(var(--status-in-progress))',
+    'resolved': 'hsl(var(--status-done))',
+    'wont-fix': 'hsl(var(--muted-foreground))'
+  };
+  return colors[status] || 'hsl(var(--muted-foreground))';
+}
+
+// Get issue status label
+export function getIssueStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    'open': 'Open',
+    'in-progress': 'In Progress',
+    'resolved': 'Resolved',
+    'wont-fix': "Won't Fix"
+  };
+  return labels[status] || status;
 }

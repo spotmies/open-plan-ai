@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, GitMerge, GitBranch, Check, CheckCircle,
   XCircle, Clock, Lock, AlertCircle, Boxes, Info, DollarSign, Flag,
   Package, Shield, Cpu, Scissors, RefreshCw, Send, Download, Edit,
-  History, Link2, X, Pause, Plus, ClipboardCheck, Loader2, Target, MessageSquare,
+  History, X, Pause, Plus, ClipboardCheck, Loader2, Target, MessageSquare,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -1307,38 +1307,17 @@ export function ECODetailView({
       </button> */}
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-2 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5 mb-2 flex-wrap">
-            <GitMerge className="w-4.5 h-4.5 text-blue-500" />
+      <div className="bg-card border border-border rounded-lg px-4 md:px-5 py-4 mb-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
+          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+            <GitMerge className="w-4.5 h-4.5 text-blue-500 shrink-0" />
             <span className="text-[13px] font-mono font-semibold text-blue-500">{detail.num}</span>
             <h1 className="text-[20px] font-semibold text-foreground">{detail.title}</h1>
             <StatusPill meta={sm} />
             <StatusPill meta={pm} />
             <StatusPill meta={cm} />
           </div>
-          <div className="flex items-center gap-4 flex-wrap mb-2 text-[12px] text-muted-foreground">
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <Link2 className="w-3 h-3" />
-              Originating ECR:{' '}
-              {detail.ecr
-                ? <span className="text-blue-500 font-semibold font-mono cursor-pointer">{detail.ecr}</span>
-                : <span className="text-muted-foreground/60">— (created directly)</span>}
-            </span>
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <Scissors className="w-3 h-3 text-blue-500" />
-              Effectivity: <span className="text-foreground font-semibold">{effectivityText(detail.effectivity)}</span>
-              <span className="text-muted-foreground/60">· {EFFECTIVITY_LABEL[detail.effectivity.type]}</span>
-            </span>
-          </div>
-          {detail.desc && (
-            <div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Reason</span>
-              <p className="text-[13px] text-muted-foreground max-w-3xl leading-relaxed">{detail.desc}</p>
-            </div>
-          )}
-        </div>
-        <div className="flex gap-2 flex-wrap shrink-0 w-full sm:w-auto">
+          <div className="flex gap-2 flex-wrap shrink-0 w-full sm:w-auto">
           {headerActions(detail.status, detail.originator === user?.name).map(a => {
             const thisLoading = !!actionPending[a.k];
 
@@ -1393,29 +1372,34 @@ export function ECODetailView({
               </button>
             );
           })}
+          </div>
         </div>
-      </div>
 
-      {/* Meta row */}
-      <div className="flex gap-5 flex-wrap text-[12px] text-muted-foreground mb-2 pt-3 border-t border-border">
-        {([
-          ['Type', ECO_TYPE_LABEL[detail.type]],
-          ['Reason', REASON_LABEL[detail.reason]],
-          ['Originator', detail.originator],
-          ['Change Owner', detail.owner],
-          ['Initiated', detail.created],
-          ['Affected Parts', String(detail.parts.length)],
-          ['ECO Revision', `${detail.revFrom} → ${detail.revTo}`],
-        ] as [string, string][]).map(([k, v]) => (
-          <span key={k}>
-            <span className="text-muted-foreground/60">{k}: </span>
-            <span className="text-foreground font-medium">{v}</span>
-          </span>
-        ))}
-      </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 mb-5">
-        <Info className="w-3 h-3" />
-        ECO revision tracks this change order; each affected part carries its own revision (see Affected Parts).
+        {detail.desc && (
+          <p className="text-[13px] text-muted-foreground leading-relaxed max-w-3xl mb-4">{detail.desc}</p>
+        )}
+
+        {/* Field grid — one consistent layout for every header fact */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-3 pt-4 border-t border-border">
+          {([
+            ['Originating ECR', detail.ecr
+              ? <span className="text-blue-500 font-semibold font-mono cursor-pointer">{detail.ecr}</span>
+              : <span className="text-muted-foreground/50">— (created directly)</span>],
+            ['Effectivity', <>{effectivityText(detail.effectivity)} <span className="text-muted-foreground/60 font-normal">· {EFFECTIVITY_LABEL[detail.effectivity.type]}</span></>],
+            ['Type', ECO_TYPE_LABEL[detail.type]],
+            ['Reason Code', REASON_LABEL[detail.reason]],
+            ['Originator', detail.originator],
+            ['Change Owner', detail.owner],
+            ['Initiated', detail.created],
+            ['Affected Parts', String(detail.parts.length)],
+            ['ECO Revision', `${detail.revFrom} → ${detail.revTo}`],
+          ] as [string, React.ReactNode][]).map(([k, v]) => (
+            <div key={k} className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">{k}</div>
+              <div className="text-[13px] font-medium text-foreground truncate">{v}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Affected modules */}
