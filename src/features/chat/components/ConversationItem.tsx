@@ -16,6 +16,7 @@ import { Conversation } from '../types';
 import { messagePreviewText } from '../chat.mappers';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { HighlightedText } from './HighlightedText';
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -27,11 +28,12 @@ interface ConversationItemProps {
   onToggleMute?: () => void;
   onMarkRead?: () => void;
   onDeleteChat?: () => void;
+  searchQuery?: string;
 }
 
 export function ConversationItem({
   conversation, isActive, unreadCount, onClick, onlineUserIds,
-  onToggleFavourite, onToggleMute, onMarkRead, onDeleteChat,
+  onToggleFavourite, onToggleMute, onMarkRead, onDeleteChat, searchQuery,
 }: ConversationItemProps) {
   const { user } = useAuth();
   const currentUserId = user?.id;
@@ -96,7 +98,7 @@ export function ConversationItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <span className={cn('text-sm truncate', unreadCount > 0 ? 'font-semibold' : 'font-medium')}>
-            {displayName}
+            <HighlightedText text={displayName} query={searchQuery} />
           </span>
           <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{timeAgo}</span>
         </div>

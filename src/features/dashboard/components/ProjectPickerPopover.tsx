@@ -4,6 +4,7 @@ import { ArrowRight, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { resolveFileUrl } from '@/utils/fileUrl';
 import type { Project } from '@/types';
 
 interface ProjectPickerPopoverProps {
@@ -43,7 +44,15 @@ export function ProjectPickerPopover({ projects, tab, label, className }: Projec
             onClick={() => handleSelect(project.id)}
             className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent transition-colors text-left"
           >
-            {project.icon && <span className="text-base leading-none">{project.icon}</span>}
+            {project.logoUrl ? (
+              <img
+                src={resolveFileUrl(project.logoUrl) ?? project.logoUrl}
+                alt=""
+                className="h-4 w-4 rounded object-cover shrink-0"
+              />
+            ) : (
+              project.icon && <span className="text-base leading-none">{project.icon}</span>
+            )}
             <span className="flex-1 min-w-0 truncate font-medium">{project.name}</span>
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           </button>

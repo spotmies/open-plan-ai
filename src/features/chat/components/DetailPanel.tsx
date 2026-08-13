@@ -718,47 +718,51 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
           <Separator />
 
           {/* Members */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <button
-                type="button"
-                className="flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setView('people')}
-              >
-                Members ({conversation.members.length})
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-              {isGroup && canManageMembers && (
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={openAddDialog} title="Add member">
-                  <UserPlus className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setView('people')}
-              className="flex items-center flex-wrap gap-2"
-            >
-              {conversation.members.slice(0, MEMBER_PREVIEW_COUNT).map((member) => (
-                <div key={member.id} className="relative">
-                  <Avatar className="h-9 w-9">
-                    {member.avatarUrl && (
-                      <AvatarImage src={member.avatarUrl} alt={member.name} className="object-cover" />
-                    )}
-                    <AvatarFallback className="text-[11px]">{member.initials}</AvatarFallback>
-                  </Avatar>
-                  <OnlineStatus isOnline={onlineUserIds.has(member.id)} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+          {isGroup && (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    type="button"
+                    className="flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setView('people')}
+                  >
+                    Members ({conversation.members.length})
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                  {canManageMembers && (
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={openAddDialog} title="Add member">
+                      <UserPlus className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
-              ))}
-              {conversation.members.length > MEMBER_PREVIEW_COUNT && (
-                <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium text-muted-foreground shrink-0">
-                  +{conversation.members.length - MEMBER_PREVIEW_COUNT}
-                </div>
-              )}
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => setView('people')}
+                  className="flex items-center flex-wrap gap-2"
+                >
+                  {conversation.members.slice(0, MEMBER_PREVIEW_COUNT).map((member) => (
+                    <div key={member.id} className="relative">
+                      <Avatar className="h-9 w-9">
+                        {member.avatarUrl && (
+                          <AvatarImage src={member.avatarUrl} alt={member.name} className="object-cover" />
+                        )}
+                        <AvatarFallback className="text-[11px]">{member.initials}</AvatarFallback>
+                      </Avatar>
+                      <OnlineStatus isOnline={onlineUserIds.has(member.id)} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+                    </div>
+                  ))}
+                  {conversation.members.length > MEMBER_PREVIEW_COUNT && (
+                    <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium text-muted-foreground shrink-0">
+                      +{conversation.members.length - MEMBER_PREVIEW_COUNT}
+                    </div>
+                  )}
+                </button>
+              </div>
 
-          <Separator />
+              <Separator />
+            </>
+          )}
 
           {/* Pinned & Saved messages */}
           <div className="space-y-1">

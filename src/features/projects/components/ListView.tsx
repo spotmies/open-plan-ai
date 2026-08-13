@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Task, Milestone, ModuleType, TeamMember } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { ArrowUpDown, AlertTriangle, Link2, Plus, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TaskDetailModal } from './TaskDetailModal';
 import { formatModuleType } from '../utils/projectUtils';
@@ -45,6 +52,8 @@ const priorityColors = {
 
 type SortField = 'title' | 'status' | 'priority' | 'module' | 'dueDate' | 'assignee';
 type SortDirection = 'asc' | 'desc';
+
+const PAGE_SIZE = 15;
 
 export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modules = [], assignableMembers, onTaskClick, onTaskCreate, onTaskUpdate, onBatchTaskUpdate, onTaskDelete, userProjectRole, projectId, onAddModule }: ListViewProps) {
   // Use allTasks prop if provided, otherwise fallback to tasks
@@ -99,6 +108,20 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
 
     return sortDirection === 'asc' ? comparison : -comparison;
   });
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(sortedTasks.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedTasks = useMemo(
+    () => sortedTasks.slice((safeCurrentPage - 1) * PAGE_SIZE, safeCurrentPage * PAGE_SIZE),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks, sortField, sortDirection, safeCurrentPage]
+  );
+
+  // Reset to page 1 whenever the underlying task list or sort order changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [tasks, sortField, sortDirection]);
 
   const getMilestoneName = (milestoneId?: string) => {
     if (!milestoneId) return null;
@@ -218,8 +241,9 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
     <>
 
       <div className="rounded-lg border">
+        <div className="max-h-[calc(100vh-320px)] min-h-[240px] overflow-y-auto">
         <Table>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow>
               <TableHead className="w-[300px]">
                 <SortableHeader field="title">Task</SortableHeader>
@@ -244,7 +268,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedTasks.map((task) => {
+            {paginatedTasks.map((task) => {
               const blockerCount = getBlockerCount(task);
               const milestoneName = getMilestoneName(task.milestoneId);
 
@@ -365,6 +389,39 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
             })}
           </TableBody>
         </Table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex flex-col items-center gap-2 py-4 border-t">
+            <p className="text-xs text-muted-foreground">
+              Page {safeCurrentPage} of {totalPages} ({sortedTasks.length} items)
+            </p>
+            <Pagination className="mx-0 w-auto">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (safeCurrentPage > 1) setCurrentPage(safeCurrentPage - 1);
+                    }}
+                    className={cn(safeCurrentPage <= 1 && 'pointer-events-none opacity-50')}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (safeCurrentPage < totalPages) setCurrentPage(safeCurrentPage + 1);
+                    }}
+                    className={cn(safeCurrentPage >= totalPages && 'pointer-events-none opacity-50')}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
       </div>
 
       {/* Task Detail Modal */}

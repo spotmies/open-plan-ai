@@ -15,7 +15,7 @@ import {
   startOfMonth,
   endOfMonth,
 } from 'date-fns';
-import { Search, Flag, AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { Search, Flag, AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CalendarEvent, getEventsForDate } from '../utils/calendarUtils';
 import { CalendarDayView } from './CalendarDayView';
@@ -45,6 +45,7 @@ function getDayLabel(date: Date): string {
 function eventBorderClass(event: CalendarEvent): string {
   if (event.type === 'milestone') return 'border-l-amber-500';
   if (event.type === 'issue') return 'border-l-destructive';
+  if (event.type === 'meeting') return 'border-l-blue-500';
   const statusMap: Record<string, string> = {
     'todo': 'border-l-muted-foreground/40',
     'in-progress': 'border-l-blue-500',
@@ -61,6 +62,8 @@ function EventTypeIcon({ event }: { event: CalendarEvent }) {
     return <Flag className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />;
   if (event.type === 'issue')
     return <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />;
+  if (event.type === 'meeting')
+    return <Video className="h-3.5 w-3.5 text-blue-600 flex-shrink-0" />;
   if (event.status === 'done')
     return <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />;
   return (

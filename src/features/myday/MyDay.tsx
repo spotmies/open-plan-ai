@@ -428,6 +428,7 @@ export default function MyDay() {
           modules={[]}
           milestones={[]}
           assignableMembers={selfAsAssignableMember}
+          defaultAssignees={selfAsAssignableMember}
           statusOptions={PERSONAL_TASK_STATUS_OPTIONS}
           projectName="Personal"
         />

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Flag, AlertTriangle, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { format } from 'date-fns';
+import { Flag, AlertTriangle, AlertCircle, CheckCircle2, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -58,6 +59,28 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
         )}>
           {event.title}
         </span>
+      </div>
+    );
+  }
+
+  if (event.type === 'meeting') {
+    return (
+      <div
+        onClick={onClick}
+        className={cn(
+          'flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer transition-colors',
+          'bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30'
+        )}
+      >
+        <Video className="h-3 w-3 text-blue-600 flex-shrink-0" />
+        <span className="text-xs font-medium text-blue-700 dark:text-blue-400 truncate flex-1 min-w-0">
+          {event.title}
+        </span>
+        {!isCompact && (
+          <span className="text-[10px] text-muted-foreground shrink-0">
+            {format(event.date, 'h:mm a')}
+          </span>
+        )}
       </div>
     );
   }

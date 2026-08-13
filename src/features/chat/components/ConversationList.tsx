@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Plus, Users, Bookmark } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ConversationSearch } from './ConversationSearch';
 import { ConversationItem } from './ConversationItem';
+import { QuickViews, type QuickView } from './QuickViews';
 import { NewDMDialog } from './NewDMDialog';
 import { NewGroupDialog } from './NewGroupDialog';
 import { EmptyState } from './EmptyState';
@@ -47,9 +47,20 @@ export function ConversationList({
     activeConversationId, conversationFilter, setConversationFilter, searchQuery, setSearchQuery, unreadCounts,
     isNewDMDialogOpen: dmDialogOpen, setNewDMDialogOpen: setDmDialogOpen,
     isNewGroupDialogOpen: groupDialogOpen, setNewGroupDialogOpen: setGroupDialogOpen,
+    draftMessages,
   } = useChatStore();
   const { data: reachableUsers = [] } = useReachableUsers();
   const [isCreatingDM, setIsCreatingDM] = useState(false);
+  const [activeQuickView, setActiveQuickView] = useState<QuickView | null>(null);
+
+  const handleSelectQuickView = (view: QuickView) => {
+    if (view === 'saved') {
+      // Saved messages are their own panel (wired up by the parent), not a filter over this list.
+      onShowSaved?.();
+      return;
+    }
+    setActiveQuickView((prev) => (prev === view ? null : view));
+  };
 
   const isSelfConversation = (c: Conversation) =>
     c.type === 'dm' && c.members.length > 0 && c.members.every((m) => m.id === currentUserId);
@@ -65,6 +76,8 @@ export function ConversationList({
     );
     if (conversationFilter === 'dms') list = list.filter((c) => c.type === 'dm');
     if (conversationFilter === 'groups') list = list.filter((c) => c.type === 'group');
+    if (activeQuickView === 'favourites') list = list.filter((c) => c.isFavourite);
+    if (activeQuickView === 'drafts') list = list.filter((c) => !!draftMessages[c.id]?.trim());
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter((c) =>
@@ -76,14 +89,14 @@ export function ConversationList({
       if (isSelfConversation(a) !== isSelfConversation(b)) return isSelfConversation(a) ? -1 : 1;
       return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
     });
-  }, [conversations, conversationFilter, searchQuery, activeConversationId, currentUserId]);
+  }, [conversations, conversationFilter, activeQuickView, draftMessages, searchQuery, activeConversationId, currentUserId]);
 
   const hasSelfConversation = conversations.some(isSelfConversation);
 
   // Teams-style: chats favourited via the hover menu surface in their own
-  // section above the regular list. Skipped while searching so results stay
-  // a single flat list.
-  const showFavouritesSection = !searchQuery.trim() && filtered.some((c) => c.isFavourite);
+  // section above the regular list. Skipped while searching, and while a quick
+  // view is active, so results stay a single flat list.
+  const showFavouritesSection = !searchQuery.trim() && !activeQuickView && filtered.some((c) => c.isFavourite);
   const favouriteConversations = showFavouritesSection ? filtered.filter((c) => c.isFavourite) : [];
   const regularConversations = showFavouritesSection ? filtered.filter((c) => !c.isFavourite) : filtered;
 
@@ -139,17 +152,6 @@ export function ConversationList({
           <div className="flex items-center justify-between px-3 py-3 border-b border-border">
             <h2 className="font-semibold text-sm">Messages</h2>
             <div className="flex gap-1">
-              {onShowSaved && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn('h-7 w-7', isSavedActive && 'bg-muted text-amber-500')}
-                  onClick={onShowSaved}
-                  title="Saved Messages"
-                >
-                  <Bookmark className={cn('h-4 w-4', isSavedActive && 'fill-amber-500')} />
-                </Button>
-              )}
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDmDialogOpen(true)} title="New Message">
                 <Plus className="h-4 w-4" />
               </Button>
@@ -161,6 +163,11 @@ export function ConversationList({
           <ConversationSearch />
         </>
       )}
+
+      <QuickViews
+        activeQuickView={isSavedActive ? 'saved' : activeQuickView}
+        onSelect={handleSelectQuickView}
+      />
 
       <div className="px-3 pb-2">
         <Tabs value={conversationFilter} onValueChange={(v) => setConversationFilter(v as 'all' | 'dms' | 'groups')}>
@@ -187,9 +194,11 @@ export function ConversationList({
                 </div>
               </div>
             ))
+          ) : activeQuickView && filtered.length === 0 ? (
+            <EmptyState type={activeQuickView === 'favourites' ? 'no-favourites' : 'no-drafts'} />
           ) : filtered.length === 0 && filteredPeople.length === 0 ? (
-            <EmptyState 
-              type="no-conversations" 
+            <EmptyState
+              type="no-conversations"
               onCreateGroup={conversationFilter !== 'dms' ? () => setGroupDialogOpen(true) : undefined}
               description={conversationFilter === 'dms' ? "Start a new direct message to get started" : undefined}
             />
@@ -212,6 +221,7 @@ export function ConversationList({
                       onToggleMute={onToggleMute ? () => onToggleMute(conv.id) : undefined}
                       onMarkRead={onMarkRead ? () => onMarkRead(conv.id) : undefined}
                       onDeleteChat={onDeleteChat ? () => onDeleteChat(conv.id) : undefined}
+                      searchQuery={searchQuery}
                     />
                   ))}
                   <div className="px-2.5 pt-3 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
@@ -237,6 +247,7 @@ export function ConversationList({
                 users={filteredPeople}
                 onSelect={handleSelectPerson}
                 onlineUserIds={onlineUserIds}
+                searchQuery={searchQuery}
               />
               {isCreatingDM && (
                 <div className="flex items-center gap-3 px-3 py-2 animate-pulse">

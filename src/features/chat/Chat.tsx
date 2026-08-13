@@ -382,6 +382,7 @@ export default function Chat() {
                     onToggleFavourite={handleToggleFavourite}
                     highlightMessageId={highlightMessageId}
                     onHighlightHandled={() => setHighlightMessageId(null)}
+                    onJumpToMessage={setHighlightMessageId}
                   />
                 )}
                 <TypingIndicator typingNames={typingNames} />

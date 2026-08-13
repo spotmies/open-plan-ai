@@ -782,7 +782,10 @@ export function IssuesView({
                                   ) : (
                                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: column.color }} />
                                   )}
-                                  <h3 className={cn('font-medium text-sm', isDependenciesColumn && 'text-status-blocked')}>
+                                  <h3
+                                    title={column.label}
+                                    className={cn('font-medium text-sm truncate', isDependenciesColumn && 'text-status-blocked')}
+                                  >
                                     {column.label}
                                   </h3>
                                   <span className="text-xs text-muted-foreground">{columnIssues.length}</span>

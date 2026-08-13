@@ -52,7 +52,8 @@ import {
   Pencil,
   Loader2,
   Smile,
-  Eye
+  Eye,
+  Image as ImageIcon
 } from "lucide-react";
 import { format, isBefore, startOfMonth } from "date-fns";
 import { cn, isValidPhoneNumber } from "@/lib/utils";
@@ -62,6 +63,7 @@ import { toast } from "sonner";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateProject } from "@/hooks/useProjects";
+import { projectsService } from "@/services/projects.service";
 import { useOrganizationMembers } from "@/hooks/useProjectTeam";
 import { useCreateAttachment } from '@/hooks/useProjectAttachments';
 import { useCreateProjectLink } from '@/hooks/useProjectLinks';
@@ -171,6 +173,9 @@ const NewProject = () => {
   const [projectStage, setProjectStage] = useState<string>("concept");
   const [projectEmoji, setProjectEmoji] = useState<string>("📁");
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [startDate, setStartDate] = useState<Date>();
   const [expectedEndDate, setExpectedEndDate] = useState<Date>();
   const [isStartDateOpen, setIsStartDateOpen] = useState(false);
@@ -580,6 +585,41 @@ const NewProject = () => {
     fileInputRef.current?.click();
   };
 
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      toast.error('Only JPG, PNG, WebP, or GIF images are allowed');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Logo file size must be less than 5MB');
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoFile(null);
+    setLogoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    };
+  }, [logoPreviewUrl]);
+
   const handleTaskDocumentUpload = () => {
     // Task import feature - coming soon
     toast.info('Task import feature coming soon!', {
@@ -700,6 +740,16 @@ const NewProject = () => {
         ));
       }
 
+      // Upload the project logo, if one was selected
+      if (logoFile) {
+        try {
+          await projectsService.uploadLogo(project.id, logoFile);
+        } catch (logoError) {
+          logger.error('Error uploading project logo:', logoError);
+          toast.warning('Project created but the logo failed to upload');
+        }
+      }
+
       // Upload files to S3 storage
       if (attachments.length > 0) {
         const filesToUpload = attachments.filter(att => att.file);
@@ -804,17 +854,69 @@ const NewProject = () => {
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-10 w-10 shrink-0 text-xl"
-                        title="Select project icon"
+                        className="h-10 w-10 shrink-0 text-xl overflow-hidden"
+                        title="Select project icon or logo"
                       >
-                        {projectEmoji}
+                        {logoPreviewUrl ? (
+                          <img src={logoPreviewUrl} alt="Project logo" className="h-full w-full object-contain" />
+                        ) : (
+                          projectEmoji
+                        )}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-72 p-3" align="start">
                       <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">Project Logo</span>
+                          </div>
+                          {logoPreviewUrl && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                              onClick={handleRemoveLogo}
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="h-12 w-12 rounded-lg border border-dashed border-border flex items-center justify-center bg-muted/30 overflow-hidden shrink-0">
+                            {logoPreviewUrl ? (
+                              <img src={logoPreviewUrl} alt="Project logo" className="h-full w-full object-contain" />
+                            ) : (
+                              <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            ref={logoInputRef}
+                            className="hidden"
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            onChange={handleLogoFileChange}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => logoInputRef.current?.click()}
+                          >
+                            <Upload className="h-3.5 w-3.5 mr-1.5" />
+                            {logoPreviewUrl ? 'Change' : 'Upload'}
+                          </Button>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          JPG, PNG, WebP or GIF. Max 5MB. Square images look best.
+                        </p>
+
+                        <Separator />
+
                         <div className="flex items-center gap-2">
                           <Smile className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">Select Project Icon</span>
+                          <span className="text-sm font-medium">Or Pick an Emoji Icon</span>
                         </div>
                         <div className="grid grid-cols-8 gap-1">
                           {projectEmojis.map((emoji) => (

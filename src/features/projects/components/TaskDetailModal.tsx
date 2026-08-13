@@ -148,6 +148,8 @@ interface TaskDetailModalProps {
   statusOptions?: Array<{ value: string; label: string; color?: string }>;
   /** Shown as a read-only "Project" field in the metadata grid when provided. Only pass this from contexts (like My Day) where the task's project isn't already implied by the surrounding page. */
   projectName?: string;
+  /** Pre-populates the Assigned To field when creating a new task (mode="create"). Opt-in — leave unset to keep the field empty by default. */
+  defaultAssignees?: TeamMember[];
 }
 
 /** Renders a status colour dot that works for both hex colours and Tailwind classes. */
@@ -235,6 +237,7 @@ export const TaskDetailModal = ({
   assignableMembers,
   statusOptions: providedStatusOptions,
   projectName,
+  defaultAssignees,
 }: TaskDetailModalProps) => {
   const { user: profile } = useAuth();
   const isMobile = useIsMobile();
@@ -250,7 +253,7 @@ export const TaskDetailModal = ({
     status: 'todo',
     priority: 'minor',
     module: '' as ModuleType,
-    assignees: [],
+    assignees: defaultAssignees ?? [],
     tags: [],
     checklist: [],
     blockedBy: [],
@@ -519,7 +522,7 @@ export const TaskDetailModal = ({
       status: 'todo' as const,
       priority: 'minor' as const,
       module: '' as ModuleType,
-      assignees: [],
+      assignees: defaultAssignees ?? [],
       tags: [],
       checklist: [],
       blockedBy: [],

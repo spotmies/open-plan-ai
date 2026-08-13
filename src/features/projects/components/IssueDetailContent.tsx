@@ -855,15 +855,17 @@ export function IssueDetailContent({
                                 <SelectTrigger
                                     className={cn(isMobileLayout ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default' : 'h-9', isMobileLayout && !canEditIssue && 'opacity-60')}
                                     aria-required="true"
-                                    title={canEditIssueFields ? undefined : editLockTitle}
+                                    title={canEditIssueFields ? undefined : (statusOptions.find(s => s.value === editedIssue.status)?.label ?? editedIssue.status)}
                                 >
                                     <SelectValue>
-                                        <div className={cn('flex items-center gap-2', isMobileLayout && 'font-bold text-sm text-foreground')}>
+                                        <div className={cn('flex items-center gap-2 min-w-0', isMobileLayout && 'font-bold text-sm text-foreground')}>
                                             <div
-                                                className="w-2 h-2 rounded-full"
+                                                className="w-2 h-2 rounded-full flex-shrink-0"
                                                 style={{ backgroundColor: statusOptions.find(s => s.value === editedIssue.status)?.color ?? '#6b7280' }}
                                             />
-                                            {statusOptions.find(s => s.value === editedIssue.status)?.label ?? editedIssue.status}
+                                            <span className="truncate">
+                                                {statusOptions.find(s => s.value === editedIssue.status)?.label ?? editedIssue.status}
+                                            </span>
                                         </div>
                                     </SelectValue>
                                 </SelectTrigger>

@@ -1,5 +1,6 @@
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
+import { resolveFileUrl } from '@/utils/fileUrl';
 import { Project, Task, Milestone, Issue, IssueCategory, IssueSeverity, IssueStatus, TeamMember } from '@/types';
 import { tasksService } from '@/services/tasks.service';
 
@@ -162,6 +163,29 @@ export const projectsService = {
    */
   async delete(id: string): Promise<void> {
     return apiClient.delete<void>(ENDPOINTS.PROJECTS.BY_ID(id));
+  },
+
+  /**
+   * Upload a square project logo — single-step endpoint handles S3 storage +
+   * the `logo_url` column update. Replaces the emoji icon when present.
+   */
+  async uploadLogo(projectId: string, file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.raw.post<{ success: boolean; data: { logoUrl: string } }>(
+      ENDPOINTS.PROJECTS.LOGO(projectId),
+      formData,
+      { headers: { 'Content-Type': undefined } },
+    );
+    const rawUrl = res.data.data.logoUrl;
+    return resolveFileUrl(rawUrl) ?? rawUrl;
+  },
+
+  /**
+   * Remove the project's logo, reverting the icon slot back to the emoji.
+   */
+  async deleteLogo(projectId: string): Promise<void> {
+    await apiClient.delete<void>(ENDPOINTS.PROJECTS.LOGO(projectId));
   },
 
   /**

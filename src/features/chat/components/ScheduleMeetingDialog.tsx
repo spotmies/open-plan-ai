@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useGoogleMeetStatus } from '@/features/integrations/hooks/useGoogleMeetStatus';
 import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsureGoogleMeetToken';
 import { googleMeetService } from '@/services/googleMeet.service';
+import { useCreateMeeting } from '@/hooks/useMeetings';
 import { logger } from '@/services/monitoring/logger';
 import { Conversation } from '../types';
 import { Calendar, Clock, Loader2, Repeat, Users } from 'lucide-react';
@@ -105,6 +106,7 @@ export function ScheduleMeetingDialog({
   const { data: meetStatusMap } = useGoogleMeetStatus(user ? [user.id] : []);
   const isConnected = !!(user && meetStatusMap?.[user.id]?.connected);
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
+  const { mutateAsync: createMeetingRecord } = useCreateMeeting();
   const [loading, setLoading] = useState(false);
   
   // Form states
@@ -197,6 +199,23 @@ export function ScheduleMeetingDialog({
         attendees,
         recurrence: recurrenceRule ? [recurrenceRule] : undefined,
       });
+
+      // The Google Calendar event already exists at this point — persist a
+      // record so it shows up in this app's own Calendar view too. If this
+      // fails, the meeting still exists in Google Calendar, so we warn
+      // rather than blocking on it.
+      try {
+        await createMeetingRecord({
+          title,
+          startTime: startDateTime.toISOString(),
+          endTime: endDateTime.toISOString(),
+          meetingUri: result.meetingUri,
+          htmlLink: result.htmlLink,
+          attendeeEmails: attendees,
+        });
+      } catch (persistErr) {
+        logger.error('Meeting created in Google Calendar but failed to save locally', { error: persistErr });
+      }
 
       // Format human-friendly schedule details
       const dateStr = format(startDateTime, 'EEEE, MMMM d, yyyy');

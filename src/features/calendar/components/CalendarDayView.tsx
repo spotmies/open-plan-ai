@@ -1,8 +1,9 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { Flag, AlertCircle, CheckSquare } from 'lucide-react';
+import { Flag, AlertCircle, CheckSquare, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
 import { CalendarEvent, getEventsForDate } from '../utils/calendarUtils';
 import { CalendarEventCard } from './CalendarEventCard';
 import { CalendarEventPreview } from './CalendarEventPreview';
@@ -11,12 +12,14 @@ interface CalendarDayViewProps {
   date: Date;
   events: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
+  onScheduleMeeting?: (date: Date) => void;
 }
 
 export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
   date,
   events,
   onEventClick,
+  onScheduleMeeting,
 }) => {
   const dayEvents = getEventsForDate(events, date);
   const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
@@ -25,6 +28,7 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
   const milestones = dayEvents.filter((e) => e.type === 'milestone');
   const issues = dayEvents.filter((e) => e.type === 'issue');
   const tasks = dayEvents.filter((e) => e.type === 'task');
+  const meetings = dayEvents.filter((e) => e.type === 'meeting');
 
   const EventSection: React.FC<{
     title: string;
@@ -57,9 +61,22 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* Day header */}
-      <div className="py-3 px-4 border-b border-border">
-        <div className="text-2xl font-semibold">{format(date, 'EEEE')}</div>
-        <div className="text-sm text-muted-foreground">{format(date, 'MMMM d, yyyy')}</div>
+      <div className="py-3 px-4 border-b border-border flex items-center justify-between gap-4">
+        <div>
+          <div className="text-2xl font-semibold">{format(date, 'EEEE')}</div>
+          <div className="text-sm text-muted-foreground">{format(date, 'MMMM d, yyyy')}</div>
+        </div>
+        {onScheduleMeeting && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 h-9 rounded-lg shrink-0"
+            onClick={() => onScheduleMeeting(date)}
+          >
+            <Video className="h-4 w-4" />
+            <span className="hidden sm:inline">Schedule Meeting</span>
+          </Button>
+        )}
       </div>
 
       {/* Events */}
@@ -72,12 +89,17 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
             <h3 className="font-medium text-foreground mb-1">No events scheduled</h3>
             <p className="text-sm text-muted-foreground">
               {isPast
-                ? 'There were no tasks, milestones, or issues on this day.'
-                : 'There are no tasks, milestones, or issues due on this day.'}
+                ? 'There were no tasks, milestones, issues, or meetings on this day.'
+                : 'There are no tasks, milestones, issues, or meetings due on this day.'}
             </p>
           </div>
         ) : (
           <div className="space-y-6 px-4">
+            <EventSection
+              title="Meetings"
+              icon={<Video className="h-4 w-4 text-blue-600" />}
+              items={meetings}
+            />
             <EventSection
               title="Milestones"
               icon={<Flag className="h-4 w-4 text-amber-600" />}

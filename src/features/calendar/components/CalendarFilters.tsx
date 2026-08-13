@@ -17,10 +17,11 @@ interface CalendarFiltersProps {
   hideActiveFilters?: boolean;
 }
 
-const entityTypeOptions: { value: 'task' | 'milestone' | 'issue'; label: string }[] = [
+const entityTypeOptions: { value: 'task' | 'milestone' | 'issue' | 'meeting'; label: string }[] = [
   { value: 'task', label: 'Tasks' },
   { value: 'milestone', label: 'Milestones' },
   { value: 'issue', label: 'Issues' },
+  { value: 'meeting', label: 'Meetings' },
 ];
 
 const priorityOptions: { value: Priority; label: string }[] = [
@@ -113,7 +114,7 @@ export const CalendarFilters: React.FC<CalendarFiltersProps> = ({
                   onChange={(values) =>
                     onFiltersChange({
                       ...filters,
-                      entityType: values.length ? (values as ('task' | 'milestone' | 'issue')[]) : undefined,
+                      entityType: values.length ? (values as ('task' | 'milestone' | 'issue' | 'meeting')[]) : undefined,
                     })
                   }
                   placeholder="All Types"

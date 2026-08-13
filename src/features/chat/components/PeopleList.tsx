@@ -1,14 +1,16 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { OnlineStatus } from './OnlineStatus';
+import { HighlightedText } from './HighlightedText';
 import type { ReachableUser } from '../types';
 
 interface PeopleListProps {
     users: ReachableUser[];
     onSelect: (userId: string) => void;
     onlineUserIds?: Set<string>;
+    searchQuery?: string;
 }
 
-export function PeopleList({ users, onSelect, onlineUserIds }: PeopleListProps) {
+export function PeopleList({ users, onSelect, onlineUserIds, searchQuery }: PeopleListProps) {
     if (users.length === 0) return null;
 
     return (
@@ -36,7 +38,7 @@ export function PeopleList({ users, onSelect, onlineUserIds }: PeopleListProps) 
                             />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{user.name}</p>
+                            <p className="text-sm font-medium truncate"><HighlightedText text={user.name} query={searchQuery} /></p>
                             <p className="text-xs text-muted-foreground truncate">{user.role}</p>
                         </div>
                     </button>

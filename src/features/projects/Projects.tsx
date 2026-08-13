@@ -418,10 +418,17 @@ export default function Projects() {
                     <div className={cn('flex items-start justify-between gap-3 flex-1', isMobile ? 'mb-2' : 'mb-4')}>
                       <div className="min-w-0 flex-1">
                         <h3 className={cn('font-semibold truncate flex items-center gap-2', isMobile ? 'text-sm' : '')}>
-                          {isMobile
-                            ? <span className="text-base">📁</span>
-                            : project.icon && <span className="text-lg">{project.icon}</span>
-                          }
+                          {project.logoUrl ? (
+                            <img
+                              src={resolveFileUrl(project.logoUrl) ?? project.logoUrl}
+                              alt=""
+                              className={cn('rounded object-cover shrink-0', isMobile ? 'h-4 w-4' : 'h-5 w-5')}
+                            />
+                          ) : isMobile ? (
+                            <span className="text-base">📁</span>
+                          ) : (
+                            project.icon && <span className="text-lg">{project.icon}</span>
+                          )}
                           {project.name}
                         </h3>
                         <p className={cn('text-muted-foreground/90 mt-0.5', isMobile ? 'text-xs line-clamp-1' : 'text-sm line-clamp-2')}>

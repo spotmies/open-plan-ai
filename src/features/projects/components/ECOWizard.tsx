@@ -85,16 +85,20 @@ function ParamCombobox({
 }: {
   value: string;
   onChange: (label: string, autoFrom: string) => void;
-  onSelectOther: () => void;
+  onSelectOther: (initialValue?: string) => void;
   firstSelectedNode: BOMNode | null;
   usedParams: Set<string>;
 }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
 
   const selectedLabel = value || 'Select parameter';
+  const trimmedSearch = search.trim();
+  const hasKnownMatch = trimmedSearch !== '' && [...BOM_PARAM_OPTIONS.map(o => o.label), ...ECO_RECOMMENDED_PARAMS]
+    .some(label => label.toLowerCase().includes(trimmedSearch.toLowerCase()));
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={next => { setOpen(next); if (next) setSearch(''); }}>
       <PopoverTrigger asChild>
         <button
           className="flex items-center justify-between gap-1 flex-[1.2] bg-muted/40 border border-border rounded-md text-foreground text-[13px] px-3 py-2 outline-none focus:border-primary/40 cursor-pointer font-[inherit] min-w-0"
@@ -106,7 +110,23 @@ function ParamCombobox({
       </PopoverTrigger>
       <PopoverContent className="p-0 w-[260px] z-[300]" align="start">
         <Command>
-          <CommandInput placeholder="Search parameters…" />
+          <CommandInput
+            placeholder="Search parameters…"
+            value={search}
+            onValueChange={setSearch}
+            onKeyDown={e => {
+              // No known field matches the typed text — Enter commits it as a
+              // custom parameter instead of doing nothing (the "Other…" item
+              // itself gets filtered out of the list in this case, so Enter
+              // is otherwise the only way to proceed without clearing the box).
+              if (e.key === 'Enter' && trimmedSearch !== '' && !hasKnownMatch) {
+                e.preventDefault();
+                e.stopPropagation();
+                onSelectOther(trimmedSearch);
+                setOpen(false);
+              }
+            }}
+          />
           <CommandList>
             <CommandEmpty>No match — use Other to enter custom.</CommandEmpty>
             <CommandGroup heading="BOM Fields">
@@ -146,11 +166,12 @@ function ParamCombobox({
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandGroup heading="Custom">
+            <CommandGroup heading="Custom" forceMount>
               <CommandItem
                 value="other"
+                forceMount
                 onSelect={() => {
-                  onSelectOther();
+                  onSelectOther(hasKnownMatch ? undefined : trimmedSearch || undefined);
                   setOpen(false);
                 }}
               >
@@ -218,19 +239,22 @@ function EcoSelect<T extends string>({
   labels: Record<string, string>;
 }) {
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value as T)}
-      className="w-full bg-muted/40 border border-border rounded-md text-foreground text-[13px] px-3 py-2 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
-    >
-      {options.map(o => (
-        <option key={o} value={o} className="bg-card">{labels[o] ?? o}</option>
-      ))}
-    </select>
+    <div className="relative">
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value as T)}
+        className="w-full bg-muted/40 border border-border rounded-md text-foreground text-[13px] pl-3 pr-8 py-2 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
+      >
+        {options.map(o => (
+          <option key={o} value={o} className="bg-card">{labels[o] ?? o}</option>
+        ))}
+      </select>
+      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+    </div>
   );
 }
 
-const ECO_SELECT_CLS = 'w-full bg-muted/40 border border-border rounded-md text-foreground text-[13px] px-3 py-2 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]';
+const ECO_SELECT_CLS = 'w-full bg-muted/40 border border-border rounded-md text-foreground text-[13px] pl-3 pr-8 py-2 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]';
 
 const CUSTOM_SENTINEL = '__custom__';
 
@@ -264,21 +288,24 @@ function EcoSelectWithCustom({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <select
-        value={isCustom ? CUSTOM_SENTINEL : value}
-        onChange={handleSelectChange}
-        className={ECO_SELECT_CLS}
-      >
-        {options.map(o => (
-          <option key={o} value={o} className="bg-card">{labels[o] ?? o}</option>
-        ))}
-        {isCustom && (
-          <option value={CUSTOM_SENTINEL} className="bg-card">{value}</option>
-        )}
-        <option value={CUSTOM_SENTINEL} disabled={false} className="bg-card text-muted-foreground">
-          {isCustom ? '✎ Edit custom…' : '+ Custom…'}
-        </option>
-      </select>
+      <div className="relative">
+        <select
+          value={isCustom ? CUSTOM_SENTINEL : value}
+          onChange={handleSelectChange}
+          className={ECO_SELECT_CLS}
+        >
+          {options.map(o => (
+            <option key={o} value={o} className="bg-card">{labels[o] ?? o}</option>
+          ))}
+          {isCustom && (
+            <option value={CUSTOM_SENTINEL} className="bg-card">{value}</option>
+          )}
+          <option value={CUSTOM_SENTINEL} disabled={false} className="bg-card text-muted-foreground">
+            {isCustom ? '✎ Edit custom…' : '+ Custom…'}
+          </option>
+        </select>
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+      </div>
       {editing && (
         <input
           autoFocus
@@ -1195,8 +1222,8 @@ export function ECOWizard({
                 onChange={(label, autoFrom) => {
                   setDiffRows(prev => prev.map((x, i) => i === idx ? { ...x, param: label, from: autoFrom, paramIsCustom: false } : x));
                 }}
-                onSelectOther={() => {
-                  setDiffRows(prev => prev.map((x, i) => i === idx ? { ...x, param: '', paramIsCustom: true } : x));
+                onSelectOther={(initialValue) => {
+                  setDiffRows(prev => prev.map((x, i) => i === idx ? { ...x, param: initialValue ?? '', paramIsCustom: true } : x));
                 }}
               />
             );
@@ -1532,17 +1559,20 @@ export function ECOWizard({
                     </span>
                   )}
                 </div>
-                <select
-                  value={p.approverId ?? ''}
-                  onChange={e => assignApprover(idx, e.target.value)}
-                  className="mt-0.5 w-full max-w-[240px] bg-muted/40 border rounded-md text-foreground text-[11px] px-2 py-1 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
-                  style={{ borderColor: p.approverId ? 'hsl(var(--border))' : '#F59E0B88' }}
-                >
-                  <option value="" disabled className="bg-card">Select approver…</option>
-                  {projectMembers.map(m => (
-                    <option key={m.id} value={m.id} className="bg-card">{m.name} · {m.role}</option>
-                  ))}
-                </select>
+                <div className="relative mt-0.5 w-full max-w-[240px]">
+                  <select
+                    value={p.approverId ?? ''}
+                    onChange={e => assignApprover(idx, e.target.value)}
+                    className="w-full bg-muted/40 border rounded-md text-foreground text-[11px] pl-2 pr-7 py-1 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
+                    style={{ borderColor: p.approverId ? 'hsl(var(--border))' : '#F59E0B88' }}
+                  >
+                    <option value="" disabled className="bg-card">Select approver…</option>
+                    {projectMembers.map(m => (
+                      <option key={m.id} value={m.id} className="bg-card">{m.name} · {m.role}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-muted-foreground pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                </div>
               </div>
               {locked ? (
                 <span

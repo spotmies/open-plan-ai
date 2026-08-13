@@ -2,7 +2,7 @@ import { MessageSquare, MessagesSquare, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface EmptyStateProps {
-  type: 'no-selection' | 'no-conversations' | 'no-messages' | 'error';
+  type: 'no-selection' | 'no-conversations' | 'no-messages' | 'no-favourites' | 'no-drafts' | 'error';
   onCreateGroup?: () => void;
   onRetry?: () => void;
   description?: string;
@@ -19,6 +19,16 @@ export function EmptyState({ type, onCreateGroup, onRetry, description }: EmptyS
       icon: MessagesSquare,
       title: 'No conversations yet',
       description: 'Start a new direct message or create a group to get started',
+    },
+    'no-favourites': {
+      icon: MessagesSquare,
+      title: 'No favorites yet',
+      description: 'Hover a chat and pin it to add it to your favorites',
+    },
+    'no-drafts': {
+      icon: MessagesSquare,
+      title: 'No drafts',
+      description: 'Messages you start typing but don’t send will show up here',
     },
     'no-messages': {
       icon: MessageSquare,

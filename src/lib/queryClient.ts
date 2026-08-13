@@ -80,6 +80,12 @@ export const queryKeys = {
     detail: (id: string) => [...queryKeys.milestones.all, 'detail', id] as const,
   },
 
+  // Meetings (Calendar — Schedule a Meet)
+  meetings: {
+    all: ['meetings'] as const,
+    org: (orgId?: string) => [...queryKeys.meetings.all, 'org', orgId] as const,
+  },
+
   // Task Columns
   taskColumns: {
     all: ['task-columns'] as const,

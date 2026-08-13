@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Paperclip, Loader2, X, Smile, File as FileIcon, Users, CheckSquare, AlertCircle, Flag, Cpu, Layers, FileText, ChevronLeft, Plus, ArrowUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -59,6 +59,107 @@ const ENTITY_TYPE_LABEL: Record<ChatEntityType, string> = Object.fromEntries(
   ENTITY_TYPE_OPTIONS.map((o) => [o.type, o.label])
 ) as Record<ChatEntityType, string>;
 
+/**
+ * Teams-style mention backspace: collapses a typed "@First Last " mention one
+ * word at a time (trailing space + last word per press) down to a bare "@",
+ * instead of deleting the whole mention in one shot or one character at a time.
+ * Returns the [start, end) range to remove, or null if the cursor isn't right
+ * after a run that's a word-prefix of a known mention name.
+ */
+function findMentionWordBackspaceRange(
+  value: string,
+  cursorPos: number,
+  knownNames: string[]
+): { start: number; end: number } | null {
+  const textBeforeCursor = value.slice(0, cursorPos);
+  const atIndex = textBeforeCursor.lastIndexOf('@');
+  if (atIndex === -1) return null;
+
+  const charBeforeAt = atIndex > 0 ? textBeforeCursor[atIndex - 1] : '';
+  if (charBeforeAt && !/\s/.test(charBeforeAt)) return null;
+
+  const run = textBeforeCursor.slice(atIndex);
+  if (run === '@') return null; // let default backspace remove the bare "@"
+
+  const hasTrailingSpace = run.endsWith(' ');
+  const core = hasTrailingSpace ? run.slice(0, -1) : run;
+  if (core === '@') return null;
+
+  const words = core.slice(1).split(' ');
+  if (words.some((w) => w.length === 0)) return null; // malformed run (e.g. double space)
+
+  const wordsLower = words.map((w) => w.toLowerCase());
+  const isKnownPrefix = knownNames.some((name) => {
+    const nameWords = name.toLowerCase().split(' ');
+    if (wordsLower.length > nameWords.length) return false;
+    return wordsLower.every((w, i) => w === nameWords[i]);
+  });
+  if (!isKnownPrefix) return null;
+
+  // Never touch the trailing space itself — it may be separating the mention
+  // from following text (e.g. "@Jagan Tripuragiri please review"), and eating
+  // it would merge the mention into whatever comes next.
+  const lastWord = words[words.length - 1];
+  const wordEnd = cursorPos - (hasTrailingSpace ? 1 : 0);
+  const wordStart = wordEnd - lastWord.length - (words.length > 1 ? 1 : 0);
+  return { start: wordStart, end: wordEnd };
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Some browsers auto-boost/shrink text-node font-size in plain <div>s but exempt
+// form controls from that heuristic, which desyncs the mention overlay's font size
+// from the textarea's even though both declare the same Tailwind text-sm class.
+// Locking both to 100% keeps them pixel-matched.
+const TEXT_SIZE_ADJUST_STYLE = { WebkitTextSizeAdjust: '100%', textSizeAdjust: '100%' } as const;
+
+/** Byte ranges of recognized "@Name"/"@everyone" runs anywhere in the draft, for live blue highlighting. */
+function findKnownMentionRanges(value: string, knownNames: string[]): { start: number; end: number }[] {
+  if (knownNames.length === 0) return [];
+  const sorted = [...knownNames].sort((a, b) => b.length - a.length).map(escapeRegExp);
+  const regex = new RegExp(`@(?:${sorted.join('|')})(?=\\s|$|[.,!?])`, 'gi');
+  const ranges: { start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(value)) !== null) {
+    ranges.push({ start: m.index, end: m.index + m[0].length });
+  }
+  return ranges;
+}
+
+/** Sorts + merges overlapping/adjacent ranges so the overlay never double-renders a span. */
+function mergeRanges(ranges: { start: number; end: number }[]): { start: number; end: number }[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [sorted[0]];
+  for (const r of sorted.slice(1)) {
+    const last = merged[merged.length - 1];
+    if (r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else merged.push({ ...r });
+  }
+  return merged;
+}
+
+/** Renders the draft as plain/blue-highlighted spans for the mention-preview overlay. */
+function renderMentionOverlay(value: string, ranges: { start: number; end: number }[]) {
+  if (value.length === 0) return null;
+  const merged = mergeRanges(ranges);
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  merged.forEach((r, i) => {
+    if (r.start > cursor) nodes.push(<span key={`t-${i}`}>{value.slice(cursor, r.start)}</span>);
+    nodes.push(
+      <span key={`m-${i}`} className="text-blue-600 dark:text-blue-400">
+        {value.slice(r.start, r.end)}
+      </span>
+    );
+    cursor = r.end;
+  });
+  if (cursor < value.length) nodes.push(<span key="t-last">{value.slice(cursor)}</span>);
+  return nodes;
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
@@ -87,6 +188,7 @@ function buildFileContent(payload: {
 export function MessageInput({ conversationId, onMessageSent, onTyping, members, isGroup = false, sendMessage, readOnly = false, readOnlyNotice = null, replyingTo = null, onCancelReply }: MessageInputProps) {
   const isMobile = useIsMobile();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionOverlayRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
@@ -137,6 +239,26 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
 
   // Total items in the mention dropdown (everyone slot + individual members)
   const totalMentionItems = (showEveryoneOption ? 1 : 0) + filteredMentions.length;
+
+  // Names Backspace is allowed to word-collapse a mention into (see findMentionWordBackspaceRange).
+  const knownMentionNames = useMemo(
+    () => [...otherMembers.map((m) => m.name), 'everyone'],
+    [otherMembers]
+  );
+
+  // Live blue highlighting for @mentions while composing: recognized "@Name"/"@everyone"
+  // runs anywhere in the draft, plus the mention query currently being typed (so the
+  // color appears immediately after "@", before the name is even complete).
+  const mentionHighlightNodes = useMemo(() => {
+    const ranges = findKnownMentionRanges(value, knownMentionNames);
+    if (mentionQuery !== null && mentionStartRef.current >= 0) {
+      ranges.push({
+        start: mentionStartRef.current,
+        end: mentionStartRef.current + 1 + mentionQuery.length,
+      });
+    }
+    return renderMentionOverlay(value, ranges);
+  }, [value, knownMentionNames, mentionQuery]);
 
   // ── Slash-command entity tag picker ──────────────────────────────────────
   const [slashStage, setSlashStage] = useState<SlashStage | null>(null);
@@ -335,6 +457,13 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 144) + 'px';
+    if (mentionOverlayRef.current) mentionOverlayRef.current.scrollTop = el.scrollTop;
+  }, []);
+
+  const syncOverlayScroll = useCallback(() => {
+    if (textareaRef.current && mentionOverlayRef.current) {
+      mentionOverlayRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
   }, []);
 
   // Re-measure on layout swaps too: the mobile/desktop branches render structurally
@@ -614,6 +743,23 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
         return;
       }
       if (e.key === 'Escape') { e.preventDefault(); setMentionQuery(null); mentionStartRef.current = -1; return; }
+    }
+    if (e.key === 'Backspace' && mentionQuery === null) {
+      const el = textareaRef.current;
+      if (el && el.selectionStart === el.selectionEnd) {
+        const cursorPos = el.selectionStart ?? 0;
+        const range = findMentionWordBackspaceRange(value, cursorPos, knownMentionNames);
+        if (range) {
+          e.preventDefault();
+          const newValue = value.substring(0, range.start) + value.substring(range.end);
+          setDraft(conversationId, newValue);
+          requestAnimationFrame(() => {
+            el.setSelectionRange(range.start, range.start);
+            el.focus();
+          });
+          return;
+        }
+      }
     }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
@@ -996,17 +1142,29 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
 
             {/* Bordered message pill */}
             <div className="flex-1 min-w-0 flex items-center gap-1 rounded-full border border-input bg-background px-4 min-h-[42px] focus-within:ring-2 focus-within:ring-ring/70 transition-all">
-              <textarea
-                ref={textareaRef}
-                value={value}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                placeholder="Type a message..."
-                rows={1}
-                className="w-full resize-none overflow-hidden bg-transparent text-sm leading-5 max-h-[140px] placeholder:text-muted-foreground/90 focus-visible:outline-none"
-                disabled={readOnly}
-              />
+              <div className="relative flex-1 min-w-0 flex items-center">
+                <div
+                  ref={mentionOverlayRef}
+                  aria-hidden="true"
+                  className="absolute inset-x-0 top-1/2 -translate-y-1/2 overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
+                  style={TEXT_SIZE_ADJUST_STYLE}
+                >
+                  {mentionHighlightNodes}
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={value}
+                  onChange={handleChange}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  onScroll={syncOverlayScroll}
+                  placeholder="Type a message..."
+                  rows={1}
+                  className="relative w-full resize-none overflow-hidden bg-transparent text-sm leading-5 max-h-[140px] text-transparent caret-foreground placeholder:text-muted-foreground/90 focus-visible:outline-none"
+                  style={TEXT_SIZE_ADJUST_STYLE}
+                  disabled={readOnly}
+                />
+              </div>
               {showCharCount && (
                 <span className="shrink-0 text-[10px] text-muted-foreground">
                   {value.length}/{MAX_CHARS}
@@ -1055,15 +1213,25 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
 
             {/* Textarea */}
             <div className="flex-1 min-w-0 relative px-0.5 flex items-center min-h-[28px] md:min-h-[32px]">
+              <div
+                ref={mentionOverlayRef}
+                aria-hidden="true"
+                className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-0.5 overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
+                style={TEXT_SIZE_ADJUST_STYLE}
+              >
+                {mentionHighlightNodes}
+              </div>
               <textarea
                 ref={textareaRef}
                 value={value}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
+                onScroll={syncOverlayScroll}
                 placeholder={otherMembers.length <= 1 ? 'Type a message...' : 'Type a message... Use @ to mention'}
                 rows={1}
-                className="w-full resize-none bg-transparent text-sm leading-5 max-h-[140px] placeholder:text-muted-foreground/90 focus-visible:outline-none"
+                className="relative w-full resize-none bg-transparent text-sm leading-5 max-h-[140px] text-transparent caret-foreground placeholder:text-muted-foreground/90 focus-visible:outline-none"
+                style={TEXT_SIZE_ADJUST_STYLE}
                 disabled={readOnly}
               />
               {showCharCount && (

@@ -254,6 +254,7 @@ export interface Project {
   targetDate: string;
   type?: string; // Project Type (e.g., "Hardware Development")
   icon?: string; // Emoji icon for the project
+  logoUrl?: string | null; // Uploaded square logo image, takes precedence over icon when set
   team: TeamMember[];
   memberCount?: number;
   tasks: Task[];
@@ -379,7 +380,7 @@ export interface ExtendedTeamMember extends TeamMember {
 export interface CalendarFilter {
   projectIds?: string[];
   priority?: Priority[];
-  entityType?: ('task' | 'milestone' | 'issue')[];
+  entityType?: ('task' | 'milestone' | 'issue' | 'meeting')[];
   isBlocked?: boolean;
   assignedBy?: string[];
 }

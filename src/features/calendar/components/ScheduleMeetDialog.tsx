@@ -17,9 +17,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useGoogleMeetStatus } from '@/features/integrations/hooks/useGoogleMeetStatus';
 import { useEnsureGoogleMeetToken } from '@/features/integrations/hooks/useEnsureGoogleMeetToken';
 import { googleMeetService } from '@/services/googleMeet.service';
+import { useCreateMeeting } from '@/hooks/useMeetings';
 import { logger } from '@/services/monitoring/logger';
 import { TeamMember } from '@/types';
-import { CalendarPlus, Loader2, Users, UserPlus, X } from 'lucide-react';
+import { CalendarPlus, Loader2, Users, UserPlus, X, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, addMinutes } from 'date-fns';
 
@@ -29,15 +30,18 @@ interface ScheduleMeetDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   teamMembers: TeamMember[];
+  /** Pre-fill the meeting date (e.g. the day selected in the calendar). Time-of-day still defaults to the next half-hour slot. */
+  initialDate?: Date;
 }
 
-export function ScheduleMeetDialog({ open, onOpenChange, teamMembers }: ScheduleMeetDialogProps) {
+export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDate }: ScheduleMeetDialogProps) {
   const { user } = useAuth();
   // Real (backend-persisted) status for the viewer — same source of truth as
   // the chat feature's meeting scheduler, not a stale local flag.
   const { data: meetStatusMap } = useGoogleMeetStatus(user ? [user.id] : []);
   const isConnected = !!(user && meetStatusMap?.[user.id]?.connected);
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
+  const { mutateAsync: createMeetingRecord } = useCreateMeeting();
   const [loading, setLoading] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -46,6 +50,7 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers }: Schedule
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<Record<string, boolean>>({});
+  const [memberSearch, setMemberSearch] = useState('');
   const [guestInput, setGuestInput] = useState('');
   const [guestInputError, setGuestInputError] = useState('');
   const [guestEmails, setGuestEmails] = useState<string[]>([]);
@@ -56,21 +61,31 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers }: Schedule
       setTitle('');
       const now = new Date();
       const start = new Date(Math.ceil(now.getTime() / (30 * 60 * 1000)) * (30 * 60 * 1000));
+      if (initialDate) {
+        start.setFullYear(initialDate.getFullYear(), initialDate.getMonth(), initialDate.getDate());
+      }
       const end = addMinutes(start, 30);
       setStartDate(format(start, 'yyyy-MM-dd'));
       setStartTime(format(start, 'HH:mm'));
       setEndDate(format(end, 'yyyy-MM-dd'));
       setEndTime(format(end, 'HH:mm'));
       setSelectedMembers({});
+      setMemberSearch('');
       setGuestInput('');
       setGuestInputError('');
       setGuestEmails([]);
     }
-  }, [open]);
+  }, [open, initialDate]);
 
   const orgEmails = new Set(
     teamMembers.filter((m) => selectedMembers[m.id] && m.email).map((m) => m.email.toLowerCase())
   );
+
+  const filteredTeamMembers = teamMembers.filter((m) => {
+    const q = memberSearch.trim().toLowerCase();
+    if (!q) return true;
+    return m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
+  });
 
   const tryAddGuestEmail = (email: string, currentGuests: string[]): string[] | null => {
     if (!EMAIL_RE.test(email)) {
@@ -157,6 +172,24 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers }: Schedule
         endTime: endDateTime.toISOString(),
         attendees,
       });
+
+      // The Google Calendar event already exists at this point — persist a
+      // record so it shows up in this app's own Calendar view too. If this
+      // fails, the meeting still exists in Google Calendar, so we warn
+      // rather than blocking on it.
+      try {
+        await createMeetingRecord({
+          title,
+          startTime: startDateTime.toISOString(),
+          endTime: endDateTime.toISOString(),
+          meetingUri: result.meetingUri,
+          htmlLink: result.htmlLink,
+          attendeeEmails: attendees,
+        });
+      } catch (persistErr) {
+        logger.error('Meeting created in Google Calendar but failed to save locally', { error: persistErr });
+        toast.warning('Meeting created in Google Calendar, but it may not show up on this app\'s Calendar.');
+      }
 
       toast.success('Meeting scheduled and event created in Google Calendar!', {
         description: result.meetingUri,
@@ -253,12 +286,24 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers }: Schedule
               <Users className="h-4 w-4 text-muted-foreground" />
               Team Members
             </Label>
-            <ScrollArea className="h-28 border rounded-lg p-3 bg-muted/20">
-              <div className="space-y-2.5">
-                {teamMembers.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No team members found.</p>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+                placeholder="Search team members..."
+                className="h-8 pl-8 text-sm"
+                disabled={loading}
+              />
+            </div>
+            <ScrollArea type="always" className="h-28 border rounded-lg p-3 bg-muted/20">
+              <div className="space-y-2.5 pr-2">
+                {filteredTeamMembers.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {teamMembers.length === 0 ? 'No team members found.' : 'No matches found.'}
+                  </p>
                 )}
-                {teamMembers.map((member) => (
+                {filteredTeamMembers.map((member) => (
                   <div key={member.id} className="flex items-center space-x-2">
                     <Checkbox
                       id={`sm-chk-${member.id}`}

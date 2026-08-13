@@ -10,6 +10,7 @@ import { messagePreviewText } from '../chat.mappers';
 import { logger } from '@/services/monitoring/logger';
 import { useCallSignaling } from '../hooks/useCallSignaling';
 import { CallOverlay } from '../components/CallOverlay';
+import { playMessageSound } from '@/lib/playSound';
 
 function refreshConversations() {
   chatService.getConversations()
@@ -80,7 +81,7 @@ export function ChatNotificationsProvider() {
         const activeId = store.activeConversationId;
         const isOwnMessage = (raw.senderId ?? raw.sender?.id) === user.id;
 
-        if (convId !== activeId) {
+        if (convId !== activeId && !isOwnMessage) {
           store.incrementUnread(convId);
         }
 
@@ -114,6 +115,7 @@ export function ChatNotificationsProvider() {
           const heading = conv?.type === 'group' && conv.name ? `${senderName} in ${conv.name}` : `${senderName} sent you a message`;
           const preview = messagePreviewText(content).slice(0, 80);
 
+          playMessageSound();
           toast.custom((toastId) => (
             <button
               type="button"

@@ -29,7 +29,7 @@ export interface CalendarEvent {
   id: string;
   title: string;
   date: Date;
-  type: 'task' | 'milestone' | 'issue';
+  type: 'task' | 'milestone' | 'issue' | 'meeting';
   projectId: string;
   projectName: string;
   // Task-specific
@@ -43,6 +43,11 @@ export interface CalendarEvent {
   // Issue-specific
   severity?: string;
   issueStatus?: string;
+  // Meeting-specific
+  endDate?: Date;
+  meetingUri?: string;
+  htmlLink?: string;
+  attendeeEmails?: string[];
   // Common
   description?: string;
   tags?: string[];
