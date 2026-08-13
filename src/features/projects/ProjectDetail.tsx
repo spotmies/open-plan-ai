@@ -85,6 +85,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { projectMembersService } from '@/services/projectMembers.service';
 import { attachmentsService } from '@/services/attachments.service';
 import { chatService } from '@/services/chat.service';
+import { ProjectChatPanel } from './components/ProjectChatPanel';
 import { toast } from 'sonner';
 import { calculateProjectProgress, getModuleTasks, getModuleProgress } from './utils/projectUtils';
 import { ProjectSection, ProjectTabId, Module, TaskViewMode, TaskFilter, ModuleViewMode, Issue, Milestone, Task, IssueStatus, IssueSeverity, TeamMember, ProjectRole } from '@/types';
@@ -560,6 +561,26 @@ export default function ProjectDetail() {
   const [selectedMemberRoleToAdd, setSelectedMemberRoleToAdd] = useState<ProjectRole>('member');
   const [isAddingProjectMember, setIsAddingProjectMember] = useState(false);
   const [isStartingChat, setIsStartingChat] = useState(false);
+  const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
+  const [projectChatConversationId, setProjectChatConversationId] = useState<string | null>(null);
+  // Docks the chat panel below the sticky title/tabs header (kept fully visible)
+  // rather than covering it — tracked live since the header's height varies
+  // (mobile module-detail view, part/ECO deep-links collapse a row).
+  const chatPanelHeaderRef = useRef<HTMLDivElement>(null);
+  const [chatPanelTop, setChatPanelTop] = useState(0);
+  useEffect(() => {
+    const el = chatPanelHeaderRef.current;
+    if (!el) return;
+    const updateOffset = () => setChatPanelTop(el.getBoundingClientRect().bottom);
+    updateOffset();
+    const observer = new ResizeObserver(updateOffset);
+    observer.observe(el);
+    window.addEventListener('resize', updateOffset);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateOffset);
+    };
+  }, [isMobileModuleDetailOpen, partId, ecoId]);
   const [memberRemovalPrompt, setMemberRemovalPrompt] = useState<{
     open: boolean;
     memberId: string | null;
@@ -885,6 +906,13 @@ export default function ProjectDetail() {
       return;
     }
 
+    // Already resolved this project's chat — just toggle the docked panel
+    // instead of re-hitting the lookup/ensure endpoints.
+    if (projectChatConversationId) {
+      setIsChatPanelOpen((prev) => !prev);
+      return;
+    }
+
     setIsStartingChat(true);
     try {
       const timeoutMs = Number(import.meta.env.VITE_CHAT_START_PROJECT_TIMEOUT_MS ?? 6000);
@@ -940,7 +968,8 @@ export default function ProjectDetail() {
         throw new Error('Failed to start project chat. Please try again.');
       }
 
-      navigate(`/chat/${conversationId}`);
+      setProjectChatConversationId(conversationId);
+      setIsChatPanelOpen(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start project chat';
       if (message && message.toLowerCase().includes('access denied')) {
@@ -1316,7 +1345,7 @@ export default function ProjectDetail() {
 
         {/* Section Tabs - Entity-based navigation */}
         <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
-          <div className="sticky top-0 z-20 bg-background">
+          <div ref={chatPanelHeaderRef} className="sticky top-0 z-20 bg-background">
           {!partId && !ecoId && !isMobileModuleDetailOpen && (
             <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
               {/* Left Side: Tabs */}
@@ -1361,7 +1390,7 @@ export default function ProjectDetail() {
                 {/* Start Chat */}
                 <Button
                   type="button"
-                  variant="outline"
+                  variant={isChatPanelOpen ? 'secondary' : 'outline'}
                   size="sm"
                   className="h-9 gap-1.5 whitespace-nowrap rounded-lg hidden sm:flex"
                   onClick={handleStartProjectChat}
@@ -1897,6 +1926,13 @@ export default function ProjectDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProjectChatPanel
+        open={isChatPanelOpen}
+        onOpenChange={setIsChatPanelOpen}
+        conversationId={projectChatConversationId}
+        topOffset={chatPanelTop}
+      />
     </>
   );
 }
