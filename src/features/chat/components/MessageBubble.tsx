@@ -423,8 +423,8 @@ function FileAttachment({
           'flex w-full items-center justify-center h-16 transition-colors',
           'hover:bg-accent/40 disabled:opacity-50 disabled:cursor-not-allowed',
           fileType === 'pdf' ? 'bg-red-500/10 text-red-500' :
-          fileType === 'doc' ? 'bg-blue-500/10 text-blue-500' :
-          'bg-muted text-muted-foreground'
+            fileType === 'doc' ? 'bg-blue-500/10 text-blue-500' :
+              'bg-muted text-muted-foreground'
         )}
         title={isPreviewable ? `Open ${fileType.toUpperCase()} preview` : 'Open file'}
       >
@@ -911,6 +911,7 @@ export function MessageBubble({
             {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
             {isFavourited && <Bookmark className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Saved" />}
             {message.isEdited && <span>Edited</span>}
+            {message.isEdited && <span>Edited</span>}
             {formatMessageTimestamp(message.createdAt, timezone)}
             {isOwn && renderStatusIcon()}
           </span>
@@ -923,9 +924,8 @@ export function MessageBubble({
             )}
           >
             {isPinned && <Pin className="h-2.5 w-2.5" aria-label="Pinned" />}
-            {isFavourited && <Bookmark className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Saved" />}
-            {message.isEdited && <span>Edited</span>}
-            {isOwn && renderStatusIcon()}
+            {isFavourited && <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" aria-label="Favourited" />}
+            {renderStatusIcon()}
           </span>
         )}
       </div>
