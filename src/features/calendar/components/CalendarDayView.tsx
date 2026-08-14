@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { CalendarEvent, getEventsForDate } from '../utils/calendarUtils';
 import { CalendarEventCard } from './CalendarEventCard';
 import { CalendarEventPreview } from './CalendarEventPreview';
+import { CalendarMeetingCard } from './CalendarMeetingCard';
 
 interface CalendarDayViewProps {
   date: Date;
@@ -35,7 +36,8 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
     icon: React.ReactNode;
     items: CalendarEvent[];
     className?: string;
-  }> = ({ title, icon, items, className }) => {
+    renderItem?: (event: CalendarEvent) => React.ReactNode;
+  }> = ({ title, icon, items, className, renderItem }) => {
     if (items.length === 0) return null;
 
     return (
@@ -46,13 +48,19 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
           <span className="text-xs text-muted-foreground">({items.length})</span>
         </div>
         <div className="grid gap-2">
-          {items.map((event) => (
-            <CalendarEventPreview key={event.id} event={event} side="bottom">
-              <div className="min-w-0" onClick={() => onEventClick(event)}>
-                <CalendarEventCard event={event} variant="full" />
+          {items.map((event) =>
+            renderItem ? (
+              <div key={event.id} className="min-w-0">
+                {renderItem(event)}
               </div>
-            </CalendarEventPreview>
-          ))}
+            ) : (
+              <CalendarEventPreview key={event.id} event={event} side="bottom">
+                <div className="min-w-0" onClick={() => onEventClick(event)}>
+                  <CalendarEventCard event={event} variant="full" />
+                </div>
+              </CalendarEventPreview>
+            )
+          )}
         </div>
       </div>
     );
@@ -99,6 +107,9 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
               title="Meetings"
               icon={<Video className="h-4 w-4 text-blue-600" />}
               items={meetings}
+              renderItem={(event) => (
+                <CalendarMeetingCard event={event} onClick={() => onEventClick(event)} />
+              )}
             />
             <EventSection
               title="Milestones"

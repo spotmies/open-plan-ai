@@ -30,7 +30,7 @@ export function AssistantWidget() {
 
   // Not signed in yet (widget can mount before auth resolves), or already on
   // the full Assistant page — either way there's nothing for the widget to add.
-  if (!isOpen || !user || location.pathname === '/assistant') return null;
+  if (!isOpen || !user || location.pathname.startsWith('/assistant')) return null;
 
   const handleExpand = () => {
     close();

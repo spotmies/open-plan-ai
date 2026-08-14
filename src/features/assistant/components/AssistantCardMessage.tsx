@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCurrency } from '@/hooks/useCurrency';
 import { cn } from '@/lib/utils';
 import type {
@@ -89,6 +90,23 @@ const SEVERITY_BADGE_META: Record<CardSeverity, { label: string; className: stri
   minor: { label: 'Minor', className: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-500' },
   trivial: { label: 'Trivial', className: 'border-muted-foreground/30 bg-muted text-muted-foreground' },
 };
+
+// Detail-card tag pills (severity/type/module/etc.) read as bare labels with
+// no indication of what each one means — wrapping them here shows the
+// category ("Priority", "Type", "Module", ...) on hover so the pill row
+// stays scannable without a legend.
+function TagBadge({ category, className, children }: { category: string; className?: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline" className={cn('text-[10px]', className)}>
+          {children}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top">{category}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 const AVATAR_PALETTE = ['#2563EB', '#9333EA', '#16A34A', '#D97706', '#DC2626', '#0891B2', '#DB2777', '#0D9488'];
 
@@ -660,14 +678,14 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
                 {(card.priority || card.hasDependency) && (
                   <div className="flex flex-wrap gap-1.5">
                     {card.priority && (
-                      <Badge variant="outline" className={cn('text-[10px]', SEVERITY_BADGE_META[card.priority].className)}>
+                      <TagBadge category="Priority" className={SEVERITY_BADGE_META[card.priority].className}>
                         {SEVERITY_BADGE_META[card.priority].label}
-                      </Badge>
+                      </TagBadge>
                     )}
                     {card.hasDependency && (
-                      <Badge variant="outline" className="gap-1 text-[10px]">
+                      <TagBadge category="Dependency" className="gap-1">
                         <Link2 className="h-3 w-3" /> Has dependency
-                      </Badge>
+                      </TagBadge>
                     )}
                   </div>
                 )}
@@ -688,20 +706,12 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
                 {(card.severity || card.category || card.module) && (
                   <div className="flex flex-wrap gap-1.5">
                     {card.severity && (
-                      <Badge variant="outline" className={cn('text-[10px]', SEVERITY_BADGE_META[card.severity].className)}>
+                      <TagBadge category="Priority" className={SEVERITY_BADGE_META[card.severity].className}>
                         {SEVERITY_BADGE_META[card.severity].label}
-                      </Badge>
+                      </TagBadge>
                     )}
-                    {card.category && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {titleCase(card.category)}
-                      </Badge>
-                    )}
-                    {card.module && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {card.module}
-                      </Badge>
-                    )}
+                    {card.category && <TagBadge category="Type">{titleCase(card.category)}</TagBadge>}
+                    {card.module && <TagBadge category="Module">{card.module}</TagBadge>}
                   </div>
                 )}
                 <DetailFacts>
@@ -722,16 +732,8 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
                 {card.description && <p className="text-sm text-muted-foreground">{card.description}</p>}
                 {(card.priority || card.changeClass) && (
                   <div className="flex flex-wrap gap-1.5">
-                    {card.priority && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {titleCase(card.priority)}
-                      </Badge>
-                    )}
-                    {card.changeClass && (
-                      <Badge variant="outline" className="text-[10px]">
-                        Class {card.changeClass}
-                      </Badge>
-                    )}
+                    {card.priority && <TagBadge category="Priority">{titleCase(card.priority)}</TagBadge>}
+                    {card.changeClass && <TagBadge category="Change Class">Class {card.changeClass}</TagBadge>}
                   </div>
                 )}
                 <DetailFacts>
@@ -753,9 +755,7 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
                 {card.description && <p className="text-sm text-muted-foreground">{card.description}</p>}
                 {card.moduleType && (
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="outline" className="text-[10px]">
-                      {titleCase(card.moduleType)}
-                    </Badge>
+                    <TagBadge category="Module Type">{titleCase(card.moduleType)}</TagBadge>
                   </div>
                 )}
                 {card.progress != null && (

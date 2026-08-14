@@ -150,6 +150,8 @@ export function ScheduleMeetingDialog({
     }
   }, [open, conversation]);
 
+  const hasAttendees = conversation.members.some((m) => selectedMembers[m.id] && m.email);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isConnected) {
@@ -173,6 +175,12 @@ export function ScheduleMeetingDialog({
 
     if (repeatFreq === 'daily' && dailyMode === 'specific' && recurDays.length === 0) {
       toast.error('Please select at least one day for the recurring meeting.');
+      return;
+    }
+
+    const hasSelectedAttendees = conversation.members.some((m) => selectedMembers[m.id] && m.email);
+    if (!hasSelectedAttendees) {
+      toast.error('Please select at least one attendee to schedule this meeting.');
       return;
     }
 
@@ -422,6 +430,11 @@ export function ScheduleMeetingDialog({
                 ))}
               </div>
             </ScrollArea>
+            {!hasAttendees && (
+              <p className="text-xs text-destructive">
+                Select at least one attendee to schedule this meeting.
+              </p>
+            )}
           </div>
 
           <DialogFooter className="pt-2">
@@ -433,7 +446,7 @@ export function ScheduleMeetingDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="gap-2">
+            <Button type="submit" disabled={loading || !hasAttendees} className="gap-2">
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />

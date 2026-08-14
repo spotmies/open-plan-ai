@@ -87,6 +87,9 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
     return m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
   });
 
+  const hasAttendees =
+    orgEmails.size > 0 || guestEmails.length > 0 || EMAIL_RE.test(guestInput.trim());
+
   const tryAddGuestEmail = (email: string, currentGuests: string[]): string[] | null => {
     if (!EMAIL_RE.test(email)) {
       setGuestInputError('Please enter a valid email address');
@@ -157,6 +160,11 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
       .filter((m) => selectedMembers[m.id] && m.email)
       .map((m) => m.email);
     const attendees = Array.from(new Set([...memberAttendees, ...finalGuestEmails]));
+
+    if (attendees.length === 0) {
+      toast.error('Please select at least one team member or invite an outside guest.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -366,13 +374,18 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
             <p className="text-xs text-muted-foreground">
               Guests don&apos;t need an Open Plan AI account — they&apos;ll get a Google Calendar invite by email.
             </p>
+            {!hasAttendees && (
+              <p className="text-xs text-destructive">
+                Select at least one team member or invite an outside guest to schedule this meeting.
+              </p>
+            )}
           </div>
 
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="gap-2">
+            <Button type="submit" disabled={loading || !hasAttendees} className="gap-2">
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
