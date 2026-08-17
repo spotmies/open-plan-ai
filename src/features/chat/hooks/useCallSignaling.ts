@@ -44,9 +44,20 @@ export function useCallSignaling() {
       });
     });
 
-    const unsubAccepted = chatTransport.subscribeToCallAccepted(({ callId, byUserName }) => {
+    const unsubAccepted = chatTransport.subscribeToCallAccepted(({ callId, byUserId, byUserName }) => {
       const store = useCallStore.getState();
       if (store.callId !== callId || store.callState === 'idle') return;
+
+      // I accepted this same call from another tab/browser — that tab has
+      // already opened the Meet window, so this one just needs to stop
+      // ringing, not join a second time.
+      if (byUserId === user?.id) {
+        if (store.callState === 'incoming') {
+          meetWindow.close();
+          store.reset();
+        }
+        return;
+      }
 
       // The server fans this out to every other conversation member, not just
       // the caller — in a group ring, a fellow invitee who's still being rung
@@ -79,6 +90,16 @@ export function useCallSignaling() {
     const unsubDeclined = chatTransport.subscribeToCallDeclined(({ callId, byUserId, byUserName }) => {
       const store = useCallStore.getState();
       if (store.callId !== callId) return;
+
+      // I declined this same call from another tab/browser — dismiss the
+      // ring here too instead of waiting for it to time out.
+      if (byUserId === user?.id) {
+        if (store.callState === 'incoming') {
+          meetWindow.close();
+          store.reset();
+        }
+        return;
+      }
 
       // Same reasoning as call:accepted above — one recipient declining a
       // group call must not cancel the ring for a fellow invitee who's still

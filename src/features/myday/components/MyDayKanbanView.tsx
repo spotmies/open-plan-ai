@@ -347,12 +347,23 @@ export function MyDayKanbanView({
 
                                 <div className="flex items-center justify-between pt-2">
                                   {task.assignees && task.assignees.length > 0 && (
-                                    <Avatar className="h-5 w-5">
-                                      <AvatarImage src={resolveFileUrl(task.assignees[0].avatar) ?? task.assignees[0].avatar} alt={task.assignees[0].name} />
-                                      <AvatarFallback className="text-[9px] bg-muted">
-                                        {task.assignees[0].initials}
-                                      </AvatarFallback>
-                                    </Avatar>
+                                    <div className="flex -space-x-2">
+                                      {task.assignees.slice(0, 3).map((assignee) => (
+                                        <Avatar key={assignee.id} className="h-5 w-5 border-2 border-background">
+                                          <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                          <AvatarFallback className="text-[9px] bg-muted">
+                                            {assignee.initials}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                      ))}
+                                      {task.assignees.length > 3 && (
+                                        <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center border-2 border-background z-10">
+                                          <span className="text-[8px] text-muted-foreground font-medium">
+                                            +{task.assignees.length - 3}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                   {task.dueDate && (
                                     <span className="text-[10px] text-muted-foreground ml-auto">

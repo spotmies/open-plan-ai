@@ -20,6 +20,21 @@ export interface ToolStatusEntry {
   done: boolean;
 }
 
+// Detects the backend's message-length / request-size validation failures so
+// send failures can surface a specific, actionable toast instead of the
+// generic "try again" one — see ai-conversations.validator.ts (message capped
+// at 8000 chars, UNPROCESSABLE) and server.ts's 10mb JSON body limit
+// (PAYLOAD_TOO_LARGE).
+export function isMessageTooLargeError(error: unknown): boolean {
+  const err = error as { response?: { status?: number }; message?: string };
+  if (err?.response?.status === 413) return true;
+  if (err?.response?.status === 422 && /character/i.test(err?.message ?? '')) return true;
+  return false;
+}
+
+export const MESSAGE_TOO_LARGE_NOTICE =
+  "That message is too long for me to process in one go. Try summarizing it or breaking it into smaller messages, then send it again.";
+
 /**
  * Owns everything needed to render one active conversation: the persisted
  * detail (React Query), plus live streaming state fed by the socket
@@ -194,10 +209,10 @@ export function useAssistantConversation(conversationId: string | null) {
       setLiveCard(null);
       invalidate();
     },
-    onError: () => {
+    onError: (error) => {
       setOptimisticMessage(null);
       setOptimisticAttachments(null);
-      toast.error("Couldn't send that message — try again.");
+      toast.error(isMessageTooLargeError(error) ? MESSAGE_TOO_LARGE_NOTICE : "Couldn't send that message — try again.");
     },
   });
 
@@ -244,16 +259,24 @@ export function useAssistantConversation(conversationId: string | null) {
     onError: () => toast.error("Couldn't stop that — it may finish on its own shortly."),
   });
 
-  const stopStreaming = useCallback(() => {
+  const stopStreaming = useCallback(async () => {
     if (!conversationId) return;
-    // Flip the UI immediately rather than waiting on the round-trip — the
-    // request to actually cancel the backend turn (and drop the partial
-    // answer it persists) still goes out via stopTurnMutation.
+    // Flip the UI immediately rather than waiting on the round-trip — but
+    // still await the request itself (mutateAsync, not mutate) so callers
+    // that need to send a follow-up right after stopping can be sure the
+    // backend has actually registered the cancellation first. Without that,
+    // the new turn's worker could call registerTurn() before this stop
+    // request lands, and aiAbortRegistry (keyed by conversationId) would end
+    // up cancelling the *new* turn instead of the one being replaced.
     stoppedRef.current = true;
     setIsStreaming(false);
     setStreamingText('');
     setToolStatus([]);
-    stopTurnMutation.mutate();
+    try {
+      await stopTurnMutation.mutateAsync();
+    } catch {
+      // onError above already surfaced a toast — nothing further to do.
+    }
   }, [conversationId, stopTurnMutation]);
 
   const pendingQuestions = liveQuestion ?? query.data?.pendingQuestions ?? null;

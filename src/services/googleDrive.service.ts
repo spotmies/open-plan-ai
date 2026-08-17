@@ -14,10 +14,17 @@ export const googleDriveService = {
    * page navigation (`window.location.href = ...`), not an apiClient fetch —
    * the browser has to follow the redirect all the way to Google's consent
    * screen and back to our callback route.
+   *
+   * `returnTo` tells the backend which origin to redirect back to once the
+   * Google round trip finishes — without it, the callback has no way to know
+   * whether this flow started from localhost or a deployed environment and
+   * falls back to a fixed default, which sends localhost sessions off to
+   * that default instead of back to localhost.
    */
   getConnectUrl(orgId: string): string {
     const base = config.api.baseUrl.replace(/\/$/, '');
-    return `${base}${ENDPOINTS.GOOGLE_DRIVE.CONNECT(orgId)}`;
+    const returnTo = encodeURIComponent(window.location.origin);
+    return `${base}${ENDPOINTS.GOOGLE_DRIVE.CONNECT(orgId)}?returnTo=${returnTo}`;
   },
 
   async getStatus(orgId: string): Promise<GoogleDriveStatus> {

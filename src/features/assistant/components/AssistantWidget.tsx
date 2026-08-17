@@ -12,6 +12,16 @@ export function AssistantWidget() {
   const navigate = useNavigate();
   const location = useLocation();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const isAssistantPage = location.pathname.startsWith('/assistant');
+
+  // The widget refuses to render on the full Assistant page (see the early
+  // return below), but toggle()/Ctrl+K can still flip isOpen to true while
+  // there (nothing visibly happens). Left uncorrected, that stale true then
+  // pops the widget open the instant the user navigates to any other route.
+  // Reset it here so isOpen never survives a visit to /assistant.
+  useEffect(() => {
+    if (isAssistantPage && isOpen) close();
+  }, [isAssistantPage, isOpen, close]);
 
   // Global Cmd/Ctrl+K — mirrors the Ctrl/Cmd+B sidebar shortcut in
   // components/ui/sidebar.tsx. This component is mounted once at the app
@@ -30,11 +40,11 @@ export function AssistantWidget() {
 
   // Not signed in yet (widget can mount before auth resolves), or already on
   // the full Assistant page — either way there's nothing for the widget to add.
-  if (!isOpen || !user || location.pathname.startsWith('/assistant')) return null;
+  if (!isOpen || !user || isAssistantPage) return null;
 
   const handleExpand = () => {
     close();
-    navigate('/assistant');
+    navigate(activeId ? `/assistant/${activeId}` : '/assistant');
   };
 
   return (

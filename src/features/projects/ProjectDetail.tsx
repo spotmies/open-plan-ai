@@ -563,24 +563,6 @@ export default function ProjectDetail() {
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
   const [projectChatConversationId, setProjectChatConversationId] = useState<string | null>(null);
-  // Docks the chat panel below the sticky title/tabs header (kept fully visible)
-  // rather than covering it — tracked live since the header's height varies
-  // (mobile module-detail view, part/ECO deep-links collapse a row).
-  const chatPanelHeaderRef = useRef<HTMLDivElement>(null);
-  const [chatPanelTop, setChatPanelTop] = useState(0);
-  useEffect(() => {
-    const el = chatPanelHeaderRef.current;
-    if (!el) return;
-    const updateOffset = () => setChatPanelTop(el.getBoundingClientRect().bottom);
-    updateOffset();
-    const observer = new ResizeObserver(updateOffset);
-    observer.observe(el);
-    window.addEventListener('resize', updateOffset);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateOffset);
-    };
-  }, [isMobileModuleDetailOpen, partId, ecoId]);
   const [memberRemovalPrompt, setMemberRemovalPrompt] = useState<{
     open: boolean;
     memberId: string | null;
@@ -1345,7 +1327,7 @@ export default function ProjectDetail() {
 
         {/* Section Tabs - Entity-based navigation */}
         <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
-          <div ref={chatPanelHeaderRef} className="sticky top-0 z-20 bg-background">
+          <div className="sticky top-0 z-20 bg-background">
           {!partId && !ecoId && !isMobileModuleDetailOpen && (
             <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
               {/* Left Side: Tabs */}
@@ -1931,7 +1913,6 @@ export default function ProjectDetail() {
         open={isChatPanelOpen}
         onOpenChange={setIsChatPanelOpen}
         conversationId={projectChatConversationId}
-        topOffset={chatPanelTop}
       />
     </>
   );

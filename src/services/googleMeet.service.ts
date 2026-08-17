@@ -66,10 +66,17 @@ export const googleMeetService = {
    * screen and back to our callback route. The backend stores the resulting
    * refresh token permanently, which is what lets the connection survive
    * indefinitely instead of needing re-consent every ~hour.
+   *
+   * `returnTo` tells the backend which origin to redirect back to once the
+   * Google round trip finishes — without it, the callback has no way to know
+   * whether this flow started from localhost or a deployed environment and
+   * falls back to a fixed default, which sends localhost sessions off to
+   * that default instead of back to localhost.
    */
   getConnectUrl(): string {
     const base = config.api.baseUrl.replace(/\/$/, '');
-    return `${base}${ENDPOINTS.GOOGLE_MEET.CONNECT}`;
+    const returnTo = encodeURIComponent(window.location.origin);
+    return `${base}${ENDPOINTS.GOOGLE_MEET.CONNECT}?returnTo=${returnTo}`;
   },
 
   /**

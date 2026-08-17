@@ -5,6 +5,7 @@ import type { ToolStatusEntry } from '../hooks/useAssistantConversation';
 const TOOL_PHASES: Record<string, string> = {
   query_project_data: 'Scanning your project…',
   search_project_files: 'Searching your files…',
+  read_project_file: 'Reading your file…',
   present_card: 'Crafting your answer…',
 };
 

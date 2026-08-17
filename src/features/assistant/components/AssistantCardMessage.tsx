@@ -123,6 +123,36 @@ function initials(name: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+const MAX_VISIBLE_ASSIGNEES = 3;
+
+// Overlapping avatar stack so a multi-assignee row reads as "more than one
+// person" at a glance instead of only revealing that on hover (the previous
+// behavior — a single avatar whose title listed everyone).
+function AssigneeAvatars({ assignees }: { assignees?: string[] }) {
+  if (!assignees?.length) return null;
+  const visible = assignees.slice(0, MAX_VISIBLE_ASSIGNEES);
+  const overflow = assignees.length - visible.length;
+
+  return (
+    <div className="flex shrink-0 -space-x-2" title={assignees.join(', ')}>
+      {visible.map((name, index) => (
+        <span
+          key={`${name}-${index}`}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-background text-[10px] font-semibold text-white"
+          style={{ background: AVATAR_PALETTE[hashIndex(name)] }}
+        >
+          {initials(name)}
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[10px] font-semibold text-muted-foreground">
+          +{overflow}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // Never model-supplied — derived purely from the item's real UUID/dueDate so
 // nothing shown on a card can be an invented ID or age (see the plan's "no
 // fabricated data" requirement). Tasks/issues/modules have no human-facing
@@ -424,7 +454,6 @@ function CardItemRow({
   const navigate = useNavigate();
   const due = dueLabel(item.dueDate);
   const metaLine = [item.contextLabel, due].filter(Boolean).join(' · ');
-  const primaryAssignee = item.assignees?.[0];
   const entityType = item.entityType ?? (subject === 'tasks' ? 'task' : subject === 'issues' ? 'issue' : undefined);
   const target =
     !readOnly && entityType && item.projectId ? ENTITY_DEEP_LINK[entityType](item.projectId, item.id) : undefined;
@@ -439,15 +468,7 @@ function CardItemRow({
         <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
         {metaLine && <p className="truncate text-xs text-muted-foreground">{metaLine}</p>}
       </div>
-      {primaryAssignee && (
-        <span
-          title={item.assignees?.join(', ')}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-          style={{ background: AVATAR_PALETTE[hashIndex(primaryAssignee)] }}
-        >
-          {initials(primaryAssignee)}
-        </span>
-      )}
+      <AssigneeAvatars assignees={item.assignees} />
       <Badge variant="outline" className="shrink-0 font-mono text-[10px]">
         {shortId(item.id)}
       </Badge>

@@ -341,6 +341,8 @@ export interface MyTasksColumnFilters {
   status?: string[];
   priority?: string[];
   projectIds?: string[];
+  assignedByIds?: string[];
+  dueDate?: 'overdue' | 'today' | 'upcoming' | 'no-date';
 }
 
 // Filter options - enhanced for hardware workflows

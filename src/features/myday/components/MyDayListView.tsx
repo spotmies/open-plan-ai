@@ -201,25 +201,27 @@ export function MyDayListView({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
-  // Reset mobile count whenever tasks or sort order changes
-  useEffect(() => {
-    setMobileVisibleCount(10);
-    setIsLoadingMore(false);
-  }, [allTasks]);
-
   // Pagination state for desktop table view
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset paging state synchronously during render whenever the underlying task
+  // list changes (tab switch, sort, group, or filter change). Doing this in a
+  // useEffect would let one render commit with the old page against the new
+  // task list first, briefly showing the wrong slice of data.
+  const prevAllTasksRef = useRef(allTasks);
+  if (prevAllTasksRef.current !== allTasks) {
+    prevAllTasksRef.current = allTasks;
+    if (currentPage !== 1) setCurrentPage(1);
+    if (mobileVisibleCount !== 10) setMobileVisibleCount(10);
+    if (isLoadingMore) setIsLoadingMore(false);
+  }
+
   const totalPages = Math.max(1, Math.ceil(allTasks.length / DESKTOP_PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedTasks = useMemo(
     () => allTasks.slice((safeCurrentPage - 1) * DESKTOP_PAGE_SIZE, safeCurrentPage * DESKTOP_PAGE_SIZE),
     [allTasks, safeCurrentPage]
   );
-
-  // Reset to page 1 whenever the underlying task list or sort order changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [allTasks]);
 
   // Observer to load 10 more tasks when scrolling near bottom on mobile
   useEffect(() => {
@@ -397,7 +399,7 @@ export function MyDayListView({
                       </TooltipContent>
                     </Tooltip>
                     {task.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                      <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5 break-all">
                         {task.description}
                       </p>
                     )}

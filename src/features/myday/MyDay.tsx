@@ -50,7 +50,7 @@ export default function MyDay() {
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
 
   // Fetch dynamic data
-  const { data: userTasks = [], isLoading: tasksLoading } = useMyDayTasks(filter);
+  const { data: userTasks = [], isLoading: tasksLoading } = useMyDayTasks(filter, columnFilters.status);
   const { data: overdueTasks = [] } = useMyDayTasks('overdue');
   const { data: todayTasks = [] } = useMyDayTasks('today');
   const todayActiveCount = todayTasks.length;
@@ -87,13 +87,23 @@ export default function MyDay() {
     return projects.flatMap(p => p.tasks || []);
   }, [projects]);
 
-  // Column filters (type/status/priority/project) apply on top of the date filter
+  // Column filters (type/status/priority/project/assignedBy/dueDate) apply on top of the date filter
   const filteredTasks = useMemo(() => {
     return userTasks.filter((item) => {
       if (columnFilters.type?.length && !columnFilters.type.includes(item.itemType)) return false;
       if (columnFilters.status?.length && !columnFilters.status.includes(item.status)) return false;
       if (columnFilters.priority?.length && (!item.priority || !columnFilters.priority.includes(item.priority))) return false;
       if (columnFilters.projectIds?.length && !columnFilters.projectIds.includes(item.projectId)) return false;
+      if (columnFilters.assignedByIds?.length) {
+        const assignedById = item.itemType === 'task' ? item.originalTask?.createdBy?.id : item.originalIssue?.reportedBy?.id;
+        if (!assignedById || !columnFilters.assignedByIds.includes(assignedById)) return false;
+      }
+      if (columnFilters.dueDate) {
+        if (columnFilters.dueDate === 'overdue' && !item.isOverdue) return false;
+        if (columnFilters.dueDate === 'today' && !item.isDueToday) return false;
+        if (columnFilters.dueDate === 'no-date' && item.dueDate) return false;
+        if (columnFilters.dueDate === 'upcoming' && (!item.dueDate || item.isOverdue || item.isDueToday)) return false;
+      }
       return true;
     });
   }, [userTasks, columnFilters]);

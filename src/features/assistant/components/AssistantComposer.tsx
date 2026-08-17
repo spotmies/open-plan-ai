@@ -78,6 +78,8 @@ export function AssistantComposer({
     previewUrl: fileUrls[i] ?? '',
   }));
 
+  const hasContent = !!value.trim() || files.length > 0;
+
   const handleSendClick = () => {
     // Sending mid-dictation is allowed — the composer already reflects the
     // live partial text by the time this fires, so just stop capturing and
@@ -198,7 +200,7 @@ export function AssistantComposer({
             </Tooltip>
           )}
 
-          {isGenerating && onStop ? (
+          {isGenerating && onStop && !hasContent ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -212,12 +214,30 @@ export function AssistantComposer({
               </TooltipTrigger>
               <TooltipContent side="top">Stop generating</TooltipContent>
             </Tooltip>
+          ) : isGenerating ? (
+            // Typed something while a turn is still active — sending now
+            // stops that turn first, then sends what's typed (handled in
+            // the parent's onSend), rather than silently blocking input.
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={handleSendClick}
+                  disabled={disabled}
+                  className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Stop and send</TooltipContent>
+            </Tooltip>
           ) : (
             <Button
               type="button"
               size="icon"
               onClick={handleSendClick}
-              disabled={disabled || (!value.trim() && files.length === 0)}
+              disabled={disabled || !hasContent}
               className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
             >
               <ArrowUp className="h-4 w-4" />

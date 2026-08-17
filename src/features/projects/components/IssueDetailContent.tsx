@@ -152,6 +152,11 @@ const formatFileSize = (bytes: number) => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Draft issues use a client-generated `issue-${Date.now()}` id until the create
+// mutation resolves — guard against firing comment/attachment fetches with it.
+const isUuid = (id: string) => UUID_REGEX.test(id);
+
 export function IssueDetailContent({
     issue,
     tasks = [],
@@ -259,7 +264,7 @@ export function IssueDetailContent({
 
     // Load comments from API whenever an existing issue is opened.
     useEffect(() => {
-        if (mode === 'create' || !issue?.id) return;
+        if (mode === 'create' || !issue?.id || !isUuid(issue.id)) return;
         let cancelled = false;
         commentsService.getByEntity(issue.id, 'issue').then(dbComments => {
             if (cancelled) return;
@@ -286,7 +291,7 @@ export function IssueDetailContent({
     // attachments (they live behind a separate uploads endpoint), so fetch them
     // explicitly whenever an existing issue is opened.
     useEffect(() => {
-        if (mode === 'create' || !issue?.id) return;
+        if (mode === 'create' || !issue?.id || !isUuid(issue.id)) return;
         let cancelled = false;
         attachmentsService.getByEntity(issue.id, 'issue').then(records => {
             if (cancelled) return;
@@ -572,7 +577,7 @@ export function IssueDetailContent({
         const content = newComment.trim();
         setNewComment('');
 
-        if (mode !== 'create' && issue?.id) {
+        if (mode !== 'create' && issue?.id && isUuid(issue.id)) {
             try {
                 const dbComment = await commentsService.create({
                     content,

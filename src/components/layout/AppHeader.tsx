@@ -84,6 +84,13 @@ export function AppHeader() {
   // Mobile settings page: hide theme/notifications/profile
   const isMobileSettings = isMobile && location.pathname.startsWith('/settings');
 
+  // Full Assistant page already has its own inline Ask UI (and the floating
+  // AssistantWidget refuses to render here — see AssistantWidget.tsx). Hide
+  // the header button here too, otherwise toggling it just flips isOpen with
+  // no visible effect, and that stale true value pops the widget open on
+  // whatever route the user navigates to next.
+  const isAssistantPage = location.pathname.startsWith('/assistant');
+
   const pageTitle = useMemo(
     () => getPageTitle(location.pathname),
     [location.pathname],
@@ -180,7 +187,7 @@ export function AppHeader() {
         ) : (
           <>
             {/* Ask Assistant */}
-            {!isMobile && (
+            {!isMobile && !isAssistantPage && (
               <Button
                 variant="outline"
                 size="sm"

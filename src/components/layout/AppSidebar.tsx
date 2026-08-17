@@ -17,6 +17,7 @@ import { OrganizationSettings } from '@/services/organizations.service';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { toast } from 'sonner';
 import { useChatStore } from '@/features/chat/stores/useChatStore';
+import { useAssistantDraftStore } from '@/features/assistant/stores/useAssistantDraftStore';
 
 const mainNavItems = [{
   title: 'Dashboard',
@@ -70,6 +71,7 @@ export function AppSidebar() {
   const { organizations, currentOrganization, setCurrentOrganization, createOrganization, isLoading: orgLoading } = useOrganization();
   const { isOrgAdmin: canCreateOrg } = useOrgPermissions();
   const chatUnreadCount = useChatStore((s) => s.getTotalUnread());
+  const lastAssistantConversationId = useAssistantDraftStore((s) => s.lastActiveConversationId);
 
   const [orgPopoverOpen, setOrgPopoverOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -85,6 +87,14 @@ export function AppSidebar() {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
+
+  // Clicking "Assistant" always used to reset to a blank composer, even if a
+  // thread was already open before navigating elsewhere — send it back to
+  // that thread instead, mirroring ChatGPT's persistent sidebar behavior.
+  const navDestination = (item: typeof mainNavItems[number]) =>
+    item.url === '/assistant' && lastAssistantConversationId
+      ? `/assistant/${lastAssistantConversationId}`
+      : item.url;
 
   const handleSelectOrg = (org: typeof currentOrganization) => {
     if (org) {
@@ -257,7 +267,7 @@ export function AppSidebar() {
                   return (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton className="overflow-visible relative" asChild isActive={isActive(item.url)} tooltip={collapsed ? item.title : undefined}>
-                        <NavLink id={item.url} to={item.url} end={item.url === '/'} className="flex items-center gap-3 px-3 py-2 rounded-md transition-colors" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
+                        <NavLink id={item.url} to={navDestination(item)} end={item.url === '/'} className="flex items-center gap-3 px-3 py-2 rounded-md transition-colors" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
                           <span className="relative shrink-0 overflow-visible">
                             <item.icon className="h-4 w-4" />
                           </span>

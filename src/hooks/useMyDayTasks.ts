@@ -64,20 +64,28 @@ function useMyDayRawData() {
  * `filter` narrows the result to today's items, overdue items, or everything;
  * the underlying queries always fetch the full assigned set so switching
  * filters is a client-side recompute, not a refetch.
+ *
+ * `statusFilter` is the active column status filter (from MyTasksFiltersDropdown).
+ * Wont-fix/resolved issues are hidden by default (see below), but if the user has
+ * explicitly selected one of those statuses, it must still be excludable-from-exclusion
+ * so the filter can actually surface it instead of being silently dead.
  */
-export function useMyDayTasks(filter: MyDayFilter = 'all') {
+export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string[]) {
   const { user, rawTasks, rawIssues, isLoading } = useMyDayRawData();
+  const includeWontFix = statusFilter?.includes('wont-fix') ?? false;
+  const includeResolved = statusFilter?.includes('resolved') ?? false;
+  const includeDone = statusFilter?.includes('done') ?? false;
 
   const data = useMemo((): MyDayItem[] => {
     if (!user?.id) return [];
 
     // All tasks from /tasks/me/all are already assigned to the current user (filtered server-side).
-    // Completed tasks are excluded from every filter (today/overdue/all) so a task marked
-    // done disappears from the list immediately instead of lingering in My Day.
+    // Completed tasks are excluded by default (today/overdue/all) so a task marked done
+    // disappears from the list immediately, unless the user explicitly filters for "Done".
     const taskItems: MyDayItem[] = rawTasks
       .filter(task =>
         matchesFilter(getDueDateStatus(task.dueDate), filter) &&
-        task.status !== 'done'
+        (task.status !== 'done' || includeDone)
       )
       .map(task => {
         const dueDateStatus = getDueDateStatus(task.dueDate);
@@ -102,15 +110,15 @@ export function useMyDayTasks(filter: MyDayFilter = 'all') {
         } as MyDayItem;
       });
 
-    // Wont-fix issues never belong here. Resolved issues are excluded from every filter
-    // (mirrors the task exclusion above) so a resolved issue disappears immediately too.
+    // Wont-fix and resolved issues are excluded by default so they don't linger in
+    // My Day, unless the user has explicitly filtered for that status — otherwise
+    // selecting "Won't Fix"/"Resolved" in the column filter could never show anything.
     const issueItems: MyDayItem[] = rawIssues
       .filter(({ issue }) => {
         const isAssignedToUser = issue.assignees?.some(a => a.id === user.id) ?? false;
-        if (issue.status === 'wont-fix') return false;
-        const isUnresolved = issue.status !== 'resolved';
+        if (issue.status === 'wont-fix' && !includeWontFix) return false;
+        if (issue.status === 'resolved' && !includeResolved) return false;
         return isAssignedToUser &&
-          isUnresolved &&
           matchesFilter(getDueDateStatus(issue.dueDate), filter);
       })
       .map(({ issue, projectName }) => {

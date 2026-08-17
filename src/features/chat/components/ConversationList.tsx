@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ConversationSearch } from './ConversationSearch';
 import { ConversationItem } from './ConversationItem';
@@ -44,7 +43,7 @@ export function ConversationList({
   const { user } = useAuth();
   const currentUserId = user?.id;
   const {
-    activeConversationId, conversationFilter, setConversationFilter, searchQuery, setSearchQuery, unreadCounts,
+    activeConversationId, conversationFilter, searchQuery, setSearchQuery, unreadCounts,
     isNewDMDialogOpen: dmDialogOpen, setNewDMDialogOpen: setDmDialogOpen,
     isNewGroupDialogOpen: groupDialogOpen, setNewGroupDialogOpen: setGroupDialogOpen,
     draftMessages,
@@ -168,16 +167,6 @@ export function ConversationList({
         activeQuickView={isSavedActive ? 'saved' : activeQuickView}
         onSelect={handleSelectQuickView}
       />
-
-      <div className="px-3 pb-2">
-        <Tabs value={conversationFilter} onValueChange={(v) => setConversationFilter(v as 'all' | 'dms' | 'groups')}>
-          <TabsList className="w-full h-8">
-            <TabsTrigger value="all" className="text-xs flex-1">All</TabsTrigger>
-            <TabsTrigger value="dms" className="text-xs flex-1">DMs</TabsTrigger>
-            <TabsTrigger value="groups" className="text-xs flex-1">Groups</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
 
       <ScrollArea className="flex-1 min-w-0">
         <div className="px-1.5 pb-2 overflow-hidden">
