@@ -8,6 +8,8 @@ import { Mail, AlertCircle, CheckCircle } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { authService } from "@/services/auth.service";
 import { useAuth } from "@/contexts/AuthContext";
+import { OrgReviewNotice } from "./OrgReviewNotice";
+import { parseOrgReviewError, type OrgReviewBlock } from "../orgReview";
 
 const VerifyEmail = () => {
   const { refreshProfile } = useAuth();
@@ -26,6 +28,10 @@ const VerifyEmail = () => {
   const redirectMessage = locationState.message || "";
 
   const [otp, setOtp] = useState("");
+  // The email verified fine, but the organization still needs admin approval, so
+  // no session was issued. Terminal state for this screen — the notice replaces
+  // the OTP form rather than sitting above it.
+  const [orgReview, setOrgReview] = useState<OrgReviewBlock | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +100,16 @@ const VerifyEmail = () => {
         }
       }, 1500);
     } catch (err) {
+      // The email IS verified at this point — the backend marks it before running
+      // the approval gate, then refuses to issue a session. Show the review notice
+      // rather than err.message, which here is a raw JSON payload.
+      const review = parseOrgReviewError(err);
+      if (review) {
+        setOrgReview(review);
+        sessionStorage.removeItem('openplan_pending_verify');
+        setOtp("");
+        return;
+      }
       const message = err instanceof Error ? err.message : "Verification failed";
       setError(message);
       setOtp("");
@@ -117,6 +133,13 @@ const VerifyEmail = () => {
       await authService.sendOtp(email);
       setCountdown(60); // 60 second cooldown
     } catch (err) {
+      // Resending after a successful verify hits the same gate — the account is
+      // already verified, so what is actually blocking them is the org review.
+      const review = parseOrgReviewError(err);
+      if (review) {
+        setOrgReview(review);
+        return;
+      }
       const message = err instanceof Error ? err.message : "Failed to resend code";
       setError(message);
     } finally {
@@ -138,10 +161,12 @@ const VerifyEmail = () => {
             </div>
             <span className="text-xl font-bold">OpenPlan AI</span>
           </div>
-          <CardTitle className="text-2xl font-bold">
-            {success ? "Email verified" : "Verify your email"}
-          </CardTitle>
-          {!success && (
+          {!orgReview && (
+            <CardTitle className="text-2xl font-bold">
+              {success ? "Email verified" : "Verify your email"}
+            </CardTitle>
+          )}
+          {!success && !orgReview && (
             <>
               <CardDescription>
                 {fromLogin
@@ -156,7 +181,18 @@ const VerifyEmail = () => {
           )}
         </CardHeader>
         <CardContent className="space-y-6">
-          {redirectMessage && !error && !success && (
+          {/* Verification succeeded; the organization is what is still gated. This
+              is the end of the signup flow, so nothing else on the card applies. */}
+          {orgReview && (
+            <>
+              <OrgReviewNotice review={orgReview} />
+              <Button variant="link" className="w-full text-muted-foreground" onClick={() => navigate("/login")}>
+                Back to sign in
+              </Button>
+            </>
+          )}
+
+          {!orgReview && redirectMessage && !error && !success && (
             <Alert className="border-yellow-500/50 bg-yellow-500/10">
               <AlertCircle className="h-4 w-4 text-yellow-600" />
               <AlertDescription className="text-yellow-700">
@@ -165,7 +201,7 @@ const VerifyEmail = () => {
             </Alert>
           )}
 
-          {success && (
+          {!orgReview && success && (
             <Alert className="border-green-500/50 bg-green-500/10">
               <CheckCircle className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-600">
@@ -174,7 +210,7 @@ const VerifyEmail = () => {
             </Alert>
           )}
 
-          {!success && (
+          {!orgReview && !success && (
             <>
               <div className="flex flex-col items-center justify-center gap-2">
                 <InputOTP

@@ -11,6 +11,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { teamService } from "@/services/team.service";
 import { authService } from "@/services/auth.service";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { OrgReviewNotice } from "./OrgReviewNotice";
+import type { OrgReviewBlock } from "../orgReview";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -24,6 +26,9 @@ const Login = () => {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
+  // Set when the organization is awaiting or was refused admin approval. Replaces
+  // the whole form: there is nothing useful to do with these credentials yet.
+  const [orgReview, setOrgReview] = useState<OrgReviewBlock | null>(null);
 
   // Priority: ?redirect= query param > location.state.from > "/"
   const redirectParam = searchParams.get("redirect");
@@ -56,8 +61,18 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    setOrgReview(null);
 
     const result = await signIn(email, password);
+
+    if (result.orgReview) {
+      // Stay on this page and explain. Every other branch below navigates away,
+      // which is why isLoading has to be cleared explicitly here — otherwise the
+      // submit button stays spinner-locked forever.
+      setOrgReview(result.orgReview);
+      setIsLoading(false);
+      return;
+    }
 
     if (result.error) {
       // Check if the error is "Email not confirmed" - redirect to verify page
@@ -188,11 +203,37 @@ const Login = () => {
               </div>
               <span className="text-xl font-bold">OpenPlan AI</span>
             </div>
-            <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
-            <CardDescription>
-              Enter your credentials to access your account
-            </CardDescription>
+            {!orgReview && (
+              <>
+                <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
+                <CardDescription>
+                  Enter your credentials to access your account
+                </CardDescription>
+              </>
+            )}
           </CardHeader>
+
+          {/* The credentials were correct — the organization simply is not open
+              yet, so the form is replaced rather than annotated with an error. */}
+          {orgReview ? (
+            <CardContent className="px-6 pb-8">
+              <OrgReviewNotice
+                review={orgReview}
+                onRetry={() => handleSubmit({ preventDefault: () => {} } as React.FormEvent)}
+                retrying={isLoading}
+              />
+              <Button
+                variant="link"
+                className="mt-2 w-full text-muted-foreground"
+                onClick={() => {
+                  setOrgReview(null);
+                  setPassword("");
+                }}
+              >
+                Use a different account
+              </Button>
+            </CardContent>
+          ) : (
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-3 px-6 pb-4">
               {resetSuccessMessage && (
@@ -285,6 +326,7 @@ const Login = () => {
               </p>
             </CardFooter>
           </form>
+          )}
         </Card>
       </div>
     </div>

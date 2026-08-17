@@ -19,9 +19,17 @@ export interface Organization {
   description: string | null;
   settings: Record<string, unknown>;
   myRole: OrgRole | null;
-  status?: 'active' | 'suspended';
+  /**
+   * Platform governance state. 'pending_review' / 'rejected' are the signup gate.
+   *
+   * Nothing here is exhaustively switched on, so widening this union is
+   * compile-safe — every consumer tests for a specific value. Treat new values as
+   * a manual audit of those tests, not something tsc will find for you.
+   */
+  status?: 'active' | 'suspended' | 'pending_review' | 'rejected';
   suspendedReason?: string | null;
   suspendedAt?: string | null;
+  rejectedReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { getPasswordRequirements, getUnmetRequirementLabels } from "@/lib/passwordValidation";
 import { apiClient } from "@/services/api/client";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { OrgReviewNotice } from "./OrgReviewNotice";
+import type { OrgReviewBlock } from "../orgReview";
 
 const industries = [
   "Aerospace & Defense",
@@ -40,6 +42,9 @@ const Signup = () => {
   const { theme, changeTheme } = useAppTheme();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when this email already has an organization awaiting (or refused) approval.
+  // Replaces the form: re-submitting it cannot help them.
+  const [orgReview, setOrgReview] = useState<OrgReviewBlock | null>(null);
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -134,22 +139,17 @@ const Signup = () => {
         industry: industryValue,
       });
 
-      if (result.error) {
-        const msg = (result.error as any)?.response?.data?.error?.message || result.error.message || 'Registration failed';
-        reportError(msg, result.error);
+      // Re-registering an email whose organization is already under review comes
+      // back as a review block rather than a duplicate-email conflict — explain
+      // that instead of telling them the email is taken.
+      if (result.orgReview) {
+        setOrgReview(result.orgReview);
         return;
       }
 
-      // For regular signups, store org info so it can be created after email verification
-      if (!inviteToken) {
-        try {
-          sessionStorage.setItem(
-            'openplan_pending_org',
-            JSON.stringify({ name: formData.companyName, description: industryValue })
-          );
-        } catch {
-          // sessionStorage may be unavailable; org creation will fall back to Dashboard prompt.
-        }
+      if (result.error) {
+        reportError(result.error.message || 'Registration failed', result.error);
+        return;
       }
 
       try {
@@ -263,15 +263,34 @@ const Signup = () => {
               </div>
               <span className="text-xl font-bold">OpenPlan AI</span>
             </div>
-            <CardTitle className="text-2xl font-bold">
-              {isInviteSignup ? "Join your team" : "Create your account"}
-            </CardTitle>
-            <CardDescription>
-              {isInviteSignup
-                ? "Create an account to accept your team invitation"
-                : "Get started with a 14-day free trial"}
-            </CardDescription>
+            {!orgReview && (
+              <>
+                <CardTitle className="text-2xl font-bold">
+                  {isInviteSignup ? "Join your team" : "Create your account"}
+                </CardTitle>
+                <CardDescription>
+                  {isInviteSignup
+                    ? "Create an account to accept your team invitation"
+                    : "Get started with a 14-day free trial"}
+                </CardDescription>
+              </>
+            )}
           </CardHeader>
+
+          {/* This email already has an organization in review — resubmitting the
+              form would only produce the same result. */}
+          {orgReview ? (
+            <CardContent className="pb-8">
+              <OrgReviewNotice review={orgReview} />
+              <Button
+                variant="link"
+                className="mt-2 w-full text-muted-foreground"
+                onClick={() => navigate("/login")}
+              >
+                Back to sign in
+              </Button>
+            </CardContent>
+          ) : (
           <form onSubmit={handleSubmit} onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') e.preventDefault(); }}>
             <CardContent className="space-y-3 pb-4">
               {error && (
@@ -521,6 +540,7 @@ const Signup = () => {
               )}
             </CardFooter>
           </form>
+          )}
         </Card>
       </div>
     </div>

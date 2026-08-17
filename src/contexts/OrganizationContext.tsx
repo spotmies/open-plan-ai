@@ -49,7 +49,11 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       if (rawSavedOrgId && savedOrg && rawSavedOrgId !== savedOrg.id) {
         localStorage.setItem(CURRENT_ORG_KEY, savedOrg.id);
       }
-      setCurrentOrganizationState(savedOrg || orgs[0] || null);
+      // Prefer an org the user can actually use. A member of one live org plus one
+      // awaiting approval would otherwise land on the pending one and meet bare
+      // 403s across the whole dashboard, with nothing saying why.
+      const usable = orgs.find((o) => o.status !== 'pending_review' && o.status !== 'rejected');
+      setCurrentOrganizationState(savedOrg || usable || orgs[0] || null);
     } catch (error) {
       logger.error('Error fetching organizations:', error);
       setOrganizations([]);

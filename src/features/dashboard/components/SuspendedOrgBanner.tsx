@@ -18,7 +18,12 @@ export function SuspendedOrgBanner({ onOpenCreateDialog }: SuspendedOrgBannerPro
     return null;
   }
 
-  const otherOrgs = organizations.filter((o) => o.id !== currentOrganization.id && o.status !== 'suspended');
+  // "Switch to another organization" must only offer orgs that actually work —
+  // a pending or rejected one is just as closed as the suspended one they are
+  // trying to escape.
+  const otherOrgs = organizations.filter(
+    (o) => o.id !== currentOrganization.id && o.status === 'active',
+  );
 
   return (
     <div className="w-full space-y-4 my-2">

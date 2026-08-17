@@ -62,7 +62,10 @@ export function AppLayout({ children, noPadding }: AppLayoutProps) {
         <div className={`flex-1 flex flex-col h-full min-h-0 min-w-0 `}>
           {showAppHeader && <AppHeader />}
 
-          {/* Persistent warning banner when organization is suspended */}
+          {/* Persistent warning banner whenever the selected organization is closed.
+              Reachable for a multi-org member who switches to a closed org — the
+              API refuses every request for it, so without this the workspace just
+              fails silently. */}
           {currentOrganization?.status === 'suspended' && (
             <div className="bg-destructive/15 border-b border-destructive/30 px-4 py-2 text-xs sm:text-sm text-destructive flex items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2 font-medium">
@@ -73,6 +76,27 @@ export function AppLayout({ children, noPadding }: AppLayoutProps) {
                   Workspace access is restricted.
                 </span>
               </div>
+            </div>
+          )}
+
+          {currentOrganization?.status === 'pending_review' && (
+            <div className="bg-yellow-500/15 border-b border-yellow-500/30 px-4 py-2 text-xs sm:text-sm text-yellow-700 dark:text-yellow-500 flex items-center gap-2 shrink-0">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span className="font-medium">
+                <strong>{currentOrganization.name}</strong> is awaiting admin approval.
+                Workspace access is restricted until it is approved.
+              </span>
+            </div>
+          )}
+
+          {currentOrganization?.status === 'rejected' && (
+            <div className="bg-destructive/15 border-b border-destructive/30 px-4 py-2 text-xs sm:text-sm text-destructive flex items-center gap-2 shrink-0">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+              <span className="font-medium">
+                <strong>{currentOrganization.name}</strong> was not approved
+                {currentOrganization.rejectedReason ? `: ${currentOrganization.rejectedReason}` : ''}.
+                Contact support to have it reviewed again.
+              </span>
             </div>
           )}
 
