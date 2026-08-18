@@ -151,6 +151,10 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
       toast.error('Please select valid start and end times.');
       return;
     }
+    if (startDateTime < new Date()) {
+      toast.error('Start time must be now or in the future.');
+      return;
+    }
     if (endDateTime <= startDateTime) {
       toast.error('End time must be after the start time.');
       return;
@@ -245,6 +249,7 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
                 id="sm-start-date"
                 type="date"
                 value={startDate}
+                min={format(new Date(), 'yyyy-MM-dd')}
                 onChange={(e) => setStartDate(e.target.value)}
                 required
                 disabled={loading}
@@ -270,6 +275,7 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
                 id="sm-end-date"
                 type="date"
                 value={endDate}
+                min={startDate || format(new Date(), 'yyyy-MM-dd')}
                 onChange={(e) => setEndDate(e.target.value)}
                 required
                 disabled={loading}
@@ -304,6 +310,23 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
                 disabled={loading}
               />
             </div>
+            {teamMembers.filter((member) => selectedMembers[member.id]).length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {teamMembers
+                  .filter((member) => selectedMembers[member.id])
+                  .map((member) => (
+                    <Badge key={member.id} variant="secondary" className="h-6 gap-1 text-xs">
+                      {member.name}
+                      <X
+                        className="h-3 w-3 cursor-pointer hover:text-foreground"
+                        onClick={() =>
+                          setSelectedMembers((prev) => ({ ...prev, [member.id]: false }))
+                        }
+                      />
+                    </Badge>
+                  ))}
+              </div>
+            )}
             <ScrollArea type="always" className="h-28 border rounded-lg p-3 bg-muted/20">
               <div className="space-y-2.5 pr-2">
                 {filteredTeamMembers.length === 0 && (

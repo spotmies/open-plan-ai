@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { resolveFileUrl } from '@/utils/fileUrl';
+import { resolveProjectTabConfig, visibleOrderedTabDefinitions } from '@/features/projects/projectTabsConfig';
 import type { Project } from '@/types';
 
 interface ProjectPickerPopoverProps {
@@ -17,6 +18,10 @@ interface ProjectPickerPopoverProps {
 export function ProjectPickerPopover({ projects, tab, label, className }: ProjectPickerPopoverProps) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+
+  const visibleProjects = projects.filter((project) =>
+    visibleOrderedTabDefinitions(resolveProjectTabConfig(project.tabConfig)).some((t) => t.id === tab)
+  );
 
   function handleSelect(projectId: string) {
     setOpen(false);
@@ -35,10 +40,10 @@ export function ProjectPickerPopover({ projects, tab, label, className }: Projec
         <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
           Select project
         </p>
-        {projects.length === 0 && (
+        {visibleProjects.length === 0 && (
           <p className="px-2 py-2 text-sm text-muted-foreground">No projects found.</p>
         )}
-        {projects.map((project) => (
+        {visibleProjects.map((project) => (
           <button
             key={project.id}
             onClick={() => handleSelect(project.id)}

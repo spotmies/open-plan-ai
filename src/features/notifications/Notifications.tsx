@@ -104,7 +104,7 @@ const Notifications = () => {
     }, [activeTab]);
 
     const {
-        notifications,
+        notifications: fetchedNotifications,
         meta,
         isLoading,
         markAsRead,
@@ -114,6 +114,12 @@ const Notifications = () => {
         unreadCount,
         stats,
     } = useNotifications({ page, limit: PAGE_SIZE, ...filters });
+
+    // Guard against stale placeholder data (from React Query's keepPreviousData)
+    // briefly showing the previous tab's items while the unread-filtered query loads.
+    const notifications = activeTab === 'unread'
+        ? fetchedNotifications.filter((n) => !n.read)
+        : fetchedNotifications;
 
     const handleTabChange = (tab: string) => {
         setActiveTab(tab);

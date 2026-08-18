@@ -26,8 +26,8 @@ interface ConversationListProps {
   onSelect: (id: string) => void;
   onConversationCreated?: () => Promise<void>;
   onlineUserIds?: Set<string>;
-  onShowSaved?: () => void;
-  isSavedActive?: boolean;
+  onShowQuickView?: (view: QuickView) => void;
+  activeQuickView?: QuickView | null;
   onToggleFavourite?: (conversationId: string) => void;
   onToggleMute?: (conversationId: string) => void;
   onMarkRead?: (conversationId: string) => void;
@@ -35,7 +35,7 @@ interface ConversationListProps {
 }
 
 export function ConversationList({
-  conversations, loading, onSelect, onConversationCreated, onlineUserIds, onShowSaved, isSavedActive,
+  conversations, loading, onSelect, onConversationCreated, onlineUserIds, onShowQuickView, activeQuickView = null,
   onToggleFavourite, onToggleMute, onMarkRead, onDeleteChat,
 }: ConversationListProps) {
   const isMobile = useIsMobile();
@@ -46,20 +46,9 @@ export function ConversationList({
     activeConversationId, conversationFilter, searchQuery, setSearchQuery, unreadCounts,
     isNewDMDialogOpen: dmDialogOpen, setNewDMDialogOpen: setDmDialogOpen,
     isNewGroupDialogOpen: groupDialogOpen, setNewGroupDialogOpen: setGroupDialogOpen,
-    draftMessages,
   } = useChatStore();
   const { data: reachableUsers = [] } = useReachableUsers();
   const [isCreatingDM, setIsCreatingDM] = useState(false);
-  const [activeQuickView, setActiveQuickView] = useState<QuickView | null>(null);
-
-  const handleSelectQuickView = (view: QuickView) => {
-    if (view === 'saved') {
-      // Saved messages are their own panel (wired up by the parent), not a filter over this list.
-      onShowSaved?.();
-      return;
-    }
-    setActiveQuickView((prev) => (prev === view ? null : view));
-  };
 
   const isSelfConversation = (c: Conversation) =>
     c.type === 'dm' && c.members.length > 0 && c.members.every((m) => m.id === currentUserId);
@@ -75,8 +64,6 @@ export function ConversationList({
     );
     if (conversationFilter === 'dms') list = list.filter((c) => c.type === 'dm');
     if (conversationFilter === 'groups') list = list.filter((c) => c.type === 'group');
-    if (activeQuickView === 'favourites') list = list.filter((c) => c.isFavourite);
-    if (activeQuickView === 'drafts') list = list.filter((c) => !!draftMessages[c.id]?.trim());
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter((c) =>
@@ -88,14 +75,14 @@ export function ConversationList({
       if (isSelfConversation(a) !== isSelfConversation(b)) return isSelfConversation(a) ? -1 : 1;
       return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
     });
-  }, [conversations, conversationFilter, activeQuickView, draftMessages, searchQuery, activeConversationId, currentUserId]);
+  }, [conversations, conversationFilter, searchQuery, activeConversationId, currentUserId]);
 
   const hasSelfConversation = conversations.some(isSelfConversation);
 
   // Teams-style: chats favourited via the hover menu surface in their own
-  // section above the regular list. Skipped while searching, and while a quick
-  // view is active, so results stay a single flat list.
-  const showFavouritesSection = !searchQuery.trim() && !activeQuickView && filtered.some((c) => c.isFavourite);
+  // section above the regular list. Skipped while searching, so results stay
+  // a single flat list.
+  const showFavouritesSection = !searchQuery.trim() && filtered.some((c) => c.isFavourite);
   const favouriteConversations = showFavouritesSection ? filtered.filter((c) => c.isFavourite) : [];
   const regularConversations = showFavouritesSection ? filtered.filter((c) => !c.isFavourite) : filtered;
 
@@ -164,8 +151,8 @@ export function ConversationList({
       )}
 
       <QuickViews
-        activeQuickView={isSavedActive ? 'saved' : activeQuickView}
-        onSelect={handleSelectQuickView}
+        activeQuickView={activeQuickView}
+        onSelect={(view) => onShowQuickView?.(view)}
       />
 
       <ScrollArea className="flex-1 min-w-0">
@@ -183,8 +170,6 @@ export function ConversationList({
                 </div>
               </div>
             ))
-          ) : activeQuickView && filtered.length === 0 ? (
-            <EmptyState type={activeQuickView === 'favourites' ? 'no-favourites' : 'no-drafts'} />
           ) : filtered.length === 0 && filteredPeople.length === 0 ? (
             <EmptyState
               type="no-conversations"

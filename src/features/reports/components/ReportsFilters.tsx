@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Filter, ChevronDown, X, Download, FileText } from 'lucide-react';
+import { Filter, ChevronDown, X, Download, FileText, User, Flag, AlertTriangle, Boxes } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -14,9 +14,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Calendar } from '@/components/ui/calendar';
 import {
   DropdownMenu,
@@ -60,6 +60,7 @@ export function ReportsFilters({
   const isMobile = useIsMobile();
   const [showCustomDate, setShowCustomDate] = useState(filter.timeRange === 'custom');
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [customDateOpen, setCustomDateOpen] = useState(false);
 
   useEffect(() => {
     setShowCustomDate(filter.timeRange === 'custom');
@@ -76,6 +77,11 @@ export function ReportsFilters({
 
   const handleTimeRangeChange = (value: ReportTimeRange) => {
     setShowCustomDate(value === 'custom');
+    if (value === 'custom') {
+      // Open the picker right away so the user isn't left staring at a
+      // "Select dates" button with no indication a range is needed.
+      setCustomDateOpen(true);
+    }
     onFilterChange({ ...filter, timeRange: value });
   };
 
@@ -126,7 +132,31 @@ export function ReportsFilters({
     });
   };
 
+  const activeChips: { key: string; label: string; onRemove: () => void }[] = [
+    ...(filter.assigneeIds?.map(id => ({
+      key: `assignee-${id}`,
+      label: `Assignee: ${teamMembers.find(m => m.id === id)?.name ?? id}`,
+      onRemove: () => handleAssigneeToggle(id),
+    })) ?? []),
+    ...(filter.priority?.map(p => ({
+      key: `priority-${p}`,
+      label: `Priority: ${p}`,
+      onRemove: () => handlePriorityToggle(p),
+    })) ?? []),
+    ...(filter.status?.map(s => ({
+      key: `status-${s}`,
+      label: `Status: ${s.replace('-', ' ')}`,
+      onRemove: () => handleStatusToggle(s),
+    })) ?? []),
+    ...(filter.moduleIds?.map(id => ({
+      key: `module-${id}`,
+      label: `Module: ${modules.find(m => m.id === id)?.name ?? id}`,
+      onRemove: () => handleModuleToggle(id),
+    })) ?? []),
+  ];
+
   return (
+    <div className="flex flex-col gap-2">
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
       {/* Project Selector - Left Side */}
       <div className="flex items-center w-full md:w-auto">
@@ -187,110 +217,81 @@ export function ReportsFilters({
           {/* Advanced Filters */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className={`shrink-0 ${isMobile ? 'h-8 px-3' : ''}`}>
-                <Filter className="h-4 w-4 mr-2" />
-                Filters
+              <Button variant="outline" size="sm" className={`gap-2 rounded-lg shrink-0 ${isMobile ? 'h-8 px-3' : 'h-9'}`}>
+                <Filter className="h-4 w-4" />
+                {!isMobile && 'Filter'}
                 {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="ml-2 h-5 w-5 p-0 justify-center">
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
                     {activeFilterCount}
                   </Badge>
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[calc(100vw-2rem)] max-w-80" align="start">
+            <PopoverContent className="w-72" align="start">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-sm">Filters</h4>
+                  <h4 className="font-medium text-sm">Filter Reports</h4>
                   {activeFilterCount > 0 && (
-                    <Button variant="ghost" size="sm" onClick={clearFilters}>
-                      <X className="h-4 w-4 mr-1" />
-                      Clear
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearFilters}>
+                      Clear all
                     </Button>
                   )}
                 </div>
 
-                <Separator />
-
                 {/* Assignee Filter */}
                 <div className="space-y-2">
-                  <h5 className="text-sm font-medium text-muted-foreground">Assignee</h5>
-                  <div className="grid grid-cols-2 gap-2">
-                    {teamMembers.slice(0, 6).map(member => (
-                      <label
-                        key={member.id}
-                        className="flex items-center gap-2 text-sm cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={filter.assigneeIds?.includes(member.id)}
-                          onCheckedChange={() => handleAssigneeToggle(member.id)}
-                        />
-                        <span className="truncate">{member.name}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <Label className="text-xs flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    Assignee
+                  </Label>
+                  <MultiSelect
+                    options={teamMembers.map(member => ({ value: member.id, label: member.name }))}
+                    selected={filter.assigneeIds || []}
+                    onChange={(values) => onFilterChange({ ...filter, assigneeIds: values.length ? values : undefined })}
+                    placeholder="All assignees"
+                  />
                 </div>
-
-                <Separator />
 
                 {/* Priority Filter */}
                 <div className="space-y-2">
-                  <h5 className="text-sm font-medium text-muted-foreground">Priority</h5>
-                  <div className="flex flex-wrap gap-2">
-                    {priorityOptions.map(priority => (
-                      <label
-                        key={priority}
-                        className="flex items-center gap-2 text-sm cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={filter.priority?.includes(priority)}
-                          onCheckedChange={() => handlePriorityToggle(priority)}
-                        />
-                        <span className="capitalize">{priority}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <Label className="text-xs flex items-center gap-1">
+                    <Flag className="h-3 w-3" />
+                    Priority
+                  </Label>
+                  <MultiSelect
+                    options={priorityOptions.map(priority => ({ value: priority, label: priority.charAt(0).toUpperCase() + priority.slice(1) }))}
+                    selected={filter.priority || []}
+                    onChange={(values) => onFilterChange({ ...filter, priority: values.length ? values as Priority[] : undefined })}
+                    placeholder="All priorities"
+                  />
                 </div>
-
-                <Separator />
 
                 {/* Status Filter */}
                 <div className="space-y-2">
-                  <h5 className="text-sm font-medium text-muted-foreground">Status</h5>
-                  <div className="flex flex-wrap gap-2">
-                    {statusOptions.map(status => (
-                      <label
-                        key={status}
-                        className="flex items-center gap-2 text-sm cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={filter.status?.includes(status)}
-                          onCheckedChange={() => handleStatusToggle(status)}
-                        />
-                        <span className="capitalize">{status.replace('-', ' ')}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <Label className="text-xs flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    Status
+                  </Label>
+                  <MultiSelect
+                    options={statusOptions.map(status => ({ value: status, label: status.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase()) }))}
+                    selected={filter.status || []}
+                    onChange={(values) => onFilterChange({ ...filter, status: values.length ? values as TaskStatus[] : undefined })}
+                    placeholder="All statuses"
+                  />
                 </div>
-
-                <Separator />
 
                 {/* Module Filter */}
                 <div className="space-y-2">
-                  <h5 className="text-sm font-medium text-muted-foreground">Module</h5>
-                  <div className="grid grid-cols-2 gap-2">
-                    {modules.map(module => (
-                      <label
-                        key={module.id}
-                        className="flex items-center gap-2 text-sm cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={filter.moduleIds?.includes(module.id)}
-                          onCheckedChange={() => handleModuleToggle(module.id)}
-                        />
-                        <span className="truncate">{module.name}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <Label className="text-xs flex items-center gap-1">
+                    <Boxes className="h-3 w-3" />
+                    Module
+                  </Label>
+                  <MultiSelect
+                    options={modules.map(module => ({ value: module.id, label: module.name }))}
+                    selected={filter.moduleIds || []}
+                    onChange={(values) => onFilterChange({ ...filter, moduleIds: values.length ? values : undefined })}
+                    placeholder="All modules"
+                  />
                 </div>
               </div>
             </PopoverContent>
@@ -326,7 +327,7 @@ export function ReportsFilters({
 
         {/* Custom Date Range */}
         {showCustomDate && (
-          <Popover>
+          <Popover open={customDateOpen} onOpenChange={setCustomDateOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm">
                 {dateRange.from && dateRange.to
@@ -349,6 +350,7 @@ export function ReportsFilters({
                         end: format(range.to, 'yyyy-MM-dd'),
                       },
                     });
+                    setCustomDateOpen(false);
                   }
                 }}
                 numberOfMonths={isMobile ? 1 : 2}
@@ -357,6 +359,34 @@ export function ReportsFilters({
           </Popover>
         )}
       </div>
+    </div>
+
+    {activeChips.length > 0 && (
+      <div className="flex flex-wrap items-center gap-2">
+        {activeChips.map(chip => (
+          <Badge
+            key={chip.key}
+            variant="secondary"
+            className="capitalize flex items-center gap-1 pr-1"
+          >
+            {chip.label}
+            <button
+              type="button"
+              onClick={chip.onRemove}
+              className="ml-1 rounded-full hover:bg-muted p-0.5"
+              aria-label={`Remove ${chip.label} filter`}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        ))}
+        {activeChips.length > 1 && (
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearFilters}>
+            Clear all
+          </Button>
+        )}
+      </div>
+    )}
     </div>
   );
 }

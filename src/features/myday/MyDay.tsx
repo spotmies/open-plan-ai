@@ -98,7 +98,9 @@ export default function MyDay() {
         const assignedById = item.itemType === 'task' ? item.originalTask?.createdBy?.id : item.originalIssue?.reportedBy?.id;
         if (!assignedById || !columnFilters.assignedByIds.includes(assignedById)) return false;
       }
-      if (columnFilters.dueDate) {
+      if (columnFilters.dueDateCustom) {
+        if (!item.dueDate || new Date(item.dueDate).toDateString() !== new Date(columnFilters.dueDateCustom).toDateString()) return false;
+      } else if (columnFilters.dueDate) {
         if (columnFilters.dueDate === 'overdue' && !item.isOverdue) return false;
         if (columnFilters.dueDate === 'today' && !item.isDueToday) return false;
         if (columnFilters.dueDate === 'no-date' && item.dueDate) return false;

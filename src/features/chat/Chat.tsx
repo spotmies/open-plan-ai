@@ -14,6 +14,8 @@ import { TypingIndicator } from './components/TypingIndicator';
 import { MessageAreaSkeleton } from './components/MessageAreaSkeleton';
 import { PinnedBanner } from './components/PinnedBanner';
 import { SavedMessagesView } from './components/SavedMessagesView';
+import { QuickViewPanel } from './components/QuickViewPanel';
+import type { QuickView } from './components/QuickViews';
 import { useChatStore } from './stores/useChatStore';
 import { useConversations, useMessages, useReactions, usePinnedMessages, useFavouriteMessages, useGlobalFavourites } from './hooks/useChatData';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
@@ -60,7 +62,9 @@ export default function Chat() {
   const pendingFilterRef = useRef<'pinned' | 'favourites' | null>(null);
   const { pinnedMessages, pinnedMessageIds, pinMessage, unpinMessage } = usePinnedMessages(activeId ?? null);
   const { favouriteMessages, favouriteIds, toggleFavourite, refetchFavourites } = useFavouriteMessages(activeId ?? null);
-  const [showSaved, setShowSaved] = useState(false);
+  const [activeQuickView, setActiveQuickView] = useState<QuickView | null>(null);
+  const showSaved = activeQuickView === 'saved';
+  const { draftMessages } = useChatStore();
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const { messages: savedMessages, loading: savedLoading, refetch: refetchSaved, removeFavourite: removeSavedMessage } = useGlobalFavourites();
 
@@ -140,7 +144,7 @@ export default function Chat() {
   }, [navigate, setActiveConversation]);
 
   const handleSelectConversation = useCallback((id: string) => {
-    setShowSaved(false);
+    setActiveQuickView(null);
     setHighlightMessageId(null);
     navigateToConversation(id);
   }, [navigateToConversation]);
@@ -246,11 +250,15 @@ export default function Chat() {
     setMessageFilter(null);
   }, []);
 
-  const handleShowSaved = useCallback(() => {
+  const handleShowQuickView = useCallback((view: QuickView) => {
     useChatStore.getState().setDetailPanelOpen(false);
-    setShowSaved(true);
-    refetchSaved();
+    setActiveQuickView((prev) => (prev === view ? null : view));
+    if (view === 'saved') refetchSaved();
   }, [refetchSaved]);
+
+  const handleCloseQuickView = useCallback(() => {
+    setActiveQuickView(null);
+  }, []);
 
   const handleRemoveSaved = useCallback(async (messageId: string) => {
     await removeSavedMessage(messageId);
@@ -267,7 +275,7 @@ export default function Chat() {
   const handleOpenSavedMessage = useCallback((message: FavouriteMessage) => {
     // Desktop keeps the Saved panel open as a third column (Teams-style) so another
     // saved item can be picked next; mobile has no room for three panes, so it closes.
-    if (isMobile) setShowSaved(false);
+    if (isMobile) setActiveQuickView(null);
     setHighlightMessageId(message.id);
     if (message.conversationId === activeId) {
       setMessageFilter(null);
@@ -277,13 +285,18 @@ export default function Chat() {
     }
   }, [isMobile, activeId, navigateToConversation]);
 
+  const handleOpenQuickViewConversation = useCallback((id: string) => {
+    if (isMobile) setActiveQuickView(null);
+    navigateToConversation(id);
+  }, [isMobile, navigateToConversation]);
+
   const routeHasConversation = Boolean(conversationId);
-  // Desktop shows conversation list + (optionally) the Saved panel + the chat pane all at
-  // once — three columns, like Teams' Quick views. Mobile has room for only one at a time,
-  // so panes are shown/hidden in sequence instead (list -> saved -> chat).
-  const showConversationList = isMobile ? !routeHasConversation && !showSaved : true;
-  const showSavedPane = showSaved;
-  const showChatPane = isMobile ? routeHasConversation && !showSaved : true;
+  const showQuickViewPane = activeQuickView !== null;
+  // Desktop shows conversation list + (optionally) the quick view panel (Favorites/Drafts/Saved)
+  // + the chat pane all at once — three columns, like Teams' Quick views. Mobile has room for
+  // only one at a time, so panes are shown/hidden in sequence instead (list -> panel -> chat).
+  const showConversationList = isMobile ? !routeHasConversation && !showQuickViewPane : true;
+  const showChatPane = isMobile ? routeHasConversation && !showQuickViewPane : true;
 
   const typingText = typingNames.length > 0
     ? typingNames.length === 1
@@ -308,8 +321,8 @@ export default function Chat() {
               onSelect={handleSelectConversation}
               onConversationCreated={refetch}
               onlineUserIds={onlineUserIds}
-              onShowSaved={handleShowSaved}
-              isSavedActive={showSaved}
+              onShowQuickView={handleShowQuickView}
+              activeQuickView={activeQuickView}
               onToggleFavourite={toggleConversationFavourite}
               onToggleMute={user?.id ? (id) => toggleMute(id, user.id) : undefined}
               onMarkRead={markConversationRead}
@@ -318,7 +331,7 @@ export default function Chat() {
           </div>
         )}
 
-        {showSavedPane && (
+        {showSaved && (
           <div className="w-full md:w-[320px] shrink-0 overflow-hidden border-r border-border">
             <SavedMessagesView
               messages={savedMessages}
@@ -327,7 +340,23 @@ export default function Chat() {
               currentUserId={user?.id}
               onOpenMessage={handleOpenSavedMessage}
               onRemove={handleRemoveSaved}
-              onClose={() => setShowSaved(false)}
+              onClose={handleCloseQuickView}
+            />
+          </div>
+        )}
+
+        {(activeQuickView === 'favourites' || activeQuickView === 'drafts') && (
+          <div className="w-full md:w-[320px] shrink-0 overflow-hidden border-r border-border">
+            <QuickViewPanel
+              type={activeQuickView}
+              conversations={conversations}
+              draftMessages={draftMessages}
+              loading={convsLoading}
+              currentUserId={user?.id}
+              activeConversationId={activeId ?? null}
+              onlineUserIds={onlineUserIds}
+              onSelect={handleOpenQuickViewConversation}
+              onClose={handleCloseQuickView}
             />
           </div>
         )}

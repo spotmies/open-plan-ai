@@ -103,14 +103,16 @@ export function getDateRangeFromTimeRange(
 /**
  * Filter tasks for the selected reporting window.
  *
- * Previously this used **due dates only**, which dropped active tasks whose due date was
- * in the future (or otherwise outside the window), so KPIs and charts showed empty data
- * while "Project Progress" still counted tasks from unfiltered totals.
- *
- * Rules now:
- * - **Non-done** tasks: always included (current backlog / in-flight work for the org/project).
+ * Rules:
+ * - **Non-done** tasks: included if created within the range (`createdAt`) OR due within
+ *   the range (`dueDate`) — a task can be relevant to a reporting window either because it
+ *   was opened then or because it's coming due then.
  * - **Done** tasks: included only if completion time (`updatedAt`) falls within the range
  *   (typical for "Last 30 days" velocity / cycle metrics).
+ *
+ * This means picking an old, empty custom range (e.g. a single day years ago with no
+ * activity) correctly drops every task — status breakdown, KPIs, etc. all go to zero
+ * instead of always reflecting the org's current backlog regardless of the selected dates.
  */
 export function filterTasksByTimeRange(
   tasks: Task[],
@@ -118,16 +120,59 @@ export function filterTasksByTimeRange(
 ): Task[] {
   const rangeStart = startOfDay(dateRange.start);
   const rangeEnd = startOfDay(dateRange.end);
+  const interval = { start: rangeStart, end: rangeEnd };
 
   return tasks.filter((task) => {
-    if (task.status !== 'done') {
-      return true;
+    if (task.status === 'done') {
+      if (!task.updatedAt) return false;
+      return isWithinInterval(startOfDay(parseISO(task.updatedAt)), interval);
     }
-    if (!task.updatedAt) {
-      return false;
-    }
-    const completedDay = startOfDay(parseISO(task.updatedAt));
-    return isWithinInterval(completedDay, { start: rangeStart, end: rangeEnd });
+
+    const createdWithinRange = task.createdAt
+      && isWithinInterval(startOfDay(parseISO(task.createdAt)), interval);
+    const dueWithinRange = task.dueDate
+      && isWithinInterval(startOfDay(parse(task.dueDate, 'yyyy-MM-dd', new Date())), interval);
+
+    return Boolean(createdWithinRange || dueWithinRange);
+  });
+}
+
+/**
+ * Filter issues for the selected reporting window, by report date.
+ * Mirrors filterTasksByTimeRange so "Open Issues"/"Project Progress" actually
+ * shrink to zero when the selected range has no data, instead of always
+ * reflecting the org's all-time issue count.
+ */
+export function filterIssuesByTimeRange(
+  issues: Issue[],
+  dateRange: { start: Date; end: Date }
+): Issue[] {
+  const rangeStart = startOfDay(dateRange.start);
+  const rangeEnd = startOfDay(dateRange.end);
+
+  return issues.filter((issue) => {
+    if (!issue.reportedAt) return false;
+    const reportedDay = startOfDay(parseISO(issue.reportedAt));
+    return isWithinInterval(reportedDay, { start: rangeStart, end: rangeEnd });
+  });
+}
+
+/**
+ * Filter milestones for the selected reporting window, by due date.
+ * Milestones without a due date are excluded from date-scoped KPIs (there's
+ * no date to compare against).
+ */
+export function filterMilestonesByTimeRange(
+  milestones: Milestone[],
+  dateRange: { start: Date; end: Date }
+): Milestone[] {
+  const rangeStart = startOfDay(dateRange.start);
+  const rangeEnd = startOfDay(dateRange.end);
+
+  return milestones.filter((milestone) => {
+    if (!milestone.date) return false;
+    const dueDay = startOfDay(parse(milestone.date, 'yyyy-MM-dd', new Date()));
+    return isWithinInterval(dueDay, { start: rangeStart, end: rangeEnd });
   });
 }
 
@@ -214,12 +259,16 @@ export function countOpenIssues(issues: Issue[]): { total: number; critical: num
   };
 }
 
-// Count overdue tasks
-export function countOverdueTasks(tasks: Task[]): number {
+// Count overdue tasks — a task counts only if its due date both has already
+// passed AND falls inside the selected reporting window.
+export function countOverdueTasks(tasks: Task[], dateRange: { start: Date; end: Date }): number {
   const today = startOfDay(new Date());
+  const rangeStart = startOfDay(dateRange.start);
+  const rangeEnd = startOfDay(dateRange.end);
   return tasks.filter(task => {
     if (!task.dueDate || task.status === 'done') return false;
-    return isBefore(parse(task.dueDate, 'yyyy-MM-dd', new Date()), today);
+    const dueDate = startOfDay(parse(task.dueDate, 'yyyy-MM-dd', new Date()));
+    return isBefore(dueDate, today) && isWithinInterval(dueDate, { start: rangeStart, end: rangeEnd });
   }).length;
 }
 
@@ -445,8 +494,15 @@ export function calculateKPIs(
   milestones: Milestone[] = [],
   modules: Module[] = []
 ): ReportKPI {
-  const progressData = calculateProjectProgress(tasks, milestones, modules, issues);
-  const issueData = countOpenIssues(issues);
+  // Issues and milestones don't get pre-filtered by time range the way tasks do
+  // (they arrive as project-scoped but otherwise raw), so scope them here to the
+  // selected window — otherwise "Open Issues"/"Project Progress" stay static no
+  // matter which date range is picked.
+  const scopedIssues = filterIssuesByTimeRange(issues, dateRange);
+  const scopedMilestones = filterMilestonesByTimeRange(milestones, dateRange);
+
+  const progressData = calculateProjectProgress(tasks, scopedMilestones, modules, scopedIssues);
+  const issueData = countOpenIssues(scopedIssues);
   const trendData = getCompletedTasksTrend(tasks, dateRange);
 
   return {
@@ -455,7 +511,7 @@ export function calculateKPIs(
     totalTasks: progressData.total,
     openIssues: issueData.total,
     criticalIssues: issueData.critical,
-    overdueTasks: countOverdueTasks(tasks),
+    overdueTasks: countOverdueTasks(tasks, dateRange),
     avgCycleTime: calculateAvgCycleTime(tasks),
     trendData: trendData.map(d => ({ date: d.date, value: d.cumulative }))
   };

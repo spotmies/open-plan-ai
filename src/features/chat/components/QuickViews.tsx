@@ -18,7 +18,7 @@ const ITEMS: { id: QuickView; label: string; icon: typeof Star }[] = [
 /** Teams-style "Quick views" list: a collapsible group of shortcuts (Favorites,
  *  Drafts, Saved) sitting between the search box and the All/DMs/Groups tabs. */
 export function QuickViews({ activeQuickView, onSelect }: QuickViewsProps) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="px-1.5 pb-1">
@@ -49,6 +49,7 @@ export function QuickViews({ activeQuickView, onSelect }: QuickViewsProps) {
           ))}
         </div>
       )}
+      <div className="mt-1 border-t border-border" />
     </div>
   );
 }
