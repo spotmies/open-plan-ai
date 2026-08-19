@@ -73,16 +73,17 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
                 <CommandItem
                   key={option.value}
                   onSelect={() => handleSelect(option.value)}
+                  className="items-start"
                 >
                   <div className={cn(
-                    "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                    "mr-2 mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary",
                     selected.includes(option.value)
                       ? "bg-primary text-primary-foreground"
                       : "opacity-50 [&_svg]:invisible"
                   )}>
                     <Check className="h-4 w-4" />
                   </div>
-                  {option.label}
+                  <span className="leading-tight">{option.label}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

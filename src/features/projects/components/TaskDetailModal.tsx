@@ -286,7 +286,7 @@ export const TaskDetailModal = ({
   const [editingTagOriginal, setEditingTagOriginal] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [pendingFileUrls, setPendingFileUrls] = useState<(string | null)[]>([]);
+  const [pendingFileUrls, setPendingFileUrls] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
@@ -472,9 +472,9 @@ export const TaskDetailModal = ({
   }, [isOpen, task?.id, mode]);
 
   useEffect(() => {
-    const urls = pendingFiles.map(f => f.type.startsWith('image/') ? URL.createObjectURL(f) : null);
+    const urls = pendingFiles.map(f => URL.createObjectURL(f));
     setPendingFileUrls(urls);
-    return () => { urls.forEach(url => { if (url) URL.revokeObjectURL(url); }); };
+    return () => { urls.forEach(url => URL.revokeObjectURL(url)); };
   }, [pendingFiles]);
 
   // The task payload returned by the project/task endpoints never embeds
@@ -497,7 +497,11 @@ export const TaskDetailModal = ({
           uploadedBy: uploader ?? { id: '', name: 'Unknown', email: '', role: '', initials: '?' },
         };
       });
-      setEditedTask(prev => ({ ...prev, attachments: mapped }));
+      setEditedTask(prev => {
+        const updated = { ...prev, attachments: mapped };
+        setInitialTaskSnapshot(current => current === '' ? current : serializeTaskForDirtyCheck(updated));
+        return updated;
+      });
     }).catch(() => { });
     return () => { cancelled = true; };
   }, [isOpen, task?.id, mode]);
@@ -1399,7 +1403,7 @@ export const TaskDetailModal = ({
                         {(editedTask.assignees || []).length > 0 && (
                           <div className="p-2 border-b">
                             <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
-                            {(editedTask.assignees || []).map((assignee) => (
+                            {[...(editedTask.assignees || [])].sort((a, b) => a.name.localeCompare(b.name)).map((assignee) => (
                               <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
                                 <Avatar className="h-6 w-6 shrink-0">
                                   <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
@@ -1440,6 +1444,7 @@ export const TaskDetailModal = ({
                             <CommandGroup heading="Add members">
                               {availableAssignees
                                 .filter(m => !editedTask.assignees?.some(a => a.id === m.id))
+                                .sort((a, b) => a.name.localeCompare(b.name))
                                 .map((member) => (
                                   <CommandItem
                                     key={member.id}
@@ -2398,10 +2403,25 @@ export const TaskDetailModal = ({
                   {/* Pending files (create mode only) */}
                   {mode === 'create' && pendingFiles.length > 0 && (
                     <div className="space-y-1">
-                      {pendingFiles.map((f, i) => (
-                        <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm">
+                      {pendingFiles.map((f, i) => {
+                        const previewUrl = pendingFileUrls[i];
+                        const isImage = f.type.startsWith('image/');
+                        return (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm cursor-pointer hover:bg-muted/50"
+                          onClick={() => setPreviewingFile({ url: previewUrl, fileName: f.name, mimeType: f.type })}
+                        >
                           <div className="flex items-center gap-2 min-w-0">
-                            <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            {isImage && previewUrl ? (
+                              <img
+                                src={previewUrl}
+                                alt={f.name}
+                                className="h-10 w-10 rounded object-cover shrink-0 border"
+                              />
+                            ) : (
+                              <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            )}
                             <span className="truncate">{f.name}</span>
                             <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
                           </div>
@@ -2409,12 +2429,16 @@ export const TaskDetailModal = ({
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 shrink-0"
-                            onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingFiles(prev => prev.filter((_, idx) => idx !== i));
+                            }}
                           >
                             <X className="h-3 w-3" />
                           </Button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -2465,6 +2489,27 @@ export const TaskDetailModal = ({
                 </h3>
 
                 <div className="space-y-2">
+                  {!isMobileFieldsLocked && (
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Paste video URL…"
+                        value={videoLinkInput}
+                        onChange={(e) => setVideoLinkInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddVideoLink(); } }}
+                        className="text-sm"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleAddVideoLink}
+                        disabled={!videoLinkInput.trim()}
+                        className="shrink-0"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
                   {videoLinks.map((vl) => {
                     const thumbnail = getVideoThumbnail(vl.url);
                     return (
@@ -2520,29 +2565,6 @@ export const TaskDetailModal = ({
                           </div>
                         </div>
                       ))}
-                    </div>
-                  )}
-
-                  {!isMobileFieldsLocked && (
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Paste video URL…"
-                        value={videoLinkInput}
-                        onChange={(e) => setVideoLinkInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddVideoLink(); } }}
-                        className="text-sm"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleAddVideoLink}
-                        disabled={!videoLinkInput.trim()}
-                        className="shrink-0"
-                      >
-                        <Plus className="h-4 w-4 mr-1" />
-                        Add
-                      </Button>
                     </div>
                   )}
                 </div>
@@ -2767,14 +2789,14 @@ export const TaskDetailModal = ({
                             {comment.author.initials}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="flex-1 space-y-1">
+                        <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium">{comment.author.name}</span>
                             <span className="text-xs text-muted-foreground">
                               {format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}
                             </span>
                             {isOwnComment && !isEditingThisComment && (
-                              <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="ml-auto flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   type="button"
                                   className="rounded p-0.5 text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
@@ -2818,7 +2840,7 @@ export const TaskDetailModal = ({
                               </div>
                             </div>
                           ) : (
-                            <p className="text-sm text-muted-foreground">{comment.content}</p>
+                            <p className="text-sm text-muted-foreground break-words">{comment.content}</p>
                           )}
                         </div>
                       </div>
@@ -2831,6 +2853,12 @@ export const TaskDetailModal = ({
                     placeholder="Add a comment..."
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                        e.preventDefault();
+                        handleAddComment();
+                      }
+                    }}
                     className="min-h-[80px]"
                   />
                   <Button className="h-auto" onClick={handleAddComment} disabled={!newComment.trim()}>
@@ -2941,6 +2969,7 @@ export const TaskDetailModal = ({
         file={previewingFile}
         files={[
           ...attachments.map(a => ({ url: resolveFileUrl(a.url) ?? a.url, fileName: a.filename, mimeType: a.fileType })),
+          ...pendingFiles.map((f, i) => ({ url: pendingFileUrls[i], fileName: f.name, mimeType: f.type })),
           ...videoLinks.map(v => ({ url: v.url, fileName: v.title || v.url })),
         ]}
         onClose={() => setPreviewingFile(null)}

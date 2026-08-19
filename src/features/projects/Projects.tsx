@@ -181,6 +181,7 @@ export default function Projects() {
   const [filesDialogOpen, setFilesDialogOpen] = useState(false);
   const [selectedFilesProjectId, setSelectedFilesProjectId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<any>(null);
+  const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
 
   // Fetch full project details when a project is selected for viewing details
   const { data: selectedProjectDetails, isLoading: isLoadingDetails } = useProjectDetail(selectedProjectId || undefined);
@@ -250,6 +251,7 @@ export default function Projects() {
   const handleTogglePin = (projectId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setOpenMenuProjectId(null);
     togglePinMutation.mutate(projectId, {
       onError: () => toast.error('Failed to update pin'),
     });
@@ -462,7 +464,10 @@ export default function Projects() {
                         <Badge variant="secondary" className={cn(stageColors[project.stage as keyof typeof stageColors] || stageColors.concept)}>
                           {stageLabels[project.stage as keyof typeof stageLabels] || project.stage}
                         </Badge>
-                        <DropdownMenu>
+                        <DropdownMenu
+                          open={openMenuProjectId === project.id}
+                          onOpenChange={(open) => setOpenMenuProjectId(open ? project.id : null)}
+                        >
                           <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
                               <MoreVertical className="h-4 w-4" />

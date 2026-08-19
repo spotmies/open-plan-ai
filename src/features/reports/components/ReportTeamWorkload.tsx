@@ -19,7 +19,7 @@ export const ReportTeamWorkload = memo(function ReportTeamWorkload({ data, onMem
     const overdueFromTodo = Math.min(item.overdueTasks, todo);
     const overdueFromInProgress = Math.max(0, item.overdueTasks - overdueFromTodo);
 
-    // Completed tasks + resolved issues share the same green segment
+    // Completed tasks + resolved issues share the same green segment; won't-fix issues get their own segment
     const doneCount = item.completedTasks + item.resolvedIssues;
 
     return {
@@ -32,6 +32,7 @@ export const ReportTeamWorkload = memo(function ReportTeamWorkload({ data, onMem
       overdue: item.overdueTasks,
       openIssues: item.openIssues,
       resolvedIssues: item.resolvedIssues,
+      wontFixIssues: item.wontFixIssues,
       completedTasks: item.completedTasks,
       inProgressTasks: item.inProgressTasks,
       // Bar segments (all as % of combined total)
@@ -40,6 +41,7 @@ export const ReportTeamWorkload = memo(function ReportTeamWorkload({ data, onMem
       todoPct: (Math.max(0, todo - overdueFromTodo) / total) * 100,
       overduePct: (item.overdueTasks / total) * 100,
       openIssuesPct: (item.openIssues / total) * 100,
+      wontFixPct: (item.wontFixIssues / total) * 100,
     };
   }), [data]);
 
@@ -99,6 +101,13 @@ export const ReportTeamWorkload = memo(function ReportTeamWorkload({ data, onMem
                         title={`${member.completedTasks} tasks completed · ${member.resolvedIssues} issues resolved`}
                       />
                     )}
+                    {member.wontFixPct > 0 && (
+                      <div
+                        className="bg-slate-400 dark:bg-slate-500 h-full transition-all"
+                        style={{ width: `${member.wontFixPct}%` }}
+                        title={`${member.wontFixIssues} issues won't fix`}
+                      />
+                    )}
                     {member.inProgressPct > 0 && (
                       <div
                         className="bg-blue-500 h-full transition-all"
@@ -143,6 +152,12 @@ export const ReportTeamWorkload = memo(function ReportTeamWorkload({ data, onMem
                         {member.openIssues} open {member.openIssues === 1 ? 'issue' : 'issues'}
                       </span>
                     )}
+                    {member.wontFixIssues > 0 && (
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-slate-400 dark:bg-slate-500" />
+                        {member.wontFixIssues} won't fix
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -169,6 +184,10 @@ export const ReportTeamWorkload = memo(function ReportTeamWorkload({ data, onMem
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <div className="w-2.5 h-2.5 rounded-full bg-orange-400" />
                 Open Issues
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+                Won't Fix
               </div>
             </div>
           </div>

@@ -200,13 +200,13 @@ export function IssueDetailContent({
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [previewingFile, setPreviewingFile] = useState<FilePreviewTarget | null>(null);
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-    const [pendingFileUrls, setPendingFileUrls] = useState<(string | null)[]>([]);
+    const [pendingFileUrls, setPendingFileUrls] = useState<string[]>([]);
     const [videoLinkInput, setVideoLinkInput] = useState('');
 
     useEffect(() => {
-        const urls = pendingFiles.map(f => f.type.startsWith('image/') ? URL.createObjectURL(f) : null);
+        const urls = pendingFiles.map(f => URL.createObjectURL(f));
         setPendingFileUrls(urls);
-        return () => { urls.forEach(url => { if (url) URL.revokeObjectURL(url); }); };
+        return () => { urls.forEach(url => URL.revokeObjectURL(url)); };
     }, [pendingFiles]);
 
     const projectId = issue?.projectId;
@@ -247,8 +247,13 @@ export function IssueDetailContent({
 
     useEffect(() => {
         if (issue) {
-            // Preserve loaded comments — they're fetched separately via API
-            setEditedIssue(prev => ({ ...issue, comments: prev?.comments ?? issue.comments ?? [] }));
+            // Preserve loaded comments only when staying on the same issue —
+            // they're fetched separately via API and would otherwise leak
+            // stale comments into a newly opened/created issue.
+            setEditedIssue(prev => ({
+                ...issue,
+                comments: prev && prev.id === issue.id ? (prev.comments ?? issue.comments ?? []) : (issue.comments ?? []),
+            }));
         }
     }, [issue]);
 
@@ -802,7 +807,7 @@ export function IssueDetailContent({
                                     {(editedIssue.assignees || []).length > 0 && (
                                         <div className="p-2 border-b">
                                             <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
-                                            {(editedIssue.assignees || []).map((assignee) => (
+                                            {[...(editedIssue.assignees || [])].sort((a, b) => a.name.localeCompare(b.name)).map((assignee) => (
                                                 <div key={assignee.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted group">
                                                     <Avatar className="h-6 w-6 shrink-0">
                                                         <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
@@ -842,6 +847,7 @@ export function IssueDetailContent({
                                             <CommandGroup heading="Add members">
                                                 {teamMembers
                                                     .filter(m => !editedIssue.assignees?.some(a => a.id === m.id))
+                                                    .sort((a, b) => a.name.localeCompare(b.name))
                                                     .map((member) => (
                                                         <CommandItem
                                                             key={member.id}
@@ -1673,15 +1679,8 @@ export function IssueDetailContent({
                                         return (
                                             <div
                                                 key={i}
-                                                className={cn(
-                                                    "flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm",
-                                                    isImage && previewUrl && "cursor-pointer hover:bg-muted"
-                                                )}
-                                                onClick={() => {
-                                                    if (isImage && previewUrl) {
-                                                        setPreviewingFile({ url: previewUrl, fileName: f.name, mimeType: f.type });
-                                                    }
-                                                }}
+                                                className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm cursor-pointer hover:bg-muted"
+                                                onClick={() => setPreviewingFile({ url: previewUrl, fileName: f.name, mimeType: f.type })}
                                             >
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     {isImage && previewUrl ? (
@@ -1757,6 +1756,25 @@ export function IssueDetailContent({
                         </h3>
 
                         <div className="space-y-2">
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="Paste video URL…"
+                                    value={videoLinkInput}
+                                    onChange={(e) => setVideoLinkInput(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddVideoLink(); } }}
+                                    className="text-sm"
+                                />
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={handleAddVideoLink}
+                                    disabled={!videoLinkInput.trim()}
+                                    className="shrink-0"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </div>
+
                             {videoLinks.map((vl) => {
                                 const thumbnail = getVideoThumbnail(vl.url);
                                 return (
@@ -1814,27 +1832,6 @@ export function IssueDetailContent({
                                     ))}
                                 </div>
                             )}
-
-                            <div className="flex gap-2">
-                                <Input
-                                    placeholder="Paste video URL…"
-                                    value={videoLinkInput}
-                                    onChange={(e) => setVideoLinkInput(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddVideoLink(); } }}
-                                    className="text-sm"
-                                />
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={handleAddVideoLink}
-                                    disabled={!videoLinkInput.trim()}
-                                    className="shrink-0"
-                                >
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Add
-                                </Button>
-                            </div>
                         </div>
                     </section>
 
@@ -2053,14 +2050,14 @@ export function IssueDetailContent({
                                                 {comment.author.initials}
                                             </AvatarFallback>
                                         </Avatar>
-                                        <div className="flex-1 space-y-1">
+                                        <div className="flex-1 min-w-0 space-y-1">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm font-medium">{comment.author.name}</span>
                                                 <span className="text-xs text-muted-foreground">
                                                     {format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}
                                                 </span>
                                                 {isOwnComment && !isEditingThisComment && (
-                                                    <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <div className="ml-auto flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <button
                                                             type="button"
                                                             className="rounded p-0.5 text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
@@ -2104,7 +2101,7 @@ export function IssueDetailContent({
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <p className="text-sm text-muted-foreground">{comment.content}</p>
+                                                <p className="text-sm text-muted-foreground break-words">{comment.content}</p>
                                             )}
                                         </div>
                                     </div>
@@ -2117,6 +2114,12 @@ export function IssueDetailContent({
                                 placeholder="Add a comment..."
                                 value={newComment}
                                 onChange={(e) => setNewComment(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                                        e.preventDefault();
+                                        handleAddComment();
+                                    }
+                                }}
                                 className="min-h-[80px]"
                             />
                             <Button className="h-auto" onClick={handleAddComment} disabled={!newComment.trim()}>
@@ -2187,6 +2190,7 @@ export function IssueDetailContent({
                 file={previewingFile}
                 files={[
                     ...attachments.map(a => ({ url: resolveFileUrl(a.url) ?? a.url, fileName: a.filename, mimeType: a.fileType })),
+                    ...pendingFiles.map((f, i) => ({ url: pendingFileUrls[i], fileName: f.name, mimeType: f.type })),
                     ...videoLinks.map(v => ({ url: v.url, fileName: v.title || v.url })),
                 ]}
                 onClose={() => setPreviewingFile(null)}

@@ -57,6 +57,7 @@ export interface TeamWorkloadItem {
   totalIssues: number;
   openIssues: number;
   resolvedIssues: number;
+  wontFixIssues: number;
 }
 
 export interface ModuleProgressItem {
@@ -416,7 +417,8 @@ export function getTeamWorkload(
       i.assignees?.some((a: { id: string }) => a.id === member.id)
     );
     const openIssues = memberIssues.filter(i => i.status !== 'resolved' && i.status !== 'wont-fix').length;
-    const resolvedIssues = memberIssues.filter(i => i.status === 'resolved' || i.status === 'wont-fix').length;
+    const resolvedIssues = memberIssues.filter(i => i.status === 'resolved').length;
+    const wontFixIssues = memberIssues.filter(i => i.status === 'wont-fix').length;
 
     return {
       member,
@@ -427,6 +429,7 @@ export function getTeamWorkload(
       totalIssues: memberIssues.length,
       openIssues,
       resolvedIssues,
+      wontFixIssues,
     };
   }).sort((a, b) => (b.totalTasks + b.totalIssues) - (a.totalTasks + a.totalIssues));
 }

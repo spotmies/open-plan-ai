@@ -29,6 +29,7 @@ interface MyDayListViewProps {
   groupBy: MyDayGroupBy;
   onTaskClick: (item: MyDayItem) => void;
   onStatusUpdate: (taskId: string, status: TaskStatus) => void;
+  emptyMessage?: string;
 }
 
 const statusColors: Record<string, string> = {
@@ -99,6 +100,7 @@ export function MyDayListView({
   groupBy,
   onTaskClick,
   onStatusUpdate,
+  emptyMessage = 'No tasks to display',
 }: MyDayListViewProps) {
   const isMobile = useIsMobile();
   const [sortField, setSortField] = useState<SortField | null>(null);
@@ -260,10 +262,10 @@ export function MyDayListView({
     </TableHead>
   );
 
-  if (allTasks.length === 0) {
+  if (isMobile && allTasks.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        No tasks to display
+        {emptyMessage}
       </div>
     );
   }
@@ -362,7 +364,13 @@ export function MyDayListView({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {paginatedTasks.map((task) => (
+          {paginatedTasks.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                {emptyMessage}
+              </TableCell>
+            </TableRow>
+          ) : paginatedTasks.map((task) => (
             <TableRow
               key={task.id}
               className="cursor-pointer hover:bg-muted/50"
@@ -481,7 +489,7 @@ export function MyDayListView({
         </TableBody>
       </Table>
 
-      {totalPages > 1 && (
+      {paginatedTasks.length > 0 && totalPages > 1 && (
         <div className="flex flex-col items-center gap-2 py-4 border-t">
           <p className="text-xs text-muted-foreground">
             Page {safeCurrentPage} of {totalPages} ({allTasks.length} items)

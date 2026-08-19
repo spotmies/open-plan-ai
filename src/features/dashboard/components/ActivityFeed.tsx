@@ -294,10 +294,9 @@ export function ActivityFeed({ activities, isLoading, className }: ActivityFeedP
                   {/* Center: Content */}
                   <div className="flex-1 min-w-0">
                     {/* Primary: Actor name (bold) + action text */}
-                    <p className="text-sm leading-snug break-all line-clamp-2">
-                      <span className="font-semibold">{activity.user.name}</span>
-                      {' '}
-                      <span className="text-muted-foreground text-foreground/80">{isMobile ? actionText : activity.description}</span>
+                    <p className="text-sm leading-snug flex items-baseline gap-1 min-w-0">
+                      <span className="font-semibold truncate max-w-[45%] shrink-0" title={activity.user.name}>{activity.user.name}</span>
+                      <span className="text-muted-foreground text-foreground/80 break-words line-clamp-2 min-w-0">{isMobile ? actionText : activity.description}</span>
                     </p>
 
                     {/* Mobile: quoted description as a secondary line */}

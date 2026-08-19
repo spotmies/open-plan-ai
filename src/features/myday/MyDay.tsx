@@ -343,47 +343,37 @@ export default function MyDay() {
         </div>
 
         {/* List content */}
-        {filteredTasks.length === 0 ? (
-          <div className="text-center py-16">
-            <h3 className="text-lg font-medium text-foreground mb-2">
-              {userTasks.length > 0
-                ? 'No matching tasks'
-                : filter === 'overdue' ? 'No overdue tasks' : filter === 'today' ? 'Nothing due today' : 'All caught up!'}
-            </h3>
-            <p className="text-muted-foreground max-w-md mx-auto">
-              {userTasks.length > 0
-                ? 'No tasks or issues match the selected filters. Try clearing a filter.'
-                : filter === 'overdue'
-                  ? "You're all caught up — nothing assigned to you is overdue."
-                  : filter === 'today'
-                    ? 'No tasks or issues assigned to you are due today.'
-                    : 'You have no active tasks assigned to you. Check the Projects page to see available work.'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 w-full min-w-0">
-            <div className="min-h-[400px] w-full min-w-0">
-              {/* Kanban view hidden
-              {view === 'kanban' ? (
-                <MyDayKanbanView
-                  tasks={filteredTasks}
-                  groupBy={groupBy}
-                  onTaskClick={handleTaskClick}
-                  onStatusUpdate={handleStatusUpdate}
-                  onChecklistToggle={handleChecklistToggle}
-                />
-              ) : (
-              */}
-              <MyDayListView
+        <div className="grid grid-cols-1 w-full min-w-0">
+          <div className="min-h-[400px] w-full min-w-0">
+            {/* Kanban view hidden
+            {view === 'kanban' ? (
+              <MyDayKanbanView
                 tasks={filteredTasks}
                 groupBy={groupBy}
                 onTaskClick={handleTaskClick}
                 onStatusUpdate={handleStatusUpdate}
+                onChecklistToggle={handleChecklistToggle}
               />
-              {/* )} */}
-            </div>
+            ) : (
+            */}
+            <MyDayListView
+              tasks={filteredTasks}
+              groupBy={groupBy}
+              onTaskClick={handleTaskClick}
+              onStatusUpdate={handleStatusUpdate}
+              emptyMessage={
+                userTasks.length > 0
+                  ? 'No tasks or issues match the selected filters. Try clearing a filter.'
+                  : filter === 'overdue'
+                    ? "You're all caught up — nothing assigned to you is overdue."
+                    : filter === 'today'
+                      ? 'No tasks or issues assigned to you are due today.'
+                      : 'You have no active tasks assigned to you. Check the Projects page to see available work.'
+              }
+            />
+            {/* )} */}
           </div>
-        )}
+        </div>
       </div>
 
       {selectedTask && (

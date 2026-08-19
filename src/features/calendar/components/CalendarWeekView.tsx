@@ -61,7 +61,7 @@ export const CalendarWeekView: React.FC<CalendarWeekViewProps> = ({
             <div
               key={index}
               className={cn(
-                'border-r border-border last:border-r-0 flex flex-col',
+                'border-r border-border last:border-r-0 flex flex-col min-h-0 overflow-hidden',
                 day.isToday && 'bg-primary/5'
               )}
             >

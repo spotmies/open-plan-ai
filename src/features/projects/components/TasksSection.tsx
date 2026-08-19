@@ -153,6 +153,8 @@ export function TasksSection({
     if (filters.milestoneId) count++;
     if (filters.dueDate) count++;
     if (filters.dueDateCustom) count++;
+    if (filters.completedDate) count++;
+    if (filters.completedDateCustom) count++;
     if (filters.tags?.length) count++;
     if (filters.hasBlockers) count++;
     return count;
@@ -272,6 +274,37 @@ export function TasksSection({
           case 'no-date':
             if (taskDueDate) return false;
             break;
+        }
+      }
+
+      // Exact completion date filter (calendar-picked, takes precedence over preset)
+      if (filters.completedDateCustom) {
+        const taskCompletedDate = task.completedAt ? new Date(task.completedAt) : null;
+        if (!taskCompletedDate || taskCompletedDate.toDateString() !== new Date(filters.completedDateCustom).toDateString()) {
+          return false;
+        }
+      } else if (filters.completedDate) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+        const taskCompletedDate = task.completedAt ? new Date(task.completedAt) : null;
+
+        switch (filters.completedDate) {
+          case 'today':
+            if (!taskCompletedDate || taskCompletedDate.toDateString() !== todayStart.toDateString()) return false;
+            break;
+          case 'this-week': {
+            const weekStart = new Date(todayStart);
+            weekStart.setDate(todayStart.getDate() - 7);
+            if (!taskCompletedDate || taskCompletedDate < weekStart || taskCompletedDate > todayEnd) return false;
+            break;
+          }
+          case 'this-month': {
+            const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+            if (!taskCompletedDate || taskCompletedDate < monthStart || taskCompletedDate > todayEnd) return false;
+            break;
+          }
         }
       }
 

@@ -607,7 +607,19 @@ export function MessageBubble({
     setShowDeleteConfirm(false);
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
+    if ((message.contentType === 'image') && fileData?.url) {
+      try {
+        const response = await fetch(fileData.url);
+        const blob = await response.blob();
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        toast.success('Copied to clipboard');
+      } catch {
+        await navigator.clipboard.writeText(fileData.url);
+        toast.success('Copied to clipboard');
+      }
+      return;
+    }
     navigator.clipboard.writeText(message.content);
     toast.success('Copied to clipboard');
   };

@@ -129,13 +129,14 @@ export function TaskFilters({
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2">
             {effectiveStatusOptions.map(option => (
-              <label key={option.value} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+              <label key={option.value} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.status?.includes(option.value) || false}
                   onCheckedChange={() => toggleStatus(option.value)}
+                  className="mt-0.5"
                 />
-                <StatusDot color={option.color} />
-                <span className="text-sm">{option.label}</span>
+                <span className="mt-1.5 shrink-0"><StatusDot color={option.color} /></span>
+                <span className="text-sm leading-tight">{option.label}</span>
               </label>
             ))}
           </div>
@@ -159,13 +160,14 @@ export function TaskFilters({
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2">
             {priorityOptions.map(option => (
-              <label key={option.value} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+              <label key={option.value} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.priority?.includes(option.value) || false}
                   onCheckedChange={() => togglePriority(option.value)}
+                  className="mt-0.5"
                 />
-                <div className={cn('w-2 h-2 rounded-full', option.color)} />
-                <span className="text-sm">{option.label}</span>
+                <div className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0', option.color)} />
+                <span className="text-sm leading-tight">{option.label}</span>
               </label>
             ))}
           </div>
@@ -192,12 +194,13 @@ export function TaskFilters({
               <div className="text-sm text-muted-foreground p-1">No modules created</div>
             ) : (
               modules.map(module => (
-                <label key={module.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                <label key={module.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                   <Checkbox
                     checked={filters.moduleIds?.includes(module.id) || false}
                     onCheckedChange={() => toggleModule(module.id)}
+                    className="mt-0.5"
                   />
-                  <span className="text-sm">{module.name}</span>
+                  <span className="text-sm leading-tight">{module.name}</span>
                 </label>
               ))
             )}
@@ -257,20 +260,22 @@ export function TaskFilters({
         </PopoverTrigger>
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            <label className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+            <label className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
               <Checkbox
                 checked={filters.assignee?.includes('unassigned') || false}
                 onCheckedChange={() => toggleAssignee('unassigned')}
+                className="mt-0.5"
               />
-              <span className="text-sm text-muted-foreground">Unassigned</span>
+              <span className="text-sm text-muted-foreground leading-tight">Unassigned</span>
             </label>
             {teamMembers.map(member => (
-              <label key={member.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+              <label key={member.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.assignee?.includes(member.id) || false}
                   onCheckedChange={() => toggleAssignee(member.id)}
+                  className="mt-0.5"
                 />
-                <span className="text-sm">{member.name}</span>
+                <span className="text-sm leading-tight">{member.name}</span>
               </label>
             ))}
           </div>
@@ -294,12 +299,13 @@ export function TaskFilters({
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {teamMembers.map(member => (
-              <label key={member.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+              <label key={member.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.assignedBy?.includes(member.id) || false}
                   onCheckedChange={() => toggleAssignedBy(member.id)}
+                  className="mt-0.5"
                 />
-                <span className="text-sm">{member.name}</span>
+                <span className="text-sm leading-tight">{member.name}</span>
               </label>
             ))}
           </div>
@@ -324,12 +330,13 @@ export function TaskFilters({
           <PopoverContent className="w-48 p-2" align="start">
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {allTags.map(tag => (
-                <label key={tag} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                <label key={tag} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                   <Checkbox
                     checked={filters.tags?.includes(tag) || false}
                     onCheckedChange={() => toggleTag(tag)}
+                    className="mt-0.5"
                   />
-                  <span className="text-sm">{tag}</span>
+                  <span className="text-sm leading-tight">{tag}</span>
                 </label>
               ))}
             </div>

@@ -117,7 +117,7 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
               items={milestones}
             />
             <EventSection
-              title="Critical Issues"
+              title="Issues"
               icon={<AlertCircle className="h-4 w-4 text-destructive" />}
               items={issues}
             />

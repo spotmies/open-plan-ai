@@ -23,12 +23,15 @@ const typeOptions = [
   { value: 'issue', label: 'Issue' },
 ];
 
-const statusOptions = [
+const taskStatusOptions = [
   { value: 'todo', label: 'Todo' },
   { value: 'in-progress', label: 'In Progress' },
   { value: 'review', label: 'Review' },
   { value: 'done', label: 'Done' },
   { value: 'blocked', label: 'Blocked' },
+];
+
+const issueStatusOptions = [
   { value: 'open', label: 'Open' },
   { value: 'resolved', label: 'Resolved' },
   { value: 'wont-fix', label: "Won't Fix" },
@@ -69,6 +72,16 @@ export function MyTasksFiltersDropdown({ items, filters, onFiltersChange, classN
     });
     return Array.from(seen.entries()).map(([value, label]) => ({ value, label }));
   }, [items]);
+
+  const statusOptions = useMemo(() => {
+    const selectedTypes = filters.type || [];
+    const includeTask = selectedTypes.includes('task');
+    const includeIssue = selectedTypes.includes('issue');
+    if (includeTask && includeIssue) return [...taskStatusOptions, ...issueStatusOptions];
+    if (includeIssue) return issueStatusOptions;
+    if (includeTask) return taskStatusOptions;
+    return [];
+  }, [filters.type]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -119,20 +132,36 @@ export function MyTasksFiltersDropdown({ items, filters, onFiltersChange, classN
             <MultiSelect
               options={typeOptions}
               selected={filters.type || []}
-              onChange={(values) => onFiltersChange({ ...filters, type: values.length ? (values as MyDayItemType[]) : undefined })}
+              onChange={(values) => {
+                const nextTypes = values.length ? (values as MyDayItemType[]) : undefined;
+                const allowedStatuses = new Set(
+                  [
+                    ...(nextTypes?.includes('task') ? taskStatusOptions : []),
+                    ...(nextTypes?.includes('issue') ? issueStatusOptions : []),
+                  ].map((option) => option.value)
+                );
+                const nextStatus = filters.status?.filter((value) => allowedStatuses.has(value));
+                onFiltersChange({
+                  ...filters,
+                  type: nextTypes,
+                  status: nextStatus?.length ? nextStatus : undefined,
+                });
+              }}
               placeholder="All Types"
             />
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs">Status</Label>
-            <MultiSelect
-              options={statusOptions}
-              selected={filters.status || []}
-              onChange={(values) => onFiltersChange({ ...filters, status: values.length ? values : undefined })}
-              placeholder="All Status"
-            />
-          </div>
+          {statusOptions.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs">Status</Label>
+              <MultiSelect
+                options={statusOptions}
+                selected={filters.status || []}
+                onChange={(values) => onFiltersChange({ ...filters, status: values.length ? values : undefined })}
+                placeholder="All Status"
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1">
@@ -147,18 +176,20 @@ export function MyTasksFiltersDropdown({ items, filters, onFiltersChange, classN
             />
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs flex items-center gap-1">
-              <FolderKanban className="h-3 w-3" />
-              Project
-            </Label>
-            <MultiSelect
-              options={projectOptions}
-              selected={filters.projectIds || []}
-              onChange={(values) => onFiltersChange({ ...filters, projectIds: values.length ? values : undefined })}
-              placeholder="All Projects"
-            />
-          </div>
+          {projectOptions.length > 1 && (
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <FolderKanban className="h-3 w-3" />
+                Project
+              </Label>
+              <MultiSelect
+                options={projectOptions}
+                selected={filters.projectIds || []}
+                onChange={(values) => onFiltersChange({ ...filters, projectIds: values.length ? values : undefined })}
+                placeholder="All Projects"
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1">

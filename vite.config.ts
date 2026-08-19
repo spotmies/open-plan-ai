@@ -27,7 +27,6 @@ export default defineConfig(({ mode }) => {
       protocol: "ws",
       host: "localhost",
       port: 8080,
-      clientPort: 8080,
     },
     ...(devProxyTarget && {
       proxy: {

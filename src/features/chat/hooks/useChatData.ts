@@ -606,6 +606,7 @@ export function useMessages(conversationId: string | null) {
 
 export function useReactions(messages: ChatMessage[], currentUserId?: string, conversationId?: string | null) {
   const [reactionMap, setReactionMap] = useState<Record<string, MessageReaction[]>>({});
+  const messagesKey = (messages || []).map((m) => m.id).join(',');
 
   const fetchReactions = useCallback(async () => {
     if (!messages.length || !currentUserId) return;
@@ -617,7 +618,7 @@ export function useReactions(messages: ChatMessage[], currentUserId?: string, co
     } catch (err) {
       logger.error('Failed to fetch reactions:', err);
     }
-  }, [messages, currentUserId]);
+  }, [messagesKey, currentUserId]);
 
   useEffect(() => { fetchReactions(); }, [fetchReactions]);
 

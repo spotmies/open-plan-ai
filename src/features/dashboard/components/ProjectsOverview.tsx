@@ -33,13 +33,19 @@ const stageLabels = {
 };
 
 const RAG_RANK = { red: 0, amber: 1, green: 2 };
+const CARD_PROJECT_LIMIT = 5;
 
 export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOverviewProps) {
   const isMobile = useIsMobile();
   const ranked = projects
     .map((p) => ({ project: p, health: projectHealth(p, atRiskProjectIds.has(p.id)) }))
-    .sort((a, b) => RAG_RANK[a.health.rag] - RAG_RANK[b.health.rag]);
+    .sort((a, b) => {
+      const pinDiff = Number(b.project.pinned) - Number(a.project.pinned);
+      if (pinDiff !== 0) return pinDiff;
+      return RAG_RANK[a.health.rag] - RAG_RANK[b.health.rag];
+    });
   const onTrack = ranked.filter((r) => r.health.rag === 'green').length;
+  const visible = ranked.slice(0, CARD_PROJECT_LIMIT);
 
   return (
     <Card className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -81,7 +87,7 @@ export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOvervie
             </div>
             <ScrollArea className="flex-1 min-h-0">
               <div className="divide-y divide-border/50">
-                {ranked.map(({ project, health }) => (
+                {visible.map(({ project, health }) => (
                 isMobile ? (
                   <Link
                     key={project.id}

@@ -87,6 +87,43 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
 
   if (event.type === 'issue') {
     const isResolved = event.issueStatus === 'resolved' || event.issueStatus === 'wont-fix';
+
+    if (!isCompact && event.projectName) {
+      return (
+        <div
+          onClick={onClick}
+          className={cn(
+            'flex flex-col gap-0.5 px-2 py-1 rounded cursor-pointer transition-colors',
+            isResolved
+              ? 'bg-green-500/5 hover:bg-green-500/10 border border-green-500/20'
+              : 'bg-destructive/5 hover:bg-destructive/10 border border-destructive/20'
+          )}
+        >
+          <span className="text-[10px] text-muted-foreground truncate">
+            {event.projectName}
+          </span>
+          <div className="flex items-center gap-1.5">
+            {isResolved ? (
+              <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-green-600" />
+            ) : (
+              <AlertCircle className={cn('h-3 w-3 flex-shrink-0', severityColors[event.severity || 'major'])} />
+            )}
+            <span className={cn(
+              'text-xs font-medium truncate flex-1 min-w-0',
+              isResolved ? 'text-green-600 line-through' : 'text-destructive'
+            )}>
+              {event.title}
+            </span>
+            {event.severity && !isResolved && (
+              <Badge variant="outline" className="text-[10px] h-4 shrink-0 bg-destructive/10 text-destructive border-destructive/20">
+                {event.severity}
+              </Badge>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         onClick={onClick}
@@ -108,16 +145,6 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
         )}>
           {event.title}
         </span>
-        {!isCompact && event.projectName && (
-          <Badge variant="outline" className="text-[10px] h-4 ml-auto shrink-0 max-w-[120px] truncate bg-muted/50 text-muted-foreground border-border">
-            {event.projectName}
-          </Badge>
-        )}
-        {!isCompact && event.severity && !isResolved && (
-          <Badge variant="outline" className="text-[10px] h-4 shrink-0 bg-destructive/10 text-destructive border-destructive/20">
-            {event.severity}
-          </Badge>
-        )}
       </div>
     );
   }

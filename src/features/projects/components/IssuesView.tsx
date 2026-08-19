@@ -76,6 +76,8 @@ interface IssuesViewProps {
   dueDateCustomFilter?: string;
   reportedDateFilter?: 'today' | 'this-week' | 'this-month';
   reportedDateCustomFilter?: string;
+  completedDateFilter?: 'today' | 'this-week' | 'this-month';
+  completedDateCustomFilter?: string;
   tagsFilter?: string[];
   isAddDialogOpen?: boolean;
   onAddDialogClose?: () => void;
@@ -164,6 +166,8 @@ export function IssuesView({
   dueDateCustomFilter: externalDueDateCustomFilter,
   reportedDateFilter: externalReportedDateFilter,
   reportedDateCustomFilter: externalReportedDateCustomFilter,
+  completedDateFilter: externalCompletedDateFilter,
+  completedDateCustomFilter: externalCompletedDateCustomFilter,
   tagsFilter: externalTagsFilter = [],
   isAddDialogOpen: externalIsAddDialogOpen,
   onAddDialogClose,
@@ -220,6 +224,8 @@ export function IssuesView({
   const dueDateCustomFilter = externalDueDateCustomFilter;
   const reportedDateFilter = externalReportedDateFilter;
   const reportedDateCustomFilter = externalReportedDateCustomFilter;
+  const completedDateFilter = externalCompletedDateFilter;
+  const completedDateCustomFilter = externalCompletedDateCustomFilter;
   const tagsFilter = externalTagsFilter;
 
   useEffect(() => {
@@ -340,7 +346,35 @@ export function IssuesView({
       }
     }
 
-    return matchesSearch && matchesSeverity && matchesStatus && matchesAssignee && matchesAssignedBy && matchesUpdatedBy && matchesTags && matchesDueDate && matchesReportedDate;
+    let matchesCompletedDate = true;
+    if (completedDateCustomFilter) {
+      const issueCompletedDate = issue.resolvedAt ? new Date(issue.resolvedAt) : null;
+      matchesCompletedDate = !!issueCompletedDate && issueCompletedDate.toDateString() === new Date(completedDateCustomFilter).toDateString();
+    } else if (completedDateFilter) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+      const issueCompletedDate = issue.resolvedAt ? new Date(issue.resolvedAt) : null;
+      switch (completedDateFilter) {
+        case 'today':
+          matchesCompletedDate = !!issueCompletedDate && issueCompletedDate.toDateString() === todayStart.toDateString();
+          break;
+        case 'this-week': {
+          const weekStart = new Date(todayStart);
+          weekStart.setDate(todayStart.getDate() - 7);
+          matchesCompletedDate = !!issueCompletedDate && issueCompletedDate >= weekStart && issueCompletedDate <= todayEnd;
+          break;
+        }
+        case 'this-month': {
+          const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+          matchesCompletedDate = !!issueCompletedDate && issueCompletedDate >= monthStart && issueCompletedDate <= todayEnd;
+          break;
+        }
+      }
+    }
+
+    return matchesSearch && matchesSeverity && matchesStatus && matchesAssignee && matchesAssignedBy && matchesUpdatedBy && matchesTags && matchesDueDate && matchesReportedDate && matchesCompletedDate;
   });
 
   // Sort by severity (critical first), then by date
@@ -368,6 +402,8 @@ export function IssuesView({
     dueDateCustomFilter,
     reportedDateFilter,
     reportedDateCustomFilter,
+    completedDateFilter,
+    completedDateCustomFilter,
     pageSize,
   ]);
 

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Flag, AlertTriangle, Users, Calendar, CalendarIcon, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag } from 'lucide-react';
+import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag, ChevronDown, ChevronLeft } from 'lucide-react';
 import { BOMView } from './components/BOMView';
 import RequirementsView from './components/RequirementsView';
 import { ECOView } from './components/ECOView';
@@ -26,13 +26,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { TasksSection, ViewControls } from './components/TasksSection';
 import { ModulesSection, ModuleViewControls } from './components/ModulesSection';
@@ -84,6 +77,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { projectMembersService } from '@/services/projectMembers.service';
 import { attachmentsService } from '@/services/attachments.service';
+import { commentsService } from '@/services/comments.service';
 import { chatService } from '@/services/chat.service';
 import { ProjectChatPanel } from './components/ProjectChatPanel';
 import { toast } from 'sonner';
@@ -104,6 +98,8 @@ interface IssueFilter {
   dueDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides dueDate preset
   reportedDate?: 'today' | 'this-week' | 'this-month';
   reportedDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides reportedDate preset
+  completedDate?: 'today' | 'this-week' | 'this-month';
+  completedDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides completedDate preset
   tags?: string[];
 }
 
@@ -156,7 +152,124 @@ function MilestoneViewControls({
   );
 }
 
+const BASE_DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'this-week', label: 'This Week' },
+  { value: 'this-month', label: 'This Month' },
+];
+
 // Issue View Controls Component — view toggle + filter only (search is in parent)
+function DateFilterSelect({
+  label,
+  preset,
+  custom,
+  extraOptions = [],
+  onChange,
+}: {
+  label: string;
+  preset?: string;
+  custom?: string;
+  extraOptions?: { value: string; label: string }[];
+  onChange: (value: { preset?: string; custom?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const allOptions = [...extraOptions, ...BASE_DATE_OPTIONS];
+  const displayLabel = custom
+    ? format(new Date(custom), 'PPP')
+    : (allOptions.find((o) => o.value === preset)?.label ?? 'Any Date');
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs flex items-center gap-1">
+        <Clock className="h-3 w-3" />
+        {label}
+      </Label>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setView('list');
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 w-full justify-between font-normal"
+          >
+            <span className="truncate">{displayLabel}</span>
+            <ChevronDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          {view === 'list' ? (
+            <div className="py-1 min-w-[10rem]">
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => { onChange({ preset: undefined, custom: undefined }); setOpen(false); }}
+              >
+                Any Date
+              </button>
+              {allOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => { onChange({ preset: opt.value, custom: undefined }); setOpen(false); }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => setView('calendar')}
+              >
+                Custom...
+              </button>
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                className="w-full flex items-center gap-1 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+                onClick={() => setView('list')}
+              >
+                <ChevronLeft className="h-3 w-3" />
+                Back
+              </button>
+              <CalendarPicker
+                mode="single"
+                selected={custom ? new Date(custom) : undefined}
+                onSelect={(date) => {
+                  onChange({ preset: undefined, custom: date ? format(date, 'yyyy-MM-dd') : undefined });
+                  setOpen(false);
+                }}
+              />
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+      {custom && (
+        <div className="flex items-center justify-between pl-1">
+          <span className="text-xs text-muted-foreground">{format(new Date(custom), 'PPP')}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1.5 text-xs"
+            onClick={() => onChange({ preset: undefined, custom: undefined })}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IssueViewControls({
   viewMode,
   onViewModeChange,
@@ -328,136 +441,44 @@ function IssueViewControls({
             )}
 
             {/* Due Date Filter */}
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                Due Date
-              </Label>
-              <div className="flex items-center gap-1">
-                <Select
-                  value={filters.dueDate ?? 'all'}
-                  onValueChange={(v) => onFiltersChange({
-                    ...filters,
-                    dueDate: v === 'all' ? undefined : v as IssueFilter['dueDate'],
-                    dueDateCustom: undefined,
-                  })}
-                >
-                  <SelectTrigger className="h-8 flex-1">
-                    <SelectValue placeholder="Any Date" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any Date</SelectItem>
-                    <SelectItem value="overdue">Overdue</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="this-week">This Week</SelectItem>
-                    <SelectItem value="this-month">This Month</SelectItem>
-                    <SelectItem value="no-date">No Date</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant={filters.dueDateCustom ? 'secondary' : 'outline'}
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                    >
-                      <CalendarIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
-                    <CalendarPicker
-                      mode="single"
-                      selected={filters.dueDateCustom ? new Date(filters.dueDateCustom) : undefined}
-                      onSelect={(date) => onFiltersChange({
-                        ...filters,
-                        dueDateCustom: date ? format(date, 'yyyy-MM-dd') : undefined,
-                        dueDate: date ? undefined : filters.dueDate,
-                      })}
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              {filters.dueDateCustom && (
-                <div className="flex items-center justify-between pl-1">
-                  <span className="text-xs text-muted-foreground">{format(new Date(filters.dueDateCustom), 'PPP')}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1.5 text-xs"
-                    onClick={() => onFiltersChange({ ...filters, dueDateCustom: undefined })}
-                  >
-                    Clear
-                  </Button>
-                </div>
-              )}
-            </div>
+            <DateFilterSelect
+              label="Due Date"
+              preset={filters.dueDate}
+              custom={filters.dueDateCustom}
+              extraOptions={[
+                { value: 'overdue', label: 'Overdue' },
+                { value: 'no-date', label: 'No Date' },
+              ]}
+              onChange={({ preset, custom }) => onFiltersChange({
+                ...filters,
+                dueDate: preset as IssueFilter['dueDate'],
+                dueDateCustom: custom,
+              })}
+            />
 
             {/* Reported Date Filter */}
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                Reported Date
-              </Label>
-              <div className="flex items-center gap-1">
-                <Select
-                  value={filters.reportedDate ?? 'all'}
-                  onValueChange={(v) => onFiltersChange({
-                    ...filters,
-                    reportedDate: v === 'all' ? undefined : v as IssueFilter['reportedDate'],
-                    reportedDateCustom: undefined,
-                  })}
-                >
-                  <SelectTrigger className="h-8 flex-1">
-                    <SelectValue placeholder="Any Date" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any Date</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="this-week">This Week</SelectItem>
-                    <SelectItem value="this-month">This Month</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant={filters.reportedDateCustom ? 'secondary' : 'outline'}
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                    >
-                      <CalendarIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
-                    <CalendarPicker
-                      mode="single"
-                      selected={filters.reportedDateCustom ? new Date(filters.reportedDateCustom) : undefined}
-                      onSelect={(date) => onFiltersChange({
-                        ...filters,
-                        reportedDateCustom: date ? format(date, 'yyyy-MM-dd') : undefined,
-                        reportedDate: date ? undefined : filters.reportedDate,
-                      })}
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              {filters.reportedDateCustom && (
-                <div className="flex items-center justify-between pl-1">
-                  <span className="text-xs text-muted-foreground">{format(new Date(filters.reportedDateCustom), 'PPP')}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1.5 text-xs"
-                    onClick={() => onFiltersChange({ ...filters, reportedDateCustom: undefined })}
-                  >
-                    Clear
-                  </Button>
-                </div>
-              )}
-            </div>
+            <DateFilterSelect
+              label="Reported Date"
+              preset={filters.reportedDate}
+              custom={filters.reportedDateCustom}
+              onChange={({ preset, custom }) => onFiltersChange({
+                ...filters,
+                reportedDate: preset as IssueFilter['reportedDate'],
+                reportedDateCustom: custom,
+              })}
+            />
+
+            {/* Completion Date Filter */}
+            <DateFilterSelect
+              label="Completion Date"
+              preset={filters.completedDate}
+              custom={filters.completedDateCustom}
+              onChange={({ preset, custom }) => onFiltersChange({
+                ...filters,
+                completedDate: preset as IssueFilter['completedDate'],
+                completedDateCustom: custom,
+              })}
+            />
           </div>
         </PopoverContent>
       </Popover>
@@ -778,6 +799,8 @@ export default function ProjectDetail() {
     if (issueFilters.dueDateCustom !== undefined) count++;
     if (issueFilters.reportedDate !== undefined) count++;
     if (issueFilters.reportedDateCustom !== undefined) count++;
+    if (issueFilters.completedDate !== undefined) count++;
+    if (issueFilters.completedDateCustom !== undefined) count++;
     if (issueFilters.tags?.length) count++;
     return count;
   }, [issueFilters]);
@@ -1070,6 +1093,22 @@ export default function ProjectDetail() {
         );
       } catch {
         toast.warning('Issue created but some attachments failed to upload');
+      }
+    }
+
+    if (newIssuePartial.comments && newIssuePartial.comments.length > 0 && created?.id) {
+      try {
+        await Promise.all(
+          newIssuePartial.comments.map(comment =>
+            commentsService.create({
+              content: comment.content,
+              entity_id: created.id,
+              entity_type: 'issue',
+            })
+          )
+        );
+      } catch {
+        toast.warning('Issue created but some comments failed to save');
       }
     }
   };
@@ -1729,6 +1768,8 @@ export default function ProjectDetail() {
               dueDateCustomFilter={issueFilters.dueDateCustom}
               reportedDateFilter={issueFilters.reportedDate}
               reportedDateCustomFilter={issueFilters.reportedDateCustom}
+              completedDateFilter={issueFilters.completedDate}
+              completedDateCustomFilter={issueFilters.completedDateCustom}
               tagsFilter={issueFilters.tags}
               isAddDialogOpen={isAddIssueDialogOpen}
               onAddDialogClose={() => setIsAddIssueDialogOpen(false)}
