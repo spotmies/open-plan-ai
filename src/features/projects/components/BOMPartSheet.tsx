@@ -28,6 +28,7 @@ import {
   CheckCircle, Clock, GitBranch, Save, Plus, X, ChevronRight, ChevronLeft,
   FileText, ImageIcon, Upload, Paperclip, AlertCircle, Link as LinkIcon,
   Check, XCircle, History, Loader2,
+  FileSpreadsheet, ExternalLink,
 } from 'lucide-react';
 import {
   BOMNode, BOMStatus, BOMCategory, BOM_CAT_META, KNOWN_BOM_CATEGORIES, UOM_OPTIONS, SupplierEntry, CustomFieldEntry,

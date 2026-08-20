@@ -37,7 +37,7 @@ export function BomReadiness({ projects }: BomReadinessProps) {
   const { isLoading, total, approved, pending, rejected, pct } = useOrgBomAggregate();
 
   return (
-    <Card>
+    <Card className="rounded-2xl border-border/70 shadow-sm overflow-hidden min-w-0">
       <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
         <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
           <PanelIcon icon={Layers} color="#EA580C" />

@@ -5,14 +5,20 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Check, CheckSquare } from 'lucide-react';
+import { Check, CheckSquare, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AttachmentBadges } from '@/components/shared/AttachmentBadges';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { getFallbackTagColor } from '@/lib/tagColors';
 import { formatModuleType } from '../utils/projectUtils';
 import { TaskDetailModal } from './TaskDetailModal';
-import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ColorSwatchPicker } from '@/components/shared/ColorSwatchPicker';
+import { BUCKET_COLOR_OPTIONS } from '@/lib/bucketColors';
+import { useProjectTaskColumns, useCreateTaskColumn } from '@/hooks/useProjectTaskColumns';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { playCompleteSound } from '@/lib/playSound';
 import { DEFAULT_COLUMNS, type ProjectTaskColumn } from '@/services/projectTaskColumns.service';
@@ -109,6 +115,25 @@ export function MobileTaskListView({
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
+  const [newColumnName, setNewColumnName] = useState('');
+  const [newColumnColor, setNewColumnColor] = useState(BUCKET_COLOR_OPTIONS[0].value);
+
+  const createTaskColumn = useCreateTaskColumn(projectId);
+
+  const handleAddColumn = () => {
+    if (!newColumnName.trim() || !projectId) return;
+    createTaskColumn.mutate(
+      { label: newColumnName, color: newColumnColor },
+      {
+        onSuccess: () => {
+          setNewColumnName('');
+          setNewColumnColor(BUCKET_COLOR_OPTIONS[0].value);
+          setIsAddColumnOpen(false);
+        },
+      }
+    );
+  };
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -194,6 +219,16 @@ export function MobileTaskListView({
             </span>
           </button>
         ))}
+        {projectId && (
+          <button
+            type="button"
+            onClick={() => setIsAddColumnOpen(true)}
+            aria-label="Add New Bucket"
+            className="shrink-0 flex items-center justify-center h-8 w-8 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground active:bg-muted transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {groupedSections.length === 0 ? (
@@ -310,6 +345,38 @@ export function MobileTaskListView({
           ))}
         </div>
       )}
+
+      {/* Add Bucket Dialog — mirrors the board's "Add New Bucket" column */}
+      <Dialog open={isAddColumnOpen} onOpenChange={setIsAddColumnOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Bucket</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label>Bucket Name</Label>
+              <Input
+                placeholder="e.g., QA Testing"
+                value={newColumnName}
+                maxLength={30}
+                onChange={(e) => setNewColumnName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Color</Label>
+              <ColorSwatchPicker value={newColumnColor} onChange={setNewColumnColor} />
+            </div>
+            <Button
+              onClick={handleAddColumn}
+              disabled={!newColumnName.trim() || createTaskColumn.isPending}
+              className="w-full"
+            >
+              Add Bucket
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <TaskDetailModal
         task={selectedTask}

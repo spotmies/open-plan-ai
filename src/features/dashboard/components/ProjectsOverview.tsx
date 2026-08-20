@@ -48,7 +48,7 @@ export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOvervie
   const visible = ranked.slice(0, CARD_PROJECT_LIMIT);
 
   return (
-    <Card className="flex flex-col h-full min-h-0 overflow-hidden">
+    <Card className="flex flex-col h-full min-h-0 overflow-hidden rounded-2xl border-border/70 shadow-sm min-w-0">
       <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
         <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
           <PanelIcon icon={FolderKanban} color="#2563EB" />
@@ -85,24 +85,24 @@ export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOvervie
               </span>{' '}
               need attention
             </div>
-            <ScrollArea className="flex-1 min-h-0">
+            <ScrollArea className="flex-1 min-h-0 w-full">
               <div className="divide-y divide-border/50">
                 {visible.map(({ project, health }) => (
                 isMobile ? (
                   <Link
                     key={project.id}
                     to={`/projects/${project.id}`}
-                    className="flex flex-col gap-2 py-3 px-2 rounded-md hover:bg-secondary/60 transition-colors"
+                    className="flex flex-col gap-2 py-3 px-2 rounded-xl hover:bg-secondary/60 transition-colors min-w-0"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <span title={RAG_LABEL[health.rag]} className={cn('h-2.5 w-2.5 rounded-full shrink-0', RAG_DOT_CLASS[health.rag])} />
-                      <span className="text-sm font-medium truncate flex-1" title={project.name}>{project.name}</span>
+                      <span className="text-sm font-medium truncate flex-1 min-w-0" title={project.name}>{project.name}</span>
                       <Badge variant="secondary" className={cn('shrink-0 text-[10.5px]', stageColors[project.stage])}>
                         {stageLabels[project.stage]}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Progress value={project.progress} className="h-1.5 flex-1" indicatorClassName={RAG_BAR_CLASS[health.rag]} />
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Progress value={project.progress} className="h-1.5 flex-1 min-w-0" indicatorClassName={RAG_BAR_CLASS[health.rag]} />
                       <span className="text-[11px] font-semibold tabular-nums shrink-0">{project.progress}%</span>
                       <span className={cn(
                         'flex items-center gap-1 text-[11px] whitespace-nowrap shrink-0',

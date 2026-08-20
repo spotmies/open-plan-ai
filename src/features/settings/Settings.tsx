@@ -181,6 +181,7 @@ const Settings = () => {
   });
   const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingAvatarRemoval, setPendingAvatarRemoval] = useState(false);
   const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [orgLoading, setOrgLoading] = useState(false);
@@ -251,6 +252,7 @@ const Settings = () => {
         URL.revokeObjectURL(localAvatarPreviewRef.current);
       }
       setPendingAvatarFile(null);
+      setPendingAvatarRemoval(false);
       setLocalAvatarPreview(null);
       setIsEditingProfile(false);
       if (profile) {
@@ -411,11 +413,23 @@ const Settings = () => {
     setIsEditingOrg(false);
   };
 
+  const hasProfileChanges =
+    profileForm.name !== (profile?.name || '') ||
+    profileForm.initials !== (profile?.initials || '') ||
+    pendingAvatarFile !== null ||
+    pendingAvatarRemoval;
+
   const handleSaveProfile = async () => {
+    if (!hasProfileChanges) {
+      return;
+    }
+
     setProfileLoading(true);
     try {
       if (pendingAvatarFile) {
         await profileService.uploadAvatar(pendingAvatarFile);
+      } else if (pendingAvatarRemoval) {
+        await profileService.deleteAvatar();
       }
       await profileService.updateProfile({
         name: profileForm.name,
@@ -426,6 +440,7 @@ const Settings = () => {
         URL.revokeObjectURL(localAvatarPreview);
       }
       setPendingAvatarFile(null);
+      setPendingAvatarRemoval(false);
       setLocalAvatarPreview(null);
       setIsEditingProfile(false);
       toast.success('Profile updated successfully');
@@ -441,28 +456,15 @@ const Settings = () => {
     fileInputRef.current?.click();
   };
 
-  const handleRemoveAvatar = async () => {
-    // Discard an unsaved selection instead of hitting the API
-    if (pendingAvatarFile) {
-      if (localAvatarPreview) {
-        URL.revokeObjectURL(localAvatarPreview);
-      }
-      setPendingAvatarFile(null);
-      setLocalAvatarPreview(null);
-      return;
+  const handleRemoveAvatar = () => {
+    if (localAvatarPreview) {
+      URL.revokeObjectURL(localAvatarPreview);
     }
 
-    setAvatarLoading(true);
-    try {
-      await profileService.deleteAvatar();
-      await refreshProfile();
-      toast.success('Avatar removed successfully');
-    } catch (error) {
-      logger.error('Error removing avatar:', error);
-      toast.error('Failed to remove avatar');
-    } finally {
-      setAvatarLoading(false);
-    }
+    setPendingAvatarFile(null);
+    setLocalAvatarPreview(null);
+    setPendingAvatarRemoval(true);
+    setIsEditingProfile(true);
   };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -480,6 +482,8 @@ const Settings = () => {
       const localPreview = URL.createObjectURL(file);
       setLocalAvatarPreview(localPreview);
       setPendingAvatarFile(file);
+      setPendingAvatarRemoval(false);
+      setIsEditingProfile(true);
     }
     e.target.value = '';
   };
@@ -871,18 +875,18 @@ const Settings = () => {
                         (localAvatarPreview || profile?.avatarUrl) && 'cursor-pointer'
                       )}
                       onClick={() => {
-                        if (localAvatarPreview || profile?.avatarUrl) {
+                        if (localAvatarPreview || (!pendingAvatarRemoval && profile?.avatarUrl)) {
                           setIsAvatarPreviewOpen(true);
                         }
                       }}
                     >
-                      {avatarLoading && !localAvatarPreview ? (
+                      {avatarLoading && !localAvatarPreview && !pendingAvatarRemoval ? (
                         <AvatarFallback className="bg-primary/10">
                           <Loader2 className="h-6 w-6 animate-spin" />
                         </AvatarFallback>
-                      ) : localAvatarPreview || profile?.avatarUrl ? (
+                      ) : localAvatarPreview || (!pendingAvatarRemoval && profile?.avatarUrl) ? (
                         <AvatarImage
-                          src={localAvatarPreview || resolveFileUrl(profile?.avatarUrl) || ''}
+                          src={localAvatarPreview || (!pendingAvatarRemoval ? resolveFileUrl(profile?.avatarUrl) || '' : '')}
                           alt={profile?.name || 'Avatar'}
                         />
                       ) : (
@@ -904,7 +908,7 @@ const Settings = () => {
                           <Upload className="h-4 w-4 mr-2" />
                           Change Avatar
                         </Button>
-                        {(profile?.avatarUrl || localAvatarPreview) && (
+                        {(profile?.avatarUrl || localAvatarPreview || pendingAvatarRemoval) && (
                           <Button variant="outline" size="sm" onClick={handleRemoveAvatar} disabled={avatarLoading}>
                             <Trash2 className="h-4 w-4 mr-2" />
                             Remove
@@ -912,7 +916,11 @@ const Settings = () => {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {pendingAvatarFile ? 'Click Save Profile to apply your new picture.' : 'JPG, PNG or GIF. Max 5MB.'}
+                        {pendingAvatarFile
+                          ? 'Click Save Profile to apply your new picture.'
+                          : pendingAvatarRemoval
+                            ? 'Click Save Profile to remove your current picture.'
+                            : 'JPG, PNG or GIF. Max 5MB.'}
                       </p>
                     </div>
                   </div>
@@ -924,7 +932,7 @@ const Settings = () => {
                       </DialogHeader>
                       <div className="flex items-center justify-center py-2">
                         <img
-                          src={localAvatarPreview || resolveFileUrl(profile?.avatarUrl) || ''}
+                          src={localAvatarPreview || (!pendingAvatarRemoval ? resolveFileUrl(profile?.avatarUrl) || '' : '')}
                           alt={profile?.name || 'Avatar'}
                           className="max-h-[60vh] w-full rounded-md object-contain"
                         />
@@ -982,7 +990,7 @@ const Settings = () => {
                       />
                     </div>
                   </div>
-                  <Button onClick={handleSaveProfile} disabled={profileLoading}>
+                  <Button onClick={handleSaveProfile} disabled={profileLoading || !hasProfileChanges}>
                     {profileLoading ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (

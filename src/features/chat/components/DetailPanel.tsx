@@ -418,21 +418,41 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
     }
   };
 
+  const handleOpenMemberDM = async (member: ConversationMember) => {
+    if (member.id === currentUserId) return;
+    try {
+      const conversationId = await chatService.getOrCreateDM(member.id);
+      setDetailPanelOpen(false);
+      navigate(`/chat/${conversationId}`);
+    } catch (err) {
+      logger.warn('[DetailPanel] Failed to open DM with member', {
+        memberId: member.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      toast.error('Failed to open conversation');
+    }
+  };
+
   const renderMemberRow = (member: ConversationMember) => (
     <div key={member.id} className="flex items-center gap-2.5 group">
-      <div className="relative shrink-0">
-        <Avatar className="h-8 w-8">
-          {member.avatarUrl && (
-            <AvatarImage src={member.avatarUrl} alt={member.name} className="object-cover" />
-          )}
-          <AvatarFallback className="text-[10px]">{member.initials}</AvatarFallback>
-        </Avatar>
-        <OnlineStatus isOnline={onlineUserIds.has(member.id)} className="absolute -bottom-0.5 -right-0.5" size="sm" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <span className="text-sm truncate block">
-          {member.id === currentUserId ? 'You' : member.name}
-        </span>
+      <div
+        className={cn('flex items-center gap-2.5 flex-1 min-w-0', member.id !== currentUserId && 'cursor-pointer')}
+        onClick={() => handleOpenMemberDM(member)}
+      >
+        <div className="relative shrink-0">
+          <Avatar className="h-8 w-8">
+            {member.avatarUrl && (
+              <AvatarImage src={member.avatarUrl} alt={member.name} className="object-cover" />
+            )}
+            <AvatarFallback className="text-[10px]">{member.initials}</AvatarFallback>
+          </Avatar>
+          <OnlineStatus isOnline={onlineUserIds.has(member.id)} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm truncate block">
+            {member.id === currentUserId ? 'You' : member.name}
+          </span>
+        </div>
       </div>
       {isGroup && member.role?.toLowerCase() === 'owner' && (
         <span className="text-[11px] text-muted-foreground shrink-0">owner</span>

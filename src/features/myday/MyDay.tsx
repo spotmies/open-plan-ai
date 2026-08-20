@@ -21,6 +21,7 @@ import { useProjectMembers } from '@/hooks/useProjectTeam';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { attachmentsService } from '@/services/attachments.service';
+import { commentsService } from '@/services/comments.service';
 import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
 
@@ -223,6 +224,21 @@ export default function MyDay() {
           );
         } catch {
           toast.warning('Task created but some attachments failed to upload');
+        }
+      }
+      if (newTask.comments && newTask.comments.length > 0 && created?.id) {
+        try {
+          await Promise.all(
+            newTask.comments.map(comment =>
+              commentsService.create({
+                content: comment.content,
+                entity_id: created.id,
+                entity_type: 'task',
+              })
+            )
+          );
+        } catch {
+          toast.warning('Task created but some comments failed to save');
         }
       }
       toast.success('Task created');

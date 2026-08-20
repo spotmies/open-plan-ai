@@ -77,7 +77,7 @@ export function ConversationItem({
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       className={cn(
-        'group flex items-center gap-3 w-full px-3 py-2.5 text-left rounded-md transition-colors overflow-hidden cursor-pointer',
+        'group relative flex items-center gap-3 w-full px-3 py-2.5 text-left rounded-md transition-colors overflow-hidden cursor-pointer',
         isActive ? 'bg-accent' : 'hover:bg-accent/50'
       )}
     >
@@ -96,30 +96,39 @@ export function ConversationItem({
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between">
-          <span className={cn('text-sm truncate', unreadCount > 0 ? 'font-semibold' : 'font-medium')}>
+        <div className="flex items-center justify-between gap-2">
+          <span className={cn('text-sm truncate', unreadCount > 0 ? 'font-semibold text-foreground' : 'font-medium')}>
             <HighlightedText text={displayName} query={searchQuery} />
           </span>
-          <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{timeAgo}</span>
+          <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{timeAgo}</span>
         </div>
-        {conversation.lastMessage && (
-          <p className={cn('text-xs truncate mt-0.5', unreadCount > 0 ? 'text-foreground' : 'text-muted-foreground')}>
-            {conversation.lastMessage.senderId === currentUserId
-              ? 'You: '
-              : conversation.type === 'group' && conversation.lastMessage.senderName && `${conversation.lastMessage.senderName}: `}
-            {messagePreviewText(conversation.lastMessage.content)}
-            {conversation.lastMessage.status === 'pending' && (
-              <Clock className="inline-block h-3 w-3 ml-1 text-muted-foreground" />
-            )}
-          </p>
-        )}
-      </div>
+        <div className="flex items-center justify-between gap-2 mt-0.5 min-h-[18px]">
+          {conversation.lastMessage ? (
+            <p className={cn('text-xs truncate flex-1 min-w-0', unreadCount > 0 ? 'text-foreground font-medium' : 'text-muted-foreground')}>
+              {conversation.lastMessage.senderId === currentUserId
+                ? 'You: '
+                : conversation.type === 'group' && conversation.lastMessage.senderName && `${conversation.lastMessage.senderName}: `}
+              {messagePreviewText(conversation.lastMessage.content)}
+              {conversation.lastMessage.status === 'pending' && (
+                <Clock className="inline-block h-3 w-3 ml-1 text-muted-foreground" />
+              )}
+            </p>
+          ) : (
+            <div className="flex-1" />
+          )}
 
-      <UnreadBadge count={unreadCount} />
+          {unreadCount > 0 && (
+            <UnreadBadge count={unreadCount} className="shrink-0" />
+          )}
+        </div>
+      </div>
 
       {showActionsMenu && (
         <div
-          className={cn('shrink-0 transition-opacity', isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
+          className={cn(
+            'absolute right-2 top-1/2 -translate-y-1/2 transition-opacity z-10',
+            isMenuOpen ? 'opacity-100' : 'opacity-0 md:group-hover:opacity-100 pointer-events-none md:group-hover:pointer-events-auto'
+          )}
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
@@ -127,7 +136,7 @@ export function ConversationItem({
               <button
                 type="button"
                 title="More options"
-                className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground transition-colors"
+                className="h-7 w-7 flex items-center justify-center rounded-md bg-background/90 backdrop-blur-sm border border-border shadow-xs text-muted-foreground hover:bg-background hover:text-foreground transition-colors pointer-events-auto"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>

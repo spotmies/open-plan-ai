@@ -1146,10 +1146,10 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
                 <div
                   ref={mentionOverlayRef}
                   aria-hidden="true"
-                  className="absolute inset-x-0 top-1/2 -translate-y-1/2 overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
+                  className="absolute inset-x-0 flex items-center overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
                   style={TEXT_SIZE_ADJUST_STYLE}
                 >
-                  {mentionHighlightNodes}
+                  <span className="w-full">{mentionHighlightNodes}</span>
                 </div>
                 <textarea
                   ref={textareaRef}
@@ -1216,10 +1216,10 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
               <div
                 ref={mentionOverlayRef}
                 aria-hidden="true"
-                className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-0.5 overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
+                className="absolute inset-x-0 flex items-center px-0.5 overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
                 style={TEXT_SIZE_ADJUST_STYLE}
               >
-                {mentionHighlightNodes}
+                <span className="w-full">{mentionHighlightNodes}</span>
               </div>
               <textarea
                 ref={textareaRef}
@@ -1230,7 +1230,7 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
                 onScroll={syncOverlayScroll}
                 placeholder={otherMembers.length <= 1 ? 'Type a message...' : 'Type a message... Use @ to mention'}
                 rows={1}
-                className="relative w-full resize-none bg-transparent text-sm leading-5 max-h-[140px] text-transparent caret-foreground placeholder:text-muted-foreground/90 focus-visible:outline-none"
+                className="relative w-full resize-none overflow-hidden bg-transparent text-sm leading-5 max-h-[140px] text-transparent caret-foreground placeholder:text-muted-foreground/90 focus-visible:outline-none"
                 style={TEXT_SIZE_ADJUST_STYLE}
                 disabled={readOnly}
               />

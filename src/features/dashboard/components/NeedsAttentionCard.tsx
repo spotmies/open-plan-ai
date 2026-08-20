@@ -55,7 +55,7 @@ export function NeedsAttentionCard({ overdueProject, atRiskCount, bomRejected }:
   }
 
   return (
-    <Card>
+    <Card className="rounded-2xl border-border/70 shadow-sm overflow-hidden min-w-0">
       <CardHeader className="px-3 py-2.5 flex flex-row items-center justify-between gap-2 space-y-0">
         <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-priority-medium">
           <Zap className="h-3.5 w-3.5" />

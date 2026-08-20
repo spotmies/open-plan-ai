@@ -272,7 +272,9 @@ export const TaskDetailModal = ({
   const [newComment, setNewComment] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentValue, setEditingCommentValue] = useState('');
-  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [pendingNewCommentIds, setPendingNewCommentIds] = useState<Set<string>>(new Set());
+  const [pendingEditedComments, setPendingEditedComments] = useState<Map<string, string>>(new Map());
+  const [pendingDeletedCommentIds, setPendingDeletedCommentIds] = useState<Set<string>>(new Set());
   const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
   const [isModulePopoverOpen, setIsModulePopoverOpen] = useState(false);
   const [isBlockingTaskPopoverOpen, setIsBlockingTaskPopoverOpen] = useState(false);
@@ -598,10 +600,31 @@ export const TaskDetailModal = ({
   };
 
   const handleCancel = () => {
-    // Reset local edits back to original task from props
+    setNewComment('');
+    setEditingCommentId(null);
+    setEditingCommentValue('');
+    setPendingNewCommentIds(new Set());
+    setPendingEditedComments(new Map());
+    setPendingDeletedCommentIds(new Set());
+    setNewChecklistItem('');
+    setEditingChecklistId(null);
+    setEditingChecklistValue('');
+    setVideoLinkInput('');
+    setTagSearch('');
+    setEditingTagIndex(null);
+    setEditingTagValue('');
+    setEditingTagOriginal(null);
+
     if (task) {
       setEditedTask(task);
+      const linkedTaskIds = task.id
+        ? allTasks.filter(t => t.blockedBy?.includes(task.id)).map(t => t.id)
+        : [];
+      setLocalBlockingToIds(linkedTaskIds);
+    } else {
+      setPendingFiles([]);
     }
+
     onClose();
   };
 
@@ -893,59 +916,27 @@ export const TaskDetailModal = ({
     const content = newComment.trim();
     setNewComment('');
 
-    // If in view mode, persist to DB immediately
-    if (mode !== 'create' && editedTask.id) {
-      try {
-        const dbComment = await commentsService.create({
-          author_id: profile.id,
-          content: content,
-          entity_id: editedTask.id,
-          entity_type: 'task',
-        });
-
-        const newCommentObj: Comment = {
-          id: dbComment.id,
-          content: dbComment.content,
-          author: {
-            id: profile.id,
-            name: profile.name || profile.email,
-            initials: profile.initials || '',
-            avatar: profile.avatarUrl || undefined,
-            email: profile.email,
-            role: 'member'
-          },
-          createdAt: dbComment.createdAt || new Date().toISOString(),
-        };
-
-        setEditedTask(prev => ({
-          ...prev,
-          comments: [...(prev.comments || []), newCommentObj]
-        }));
-
-      } catch (error) {
-        logger.error('Failed to add comment:', error);
-        setNewComment(content);
-        toast.error('Failed to add comment');
-      }
-    } else {
-      // Just update local state for new tasks
-      const newCommentObj: Comment = {
-        id: `comment-${Date.now()}`,
-        content: content,
-        author: {
-          id: profile.id,
-          name: profile.name || profile.email,
-          initials: profile.initials || '',
-          avatar: profile.avatarUrl || undefined,
-          email: profile.email,
-          role: profile.role || 'member'
-        },
-        createdAt: new Date().toISOString(),
-      };
-      setEditedTask(prev => ({
-        ...prev,
-        comments: [...(prev.comments || []), newCommentObj]
-      }));
+    // Stage locally; only persisted to the DB when "Update" is clicked (see handleUpdateTask)
+    const newCommentId = `comment-${Date.now()}`;
+    const newCommentObj: Comment = {
+      id: newCommentId,
+      content: content,
+      author: {
+        id: profile.id,
+        name: profile.name || profile.email,
+        initials: profile.initials || '',
+        avatar: profile.avatarUrl || undefined,
+        email: profile.email,
+        role: profile.role || 'member'
+      },
+      createdAt: new Date().toISOString(),
+    };
+    setEditedTask(prev => ({
+      ...prev,
+      comments: [...(prev.comments || []), newCommentObj]
+    }));
+    if (mode !== 'create') {
+      setPendingNewCommentIds(prev => new Set(prev).add(newCommentId));
     }
   };
 
@@ -964,45 +955,41 @@ export const TaskDetailModal = ({
     const commentId = editingCommentId;
     const content = editingCommentValue.trim();
 
-    if (mode !== 'create') {
-      try {
-        await commentsService.update(commentId, content);
-      } catch (error) {
-        logger.error('Failed to update comment:', error);
-        toast.error('Failed to update comment');
-        return;
-      }
-    }
-
+    // Stage locally; only persisted to the DB when "Update" is clicked (see handleUpdateTask)
     setEditedTask(prev => ({
       ...prev,
       comments: (prev.comments || []).map(c =>
         c.id === commentId ? { ...c, content } : c
       ),
     }));
+    if (mode !== 'create' && !pendingNewCommentIds.has(commentId)) {
+      setPendingEditedComments(prev => new Map(prev).set(commentId, content));
+    }
     setEditingCommentId(null);
     setEditingCommentValue('');
   };
 
-  const handleDeleteComment = async () => {
-    if (!deletingCommentId) return;
-    const commentId = deletingCommentId;
-    setDeletingCommentId(null);
-
-    if (mode !== 'create') {
-      try {
-        await commentsService.delete(commentId);
-      } catch (error) {
-        logger.error('Failed to delete comment:', error);
-        toast.error('Failed to delete comment');
-        return;
-      }
-    }
-
+  const handleDeleteComment = async (commentId: string) => {
+    // Stage locally; only persisted to the DB when "Update" is clicked (see handleUpdateTask)
     setEditedTask(prev => ({
       ...prev,
       comments: (prev.comments || []).filter(c => c.id !== commentId),
     }));
+    if (pendingNewCommentIds.has(commentId)) {
+      setPendingNewCommentIds(prev => {
+        const next = new Set(prev);
+        next.delete(commentId);
+        return next;
+      });
+    } else if (mode !== 'create') {
+      setPendingDeletedCommentIds(prev => new Set(prev).add(commentId));
+    }
+    setPendingEditedComments(prev => {
+      if (!prev.has(commentId)) return prev;
+      const next = new Map(prev);
+      next.delete(commentId);
+      return next;
+    });
   };
 
   const availableTasksForBlocking = allTasks.filter(
@@ -1032,6 +1019,41 @@ export const TaskDetailModal = ({
     try {
       // Commit the main task changes
       await onUpdate(editedTask);
+
+      // Commit staged comment changes (add/edit/delete) now that Update was confirmed
+      if (mode !== 'create' && editedTask.id) {
+        for (const id of pendingDeletedCommentIds) {
+          try {
+            await commentsService.delete(id);
+          } catch (error) {
+            logger.error('Failed to delete comment:', error);
+          }
+        }
+        for (const [id, content] of pendingEditedComments) {
+          try {
+            await commentsService.update(id, content);
+          } catch (error) {
+            logger.error('Failed to update comment:', error);
+          }
+        }
+        for (const id of pendingNewCommentIds) {
+          const comment = editedTask.comments?.find(c => c.id === id);
+          if (!comment || !profile) continue;
+          try {
+            await commentsService.create({
+              author_id: profile.id,
+              content: comment.content,
+              entity_id: editedTask.id,
+              entity_type: 'task',
+            });
+          } catch (error) {
+            logger.error('Failed to add comment:', error);
+          }
+        }
+        setPendingDeletedCommentIds(new Set());
+        setPendingEditedComments(new Map());
+        setPendingNewCommentIds(new Set());
+      }
 
       // Compute blocking-to diffs: tasks where THIS task is listed in their blockedBy
       const originalBlockingToIds = allTasks
@@ -1224,7 +1246,7 @@ export const TaskDetailModal = ({
           className={cn(
             'p-0 flex flex-col gap-0 overflow-hidden',
             isMobile
-              ? 'inset-0 left-0 top-0 h-[100dvh] w-screen max-w-none max-h-none translate-x-0 translate-y-0 rounded-none border-0'
+              ? 'inset-0 left-0 top-0 h-[100dvh] w-screen max-w-none max-h-none translate-x-0 translate-y-0 rounded-none border-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0 data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0 data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom duration-300 data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100'
               : 'max-w-4xl max-h-[90vh]'
           )}
           hideClose
@@ -2354,13 +2376,23 @@ export const TaskDetailModal = ({
                   {attachments.map((attachment) => {
                     const FileIcon = getFileIcon(attachment.fileType);
                     const viewUrl = resolveFileUrl(attachment.url) ?? attachment.url;
+                    const isImage = attachment.fileType.startsWith('image/') && !failedThumbnails.has(attachment.id);
                     return (
                       <div
                         key={attachment.id}
                         className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 group cursor-pointer hover:bg-muted"
                         onClick={() => setPreviewingFile({ url: viewUrl, fileName: attachment.filename, mimeType: attachment.fileType })}
                       >
-                        <FileIcon className="h-8 w-8 text-muted-foreground" />
+                        {isImage ? (
+                          <img
+                            src={viewUrl}
+                            alt={attachment.filename}
+                            className="h-8 w-8 rounded object-cover shrink-0 border"
+                            onError={() => setFailedThumbnails(prev => new Set(prev).add(attachment.id))}
+                          />
+                        ) : (
+                          <FileIcon className="h-8 w-8 text-muted-foreground shrink-0" />
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{attachment.filename}</p>
                           <p className="text-xs text-muted-foreground">
@@ -2808,7 +2840,7 @@ export const TaskDetailModal = ({
                                 <button
                                   type="button"
                                   className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-                                  onClick={() => setDeletingCommentId(comment.id)}
+                                  onClick={() => handleDeleteComment(comment.id)}
                                   aria-label="Delete comment"
                                 >
                                   <Trash2 className="h-3 w-3" />
@@ -2934,15 +2966,6 @@ export const TaskDetailModal = ({
           onConfirm={handleDelete}
           title="Delete Task"
           description="Are you sure you want to delete this task? This action cannot be undone."
-          confirmText="Delete"
-          variant="destructive"
-        />
-        <ConfirmationDialog
-          open={!!deletingCommentId}
-          onOpenChange={(open) => !open && setDeletingCommentId(null)}
-          onConfirm={handleDeleteComment}
-          title="Delete Comment"
-          description="Are you sure you want to delete this comment? This action cannot be undone."
           confirmText="Delete"
           variant="destructive"
         />

@@ -13,7 +13,7 @@ import {
   IssueSeverity,
   TeamMember,
 } from '@/types';
-import { IssueDetailContent } from './IssueDetailContent';
+import { IssueDetailContent, IssueDetailContentHandle } from './IssueDetailContent';
 import { Button } from '@/components/ui/button';
 import { DialogClose } from '@/components/ui/dialog';
 import {
@@ -101,6 +101,7 @@ export function IssueDetailModal({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isMobileEditMode, setIsMobileEditMode] = useState(false);
   const initialSnapshotRef = useRef<string>('');
+  const issueContentRef = useRef<IssueDetailContentHandle>(null);
   const { canEditResource, canDeleteResource } = useProjectPermissions(editedIssue?.projectId);
   const canEditIssue = useMemo(
     () =>
@@ -152,9 +153,10 @@ export function IssueDetailModal({
     }
   };
 
-  const handleUpdateIssue = () => {
+  const handleUpdateIssue = async () => {
     if (editedIssue) {
       onUpdate(editedIssue);
+      await issueContentRef.current?.commitPendingComments();
       onClose();
     }
   };
@@ -164,9 +166,9 @@ export function IssueDetailModal({
       <DialogContent
         hideClose
         className={cn(
-          'p-0 flex flex-col gap-0 overflow-hidden',
+          'p-0 flex flex-col gap-0 overflow-hidden !duration-0 data-[state=open]:!animate-none data-[state=closed]:!animate-none',
           isMobile
-            ? 'inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0'
+            ? 'inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0 data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0 data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom duration-300 data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100'
             : 'max-w-4xl max-h-[90vh]'
         )}
         onPointerDownOutside={(e) => e.preventDefault()}
@@ -256,7 +258,6 @@ export function IssueDetailModal({
                 onClick={() => {
                   if (editedIssue.projectId) {
                     navigate(`/projects/${editedIssue.projectId}/issues/${editedIssue.id}/full`);
-                    onClose();
                   } else {
                     logger.warn('Could not expand issue: missing projectId', { issueId: editedIssue.id });
                   }
@@ -281,6 +282,7 @@ export function IssueDetailModal({
         )}>
           <div className="p-6">
             <IssueDetailContent
+              ref={issueContentRef}
               issue={editedIssue}
               tasks={tasks}
               teamMembers={teamMembers}

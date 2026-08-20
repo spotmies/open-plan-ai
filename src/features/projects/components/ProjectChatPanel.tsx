@@ -41,7 +41,7 @@ export function ProjectChatPanel({ open, onOpenChange, conversationId }: Project
     useMessages(activeId);
   const { reactionMap, handleToggleReaction } = useReactions(messages, user?.id, activeId);
   const { typingNames, broadcastTyping } = useTypingIndicator(activeId, activeConv?.members, user?.id);
-  const { readReceiptMap } = useReadReceipts(activeId, messages, user?.id, activeConv?.members ?? []);
+  const { readReceiptMap } = useReadReceipts(activeId, messages, user?.id, activeConv?.members);
 
   useEffect(() => {
     setActiveConversation(activeId ?? null);

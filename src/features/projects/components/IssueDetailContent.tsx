@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -128,6 +128,10 @@ interface IssueDetailContentProps {
     isMobileEditMode?: boolean;
 }
 
+export interface IssueDetailContentHandle {
+    commitPendingComments: () => Promise<void>;
+}
+
 
 const categoryOptions: { value: IssueCategory; label: string; icon: typeof Bug }[] = [
     { value: 'defect', label: 'Defect', icon: Bug },
@@ -157,7 +161,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // mutation resolves — guard against firing comment/attachment fetches with it.
 const isUuid = (id: string) => UUID_REGEX.test(id);
 
-export function IssueDetailContent({
+export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDetailContentProps>(function IssueDetailContent({
     issue,
     tasks = [],
     teamMembers = [],
@@ -171,7 +175,7 @@ export function IssueDetailContent({
     onPendingFilesChange,
     projectName,
     isMobileEditMode,
-}: IssueDetailContentProps) {
+}, ref) {
     const { user: profile } = useAuth();
     const isMobile = useIsMobile();
     const isMobileLayout = isMobile && mode !== 'create';
@@ -183,7 +187,9 @@ export function IssueDetailContent({
     const [newComment, setNewComment] = useState('');
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentValue, setEditingCommentValue] = useState('');
-    const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+    const [pendingNewCommentIds, setPendingNewCommentIds] = useState<Set<string>>(new Set());
+    const [pendingEditedComments, setPendingEditedComments] = useState<Map<string, string>>(new Map());
+    const [pendingDeletedCommentIds, setPendingDeletedCommentIds] = useState<Set<string>>(new Set());
     const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
     const [isBlockingTaskPopoverOpen, setIsBlockingTaskPopoverOpen] = useState(false);
     const [isBlockedByTaskPopoverOpen, setIsBlockedByTaskPopoverOpen] = useState(false);
@@ -577,49 +583,25 @@ export function IssueDetailContent({
 
     const getTaskById = (id: string) => tasks.find(t => t.id === id);
 
+    // Comment add/edit/delete are staged locally only; they're persisted to the DB
+    // via commitPendingComments(), which fires when the real "Update"/"Save" action runs.
     const handleAddComment = async () => {
         if (!newComment.trim()) return;
         const content = newComment.trim();
         setNewComment('');
 
+        const newCommentId = `comment-${Date.now()}`;
+        const newCommentObj: Comment = {
+            id: newCommentId,
+            content,
+            author: profile
+                ? { id: profile.id, name: profile.name || profile.email, initials: profile.initials || '?', avatar: profile.avatarUrl || undefined, email: profile.email, role: profile.role || 'member' }
+                : { id: 'unknown', name: 'Unknown User', initials: '?', email: '', role: 'member' },
+            createdAt: new Date().toISOString(),
+        };
+        handleFieldChange('comments', [...comments, newCommentObj]);
         if (mode !== 'create' && issue?.id && isUuid(issue.id)) {
-            try {
-                const dbComment = await commentsService.create({
-                    content,
-                    entity_id: issue.id,
-                    entity_type: 'issue',
-                });
-                const newCommentObj: Comment = {
-                    id: dbComment.id,
-                    content: dbComment.content,
-                    author: {
-                        id: dbComment.author?.id || profile?.id || '',
-                        name: dbComment.author?.name || profile?.name || 'You',
-                        initials: dbComment.author?.initials || profile?.initials || '?',
-                        avatar: dbComment.author?.avatarUrl || undefined,
-                        email: profile?.email || '',
-                        role: 'member',
-                    },
-                    createdAt: dbComment.createdAt || new Date().toISOString(),
-                };
-                setEditedIssue(prev => {
-                    if (!prev) return prev;
-                    return { ...prev, comments: [...(prev.comments || []), newCommentObj] };
-                });
-            } catch {
-                setNewComment(content);
-                toast.error('Failed to add comment');
-            }
-        } else {
-            const newCommentObj: Comment = {
-                id: `comment-${Date.now()}`,
-                content,
-                author: profile
-                    ? { id: profile.id, name: profile.name || profile.email, initials: profile.initials || '?', avatar: profile.avatarUrl || undefined, email: profile.email, role: profile.role || 'member' }
-                    : { id: 'unknown', name: 'Unknown User', initials: '?', email: '', role: 'member' },
-                createdAt: new Date().toISOString(),
-            };
-            handleFieldChange('comments', [...comments, newCommentObj]);
+            setPendingNewCommentIds(prev => new Set(prev).add(newCommentId));
         }
     };
 
@@ -638,45 +620,70 @@ export function IssueDetailContent({
         const commentId = editingCommentId;
         const content = editingCommentValue.trim();
 
-        if (mode !== 'create') {
-            try {
-                await commentsService.update(commentId, content);
-            } catch {
-                toast.error('Failed to update comment');
-                return;
-            }
+        handleFieldChange('comments', comments.map(c => c.id === commentId ? { ...c, content } : c));
+        if (mode !== 'create' && !pendingNewCommentIds.has(commentId)) {
+            setPendingEditedComments(prev => new Map(prev).set(commentId, content));
         }
-
-        setEditedIssue(prev => {
-            if (!prev) return prev;
-            return {
-                ...prev,
-                comments: (prev.comments || []).map(c => c.id === commentId ? { ...c, content } : c),
-            };
-        });
         setEditingCommentId(null);
         setEditingCommentValue('');
     };
 
-    const handleDeleteComment = async () => {
-        if (!deletingCommentId) return;
-        const commentId = deletingCommentId;
-        setDeletingCommentId(null);
+    const handleDeleteComment = async (commentId: string) => {
+        if (pendingNewCommentIds.has(commentId)) {
+            setPendingNewCommentIds(prev => {
+                const next = new Set(prev);
+                next.delete(commentId);
+                return next;
+            });
+        } else if (mode !== 'create') {
+            setPendingDeletedCommentIds(prev => new Set(prev).add(commentId));
+        }
+        setPendingEditedComments(prev => {
+            if (!prev.has(commentId)) return prev;
+            const next = new Map(prev);
+            next.delete(commentId);
+            return next;
+        });
 
-        if (mode !== 'create') {
+        handleFieldChange('comments', comments.filter(c => c.id !== commentId));
+    };
+
+    const commitPendingComments = async () => {
+        if (mode === 'create' || !issue?.id || !isUuid(issue.id)) return;
+
+        for (const id of pendingDeletedCommentIds) {
             try {
-                await commentsService.delete(commentId);
+                await commentsService.delete(id);
             } catch {
                 toast.error('Failed to delete comment');
-                return;
             }
         }
-
-        setEditedIssue(prev => {
-            if (!prev) return prev;
-            return { ...prev, comments: (prev.comments || []).filter(c => c.id !== commentId) };
-        });
+        for (const [id, content] of pendingEditedComments) {
+            try {
+                await commentsService.update(id, content);
+            } catch {
+                toast.error('Failed to update comment');
+            }
+        }
+        for (const id of pendingNewCommentIds) {
+            const comment = (editedIssue?.comments || []).find(c => c.id === id);
+            if (!comment) continue;
+            try {
+                await commentsService.create({
+                    content: comment.content,
+                    entity_id: issue.id,
+                    entity_type: 'issue',
+                });
+            } catch {
+                toast.error('Failed to add comment');
+            }
+        }
+        setPendingDeletedCommentIds(new Set());
+        setPendingEditedComments(new Map());
+        setPendingNewCommentIds(new Set());
     };
+
+    useImperativeHandle(ref, () => ({ commitPendingComments }));
 
     return (
         <div className="flex flex-col h-full bg-background">
@@ -718,16 +725,6 @@ export function IssueDetailContent({
                     }}
                     title="Delete Issue"
                     description="Are you sure you want to delete this issue? This action cannot be undone."
-                    confirmText="Delete"
-                    variant="destructive"
-                />
-
-                <ConfirmationDialog
-                    open={!!deletingCommentId}
-                    onOpenChange={(open) => !open && setDeletingCommentId(null)}
-                    onConfirm={handleDeleteComment}
-                    title="Delete Comment"
-                    description="Are you sure you want to delete this comment? This action cannot be undone."
                     confirmText="Delete"
                     variant="destructive"
                 />
@@ -2069,7 +2066,7 @@ export function IssueDetailContent({
                                                         <button
                                                             type="button"
                                                             className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-                                                            onClick={() => setDeletingCommentId(comment.id)}
+                                                            onClick={() => handleDeleteComment(comment.id)}
                                                             aria-label="Delete comment"
                                                         >
                                                             <Trash2 className="h-3 w-3" />
@@ -2167,6 +2164,7 @@ export function IssueDetailContent({
                                         setIsSaving(true);
                                         try {
                                             await onUpdate(editedIssue);
+                                            await commitPendingComments();
                                             toast.success('Issue updated successfully');
                                         } catch (err) {
                                             toast.error('Failed to update issue');
@@ -2197,4 +2195,4 @@ export function IssueDetailContent({
             />
         </div >
     );
-}
+});

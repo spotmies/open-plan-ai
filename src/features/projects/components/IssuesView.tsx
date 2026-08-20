@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ColorSwatchPicker } from '@/components/shared/ColorSwatchPicker';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -32,6 +32,7 @@ import {
   MoreHorizontal,
   Trash2,
   Calendar,
+  Loader2,
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -179,7 +180,7 @@ export function IssuesView({
   const { id: routeProjectId } = useParams();
   const { user } = useAuth();
   const isMobile = useIsMobile();
-  const { data: apiIssueColumns } = useIssueColumns(routeProjectId);
+  const { data: apiIssueColumns, isLoading: isIssueColumnsLoading } = useIssueColumns(routeProjectId);
   const createIssueColumn = useCreateIssueColumn(routeProjectId);
   const updateIssueColumn = useUpdateIssueColumn(routeProjectId);
   const deleteIssueColumn = useDeleteIssueColumn(routeProjectId);
@@ -191,7 +192,7 @@ export function IssuesView({
   const [internalStatusFilter, setInternalStatusFilter] = useState<string[]>([]);
   const [localIssues, setLocalIssues] = useState<Issue[]>(issues);
   const [columns, setColumns] = useState<IssuesKanbanColumn[]>(() =>
-    apiColumnsToKanban(DEFAULT_ISSUE_COLUMNS),
+    apiColumnsToKanban(apiIssueColumns && apiIssueColumns.length > 0 ? apiIssueColumns : DEFAULT_ISSUE_COLUMNS),
   );
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -205,6 +206,7 @@ export function IssuesView({
   const [expandedChecklistPreview, setExpandedChecklistPreview] = useState<Record<string, boolean>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [selectedMobileStatus, setSelectedMobileStatus] = useState<string>('all');
 
   // Sync columns from API
   useEffect(() => {
@@ -537,6 +539,53 @@ export function IssuesView({
     (column) => !(column.isSpecial && column.status === 'dependencies' && dependencyIssuesCount === 0),
   );
 
+  // Mobile list view groups issues into the project's buckets, mirroring MobileTaskListView.
+  const mobileStatusCounts = sortedIssues.reduce<Record<string, number>>((acc, issue) => {
+    acc[issue.status] = (acc[issue.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  const MOBILE_OTHER_BUCKET = '__other__';
+  const issueMatchesMobileBucket = (issue: Issue, bucketKey: string) =>
+    bucketKey === MOBILE_OTHER_BUCKET
+      ? !columns.some((column) => column.status === issue.status)
+      : issue.status === bucketKey;
+
+  const ungroupedMobileCount = sortedIssues.filter(
+    (issue) => !columns.some((column) => column.status === issue.status),
+  ).length;
+
+  const mobileBuckets = [
+    ...columns
+      .filter((column) => column.status !== 'dependencies' && (mobileStatusCounts[column.status] || 0) > 0)
+      .map((column) => ({
+        key: column.status,
+        label: column.label,
+        color: column.color,
+        count: mobileStatusCounts[column.status] || 0,
+      })),
+    ...(ungroupedMobileCount > 0
+      ? [{ key: MOBILE_OTHER_BUCKET, label: 'Other', color: '#6b7280', count: ungroupedMobileCount }]
+      : []),
+  ];
+
+  // A bucket can disappear while it's selected (last issue moved out) — fall back to All.
+  const activeMobileStatus =
+    selectedMobileStatus !== 'all' && !mobileBuckets.some((bucket) => bucket.key === selectedMobileStatus)
+      ? 'all'
+      : selectedMobileStatus;
+
+  const mobileDisplayedIssues = activeMobileStatus === 'all'
+    ? sortedIssues
+    : sortedIssues.filter((issue) => issueMatchesMobileBucket(issue, activeMobileStatus));
+
+  const mobileGroupedSections = mobileBuckets
+    .map((bucket) => ({
+      ...bucket,
+      items: mobileDisplayedIssues.filter((issue) => issueMatchesMobileBucket(issue, bucket.key)),
+    }))
+    .filter((group) => group.items.length > 0);
+
   const handleDragEnd = (result: DropResult) => {
     const pointer = getLastPointerPosition();
     handleAutoScrollDragEnd();
@@ -686,7 +735,12 @@ export function IssuesView({
 
   return (
     <div className="space-y-4">
-      {viewMode === 'kanban' ? (
+      {viewMode === 'kanban' && isIssueColumnsLoading && !apiIssueColumns ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <p className="text-sm">Loading board…</p>
+        </div>
+      ) : viewMode === 'kanban' ? (
         <DragDropContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <Droppable droppableId="board" type="COLUMN" direction={isMobile ? 'vertical' : 'horizontal'}>
             {(provided) => (
@@ -1023,50 +1077,16 @@ export function IssuesView({
                         <h3 className="font-medium text-sm text-muted-foreground">Add Bucket</h3>
                       </div>
                       )}
-                      <Dialog open={isAddColumnOpen} onOpenChange={setIsAddColumnOpen}>
-                        <DialogTrigger asChild>
-                          <div className="px-2">
-                            <Button
-                              variant="ghost"
-                              className="w-full h-8 text-xs text-muted-foreground hover:text-foreground border border-dashed border-muted-foreground/30 hover:border-muted-foreground/50"
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Add New Bucket
-                            </Button>
-                          </div>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Add New Bucket</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4 pt-4">
-                            <div className="space-y-2">
-                              <Label>Bucket Name</Label>
-                              <Input
-                                placeholder="e.g., In Review"
-                                value={newColumnName}
-                                maxLength={30}
-                                onChange={(e) => setNewColumnName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Color</Label>
-                              <ColorSwatchPicker
-                                value={newColumnColor}
-                                onChange={setNewColumnColor}
-                              />
-                            </div>
-                            <Button
-                              onClick={handleAddColumn}
-                              disabled={!newColumnName.trim() || createIssueColumn.isPending}
-                              className="w-full"
-                            >
-                              Add Bucket
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <div className="px-2">
+                        <Button
+                          variant="ghost"
+                          className="w-full h-8 text-xs text-muted-foreground hover:text-foreground border border-dashed border-muted-foreground/30 hover:border-muted-foreground/50"
+                          onClick={() => setIsAddColumnOpen(true)}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add New Bucket
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1075,73 +1095,132 @@ export function IssuesView({
           </Droppable>
         </DragDropContext>
       ) : isMobile ? (
-        sortedIssues.length === 0 ? (
-          <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-            No issues found
+        <div className="space-y-4">
+          {/* Bucket filter pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-4 px-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <button
+              type="button"
+              onClick={() => setSelectedMobileStatus('all')}
+              className={cn(
+                'shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium border transition-colors',
+                activeMobileStatus === 'all'
+                  ? 'bg-foreground text-background border-foreground'
+                  : 'bg-background text-foreground border-border'
+              )}
+            >
+              All
+              <span className={cn('text-xs', activeMobileStatus === 'all' ? 'opacity-70' : 'text-muted-foreground')}>
+                {sortedIssues.length}
+              </span>
+            </button>
+            {mobileBuckets.map((bucket) => (
+              <button
+                key={bucket.key}
+                type="button"
+                onClick={() => setSelectedMobileStatus(bucket.key)}
+                className={cn(
+                  'shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium border transition-colors',
+                  activeMobileStatus === bucket.key
+                    ? 'bg-foreground text-background border-foreground'
+                    : 'bg-background text-foreground border-border'
+                )}
+              >
+                {bucket.label}
+                <span className={cn('text-xs', activeMobileStatus === bucket.key ? 'opacity-70' : 'text-muted-foreground')}>
+                  {bucket.count}
+                </span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setIsAddColumnOpen(true)}
+              aria-label="Add New Bucket"
+              className="shrink-0 flex items-center justify-center h-8 w-8 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground active:bg-muted transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {paginatedIssues.map((issue) => {
-              const severityDisplay = ISSUE_SEVERITY_DISPLAY[issue.severity];
-              const SeverityIcon = severityDisplay.icon;
-              const CategoryIcon = categoryConfig[issue.category].icon;
-              const statusBadge = getStatusBadge(issue.status);
-              const primaryAssignee = issue.assignees?.[0] ?? issue.reportedBy;
 
-              return (
-                <Card
-                  key={issue.id}
-                  onClick={() => handleIssueClick(issue)}
-                  className="p-4 rounded-2xl cursor-pointer active:bg-muted/40 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge className={cn('gap-1 shrink-0', severityDisplay.color)}>
-                      <SeverityIcon className="h-3 w-3" />
-                      {severityDisplay.label}
-                    </Badge>
-                    <Badge variant="outline" className={cn('shrink-0', statusBadge.color)}>
-                      {statusBadge.label}
-                    </Badge>
+          {mobileGroupedSections.length === 0 ? (
+            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+              No issues found
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {mobileGroupedSections.map((group) => (
+                <div key={group.key} className="space-y-3">
+                  <div className="flex items-center gap-2 px-0.5">
+                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                    <h3 className="text-sm font-semibold">{group.label}</h3>
+                    <span className="text-xs text-muted-foreground">{group.items.length}</span>
                   </div>
 
-                  <h4 className="font-semibold text-[15px] leading-snug mt-2.5">{issue.title}</h4>
+                  <div className="space-y-3">
+                    {group.items.map((issue) => {
+                      const severityDisplay = ISSUE_SEVERITY_DISPLAY[issue.severity];
+                      const SeverityIcon = severityDisplay.icon;
+                      const CategoryIcon = categoryConfig[issue.category].icon;
+                      const statusBadge = getStatusBadge(issue.status);
+                      const primaryAssignee = issue.assignees?.[0] ?? issue.reportedBy;
 
-                  {issue.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{issue.description}</p>
-                  )}
+                      return (
+                        <Card
+                          key={issue.id}
+                          onClick={() => handleIssueClick(issue)}
+                          className="p-4 rounded-2xl cursor-pointer active:bg-muted/40 transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge className={cn('gap-1 shrink-0', severityDisplay.color)}>
+                              <SeverityIcon className="h-3 w-3" />
+                              {severityDisplay.label}
+                            </Badge>
+                            <Badge variant="outline" className={cn('shrink-0', statusBadge.color)}>
+                              {statusBadge.label}
+                            </Badge>
+                          </div>
 
-                  <Separator className="my-3" />
+                          <h4 className="font-semibold text-[15px] leading-snug mt-2.5">{issue.title}</h4>
 
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Avatar className="h-6 w-6 shrink-0">
-                        <AvatarImage src={resolveFileUrl(primaryAssignee.avatar) ?? primaryAssignee.avatar} alt={primaryAssignee.name} />
-                        <AvatarFallback className="text-[10px] bg-muted">{primaryAssignee.initials}</AvatarFallback>
-                      </Avatar>
-                      <span className="text-xs text-muted-foreground truncate min-w-0">{primaryAssignee.name}</span>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                        <CategoryIcon className="h-3.5 w-3.5" />
-                        {getCategoryLabel(issue)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <AttachmentBadges
-                        attachmentCounts={issue.attachmentCounts}
-                        videoLinksCount={issue.videoLinks?.length ?? 0}
-                        className="text-xs"
-                        iconClassName="h-3.5 w-3.5"
-                      />
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                        <Calendar className="h-3.5 w-3.5" />
-                        {new Date(issue.reportedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
+                          {issue.description && (
+                            <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{issue.description}</p>
+                          )}
+
+                          <Separator className="my-3" />
+
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Avatar className="h-6 w-6 shrink-0">
+                                <AvatarImage src={resolveFileUrl(primaryAssignee.avatar) ?? primaryAssignee.avatar} alt={primaryAssignee.name} />
+                                <AvatarFallback className="text-[10px] bg-muted">{primaryAssignee.initials}</AvatarFallback>
+                              </Avatar>
+                              <span className="text-xs text-muted-foreground truncate min-w-0">{primaryAssignee.name}</span>
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                                <CategoryIcon className="h-3.5 w-3.5" />
+                                {getCategoryLabel(issue)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <AttachmentBadges
+                                attachmentCounts={issue.attachmentCounts}
+                                videoLinksCount={issue.videoLinks?.length ?? 0}
+                                className="text-xs"
+                                iconClassName="h-3.5 w-3.5"
+                              />
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                                <Calendar className="h-3.5 w-3.5" />
+                                {new Date(issue.reportedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })}
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-        )
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       ) : (
         <div className="rounded-lg border">
           <Table>
@@ -1254,7 +1333,42 @@ export function IssuesView({
         </div>
       )}
 
-      {viewMode !== 'kanban' && issuesPaginationControls}
+      {viewMode !== 'kanban' && !isMobile && issuesPaginationControls}
+
+      {/* Add Bucket Dialog — shared by the desktop board and the mobile bucket pills */}
+      <Dialog open={isAddColumnOpen} onOpenChange={setIsAddColumnOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Bucket</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label>Bucket Name</Label>
+              <Input
+                placeholder="e.g., In Review"
+                value={newColumnName}
+                maxLength={30}
+                onChange={(e) => setNewColumnName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Color</Label>
+              <ColorSwatchPicker
+                value={newColumnColor}
+                onChange={setNewColumnColor}
+              />
+            </div>
+            <Button
+              onClick={handleAddColumn}
+              disabled={!newColumnName.trim() || createIssueColumn.isPending}
+              className="w-full"
+            >
+              Add Bucket
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Rename Bucket Dialog */}
       <Dialog
@@ -1266,7 +1380,7 @@ export function IssuesView({
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="w-[calc(100%-2rem)] rounded-2xl">
           <DialogHeader>
             <DialogTitle>Rename Bucket</DialogTitle>
           </DialogHeader>

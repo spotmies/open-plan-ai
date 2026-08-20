@@ -21,18 +21,18 @@ export function QuickViews({ activeQuickView, onSelect }: QuickViewsProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="px-1.5 pb-1">
+    <div className="px-2 pb-1">
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1 w-full px-2 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground rounded-md"
+        className="flex items-center gap-1.5 w-full px-2 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-md transition-colors"
         aria-expanded={expanded}
       >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         Quick views
       </button>
       {expanded && (
-        <div className="mt-0.5">
+        <div className="mt-0.5 space-y-0.5">
           {ITEMS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}

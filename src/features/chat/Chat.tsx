@@ -76,7 +76,7 @@ export default function Chat() {
     user?.id
   );
 
-  const { readReceiptMap } = useReadReceipts(activeId, messages, user?.id, activeConv?.members ?? []);
+  const { readReceiptMap } = useReadReceipts(activeId, messages, user?.id, activeConv?.members);
 
   useEffect(() => {
     if (conversationId && conversationId !== activeConversationId) {

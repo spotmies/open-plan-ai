@@ -294,8 +294,8 @@ function IssueViewControls({
   const [filterOpen, setFilterOpen] = useState(false);
   return (
     <div className="flex items-center gap-2">
-      {/* View Toggle */}
-      <div className="flex items-center gap-0.5 bg-muted/50 p-1 rounded-lg shrink-0">
+      {/* View Toggle (kanban/table has no distinct mobile layout — hidden below md) */}
+      <div className="hidden md:flex items-center gap-0.5 bg-muted/50 p-1 rounded-lg shrink-0">
         <Button
           variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
           size="sm"
@@ -319,7 +319,7 @@ function IssueViewControls({
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
             <Filter className="h-4 w-4" />
-            Filter
+            <span className="hidden md:inline">Filter</span>
             {activeFilterCount > 0 && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
                 {activeFilterCount}
@@ -528,7 +528,8 @@ export default function ProjectDetail() {
 
   const viewMode = viewModeStr || (isMobile ? 'list' : 'kanban');
   const moduleViewMode = moduleViewModeStr || (isMobile ? 'list' : 'kanban');
-  const issueViewMode = issueViewModeStr || (isMobile ? 'table' : 'kanban');
+  // Mobile has no kanban/table toggle — it always uses the grouped card list.
+  const issueViewMode = isMobile ? 'table' : (issueViewModeStr || 'kanban');
   const milestoneViewMode = milestoneViewModeStr || (isMobile ? 'list' : 'kanban');
 
   const setViewMode = (val: TaskViewMode) => setViewModeStr(val);
@@ -1284,6 +1285,22 @@ export default function ProjectDetail() {
         toast.warning('Task created but some attachments failed to upload');
       }
     }
+
+    if (newTask.comments && newTask.comments.length > 0 && created?.id) {
+      try {
+        await Promise.all(
+          newTask.comments.map(comment =>
+            commentsService.create({
+              content: comment.content,
+              entity_id: created.id,
+              entity_type: 'task',
+            })
+          )
+        );
+      } catch {
+        toast.warning('Task created but some comments failed to save');
+      }
+    }
   };
 
   const handleTaskUpdate = async (updatedTask: Task, onError?: () => void) => {
@@ -1362,11 +1379,11 @@ export default function ProjectDetail() {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-6 animate-fade-in w-full min-w-0">
+      <div className="grid grid-cols-1 gap-6 w-full min-w-0">
 
         {/* Section Tabs - Entity-based navigation */}
         <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
-          <div className="sticky top-0 z-20 bg-background">
+          <div className="sticky top-0 z-20 bg-background -mx-4 px-4 pt-2.5 pb-2.5 border-b md:border-b-0 md:static md:top-auto md:pt-0 md:mx-0 md:px-0 md:pb-0 [transform:translateZ(0)] will-change-transform">
           {!partId && !ecoId && !isMobileModuleDetailOpen && (
             <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
               {/* Left Side: Tabs */}
@@ -1507,7 +1524,7 @@ export default function ProjectDetail() {
 
           {/* Second Row: Search + View Toggle + Filter toolbar (below tabs, like BOM UI) */}
           {(section === 'tasks' || section === 'modules' || section === 'milestones' || section === 'issues') && !isMobileModuleDetailOpen && (
-            <div className="flex items-center justify-between gap-3 mt-3 pb-3 border-b w-full">
+            <div className="flex items-center justify-between gap-3 mt-3 md:pb-3 md:border-b w-full">
               {section === 'tasks' && (
                 <>
                   {/* Left: Search */}
@@ -1676,7 +1693,6 @@ export default function ProjectDetail() {
                       activeFilterCount={activeIssueFilterCount}
                       onClearFilters={clearIssueFilters}
                     />
-                    {isMobile && id && <SupportLinksSheet projectId={id} iconOnly />}
                     {isMobile && (
                       <button
                         type="button"

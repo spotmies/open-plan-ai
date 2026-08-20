@@ -347,7 +347,9 @@ const Team = () => {
 
   return (
     <>
-      <div className="space-y-6">
+      <div className={cn('h-full flex flex-col min-h-0', isMobile ? 'p-4' : 'p-6')}>
+        {/* Fixed top section: stats, pending invitations, search/invite bar never scroll */}
+        <div className="shrink-0 space-y-6">
         {/* Stats */}
         <div className="flex flex-wrap gap-3">
           <div className="bg-card rounded-lg px-3.5 py-2.5 flex-1 min-w-[140px] border border-border flex items-center gap-2.5">
@@ -535,7 +537,10 @@ const Team = () => {
             </Dialog>
           )}
         </div>
+        </div>
 
+        {/* Scrollable body: member list/table scrolls while the section above stays fixed */}
+        <div className="flex-1 min-h-0 overflow-y-auto mt-6">
         {/* Team Members */}
         {isMobile ? (
           <div className="space-y-2">
@@ -762,6 +767,7 @@ const Team = () => {
             </p>
           </div>
         )}
+        </div>
       </div >
 
       {/* Edit Member Dialog */}

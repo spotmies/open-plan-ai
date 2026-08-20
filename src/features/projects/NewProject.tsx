@@ -1185,6 +1185,12 @@ const NewProject = () => {
                     teamMembers
                       .filter(m => m.id !== currentUser?.id)
                       .filter(m => m.name.toLowerCase().includes(memberSearch.toLowerCase()))
+                      .sort((a, b) => {
+                        const aSelected = assignedMembers.some(am => am.memberId === a.id);
+                        const bSelected = assignedMembers.some(am => am.memberId === b.id);
+                        if (aSelected === bSelected) return 0;
+                        return aSelected ? -1 : 1;
+                      })
                       .map((member) => (
                         <div
                           key={member.id}

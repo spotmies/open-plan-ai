@@ -516,6 +516,7 @@ export function MessageBubble({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   // Touch devices don't fire hover reliably, so the toolbar is opened by tapping the bubble instead.
   const [isMobileToolbarOpen, setIsMobileToolbarOpen] = useState(false);
+  const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
 
   const getReactorNames = useCallback((r: MessageReaction) => {
     return r.userIds.map((id) => {
@@ -683,12 +684,22 @@ export function MessageBubble({
       {isGroupChat && (
         <div className="w-8 shrink-0">
           {showSenderInfo && !isOwn && (
-            <Avatar className="h-8 w-8">
+            <Avatar
+              className={cn('h-8 w-8', message.senderAvatar && 'cursor-pointer')}
+              onClick={() => message.senderAvatar && setAvatarLightboxOpen(true)}
+            >
               {message.senderAvatar && (
                 <AvatarImage src={message.senderAvatar} alt={message.senderName} className="object-cover" />
               )}
               <AvatarFallback className="text-[10px]">{message.senderInitials}</AvatarFallback>
             </Avatar>
+          )}
+          {avatarLightboxOpen && message.senderAvatar && (
+            <ImageLightbox
+              src={message.senderAvatar}
+              alt={message.senderName}
+              onClose={() => setAvatarLightboxOpen(false)}
+            />
           )}
         </div>
       )}

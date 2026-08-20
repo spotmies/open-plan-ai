@@ -2,8 +2,9 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Layers, Search, Filter, List, LayoutGrid, Share2,
-  CheckCircle, Clock, DollarSign, ChevronRight, ChevronDown, Hash, X, User, Plus, Check, Download, ExternalLink,
+  CheckCircle, CheckCircle2, Clock, DollarSign, ChevronRight, ChevronDown, Hash, X, User, Plus, Check, Download, ExternalLink,
   FileSpreadsheet, PenLine, Trash2, Eye,
+  Sheet as SheetIcon, ArrowDownToLine, ArrowUpFromLine, Unlink, ArrowLeftRight, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,6 +63,7 @@ function OwnerBadge({ name, size = 'sm' }: { name: string; size?: 'sm' | 'xs' })
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import {
   BOMNode, BOMFilters, BOMStatus, EMPTY_FILTERS,
@@ -77,7 +79,155 @@ import { BOMMapView } from './BOMMapView';
 import { BOMPartSheet, BOMPartPayload, DocValue } from './BOMPartSheet';
 import { BOMRejectDialog } from './BOMRejectDialog';
 import { BOMImportSubcomponentsDialog } from './BOMImportSubcomponentsDialog';
+import BOMGoogleSheetsLinkDialog from './BOMGoogleSheetsLinkDialog';
+import BOMGoogleSheetsPullDialog from './BOMGoogleSheetsPullDialog';
+import BOMGoogleSheetsPushDialog from './BOMGoogleSheetsPushDialog';
+import { useGoogleSheetsLinkStatus, useUnlinkGoogleSheet } from '@/hooks/useGoogleSheets';
+import type { GoogleSheetsLinkStatus } from '@/services/googleSheets.service';
 import { useCurrency } from '@/hooks/useCurrency';
+
+import { LOGO_PATHS } from '@/features/integrations/logoPaths';
+
+function GoogleSheetsLogo({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d={LOGO_PATHS.googleSheets} />
+    </svg>
+  );
+}
+
+// ── Google Sheets toolbar menu ────────────────────────────────────
+// Single entry point for managing this project's Google Sheets sync from
+// the BOM toolbar: Pull, Push, view the linked sheet, relink, or disconnect.
+// Hidden entirely unless the org has connected Google Sheets from Integrations.
+function GoogleSheetsToolbarMenu({
+  projectId,
+  linkStatus,
+  onPull,
+  onPush,
+  onManage,
+  compact = false,
+}: {
+  projectId: string;
+  linkStatus: GoogleSheetsLinkStatus | undefined;
+  onPull: () => void;
+  onPush: () => void;
+  onManage: () => void;
+  compact?: boolean;
+}) {
+  const unlinkSheet = useUnlinkGoogleSheet(projectId);
+
+  if (!linkStatus?.orgConnected) return null;
+  const isLinked = !!linkStatus.linked;
+
+  // When unlinked, clicking directly opens the "Link a Google Sheet" dialog as in design
+  if (!isLinked) {
+    if (compact) {
+      return (
+        <button
+          type="button"
+          title="Link a Google Sheet"
+          onClick={onManage}
+          className="relative w-8 h-8 flex items-center justify-center rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shrink-0"
+        >
+          <GoogleSheetsLogo className="w-4 h-4 text-emerald-600" />
+        </button>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={onManage}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card text-foreground hover:bg-muted cursor-pointer transition-colors"
+      >
+        <GoogleSheetsLogo className="w-3.5 h-3.5 text-emerald-600" />
+        Google Sheets
+      </button>
+    );
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        {compact ? (
+          <button
+            title="Google Sheets"
+            className="relative w-8 h-8 flex items-center justify-center rounded-lg border border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/40 transition-colors shrink-0"
+          >
+            <GoogleSheetsLogo className="w-4 h-4 text-emerald-600" />
+            <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          </button>
+        ) : (
+          <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/40 cursor-pointer transition-colors shadow-xs">
+            <GoogleSheetsLogo className="w-3.5 h-3.5 text-emerald-600" />
+            Google Sheets
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <ChevronDown className="w-3 h-3 text-emerald-600/80 -mr-0.5" />
+          </button>
+        )}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-4 rounded-2xl shadow-xl border border-border bg-card">
+        <div className="space-y-3">
+          <div className="flex items-start gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-foreground leading-tight">
+                Synced with Google Sheets
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                Tab "{linkStatus.sheetTabName || 'BOM Export'}"
+              </p>
+              <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                Last pulled just now
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-3.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs font-medium rounded-lg border-border hover:bg-muted/80"
+              onClick={onPull}
+            >
+              <ArrowDownToLine className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" /> Pull
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs font-medium rounded-lg border-border hover:bg-muted/80"
+              onClick={onPush}
+            >
+              <ArrowUpFromLine className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" /> Push
+            </Button>
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-border/60 space-y-1">
+            <button
+              type="button"
+              className="w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 px-0.5 text-left rounded cursor-pointer"
+              onClick={onManage}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
+              <span>Change linked sheet</span>
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-2 text-xs text-destructive hover:text-destructive/80 transition-colors py-1 px-0.5 text-left rounded cursor-pointer"
+              onClick={() => unlinkSheet.mutate()}
+              disabled={unlinkSheet.isPending}
+            >
+              <Unlink className="w-3.5 h-3.5 shrink-0" />
+              <span>Disconnect</span>
+            </button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // ── Skeletons ──────────────────────────────────────────────────────
 function StatCardSkeleton() {
@@ -934,6 +1084,13 @@ export function BOMView({
   const [addChoiceOpen, setAddChoiceOpen] = useState(false);
   const [addManualOpen, setAddManualOpen] = useState(false);
   const [addImportOpen, setAddImportOpen] = useState(false);
+  // Google Sheets — link status backs both the Add Part chooser card and the
+  // toolbar's manage menu (Pull/Push/relink/disconnect). Only visible once
+  // the org has connected from Integrations.
+  const { data: sheetsLinkStatus } = useGoogleSheetsLinkStatus(projectId);
+  const [sheetsLinkOpen, setSheetsLinkOpen] = useState(false);
+  const [sheetsPullOpen, setSheetsPullOpen] = useState(false);
+  const [sheetsPushOpen, setSheetsPushOpen] = useState(false);
   const [addSubNode, setAddSubNode] = useState<BOMNode | null>(null);
   const [createSubNode, setCreateSubNode] = useState<BOMNode | null>(null);
   const [importSubNode, setImportSubNode] = useState<BOMNode | null>(null);
@@ -1330,6 +1487,15 @@ export function BOMView({
 
           <div className="flex-1" />
 
+          {/* Google Sheets — Pull/Push/manage the linked spreadsheet */}
+          <GoogleSheetsToolbarMenu
+            projectId={projectId}
+            linkStatus={sheetsLinkStatus}
+            onPull={() => setSheetsPullOpen(true)}
+            onPush={() => setSheetsPushOpen(true)}
+            onManage={() => setSheetsLinkOpen(true)}
+          />
+
           {/* Export dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1421,6 +1587,16 @@ export function BOMView({
               </DropdownMenu>
 
               <div className="flex-1" />
+
+              {/* Google Sheets — Pull/Push/manage the linked spreadsheet */}
+              <GoogleSheetsToolbarMenu
+                projectId={projectId}
+                linkStatus={sheetsLinkStatus}
+                onPull={() => setSheetsPullOpen(true)}
+                onPush={() => setSheetsPushOpen(true)}
+                onManage={() => setSheetsLinkOpen(true)}
+                compact
+              />
 
               {/* Export */}
               <DropdownMenu>
@@ -1562,6 +1738,27 @@ export function BOMView({
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
             </button>
+            {/* Only shown when Google Sheets is connected at org level but NOT yet linked for this project */}
+            {sheetsLinkStatus?.orgConnected && !sheetsLinkStatus?.linked && (
+              <button
+                onClick={() => {
+                  setAddChoiceOpen(false);
+                  setSheetsLinkOpen(true);
+                }}
+                className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors text-left group"
+              >
+                <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-blue-500/10 text-blue-600">
+                  <SheetIcon className="w-4 h-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-foreground">Import from Google Sheets</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Link a spreadsheet, then pull parts from it.
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+              </button>
+            )}
           </div>
           <div className="px-4 pb-4 flex justify-end">
             <Button variant="outline" size="sm" onClick={() => { setAddChoiceOpen(false); onAddClose?.(); }}>Cancel</Button>
@@ -1588,6 +1785,30 @@ export function BOMView({
           orgId={orgId}
         />
       )}
+
+      {/* Add Part — import from Google Sheets (top-level, no parent) */}
+      <BOMGoogleSheetsLinkDialog
+        open={sheetsLinkOpen}
+        onClose={() => { setSheetsLinkOpen(false); onAddClose?.(); }}
+        projectId={projectId}
+        linkStatus={sheetsLinkStatus}
+        // A fresh link is only useful once the sheet's rows are actually in
+        // the BOM, so linking chains straight into Pull. onAddClose is not
+        // called here on purpose — when this came from the Add Part chooser
+        // the flow is still running, and Pull's own onClose ends it.
+        onLinked={() => { setSheetsLinkOpen(false); setSheetsPullOpen(true); }}
+      />
+      <BOMGoogleSheetsPullDialog
+        open={sheetsPullOpen}
+        onClose={() => { setSheetsPullOpen(false); onAddClose?.(); }}
+        projectId={projectId}
+      />
+      {/* Push — only reachable from the toolbar's manage menu, not the Add Part flow */}
+      <BOMGoogleSheetsPushDialog
+        open={sheetsPushOpen}
+        onClose={() => setSheetsPushOpen(false)}
+        projectId={projectId}
+      />
 
       {/* Add Sub-component dialog (from list row "+" action) */}
       {addSubNode && (
@@ -1640,6 +1861,7 @@ export function BOMView({
         confirmText={deleteTarget && bomFlatAll(deleteTarget.children ?? []).length > 0 ? 'Delete All' : 'Delete Part'}
         {...(deleteTarget ? describeDeleteImpact(deleteTarget) : { title: '', description: '' })}
       />
+
     </div>
   );
 }

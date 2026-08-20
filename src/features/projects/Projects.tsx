@@ -316,7 +316,7 @@ export default function Projects() {
 
   return (
     <>
-      <div className={cn('space-y-4 md:space-y-6 animate-fade-in')}>
+      <div className={cn('space-y-4 md:space-y-6 animate-fade-in w-full max-w-full min-w-0')}>
         <div className={cn(
           isMobile
             ? 'space-y-2.5'
@@ -327,7 +327,6 @@ export default function Projects() {
               <div className="relative flex-1 max-w-none">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  autoFocus
                   placeholder="Search projects..."
                   value={search}
                   onChange={(e) => handleSearch(e.target.value)}
@@ -423,16 +422,16 @@ export default function Projects() {
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0 w-full">
             <div className={cn(
               view === 'grid'
-                ? 'grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3'
-                : 'space-y-3'
+                ? 'grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 min-w-0 w-full'
+                : 'space-y-3 min-w-0 w-full'
             )}>
               {paginatedProjects.map((project) => (
-                <Link key={project.id} to={`/projects/${project.id}`} className="block h-full">
+                <Link key={project.id} to={`/projects/${project.id}`} className="block h-full min-w-0 w-full">
                   <Card className={cn(
-                    'rounded-2xl border-border/70 bg-gradient-to-b from-card to-card/80 card-hover cursor-pointer h-full flex flex-col',
+                    'rounded-2xl border-border/70 bg-gradient-to-b from-card to-card/80 card-hover cursor-pointer h-full flex flex-col min-w-0 w-full overflow-hidden',
                     isMobile
                       ? 'p-3 shadow-[0_4px_16px_rgba(0,0,0,0.10)]'
                       : 'p-4 md:p-5 shadow-[0_10px_30px_rgba(0,0,0,0.16)]'

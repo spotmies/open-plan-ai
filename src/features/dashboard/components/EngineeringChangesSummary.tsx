@@ -48,7 +48,7 @@ export function EngineeringChangesSummary({ projects }: EngineeringChangesSummar
   const remainingAwaiting = awaiting.length - fitCount;
 
   return (
-    <Card className="flex flex-col h-full min-h-0 overflow-hidden">
+    <Card className="flex flex-col h-full min-h-0 overflow-hidden rounded-2xl border-border/70 shadow-sm min-w-0">
       <CardHeader className="px-3 py-2 flex flex-row items-center justify-between gap-2">
         <CardTitle className="min-w-0 text-base font-medium flex items-center gap-2">
           <PanelIcon icon={GitMerge} color="#9333EA" />
@@ -56,33 +56,33 @@ export function EngineeringChangesSummary({ projects }: EngineeringChangesSummar
         </CardTitle>
         <ProjectPickerPopover projects={projects} tab="eng-changes" label="Open ECOs" className="shrink-0" />
       </CardHeader>
-      <CardContent className="flex flex-col flex-1 min-h-0 space-y-3 pb-4 overflow-y-auto">
-        <div className="shrink-0 grid grid-cols-3 gap-0 rounded-lg border border-border overflow-hidden">
-          <div className="flex flex-col gap-0.5 px-3 py-2">
-            <span className="text-[10.5px] font-medium text-muted-foreground">Open</span>
+      <CardContent className="flex flex-col flex-1 min-h-0 space-y-3 pb-4 overflow-y-auto min-w-0">
+        <div className="shrink-0 grid grid-cols-3 gap-0 rounded-xl border border-border overflow-hidden min-w-0">
+          <div className="flex flex-col gap-0.5 px-2 sm:px-3 py-2 min-w-0">
+            <span className="text-[10.5px] font-medium text-muted-foreground truncate">Open</span>
             <span className="text-lg font-bold tabular-nums">{isLoading ? '—' : open}</span>
           </div>
-          <div className="flex flex-col gap-0.5 px-3 py-2 border-l border-border">
-            <span className="text-[10.5px] font-medium text-muted-foreground">First-pass</span>
+          <div className="flex flex-col gap-0.5 px-2 sm:px-3 py-2 border-l border-border min-w-0">
+            <span className="text-[10.5px] font-medium text-muted-foreground truncate">First-pass</span>
             <span className="text-lg font-bold tabular-nums text-status-done">
               {isLoading ? '—' : firstPassPct == null ? '—' : `${firstPassPct}%`}
             </span>
           </div>
-          <div className="flex flex-col gap-0.5 px-3 py-2 border-l border-border">
-            <span className="text-[10.5px] font-medium text-muted-foreground">Avg cycle</span>
+          <div className="flex flex-col gap-0.5 px-2 sm:px-3 py-2 border-l border-border min-w-0">
+            <span className="text-[10.5px] font-medium text-muted-foreground truncate">Avg cycle</span>
             <span className="text-lg font-bold tabular-nums">
               {isLoading ? '—' : avgCycleDays == null ? '—' : `${avgCycleDays}d`}
             </span>
           </div>
         </div>
 
-        <div className="shrink-0">
+        <div className="shrink-0 min-w-0">
           <span className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
             Pipeline by stage
           </span>
           {isMobile ? (
             <>
-              <div className="h-2 w-full rounded-full bg-secondary overflow-hidden flex">
+              <div className="h-2 w-full rounded-full bg-secondary overflow-hidden flex min-w-0">
                 {nonEmptyCounts.map((c) => (
                   <div
                     key={c.status}
@@ -91,12 +91,12 @@ export function EngineeringChangesSummary({ projects }: EngineeringChangesSummar
                   />
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-3 min-w-0">
                 {nonEmptyCounts.map((c) => (
-                  <div key={c.status} className="flex items-center justify-between gap-2 text-[12.5px]">
-                    <span className="flex items-center gap-1.5 text-muted-foreground truncate">
+                  <div key={c.status} className="flex items-center justify-between gap-1 text-[12px] min-w-0">
+                    <span className="flex items-center gap-1.5 text-muted-foreground truncate min-w-0">
                       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: statusMeta(c.status).color }} />
-                      {STATUS_LABEL[c.status]}
+                      <span className="truncate">{STATUS_LABEL[c.status]}</span>
                     </span>
                     <span className="font-semibold tabular-nums shrink-0">{c.count}</span>
                   </div>

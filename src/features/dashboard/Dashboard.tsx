@@ -11,9 +11,13 @@ import { useOrgDashboard, useOrgEcoAggregate, useOrgBomAggregate } from './hooks
 import { useAvailableHeight } from './hooks/useAvailableHeight';
 import { useRecentActivity } from '@/hooks/useDashboard';
 import { useProjects } from '@/hooks/useProjects';
+import { useProjectDetail } from '@/hooks/useProjectDetail';
+import { useProjectMembers } from '@/hooks/useProjectTeam';
+import { useUpdateIssue, useDeleteIssue } from '@/hooks/useIssues';
+import { IssueDetailModal } from '@/features/projects/components/IssueDetailModal';
 import { projectHealth } from './utils/projectHealth';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
-import { Activity } from '@/types';
+import { Activity, Issue } from '@/types';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -38,6 +42,15 @@ export default function Dashboard() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newOrgForm, setNewOrgForm] = useState({ name: '', description: '' });
+
+  // Recent Activity opens issues in-place over the dashboard instead of navigating to the
+  // project page, so closing the modal always leaves the user back on the dashboard.
+  const [activeIssueTarget, setActiveIssueTarget] = useState<{ projectId: string; issueId: string } | null>(null);
+  const { data: activeProject } = useProjectDetail(activeIssueTarget?.projectId, { enabled: !!activeIssueTarget });
+  const { data: activeProjectMembers = [] } = useProjectMembers(activeIssueTarget?.projectId);
+  const activeIssue = activeProject?.issues?.find((i) => i.id === activeIssueTarget?.issueId) ?? null;
+  const updateIssueMutation = useUpdateIssue();
+  const deleteIssueMutation = useDeleteIssue();
 
   const { data: activities, isLoading: activitiesLoading } = useRecentActivity(10);
   const { data: projects, isLoading: projectsLoading } = useProjects();
@@ -171,6 +184,25 @@ export default function Dashboard() {
     return overdue[0] ?? null;
   }, [dashboardProjects, atRiskProjectIds]);
 
+  const handleActivityIssueClick = (projectId: string, issueId: string) => {
+    setActiveIssueTarget({ projectId, issueId });
+  };
+
+  const handleActiveIssueUpdate = async (updated: Issue) => {
+    if (!activeIssueTarget) return;
+    await updateIssueMutation.mutateAsync({
+      projectId: activeIssueTarget.projectId,
+      issueId: updated.id,
+      updates: updated,
+    });
+  };
+
+  const handleActiveIssueDelete = async (issueId: string) => {
+    if (!activeIssueTarget) return;
+    await deleteIssueMutation.mutateAsync({ projectId: activeIssueTarget.projectId, issueId });
+    setActiveIssueTarget(null);
+  };
+
   const firstName = user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'there';
 
   // Show "Create Organization" card when no org exists
@@ -183,7 +215,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <div className="flex flex-col gap-3 md:gap-4 animate-fade-in overflow-x-hidden">
+      <div className="flex flex-col gap-3 md:gap-4 animate-fade-in overflow-x-hidden min-w-0 w-full">
 
         {/* Compact Create Organization Banner */}
         {/* {showNoOrgState && (
@@ -275,20 +307,21 @@ export default function Dashboard() {
             <div
               ref={gridRef}
               style={{ ['--dashboard-grid-h' as string]: gridHeight ? `${gridHeight}px` : 'auto' }}
-              className="grid gap-3 md:gap-4 lg:grid-cols-3 items-start lg:items-stretch lg:h-[var(--dashboard-grid-h)] lg:min-h-0"
+              className="grid gap-3 md:gap-4 lg:grid-cols-3 items-start lg:items-stretch lg:h-[var(--dashboard-grid-h)] lg:min-h-0 min-w-0 w-full"
             >
-              <div className="lg:h-full lg:min-h-0 flex flex-col">
+              <div className="lg:h-full lg:min-h-0 flex flex-col min-w-0">
                 <ProjectsOverview projects={dashboardProjects} atRiskProjectIds={atRiskProjectIds} />
               </div>
-              <div className="lg:h-full lg:min-h-0 flex flex-col">
+              <div className="lg:h-full lg:min-h-0 flex flex-col min-w-0">
                 <EngineeringChangesSummary projects={dashboardProjects} />
               </div>
-              <div className="flex flex-col space-y-4 md:space-y-3 lg:h-full lg:min-h-0">
+              <div className="flex flex-col space-y-4 md:space-y-3 lg:h-full lg:min-h-0 min-w-0">
                 <BomReadiness projects={dashboardProjects} />
                 <ActivityFeed
                   activities={activityItems}
                   isLoading={activitiesLoading || isLoading}
                   className="flex-1 min-h-0"
+                  onIssueClick={handleActivityIssueClick}
                 />
               </div>
             </div>
@@ -342,6 +375,18 @@ export default function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Recent Activity issue overlay — stays on the dashboard route on open and close */}
+      <IssueDetailModal
+        issue={activeIssue}
+        tasks={activeProject?.tasks}
+        teamMembers={activeProjectMembers}
+        isOpen={!!activeIssueTarget}
+        onClose={() => setActiveIssueTarget(null)}
+        onUpdate={handleActiveIssueUpdate}
+        onDelete={handleActiveIssueDelete}
+        userProjectRole={activeProject?.myRole}
+      />
     </>
   );
 }

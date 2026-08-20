@@ -14,7 +14,7 @@ interface StatCardProps {
 
 function StatCard({ label, value, unit, subtitle, icon: Icon, iconColor, accent }: StatCardProps) {
   return (
-    <div className={cn('bg-card rounded-lg px-3.5 py-2.5 flex-1 min-w-0 border flex items-center gap-2.5', accent ? 'border-primary/25' : 'border-border')}>
+    <div className={cn('bg-card rounded-2xl px-3.5 py-2.5 flex-1 min-w-0 border flex items-center gap-2.5 shadow-sm', accent ? 'border-primary/25' : 'border-border/70')}>
       <span
         className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
         style={{ backgroundColor: softTint(iconColor, 0.12) }}

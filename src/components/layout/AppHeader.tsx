@@ -106,7 +106,7 @@ export function AppHeader() {
   };
 
   return (
-    <header className="h-14 border-b border-border flex items-center justify-between px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="h-14 border-b border-border flex items-center justify-between px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 w-full max-w-full min-w-0 overflow-hidden">
       <div className="flex items-center gap-3 min-w-0">
 
         {/* Project detail: Back + Name + Stage */}

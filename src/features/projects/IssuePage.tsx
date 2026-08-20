@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Loader2, Minimize2 } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { IssueDetailContent } from './components/IssueDetailContent';
 import { Issue } from '@/types';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
@@ -102,52 +102,39 @@ export default function IssuePage() {
   };
 
   return (
-    <>
-      <div className="container max-w-5xl mx-auto py-8 px-4 space-y-8 animate-in fade-in duration-500">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-fit -ml-2 text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => navigate(`/projects/${projectId}?tab=issues`)}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Project
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              title="Shrink"
-              onClick={() => navigate(`/projects/${projectId}/issues/${issueId}`)}
-            >
-              <Minimize2 className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground overflow-hidden">
-            <span className="truncate max-w-[200px]">{project.name}</span>
-            <span className="opacity-40">/</span>
-            <span>Issues</span>
-            <span className="opacity-40">/</span>
-            <span className="font-mono text-[10px] bg-muted px-2 py-0.5 rounded tracking-wider uppercase text-muted-foreground/80">
-              {issue.id.slice(0, 8)}
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-card text-card-foreground rounded-xl border shadow-sm p-8 min-h-[80vh] ring-1 ring-border/50">
-          <IssueDetailContent
-            issue={issue}
-            tasks={project.tasks}
-            teamMembers={teamMembers}
-            onUpdate={handleUpdate}
-            onDelete={handleDelete}
-            userProjectRole={project.myRole}
-            isExpanded={true}
-          />
+    <div className="max-w-5xl mx-auto animate-in fade-in duration-300">
+      <div className="flex items-center gap-3 pb-4 mb-6 border-b">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+          title="Back to Project"
+          onClick={() => navigate(`/projects/${projectId}?tab=issues`)}
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex items-center gap-1.5 text-sm min-w-0">
+          <span className="font-medium text-foreground truncate max-w-[220px]">{project.name}</span>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+          <span className="text-muted-foreground">Issues</span>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+          <span className="text-foreground truncate max-w-[320px]" title={issue.title}>
+            {issue.title}
+          </span>
         </div>
       </div>
-    </>
+
+      <div className="bg-background text-foreground rounded-xl border shadow-sm p-6 sm:p-8">
+        <IssueDetailContent
+          issue={issue}
+          tasks={project.tasks}
+          teamMembers={teamMembers}
+          onUpdate={handleUpdate}
+          onDelete={handleDelete}
+          userProjectRole={project.myRole}
+          isExpanded={true}
+        />
+      </div>
+    </div>
   );
 }
