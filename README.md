@@ -1,5 +1,6 @@
 # Open Plan AI
 
+
 A modern project management application built with React, TypeScript, and a feature-based architecture.
 
 ## 🚀 Quick Start
