@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,6 +19,24 @@ import { toast } from 'sonner';
 import type { Conversation } from '../types';
 import { logger } from '@/services/monitoring/logger';
 import { useAuth } from '@/contexts/AuthContext';
+
+/** Teams-style collapsible group header ("Favourites" / "Chats") with a
+ *  chevron that rotates between expanded and collapsed. */
+function SectionHeader({
+  label, expanded, onToggle,
+}: { label: string; expanded: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className="flex items-center gap-1 w-full px-1.5 pt-2 pb-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground uppercase tracking-wide rounded-md transition-colors"
+    >
+      {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+      {label}
+    </button>
+  );
+}
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -49,6 +67,9 @@ export function ConversationList({
   } = useChatStore();
   const { data: reachableUsers = [] } = useReachableUsers();
   const [isCreatingDM, setIsCreatingDM] = useState(false);
+  // Teams-style collapsible sidebar groups — both open by default.
+  const [favouritesExpanded, setFavouritesExpanded] = useState(true);
+  const [chatsExpanded, setChatsExpanded] = useState(true);
 
   const isSelfConversation = (c: Conversation) =>
     c.type === 'dm' && c.members.length > 0 && c.members.every((m) => m.id === currentUserId);
@@ -85,6 +106,9 @@ export function ConversationList({
   const showFavouritesSection = !searchQuery.trim() && filtered.some((c) => c.isFavourite);
   const favouriteConversations = showFavouritesSection ? filtered.filter((c) => c.isFavourite) : [];
   const regularConversations = showFavouritesSection ? filtered.filter((c) => !c.isFavourite) : filtered;
+  // The "Chats" header doubles as the collapse control, so it's shown whenever
+  // there are regular chats to hide — not only underneath a Favourites group.
+  const showChatsSection = !searchQuery.trim() && regularConversations.length > 0;
 
   const filteredPeople = useMemo(() => {
     if (!searchQuery.trim() || conversationFilter === 'groups') return [];
@@ -159,15 +183,9 @@ export function ConversationList({
         <div className="px-2 pb-2 overflow-hidden space-y-0.5">
           {loading ? (
             Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md overflow-hidden">
-                <Skeleton className="h-9 w-9 rounded-full shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <Skeleton className="h-3.5 w-24" />
-                    <Skeleton className="h-2.5 w-8 shrink-0" />
-                  </div>
-                  <Skeleton className="h-3 w-[72%] mt-1.5" />
-                </div>
+              <div key={i} className="flex items-center gap-2.5 w-full px-3 py-1.5 rounded-md overflow-hidden">
+                <Skeleton className="h-5 w-5 rounded-full shrink-0" />
+                <Skeleton className="h-3.5 w-28" />
               </div>
             ))
           ) : filtered.length === 0 && filteredPeople.length === 0 ? (
@@ -180,10 +198,12 @@ export function ConversationList({
             <>
               {showFavouritesSection && (
                 <>
-                  <div className="px-2.5 pt-2 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                    Favourites
-                  </div>
-                  {favouriteConversations.map((conv) => (
+                  <SectionHeader
+                    label="Favourites"
+                    expanded={favouritesExpanded}
+                    onToggle={() => setFavouritesExpanded((e) => !e)}
+                  />
+                  {favouritesExpanded && favouriteConversations.map((conv) => (
                     <ConversationItem
                       key={conv.id}
                       conversation={conv}
@@ -198,10 +218,14 @@ export function ConversationList({
                       searchQuery={searchQuery}
                     />
                   ))}
-                  <div className="px-2.5 pt-3 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                    Chats
-                  </div>
                 </>
+              )}
+              {showChatsSection && (
+                <SectionHeader
+                  label="Chats"
+                  expanded={chatsExpanded}
+                  onToggle={() => setChatsExpanded((e) => !e)}
+                />
               )}
               {searchQuery.trim() && (
                 <PeopleList
@@ -211,7 +235,7 @@ export function ConversationList({
                   searchQuery={searchQuery}
                 />
               )}
-              {regularConversations.map((conv) => (
+              {(!showChatsSection || chatsExpanded) && regularConversations.map((conv) => (
                 <ConversationItem
                   key={conv.id}
                   conversation={conv}
@@ -234,12 +258,9 @@ export function ConversationList({
                 />
               )}
               {isCreatingDM && (
-                <div className="flex items-center gap-3 px-3 py-2 animate-pulse">
-                  <Skeleton className="h-8 w-8 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-3 w-20" />
-                    <Skeleton className="h-2 w-32" />
-                  </div>
+                <div className="flex items-center gap-2.5 px-3 py-1.5 animate-pulse">
+                  <Skeleton className="h-5 w-5 rounded-full" />
+                  <Skeleton className="h-3 w-24" />
                 </div>
               )}
             </>

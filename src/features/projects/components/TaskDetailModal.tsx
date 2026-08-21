@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { LinkHighlightTextarea } from '@/components/ui/LinkHighlightTextarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -2225,7 +2226,7 @@ export const TaskDetailModal = ({
                     />
                   </div>
                 ) : (
-                  <Textarea
+                  <LinkHighlightTextarea
                     value={editedTask.description || ''}
                     onChange={(e) => handleFieldChange('description', e.target.value)}
                     placeholder="Describe the task in detail..."

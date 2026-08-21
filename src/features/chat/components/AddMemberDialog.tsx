@@ -4,7 +4,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { Conversation, ReachableUser } from '../types';
 import { chatService } from '@/services/chat.service';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -25,7 +24,6 @@ export function AddMemberDialog({ conversation, open, onOpenChange, onMemberAdde
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [isBulkAdding, setIsBulkAdding] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     if (!open || !currentOrganization?.id) return;
@@ -48,7 +46,6 @@ export function AddMemberDialog({ conversation, open, onOpenChange, onMemberAdde
 
   const handleBulkAdd = async () => {
     if (selectedUserIds.length === 0) return;
-    setShowConfirm(false);
     setIsBulkAdding(true);
     try {
       await chatService.addMembersToGroup(conversation.id, selectedUserIds);
@@ -80,91 +77,76 @@ export function AddMemberDialog({ conversation, open, onOpenChange, onMemberAdde
   };
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>Add Member</DialogTitle>
-            <DialogDescription>
-              Select members from your organization to add to this group.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            {loadingUsers ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Loading users...</p>
-            ) : reachableUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No more users to add</p>
-            ) : (
-              <div className="space-y-1 max-h-[300px] overflow-y-auto pr-2">
-                {reachableUsers.map((u) => (
-                  <div
-                    key={u.id}
-                    className={cn(
-                      'flex items-center gap-3 w-full p-2.5 rounded-lg transition-colors cursor-pointer group hover:bg-muted/50',
-                      selectedUserIds.includes(u.id) && 'bg-primary/5',
-                    )}
-                    onClick={() => toggleUser(u.id)}
-                  >
-                    <Checkbox
-                      id={`user-${u.id}`}
-                      checked={selectedUserIds.includes(u.id)}
-                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary pointer-events-none"
-                    />
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={u.avatarUrl} />
-                      <AvatarFallback className="text-[10px] bg-primary/5 text-primary">
-                        {u.initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
-                        {u.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                    </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>Add Member</DialogTitle>
+          <DialogDescription>
+            Select members from your organization to add to this group.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-2">
+          {loadingUsers ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Loading users...</p>
+          ) : reachableUsers.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No more users to add</p>
+          ) : (
+            <div className="space-y-1 max-h-[300px] overflow-y-auto pr-2">
+              {reachableUsers.map((u) => (
+                <div
+                  key={u.id}
+                  className={cn(
+                    'flex items-center gap-3 w-full p-2.5 rounded-lg transition-colors cursor-pointer group hover:bg-muted/50',
+                    selectedUserIds.includes(u.id) && 'bg-primary/5',
+                  )}
+                  onClick={() => toggleUser(u.id)}
+                >
+                  <Checkbox
+                    id={`user-${u.id}`}
+                    checked={selectedUserIds.includes(u.id)}
+                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary pointer-events-none"
+                  />
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={u.avatarUrl} />
+                    <AvatarFallback className="text-[10px] bg-primary/5 text-primary">
+                      {u.initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
+                      {u.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter className="mt-2">
+          <Button variant="ghost" size="sm" className="text-xs" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className={cn(
+              'gap-2 px-4 transition-all duration-300',
+              selectedUserIds.length > 0 ? 'opacity-100' : 'opacity-50 pointer-events-none',
             )}
-          </div>
-          <DialogFooter className="mt-2">
-            <Button variant="ghost" size="sm" className="text-xs" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className={cn(
-                'gap-2 px-4 transition-all duration-300',
-                selectedUserIds.length > 0 ? 'opacity-100' : 'opacity-50 pointer-events-none',
-              )}
-              onClick={() => setShowConfirm(true)}
-              disabled={selectedUserIds.length === 0 || isBulkAdding}
-            >
-              {isBulkAdding ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                <>Add {selectedUserIds.length > 0 ? `${selectedUserIds.length} ` : ''}Member{selectedUserIds.length > 1 ? 's' : ''}</>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <ConfirmationDialog
-        open={showConfirm}
-        onOpenChange={setShowConfirm}
-        onConfirm={handleBulkAdd}
-        title="Confirm Adding Members"
-        description={`Are you sure you want to add ${
-          selectedUserIds.length === 1
-            ? reachableUsers.find((u) => u.id === selectedUserIds[0])?.name || '1 member'
-            : `${selectedUserIds.length} members`
-        } to "${conversation.name}"?`}
-        confirmText="Add Members"
-      />
-    </>
+            onClick={handleBulkAdd}
+            disabled={selectedUserIds.length === 0 || isBulkAdding}
+          >
+            {isBulkAdding ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Adding...
+              </>
+            ) : (
+              <>Add {selectedUserIds.length > 0 ? `${selectedUserIds.length} ` : ''}Member{selectedUserIds.length > 1 ? 's' : ''}</>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

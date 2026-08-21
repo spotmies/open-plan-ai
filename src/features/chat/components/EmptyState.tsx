@@ -1,8 +1,17 @@
-import { MessageSquare, MessagesSquare, AlertCircle } from 'lucide-react';
+import { MessageSquare, MessagesSquare, AlertCircle, Bookmark, Star, PenLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface EmptyStateProps {
-  type: 'no-selection' | 'no-conversations' | 'no-messages' | 'no-favourites' | 'no-drafts' | 'error';
+  type:
+    | 'no-selection'
+    | 'no-conversations'
+    | 'no-messages'
+    | 'no-favourites'
+    | 'no-drafts'
+    | 'no-saved-selection'
+    | 'no-favourite-selection'
+    | 'no-draft-selection'
+    | 'error';
   onCreateGroup?: () => void;
   onRetry?: () => void;
   description?: string;
@@ -29,6 +38,24 @@ export function EmptyState({ type, onCreateGroup, onRetry, description }: EmptyS
       icon: MessagesSquare,
       title: 'No drafts',
       description: 'Messages you start typing but don’t send will show up here',
+    },
+    // Shown in the chat pane while a quick view is open but nothing in it has
+    // been picked yet — Teams does the same rather than leaving whichever
+    // conversation happened to be open behind the panel.
+    'no-saved-selection': {
+      icon: Bookmark,
+      title: 'No saved item selected',
+      description: 'When you select a saved item, it’ll show up here',
+    },
+    'no-favourite-selection': {
+      icon: Star,
+      title: 'No favorite selected',
+      description: 'When you select a favorite chat, it’ll show up here',
+    },
+    'no-draft-selection': {
+      icon: PenLine,
+      title: 'No draft selected',
+      description: 'When you select a draft, it’ll show up here',
     },
     'no-messages': {
       icon: MessageSquare,

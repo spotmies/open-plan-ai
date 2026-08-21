@@ -3,6 +3,7 @@ import { Bookmark, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useUserTimezone } from '@/hooks/useUserTimezone';
 import { formatMessageTimestamp } from '@/utils/dateTime';
 import type { Conversation, FavouriteMessage } from '../types';
@@ -12,6 +13,7 @@ interface SavedMessagesViewProps {
   conversations: Conversation[];
   loading: boolean;
   currentUserId?: string;
+  selectedId: string | null;
   onOpenMessage: (message: FavouriteMessage) => void;
   onRemove: (messageId: string) => void;
   onClose: () => void;
@@ -43,7 +45,7 @@ function previewText(message: FavouriteMessage): string {
 }
 
 export function SavedMessagesView({
-  messages, conversations, loading, currentUserId, onOpenMessage, onRemove, onClose,
+  messages, conversations, loading, currentUserId, selectedId, onOpenMessage, onRemove, onClose,
 }: SavedMessagesViewProps) {
   const timezone = useUserTimezone();
   const conversationById = useMemo(() => new Map(conversations.map((c) => [c.id, c])), [conversations]);
@@ -80,7 +82,10 @@ export function SavedMessagesView({
                   key={message.id}
                   type="button"
                   onClick={() => onOpenMessage(message)}
-                  className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors group"
+                  className={cn(
+                    'w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors group',
+                    selectedId === message.id && 'bg-accent ring-1 ring-inset ring-ring/60'
+                  )}
                 >
                   <Avatar className="h-9 w-9 shrink-0 mt-0.5">
                     {display.avatarUrl && <AvatarImage src={display.avatarUrl} className="object-cover" />}

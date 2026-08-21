@@ -63,6 +63,11 @@ export default function Chat() {
   const { pinnedMessages, pinnedMessageIds, pinMessage, unpinMessage } = usePinnedMessages(activeId ?? null);
   const { favouriteMessages, favouriteIds, toggleFavourite, refetchFavourites } = useFavouriteMessages(activeId ?? null);
   const [activeQuickView, setActiveQuickView] = useState<QuickView | null>(null);
+  // What the user picked *inside* the quick view panel (a conversation id for
+  // Favorites/Drafts, a message id for Saved). Null means the panel is open but
+  // nothing has been chosen, so the chat pane shows a placeholder instead of
+  // whichever conversation happened to be open before.
+  const [quickViewSelectionId, setQuickViewSelectionId] = useState<string | null>(null);
   const showSaved = activeQuickView === 'saved';
   const { draftMessages } = useChatStore();
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
@@ -253,11 +258,13 @@ export default function Chat() {
   const handleShowQuickView = useCallback((view: QuickView) => {
     useChatStore.getState().setDetailPanelOpen(false);
     setActiveQuickView((prev) => (prev === view ? null : view));
+    setQuickViewSelectionId(null);
     if (view === 'saved') refetchSaved();
   }, [refetchSaved]);
 
   const handleCloseQuickView = useCallback(() => {
     setActiveQuickView(null);
+    setQuickViewSelectionId(null);
   }, []);
 
   const handleRemoveSaved = useCallback(async (messageId: string) => {
@@ -276,6 +283,7 @@ export default function Chat() {
     // Desktop keeps the Saved panel open as a third column (Teams-style) so another
     // saved item can be picked next; mobile has no room for three panes, so it closes.
     if (isMobile) setActiveQuickView(null);
+    setQuickViewSelectionId(message.id);
     setHighlightMessageId(message.id);
     if (message.conversationId === activeId) {
       setMessageFilter(null);
@@ -287,6 +295,7 @@ export default function Chat() {
 
   const handleOpenQuickViewConversation = useCallback((id: string) => {
     if (isMobile) setActiveQuickView(null);
+    setQuickViewSelectionId(id);
     navigateToConversation(id);
   }, [isMobile, navigateToConversation]);
 
@@ -297,6 +306,14 @@ export default function Chat() {
   // only one at a time, so panes are shown/hidden in sequence instead (list -> panel -> chat).
   const showConversationList = isMobile ? !routeHasConversation && !showQuickViewPane : true;
   const showChatPane = isMobile ? routeHasConversation && !showQuickViewPane : true;
+  // Opening a quick view resets the chat pane to a prompt — leaving the previously
+  // open conversation there makes it look like the panel selected it.
+  const awaitingQuickViewSelection = showQuickViewPane && quickViewSelectionId === null;
+  const quickViewPlaceholder = activeQuickView === 'saved'
+    ? 'no-saved-selection'
+    : activeQuickView === 'drafts'
+      ? 'no-draft-selection'
+      : 'no-favourite-selection';
 
   const typingText = typingNames.length > 0
     ? typingNames.length === 1
@@ -338,6 +355,7 @@ export default function Chat() {
               conversations={conversations}
               loading={savedLoading}
               currentUserId={user?.id}
+              selectedId={quickViewSelectionId}
               onOpenMessage={handleOpenSavedMessage}
               onRemove={handleRemoveSaved}
               onClose={handleCloseQuickView}
@@ -353,7 +371,7 @@ export default function Chat() {
               draftMessages={draftMessages}
               loading={convsLoading}
               currentUserId={user?.id}
-              activeConversationId={activeId ?? null}
+              selectedId={quickViewSelectionId}
               onlineUserIds={onlineUserIds}
               onSelect={handleOpenQuickViewConversation}
               onClose={handleCloseQuickView}
@@ -363,7 +381,9 @@ export default function Chat() {
 
         {showChatPane && (
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {activeConv ? (
+            {awaitingQuickViewSelection ? (
+              <EmptyState type={quickViewPlaceholder} />
+            ) : activeConv ? (
               <>
                 <ChatHeader
                   conversation={activeConv}

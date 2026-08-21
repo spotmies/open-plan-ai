@@ -167,9 +167,9 @@ export function MessageArea({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto max-md:overflow-x-hidden"
+      className="flex-1 overflow-y-auto overflow-x-hidden"
     >
-      <div className="flex flex-col gap-0.5 pt-4 pb-2 max-md:max-w-full">
+      <div className="flex flex-col gap-0.5 pt-4 pb-2 w-full min-w-0">
         {hasMore && onLoadMore && (
           <div className="flex justify-center py-2">
             <Button variant="ghost" size="sm" onClick={onLoadMore} className="text-xs text-muted-foreground">

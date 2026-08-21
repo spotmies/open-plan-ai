@@ -12,7 +12,7 @@ interface QuickViewPanelProps {
   draftMessages: Record<string, string>;
   loading: boolean;
   currentUserId?: string;
-  activeConversationId: string | null;
+  selectedId: string | null;
   onlineUserIds?: Set<string>;
   onSelect: (id: string) => void;
   onClose: () => void;
@@ -51,7 +51,7 @@ function getConversationDisplay(conversation: Conversation, currentUserId?: stri
 }
 
 export function QuickViewPanel({
-  type, conversations, draftMessages, loading, currentUserId, activeConversationId, onlineUserIds, onSelect, onClose,
+  type, conversations, draftMessages, loading, currentUserId, selectedId, onlineUserIds, onSelect, onClose,
 }: QuickViewPanelProps) {
   const config = CONFIG[type];
   const Icon = config.icon;
@@ -95,7 +95,7 @@ export function QuickViewPanel({
                   onClick={() => onSelect(conversation.id)}
                   className={cn(
                     'w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors',
-                    activeConversationId === conversation.id && 'bg-muted/60'
+                    selectedId === conversation.id && 'bg-accent ring-1 ring-inset ring-ring/60'
                   )}
                 >
                   <div className="relative shrink-0 mt-0.5">

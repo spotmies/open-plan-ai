@@ -35,6 +35,16 @@ export function AppLayout({ children, noPadding }: AppLayoutProps) {
   useProjectMembershipRealtime();
   useConversationMembershipRealtime();
 
+  // Inside the app shell `main` is the only scroll container. Without this the
+  // document scrolls too — the shell is 100vh, but anything that overflows it
+  // grows the page — and the two scrollbars end up stacked at the right edge
+  // (most visible on long pages like Projects in list view).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add('app-shell-locked');
+    return () => root.classList.remove('app-shell-locked');
+  }, []);
+
   // Apply compact mode class to <html>
   useEffect(() => {
     const root = document.documentElement;
@@ -55,7 +65,7 @@ export function AppLayout({ children, noPadding }: AppLayoutProps) {
   return (
     <SidebarProvider
       defaultOpen={!preferences.sidebarCollapsed}
-      className="w-full max-w-full overflow-x-hidden min-h-screen"
+      className="w-full max-w-full h-screen max-h-screen overflow-hidden"
     >
       <div className="h-screen flex w-full max-w-full bg-background overflow-hidden">
         {/* Sidebar hidden on mobile */}

@@ -148,6 +148,17 @@
     touch-action: pan-y pinch-zoom;
   }
 
+  /* While the app shell is mounted (see AppLayout) the document itself must not
+     scroll: the shell is exactly one viewport tall and its <main> owns the
+     scrolling. Auth/public pages never get this class, so they keep normal
+     document scrolling. */
+  html.app-shell-locked,
+  html.app-shell-locked body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   /* Typography */
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;

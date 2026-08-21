@@ -3,6 +3,7 @@ import { format, parseISO, startOfDay } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { LinkHighlightTextarea } from '@/components/ui/LinkHighlightTextarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -1425,7 +1426,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                                 />
                             </div>
                         ) : (
-                            <Textarea
+                            <LinkHighlightTextarea
                                 value={editedIssue.description}
                                 onChange={(e) => handleFieldChange('description', e.target.value)}
                                 placeholder="Describe the issue in detail..."

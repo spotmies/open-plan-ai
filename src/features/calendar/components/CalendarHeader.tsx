@@ -2,9 +2,15 @@ import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CalendarViewMode } from '@/types';
 import { formatDateRangeLabel } from '../utils/calendarUtils';
+
+const VIEW_MODES: { value: CalendarViewMode; label: string }[] = [
+  { value: 'month', label: 'Month' },
+  { value: 'week', label: 'Week' },
+  { value: 'day', label: 'Day' },
+];
 
 interface CalendarHeaderProps {
   currentDate: Date;
@@ -55,19 +61,18 @@ export const CalendarHeader: React.FC<CalendarHeaderProps> = ({
 
       {/* Right: View mode toggle and Actions */}
       <div className="flex items-center gap-2">
-        <Tabs value={viewMode} onValueChange={(v) => onViewModeChange(v as CalendarViewMode)}>
-          <TabsList className="h-9">
-            <TabsTrigger value="month" className="text-xs px-3">
-              Month
-            </TabsTrigger>
-            <TabsTrigger value="week" className="text-xs px-3">
-              Week
-            </TabsTrigger>
-            <TabsTrigger value="day" className="text-xs px-3">
-              Day
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <Select value={viewMode} onValueChange={(v) => onViewModeChange(v as CalendarViewMode)}>
+          <SelectTrigger className="h-9 w-[110px] rounded-lg text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end" className="w-[var(--radix-select-trigger-width)] min-w-0">
+            {VIEW_MODES.map(({ value, label }) => (
+              <SelectItem key={value} value={value} indicatorSide="right" className="text-xs">
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {actions}
       </div>
     </div>

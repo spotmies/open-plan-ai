@@ -665,7 +665,7 @@ export function MessageBubble({
     return (
       <div className={cn('flex gap-2 px-4', isOwn ? 'flex-row-reverse' : 'flex-row')}>
         {isGroupChat && <div className="w-8 shrink-0" />}
-        <div className={cn('flex flex-col max-w-[70%] min-w-0', isOwn ? 'items-end' : 'items-start')}>
+        <div className={cn('flex flex-col max-w-[70%] md:max-w-[min(70%,calc(100%_-_15rem))] min-w-0', isOwn ? 'items-end' : 'items-start')}>
           <div className="rounded-2xl px-3 py-2 text-sm italic text-muted-foreground bg-muted/50 border border-dashed border-border">
             🚫 This message was deleted by {message.deletedByName || message.senderName}
           </div>
@@ -704,7 +704,7 @@ export function MessageBubble({
         </div>
       )}
 
-      <div className={cn('flex flex-col max-w-[70%] min-w-0', isOwn ? 'items-end' : 'items-start')}>
+      <div className={cn('flex flex-col max-w-[70%] md:max-w-[min(70%,calc(100%_-_15rem))] min-w-0', isOwn ? 'items-end' : 'items-start')}>
         {showSenderInfo && !isOwn && isGroupChat && (
           <span className="text-xs text-muted-foreground font-medium mb-0.5 px-1">{message.senderName}</span>
         )}

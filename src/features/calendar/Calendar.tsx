@@ -21,7 +21,7 @@ import {
 } from './utils/calendarUtils';
 import { CalendarFilter, CalendarViewMode, Task, Milestone, Issue } from '@/types';
 import { useProjects } from '@/hooks/useProjects';
-import { useAllTasks, useUpdateTask, useBatchUpdateTasks } from '@/hooks/useTasks';
+import { useAllTasks, useUpdateTask, useBatchUpdateTasks, useCreatePersonalTask } from '@/hooks/useTasks';
 import { useAllIssues, useUpdateIssue } from '@/hooks/useIssues';
 import { useAllMilestones, useUpdateMilestone } from '@/hooks/useMilestones';
 import { useAllMeetings, Meeting } from '@/hooks/useMeetings';
@@ -33,7 +33,25 @@ import { toast } from 'sonner';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { logger } from '@/services/monitoring/logger';
 import { Button } from '@/components/ui/button';
-import { Video } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { attachmentsService } from '@/services/attachments.service';
+import { commentsService } from '@/services/comments.service';
+import { ChevronDown, ListPlus, Plus, Video } from 'lucide-react';
+
+// Personal (no-project) tasks only accept this fixed status set — mirrors
+// MY_DAY_STANDARD_STATUSES in the backend (tasks.service.ts), since there's
+// no project task_columns to offer a custom status from.
+const PERSONAL_TASK_STATUS_OPTIONS = [
+  { value: 'todo', label: 'To Do', color: 'bg-[#3b82f6]' },
+  { value: 'in-progress', label: 'In Progress', color: 'bg-[#f59e0b]' },
+  { value: 'blocked', label: 'Blocked', color: 'bg-[#ef4444]' },
+  { value: 'done', label: 'Done', color: 'bg-[#10b981]' },
+];
 
 // Convert a DB milestone row to calendar event
 function dbMilestoneToCalendarEvent(m: any, projectName: string): CalendarEvent | null {
@@ -202,6 +220,17 @@ const CalendarPage: React.FC = () => {
   // Filter state remains local as it's complex and might be too long for URL
   const [filters, setFilters] = React.useState<CalendarFilter>({});
 
+  // Whether the pills row below the header has anything to show. Derived here
+  // rather than left to `empty:hidden`, so an empty row occupies no height at
+  // all instead of depending on the CSS `:empty` selector matching.
+  const hasActiveFilters = Boolean(
+    filters.projectIds?.length ||
+    filters.entityType?.length ||
+    filters.priority?.length ||
+    filters.isBlocked !== undefined ||
+    filters.assignedBy?.length
+  );
+
   // "Schedule a meet" dialog state
   const [scheduleMeetOpen, setScheduleMeetOpen] = React.useState(false);
   const [scheduleMeetDate, setScheduleMeetDate] = React.useState<Date | undefined>(undefined);
@@ -209,6 +238,55 @@ const CalendarPage: React.FC = () => {
   const handleScheduleMeeting = (date?: Date) => {
     setScheduleMeetDate(date);
     setScheduleMeetOpen(true);
+  };
+
+  // "Add task" — creates a personal (no-project) task, same as My Tasks does.
+  const [isAddTaskOpen, setIsAddTaskOpen] = React.useState(false);
+  const createPersonalTaskMutation = useCreatePersonalTask();
+
+  // A personal task is private to its creator, who is always the sole assignee
+  // (enforced server-side), so the picker only ever offers the current user.
+  const selfAsAssignableMember = useMemo(() => {
+    if (!user) return [];
+    return [{
+      id: user.id,
+      name: user.name || user.email,
+      email: user.email,
+      role: 'member',
+      initials: user.initials || (user.name || user.email || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+      avatar: user.avatarUrl || '',
+    }];
+  }, [user]);
+
+  const handleTaskCreate = async (newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, pendingFiles?: File[]) => {
+    if (!currentOrganization) return;
+    try {
+      const created = await createPersonalTaskMutation.mutateAsync({ organizationId: currentOrganization.id, task: newTask });
+      if (pendingFiles && pendingFiles.length > 0 && created?.id) {
+        try {
+          await Promise.all(
+            pendingFiles.map(file => attachmentsService.upload({ entityId: created.id, entityType: 'task', file }))
+          );
+        } catch {
+          toast.warning('Task created but some attachments failed to upload');
+        }
+      }
+      if (newTask.comments && newTask.comments.length > 0 && created?.id) {
+        try {
+          await Promise.all(
+            newTask.comments.map(comment =>
+              commentsService.create({ content: comment.content, entity_id: created.id, entity_type: 'task' })
+            )
+          );
+        } catch {
+          toast.warning('Task created but some comments failed to save');
+        }
+      }
+      toast.success('Task created');
+    } catch (error) {
+      logger.error('Failed to create task:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create task');
+    }
   };
 
   // Build project map for lookups
@@ -448,6 +526,24 @@ const CalendarPage: React.FC = () => {
           tasks={getProjectTasks(selectedIssue.projectId)}
         />
       )}
+
+      {isAddTaskOpen && (
+        <TaskDetailModal
+          task={null}
+          allTasks={[]}
+          isOpen={isAddTaskOpen}
+          onClose={() => setIsAddTaskOpen(false)}
+          onUpdate={() => { }}
+          mode="create"
+          onCreate={handleTaskCreate}
+          modules={[]}
+          milestones={[]}
+          assignableMembers={selfAsAssignableMember}
+          defaultAssignees={selfAsAssignableMember}
+          statusOptions={PERSONAL_TASK_STATUS_OPTIONS}
+          projectName="Personal"
+        />
+      )}
     </>
   );
 
@@ -469,7 +565,7 @@ const CalendarPage: React.FC = () => {
   // ── Desktop layout ─────────────────────────────────────────────────────────
   return (
     <>
-      <div className="h-full flex flex-col gap-6 animate-fade-in px-6 py-6">
+      <div className="h-full flex flex-col gap-3 animate-fade-in px-6 pt-3 pb-6">
         {/* Page Header */}
         {/* <div className="shrink-0">
           <h1 className="text-2xl font-semibold tracking-tight">Calendar</h1>
@@ -490,15 +586,25 @@ const CalendarPage: React.FC = () => {
             onNavigateToday={handleNavigateToday}
             actions={
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 h-9 rounded-lg"
-                  onClick={() => handleScheduleMeeting()}
-                >
-                  <Video className="h-4 w-4" />
-                  <span className="hidden sm:inline">Schedule a meet</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
+                      <Plus className="h-4 w-4" />
+                      <span className="hidden sm:inline">Create</span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[180px]">
+                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleScheduleMeeting()}>
+                      <Video className="h-4 w-4 mr-2" />
+                      Schedule a meet
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer" onClick={() => setIsAddTaskOpen(true)}>
+                      <ListPlus className="h-4 w-4 mr-2" />
+                      Add task
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <CalendarFilters
                   filters={filters}
                   onFiltersChange={setFilters}
@@ -511,15 +617,17 @@ const CalendarPage: React.FC = () => {
           />
 
           {/* Active Filters */}
-          <div className="py-2 empty:hidden">
-            <CalendarFilters
-              filters={filters}
-              onFiltersChange={setFilters}
-              projects={projectsForFilter as any}
-              teamMembers={teamMembers}
-              hideTrigger
-            />
-          </div>
+          {hasActiveFilters && (
+            <div className="pt-2">
+              <CalendarFilters
+                filters={filters}
+                onFiltersChange={setFilters}
+                projects={projectsForFilter as any}
+                teamMembers={teamMembers}
+                hideTrigger
+              />
+            </div>
+          )}
         </div>
 
         {/* Calendar View */}

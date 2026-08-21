@@ -62,6 +62,11 @@ export const CalendarFilters: React.FC<CalendarFiltersProps> = ({
   const projectMap = new Map(projects.map((p) => [p.id, p.name]));
   const memberMap = new Map(teamMembers.map((m) => [m.id, m.name]));
 
+  // The pills-only instance has nothing to draw until a filter is set. Render
+  // nothing at all rather than an empty box, so its wrapper's `empty:hidden`
+  // can actually collapse the row instead of leaving a blank strip behind.
+  if (hideTrigger && (hideActiveFilters || activeFilterCount === 0)) return null;
+
   return (
     <div className="flex items-center gap-2">
       {!hideTrigger && (
