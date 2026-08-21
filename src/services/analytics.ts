@@ -33,7 +33,7 @@ export const trackEvent = (
 export const setUserId = (userId: string) => {
   if (!window.gtag) return;
 
-  window.gtag('config', 'G-321RTSB0SC', {
+  window.gtag('config', 'G-PQEQRP4K01', {
     user_id: userId,
   });
 };
