@@ -76,9 +76,9 @@ function calculateKPIs(
     ? Math.round(modules.reduce((sum, m) => sum + (m.progress || 0), 0) / modules.length)
     : 0;
 
-  // Issue progress: % of issues resolved/closed
+  // Issue progress: % of issues resolved
   const resolvedIssues = issues.filter(i =>
-    i.status === 'resolved' || i.status === 'closed'
+    i.status === 'resolved'
   ).length;
   const issueProgress = issues.length > 0
     ? Math.round((resolvedIssues / issues.length) * 100)
@@ -98,9 +98,9 @@ function calculateKPIs(
   const total = tasks.length;
   const completed = tasks.filter(t => t.status === 'done').length;
 
-  // Count open issues
+  // Count open issues — primary active statuses only (excludes custom columns + orphaned statuses)
   const openIssuesList = issues.filter(i =>
-    i.status === 'open' || i.status === 'investigating'
+    i.status === 'open' || i.status === 'in-progress'
   );
   const openIssues = openIssuesList.length;
   const criticalIssues = openIssuesList.filter(i => i.severity === 'critical').length;

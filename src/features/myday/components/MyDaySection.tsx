@@ -50,9 +50,9 @@ export function MyDaySection({
   }
 
   return (
-    <section className="mb-8">
+    <section className="mb-6">
       {/* Section Header */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <div className={cn('p-2 rounded-lg', styles.icon)}>
           <Icon className="h-4 w-4" />
         </div>
@@ -68,7 +68,7 @@ export function MyDaySection({
       </div>
 
       {/* Task Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {tasks.map((task) => (
           <MyDayTaskCard
             key={task.id}

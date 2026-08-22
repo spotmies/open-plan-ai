@@ -7,6 +7,7 @@ import {
   type CaptionProps,
   type DayPickerProps,
   type ActiveModifiers,
+  type SelectSingleEventHandler,
 } from "react-day-picker";
 import {
   format,
@@ -254,23 +255,18 @@ function DualMonthSidebar() {
   const goToToday = (e: React.MouseEvent<HTMLButtonElement>) => {
     goToMonth(today);
     if (mode === "single" && onSelect) {
-      const handler = onSelect as (
-        day: Date | undefined,
-        selectedDay: Date,
-        activeModifiers: ActiveModifiers,
-        ev: MouseEvent
-      ) => void;
-      handler(today, today, {} as ActiveModifiers, e.nativeEvent);
+      const handler = onSelect as unknown as SelectSingleEventHandler;
+      handler(today, today, {} as ActiveModifiers, e);
     }
   };
 
   return (
     <div
-      className="flex w-[172px] shrink-0 flex-col gap-2 border-l border-border/80 bg-muted/20 p-2 pl-2"
+      className="flex w-[130px] sm:w-[172px] shrink-0 flex-col gap-1.5 sm:gap-2 border-l border-border/80 bg-muted/20 p-1.5 sm:p-2 pl-1.5 sm:pl-2"
       aria-label="Month and year"
     >
-      <div className="flex w-full items-center justify-between gap-1">
-        <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold tabular-nums">
+      <div className="flex w-full items-center justify-between gap-0.5 sm:gap-1">
+        <span className="min-w-0 flex-1 truncate text-left text-xs sm:text-sm font-semibold tabular-nums">
           {format(setYear(new Date(), displayYear), "yyyy", { locale })}
         </span>
         <HorizontalChevronPair
@@ -283,7 +279,7 @@ function DualMonthSidebar() {
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-3 gap-0.5 sm:gap-1">
         {MONTHS_SHORT.map((label, monthIndex) => {
           const isActive = monthIndex === selectedMonthIndex;
           return (
@@ -292,7 +288,7 @@ function DualMonthSidebar() {
               type="button"
               onClick={() => selectMonth(monthIndex)}
               className={cn(
-                "min-h-[32px] rounded-md px-1 py-1.5 text-center text-xs font-medium transition-colors",
+                "min-h-[26px] sm:min-h-[32px] rounded-md px-0.5 sm:px-1 py-1 sm:py-1.5 text-center text-[10px] sm:text-xs font-medium transition-colors",
                 isActive
                   ? "bg-foreground text-background shadow-sm"
                   : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
@@ -304,11 +300,11 @@ function DualMonthSidebar() {
         })}
       </div>
 
-      <div className="flex justify-end pt-1">
+      <div className="flex justify-end pt-0.5 sm:pt-1">
         <button
           type="button"
           onClick={goToToday}
-          className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          className="text-[10px] sm:text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           Go to today
         </button>
@@ -321,7 +317,7 @@ function DualPaneMonths({ children }: { children: React.ReactNode }) {
   const { classNames, styles } = useDayPicker();
   return (
     <div className={cn(classNames.months)} style={styles.months}>
-      <div className="min-w-0 flex-1 bg-popover p-2 pr-1.5">{children}</div>
+      <div className="min-w-0 flex-1 bg-popover p-1.5 sm:p-2 pr-1 sm:pr-1.5">{children}</div>
       <DualMonthSidebar />
     </div>
   );
@@ -406,20 +402,20 @@ function Calendar({
         table: "w-full border-collapse",
         head_row: "flex",
         head_cell: cn(
-          "rounded-md text-[0.65rem] font-normal text-muted-foreground",
-          dual ? "w-7 uppercase tracking-wide" : "w-9 text-[0.8rem]"
+          "rounded-md text-[0.6rem] sm:text-[0.65rem] font-normal text-muted-foreground",
+          dual ? "w-6 sm:w-7 uppercase tracking-wide" : "w-9 text-[0.8rem]"
         ),
         row: cn("flex w-full", dual ? "mt-0.5" : "mt-2"),
         cell: cn(
           "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md [&:has([aria-selected].day-range-end)]:rounded-r-md",
           dual
-            ? "h-7 w-7 [&:has([aria-selected])]:bg-transparent [&:has([aria-selected])]:p-0"
+            ? "h-6 w-6 sm:h-7 sm:w-7 [&:has([aria-selected])]:bg-transparent [&:has([aria-selected])]:p-0"
             : "h-9 w-9 [&:has([aria-selected])]:bg-transparent [&:has([aria-selected].day-outside)]:bg-accent/50"
         ),
         day: cn(
           buttonVariants({ variant: "ghost" }),
           "p-0 font-normal aria-selected:opacity-100",
-          dual ? "h-7 w-7 rounded-lg text-xs text-foreground" : "h-9 w-9 rounded-md"
+          dual ? "h-6 w-6 sm:h-7 sm:w-7 rounded-md sm:rounded-lg text-[11px] sm:text-xs text-foreground" : "h-9 w-9 rounded-md"
         ),
         day_range_end: "day-range-end",
         day_selected: dual

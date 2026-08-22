@@ -3,6 +3,8 @@
  * This provides a basic layer of security for data stored in IndexedDB or localStorage.
  */
 
+import { logger } from '@/services/monitoring/logger';
+
 const KEY_STORAGE_KEY = 'openplan_crypto_key_v2';
 const SALT_STORAGE_KEY = 'openplan_crypto_salt_v2';
 const LEGACY_KEY_STORAGE_KEY = 'openplan_crypto_key';
@@ -158,7 +160,7 @@ export async function encryptData(payload: string): Promise<{ ciphertext: string
 
     return { ciphertext: ciphertextBase64, iv: ivBase64 };
   } catch (error) {
-    console.error('Encryption failed:', error);
+    logger.error('Encryption failed:', error);
     throw new Error('Failed to encrypt data');
   }
 }
@@ -200,7 +202,7 @@ export async function decryptData(encryptedData: { ciphertext: string; iv: strin
 
     return new TextDecoder().decode(decryptedContent);
   } catch (error) {
-    console.error('Decryption failed:', error);
+    logger.error('Decryption failed:', error);
     throw new Error('Failed to decrypt data');
   }
 }
@@ -224,7 +226,7 @@ export async function decryptObject<T>(encryptedData: { ciphertext: string; iv: 
     const decryptedString = await decryptData(encryptedData);
     return JSON.parse(decryptedString) as T;
   } catch (err) {
-    console.error('Failed to decrypt object:', err);
+    logger.error('Failed to decrypt object:', err);
     return null;
   }
 }
@@ -252,7 +254,7 @@ export async function encryptArrayBuffer(buffer: ArrayBuffer): Promise<{ ciphert
 
     return { ciphertext: encryptedContent, iv: iv.buffer as ArrayBuffer };
   } catch (error) {
-    console.error('Encryption failed:', error);
+    logger.error('Encryption failed:', error);
     throw new Error('Failed to encrypt ArrayBuffer');
   }
 }
@@ -291,7 +293,7 @@ export async function decryptArrayBuffer(encryptedData: { ciphertext: ArrayBuffe
 
     return decryptedContent;
   } catch (error) {
-    console.error('Decryption failed:', error);
+    logger.error('Decryption failed:', error);
     throw new Error('Failed to decrypt ArrayBuffer');
   }
 }

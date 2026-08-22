@@ -80,6 +80,30 @@ export const queryKeys = {
     detail: (id: string) => [...queryKeys.milestones.all, 'detail', id] as const,
   },
 
+  // Meetings (Calendar — Schedule a Meet)
+  meetings: {
+    all: ['meetings'] as const,
+    org: (orgId?: string) => [...queryKeys.meetings.all, 'org', orgId] as const,
+  },
+
+  // Task Columns
+  taskColumns: {
+    all: ['task-columns'] as const,
+    list: (projectId: string) => [...queryKeys.taskColumns.all, 'list', projectId] as const,
+  },
+
+  // Issue Columns
+  issueColumns: {
+    all: ['issue-columns'] as const,
+    list: (projectId: string) => [...queryKeys.issueColumns.all, 'list', projectId] as const,
+  },
+
+  // Tags (shared project-wide registry)
+  tags: {
+    all: ['tags'] as const,
+    list: (projectId: string) => [...queryKeys.tags.all, 'list', projectId] as const,
+  },
+
   // Team
   team: {
     all: ['team'] as const,
@@ -107,6 +131,8 @@ export const queryKeys = {
     activity: (orgId?: string, limit?: number) => [...queryKeys.dashboard.all, 'activity', orgId, limit] as const,
     milestones: (orgId?: string, limit?: number) => [...queryKeys.dashboard.all, 'milestones', orgId, limit] as const,
     projects: (orgId?: string) => [...queryKeys.dashboard.all, 'projects', orgId] as const,
+    // Single org-wide aggregate backing the ECO / BOM / milestone panels.
+    overview: (orgId?: string) => [...queryKeys.dashboard.all, 'overview', orgId] as const,
   },
 
   // Organizations
@@ -127,6 +153,57 @@ export const queryKeys = {
   myDay: {
     all: ['myDay'] as const,
     tasks: (userId: string) => [...queryKeys.myDay.all, 'tasks', userId] as const,
+    issues: (userId: string) => [...queryKeys.myDay.all, 'issues', userId] as const,
     completedToday: (userId: string) => [...queryKeys.myDay.all, 'completedToday', userId] as const,
+  },
+
+  // BOM
+  bom: {
+    all:       ['bom'] as const,
+    tree:      (projectId: string) => ['bom', 'tree', projectId] as const,
+    summary:   (projectId: string) => ['bom', 'summary', projectId] as const,
+    node:      (nodeId: string)    => ['bom', 'node', nodeId] as const,
+    approvals:  (nodeId: string)    => ['bom', 'approvals', nodeId] as const,
+    approvalRequests: (nodeId: string) => ['bom', 'approval-requests', nodeId] as const,
+    projectApprovalRequests: (projectId: string, status?: string) => ['bom', 'project-approval-requests', projectId, status ?? 'all'] as const,
+    notes:      (nodeId: string)    => ['bom', 'notes', nodeId] as const,
+    costTrend:  (projectId: string, granularity: string) => ['bom', 'cost-trend', projectId, granularity] as const,
+  },
+
+  // Parts catalog
+  parts: {
+    all:       ['parts'] as const,
+    // listRoot has no `params` slot — invalidating this prefix matches every
+    // filtered/unfiltered useOrgParts query, since RQ does partial-key matching.
+    listRoot:  (orgId: string) => ['parts', 'list', orgId] as const,
+    list:      (orgId: string, params?: object) => ['parts', 'list', orgId, params] as const,
+    detail:    (partId: string) => ['parts', 'detail', partId] as const,
+    revisions: (partId: string) => ['parts', 'revisions', partId] as const,
+  },
+
+  // Engineering Changes (ECO)
+  ecos: {
+    all:      ['ecos'] as const,
+    // listRoot has no `filters` slot — invalidating this prefix matches every
+    // filtered/unfiltered useECOList query, since RQ does partial-key matching.
+    listRoot: (projectId: string) => ['ecos', 'list', projectId] as const,
+    list:     (projectId: string, filters?: object) => ['ecos', 'list', projectId, filters] as const,
+    stats:    (projectId: string) => ['ecos', 'stats', projectId] as const,
+    detail:   (ecoId: string) => ['ecos', 'detail', ecoId] as const,
+    ecn:      (ecoId: string) => ['ecos', 'ecn', ecoId] as const,
+  },
+  supportLinks: {
+    all:      ['support-links'] as const,
+    listRoot: (projectId: string) => ['support-links', 'list', projectId] as const,
+    list:     (projectId: string) => ['support-links', 'list', projectId] as const,
+    detail:   (linkId: string) => ['support-links', 'detail', linkId] as const,
+  },
+
+  // AI Assistant (Ask)
+  assistant: {
+    all:          ['assistant'] as const,
+    conversations: () => [...queryKeys.assistant.all, 'conversations'] as const,
+    conversation: (id: string) => [...queryKeys.assistant.all, 'conversation', id] as const,
+    shared:       (shareId: string) => [...queryKeys.assistant.all, 'shared', shareId] as const,
   },
 };

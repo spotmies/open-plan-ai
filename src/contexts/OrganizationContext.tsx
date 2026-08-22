@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useAuth } from './AuthContext';
 import { organizationsService, Organization } from '@/services/organizations.service';
 import { sanitizeUuidCandidate } from '@/utils/uuid';
+import { logger } from '@/services/monitoring/logger';
 
 interface OrganizationContextValue {
   organizations: Organization[];
@@ -17,7 +18,7 @@ const OrganizationContext = createContext<OrganizationContextValue | undefined>(
 const CURRENT_ORG_KEY = 'openplan-current-org';
 
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, isLoading: authLoading } = useAuth();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [currentOrganization, setCurrentOrganizationState] = useState<Organization | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,7 +29,10 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       hasLoadedOnceRef.current = false;
       setOrganizations([]);
       setCurrentOrganizationState(null);
-      setIsLoading(false);
+      // While auth is still bootstrapping (cookie probe in flight), stay in the
+      // loading state — otherwise consumers briefly see "resolved, no org" and
+      // flash an empty state before the org actually loads.
+      setIsLoading(authLoading);
       return;
     }
 
@@ -45,15 +49,19 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       if (rawSavedOrgId && savedOrg && rawSavedOrgId !== savedOrg.id) {
         localStorage.setItem(CURRENT_ORG_KEY, savedOrg.id);
       }
-      setCurrentOrganizationState(savedOrg || orgs[0] || null);
+      // Prefer an org the user can actually use. A member of one live org plus one
+      // awaiting approval would otherwise land on the pending one and meet bare
+      // 403s across the whole dashboard, with nothing saying why.
+      const usable = orgs.find((o) => o.status !== 'pending_review' && o.status !== 'rejected');
+      setCurrentOrganizationState(savedOrg || usable || orgs[0] || null);
     } catch (error) {
-      console.error('Error fetching organizations:', error);
+      logger.error('Error fetching organizations:', error);
       setOrganizations([]);
     } finally {
       hasLoadedOnceRef.current = true;
       setIsLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authLoading]);
 
   useEffect(() => {
     void fetchOrganizations();

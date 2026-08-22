@@ -27,6 +27,17 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // If this is a Vite chunk loading error due to a new deployment, auto-reload at most once
+    if (error.message?.includes('Failed to fetch dynamically imported module')) {
+      const lastReload = sessionStorage.getItem('chunk_reload_ts');
+      const now = Date.now();
+      if (!lastReload || now - Number(lastReload) > 10000) {
+        sessionStorage.setItem('chunk_reload_ts', String(now));
+        window.location.reload();
+        return;
+      }
+    }
+
     logger.error('React Error Boundary caught error', {
       error: error.message,
       stack: error.stack,
@@ -45,12 +56,22 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      const lastReload = sessionStorage.getItem('chunk_reload_ts');
+      const isActivelyReloading =
+        this.state.error?.message?.includes('Failed to fetch dynamically imported module') &&
+        (!lastReload || Date.now() - Number(lastReload) > 10000);
+
+      // Don't flash the error UI if we're just going to auto-reload
+      if (isActivelyReloading) {
+        return null;
+      }
+
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
       return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4 bg-background">
           <Card className="max-w-md w-full">
             <CardHeader>
               <div className="flex items-center gap-2 text-destructive">
@@ -72,10 +93,6 @@ export class ErrorBoundary extends Component<Props, State> {
               <div className="flex gap-2">
                 <Button onClick={this.handleReset} variant="outline">
                   Try Again
-                </Button>
-                <Button onClick={this.handleReload} variant="outline">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh Page
                 </Button>
                 <Button onClick={() => window.location.href = '/'}>
                   <Home className="h-4 w-4 mr-2" />

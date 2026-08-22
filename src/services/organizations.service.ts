@@ -1,11 +1,14 @@
-import { supabase } from '@/integrations/supabase/client';
-import type { Json } from '@/integrations/supabase/types';
+import { apiClient } from '@/services/api/client';
+import { ENDPOINTS } from '@/services/api/endpoints';
+import { resolveFileUrl } from '@/utils/fileUrl';
+import type { OrgRole } from '@/types';
 
 export interface OrganizationSettings {
   companyName?: string;
   companySize?: string;
   timezone?: string;
   dateFormat?: string;
+  currency?: string;
   logoUrl?: string;
 }
 
@@ -14,22 +17,34 @@ export interface Organization {
   name: string;
   slug: string;
   description: string | null;
-  settings: OrganizationSettings | Json;
-  created_at: string;
-  updated_at: string;
+  settings: Record<string, unknown>;
+  myRole: OrgRole | null;
+  /**
+   * Platform governance state. 'pending_review' / 'rejected' are the signup gate.
+   *
+   * Nothing here is exhaustively switched on, so widening this union is
+   * compile-safe — every consumer tests for a specific value. Treat new values as
+   * a manual audit of those tests, not something tsc will find for you.
+   */
+  status?: 'active' | 'suspended' | 'pending_review' | 'rejected';
+  suspendedReason?: string | null;
+  suspendedAt?: string | null;
+  rejectedReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface OrganizationMember {
   id: string;
-  organization_id: string;
-  user_id: string;
-  role: 'owner' | 'admin' | 'member';
-  joined_at: string;
+  organizationId: string;
+  userId: string;
+  role: OrgRole;
+  joinedAt: string;
   profile?: {
     id: string;
     name: string;
     email: string;
-    avatar_url: string | null;
+    avatarUrl: string | null;
     initials: string;
   };
 }
@@ -37,279 +52,105 @@ export interface OrganizationMember {
 export const organizationsService = {
   /**
    * Get all organizations the current user belongs to.
-   * Explicitly scoped to the user's memberships as defence-in-depth even when RLS is correct.
    */
   async getAll(): Promise<Organization[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    // Fetch the org IDs the user belongs to first, then filter by them.
-    const { data: memberships, error: membershipError } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', user.id);
-
-    if (membershipError) throw membershipError;
-    if (!memberships?.length) return [];
-
-    const orgIds = memberships.map(m => m.organization_id);
-
-    const { data, error } = await supabase
-      .from('organizations')
-      .select('*')
-      .in('id', orgIds)
-      .is('deleted_at', null)
-      .order('name');
-
-    if (error) throw error;
-    return data || [];
+    return apiClient.get<Organization[]>(ENDPOINTS.ORGANIZATIONS.MY);
   },
 
   /**
    * Get organization by ID
    */
   async getById(id: string): Promise<Organization | null> {
-    const { data, error } = await supabase
-      .from('organizations')
-      .select('*')
-      .eq('id', id)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
+    return apiClient.get<Organization>(ENDPOINTS.ORGANIZATIONS.BY_ID(id));
   },
 
   /**
-   * Create a new organization and add current user as owner
+   * Create a new organization
    */
   async create(org: { name: string; slug: string; description?: string }): Promise<Organization> {
-    // Use the SECURITY DEFINER function to create organization + owner membership atomically
-    const { data, error } = await supabase.rpc('create_organization_with_owner', {
-      org_name: org.name,
-      org_slug: org.slug,
-      org_description: org.description || null,
+    return apiClient.post<Organization>(ENDPOINTS.ORGANIZATIONS.CREATE, {
+      name: org.name,
+      slug: org.slug,
+      description: org.description || null,
     });
-
-    if (error) throw error;
-    return data as Organization;
   },
 
   /**
    * Update organization
    */
-  async update(id: string, updates: { name?: string; description?: string | null; settings?: Json }): Promise<Organization> {
-    const { data, error } = await supabase
-      .from('organizations')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+  async update(id: string, updates: { name?: string; description?: string | null; settings?: Record<string, unknown> }): Promise<Organization> {
+    return apiClient.put<Organization>(ENDPOINTS.ORGANIZATIONS.BY_ID(id), updates);
   },
 
   /**
-   * Soft delete organization
+   * Delete organization
    */
   async delete(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('organizations')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (error) throw error;
+    return apiClient.delete<void>(ENDPOINTS.ORGANIZATIONS.BY_ID(id));
   },
 
   /**
    * Get members of an organization
    */
   async getMembers(orgId: string): Promise<OrganizationMember[]> {
-    const { data, error } = await supabase
-      .from('organization_members')
-      .select(`
-        id,
-        organization_id,
-        user_id,
-        role,
-        joined_at,
-        profile:profiles(id, name, email, avatar_url, initials)
-      `)
-      .eq('organization_id', orgId);
-
-    if (error) throw error;
-    
-    return (data || []).map(member => ({
-      ...member,
-      profile: Array.isArray(member.profile) ? member.profile[0] : member.profile
-    })) as OrganizationMember[];
-  },
-
-  /**
-   * Add member to organization
-   */
-  async addMember(orgId: string, userId: string, role: 'admin' | 'member' = 'member'): Promise<void> {
-    const { error } = await supabase
-      .from('organization_members')
-      .insert({
-        organization_id: orgId,
-        user_id: userId,
-        role,
-      });
-
-    if (error) throw error;
+    return apiClient.get<OrganizationMember[]>(ENDPOINTS.ORGANIZATIONS.MEMBERS(orgId));
   },
 
   /**
    * Update member role
    */
-  async updateMemberRole(orgId: string, userId: string, role: 'admin' | 'member'): Promise<void> {
-    const { error } = await supabase
-      .from('organization_members')
-      .update({ role })
-      .eq('organization_id', orgId)
-      .eq('user_id', userId);
-
-    if (error) throw error;
+  async updateMemberRole(orgId: string, userId: string, role: OrgRole): Promise<void> {
+    return apiClient.put<void>(ENDPOINTS.ORGANIZATIONS.MEMBER_ROLE(orgId, userId), { role });
   },
 
   /**
    * Remove member from organization
    */
   async removeMember(orgId: string, userId: string): Promise<void> {
-    const { error } = await supabase
-      .from('organization_members')
-      .delete()
-      .eq('organization_id', orgId)
-      .eq('user_id', userId);
-
-    if (error) throw error;
+    return apiClient.delete<void>(ENDPOINTS.ORGANIZATIONS.REMOVE_MEMBER(orgId, userId));
   },
 
   /**
-   * Merge-patch organization `settings` JSONB (preserves keys not in `patch`).
-   * Pass `logoUrl: undefined` to remove the logo URL from settings.
+   * Merge-patch organization settings (preserves keys not in patch).
    */
   async updateSettings(orgId: string, patch: Partial<OrganizationSettings>): Promise<Organization> {
-    const existing = await this.getById(orgId);
-    if (!existing) {
-      throw new Error('Organization not found');
-    }
-
-    const raw = existing.settings;
-    const base: Record<string, unknown> =
-      raw !== null && typeof raw === 'object' && !Array.isArray(raw)
-        ? { ...(raw as Record<string, unknown>) }
-        : {};
-
-    for (const [key, value] of Object.entries(patch) as [keyof OrganizationSettings, unknown][]) {
-      if (value === undefined) {
-        delete base[key as string];
-      } else {
-        base[key as string] = value;
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('organizations')
-      .update({ settings: base as unknown as Json })
-      .eq('id', orgId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    return apiClient.put<Organization>(ENDPOINTS.ORGANIZATIONS.BY_ID(orgId), { settings: patch });
   },
 
   /**
-   * Upload organization logo to storage bucket
+   * Add member to organization
    */
-  async uploadLogo(orgId: string, file: File): Promise<string> {
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'];
-    if (!allowedTypes.includes(file.type)) {
-      throw new Error('Invalid file type. Only JPEG, PNG, WebP, and SVG images are allowed.');
-    }
-
-    // Validate file size (5MB limit)
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
-      throw new Error('File too large. Maximum size is 5MB.');
-    }
-
-    // Use MIME type for extension to prevent spoofing
-    const mimeToExt: Record<string, string> = {
-      'image/jpeg': 'jpg',
-      'image/jpg': 'jpg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-      'image/svg+xml': 'svg',
-    };
-    const fileExt = mimeToExt[file.type] || 'png';
-    const fileName = `${orgId}/logo-${Date.now()}.${fileExt}`;
-
-    // Delete old logo if exists
-    const { data: existingFiles } = await supabase.storage
-      .from('logos')
-      .list(orgId);
-    
-    if (existingFiles && existingFiles.length > 0) {
-      const filesToDelete = existingFiles.map(f => `${orgId}/${f.name}`);
-      await supabase.storage.from('logos').remove(filesToDelete);
-    }
-
-    // Upload new logo with content type enforcement
-    const { error: uploadError } = await supabase.storage
-      .from('logos')
-      .upload(fileName, file, {
-        cacheControl: '3600',
-        upsert: true,
-        contentType: file.type,
-      });
-
-    if (uploadError) throw uploadError;
-
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('logos')
-      .getPublicUrl(fileName);
-
-    // Update organization settings with new logo URL
-    await this.updateSettings(orgId, { logoUrl: publicUrl });
-
-    return publicUrl;
-  },
-
-  /**
-   * Delete organization logo from storage
-   */
-  async deleteLogo(orgId: string): Promise<void> {
-    // List and delete all logo files for this org
-    const { data: files } = await supabase.storage
-      .from('logos')
-      .list(orgId);
-
-    if (files && files.length > 0) {
-      const filesToDelete = files.map(f => `${orgId}/${f.name}`);
-      await supabase.storage.from('logos').remove(filesToDelete);
-    }
-
-    // Clear logoUrl in settings
-    await this.updateSettings(orgId, { logoUrl: undefined });
+  async addMember(orgId: string, userId: string, role: OrgRole = 'maintainer'): Promise<void> {
+    return apiClient.post<void>(ENDPOINTS.ORGANIZATIONS.MEMBERS(orgId), { userId, role });
   },
 
   /**
    * Get all organizations a specific user belongs to
    */
   async getMemberOrganizations(userId: string): Promise<{ organization_id: string; role: string }[]> {
-    const { data, error } = await supabase
-      .from('organization_members')
-      .select('organization_id, role')
-      .eq('user_id', userId);
+    return apiClient.get<{ organization_id: string; role: string }[]>(ENDPOINTS.USERS.ORGS(userId));
+  },
 
-    if (error) throw error;
-    return data || [];
+  /**
+   * Upload organization logo — single-step endpoint handles S3 + settings update.
+   */
+  async uploadLogo(orgId: string, file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.raw.post<{ success: boolean; data: { logoUrl: string } }>(
+      ENDPOINTS.ORGANIZATIONS.LOGO(orgId),
+      formData,
+      { headers: { 'Content-Type': undefined } },
+    );
+    const rawUrl = res.data.data.logoUrl;
+    return resolveFileUrl(rawUrl) ?? rawUrl;
+  },
+
+  /**
+   * Remove organization logo.
+   */
+  async deleteLogo(orgId: string): Promise<void> {
+    await apiClient.delete<void>(ENDPOINTS.ORGANIZATIONS.LOGO(orgId));
   },
 
   /**

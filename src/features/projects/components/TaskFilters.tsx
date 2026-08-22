@@ -15,9 +15,12 @@ interface TaskFiltersProps {
   modules: { id: string; name: string; type: ModuleType }[];
   teamMembers: { id: string; name: string; initials: string }[];
   allTags: string[];
+  statusOptions?: { value: string; label: string; color?: string }[];
 }
 
-const statusOptions: { value: TaskStatus; label: string; color: string }[] = [
+// Fallback used only when the caller hasn't loaded the project's dynamic
+// task buckets yet (e.g. no projectId). See TaskFiltersDropdown for the same pattern.
+const DEFAULT_STATUS_OPTIONS: { value: TaskStatus; label: string; color: string }[] = [
   { value: 'todo', label: 'To Do', color: 'bg-status-todo' },
   { value: 'in-progress', label: 'In Progress', color: 'bg-status-in-progress' },
   { value: 'review', label: 'Review', color: 'bg-status-review' },
@@ -25,11 +28,19 @@ const statusOptions: { value: TaskStatus; label: string; color: string }[] = [
   { value: 'blocked', label: 'Blocked', color: 'bg-status-blocked' },
 ];
 
+function StatusDot({ color }: { color?: string }) {
+  if (!color) return <div className="w-2 h-2 rounded-full bg-muted-foreground/60" />;
+  if (color.startsWith('#') || color.startsWith('rgb')) {
+    return <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />;
+  }
+  return <div className={cn('w-2 h-2 rounded-full', color)} />;
+}
+
 const priorityOptions: { value: Priority; label: string; color: string }[] = [
   { value: 'critical', label: 'Critical', color: 'bg-priority-critical' },
-  { value: 'high', label: 'High', color: 'bg-priority-high' },
-  { value: 'medium', label: 'Medium', color: 'bg-priority-medium' },
-  { value: 'low', label: 'Low', color: 'bg-priority-low' },
+  { value: 'major', label: 'Major', color: 'bg-priority-high' },
+  { value: 'minor', label: 'Minor', color: 'bg-priority-medium' },
+  { value: 'trivial', label: 'Trivial', color: 'bg-priority-low' },
 ];
 
 const dueDateOptions = [
@@ -47,7 +58,10 @@ export function TaskFilters({
   modules,
   teamMembers,
   allTags,
+  statusOptions,
 }: TaskFiltersProps) {
+  const effectiveStatusOptions = statusOptions?.length ? statusOptions : DEFAULT_STATUS_OPTIONS;
+
   const toggleStatus = (status: TaskStatus) => {
     const current = filters.status || [];
     const updated = current.includes(status)
@@ -80,6 +94,14 @@ export function TaskFilters({
     onFiltersChange({ ...filters, assignee: updated.length ? updated : undefined });
   };
 
+  const toggleAssignedBy = (memberId: string) => {
+    const current = filters.assignedBy || [];
+    const updated = current.includes(memberId)
+      ? current.filter(a => a !== memberId)
+      : [...current, memberId];
+    onFiltersChange({ ...filters, assignedBy: updated.length ? updated : undefined });
+  };
+
   const toggleTag = (tag: string) => {
     const current = filters.tags || [];
     const updated = current.includes(tag)
@@ -106,14 +128,15 @@ export function TaskFilters({
         </PopoverTrigger>
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2">
-            {statusOptions.map(option => (
-              <label key={option.value} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+            {effectiveStatusOptions.map(option => (
+              <label key={option.value} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.status?.includes(option.value) || false}
                   onCheckedChange={() => toggleStatus(option.value)}
+                  className="mt-0.5"
                 />
-                <div className={cn('w-2 h-2 rounded-full', option.color)} />
-                <span className="text-sm">{option.label}</span>
+                <span className="mt-1.5 shrink-0"><StatusDot color={option.color} /></span>
+                <span className="text-sm leading-tight">{option.label}</span>
               </label>
             ))}
           </div>
@@ -137,13 +160,14 @@ export function TaskFilters({
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2">
             {priorityOptions.map(option => (
-              <label key={option.value} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+              <label key={option.value} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.priority?.includes(option.value) || false}
                   onCheckedChange={() => togglePriority(option.value)}
+                  className="mt-0.5"
                 />
-                <div className={cn('w-2 h-2 rounded-full', option.color)} />
-                <span className="text-sm">{option.label}</span>
+                <div className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0', option.color)} />
+                <span className="text-sm leading-tight">{option.label}</span>
               </label>
             ))}
           </div>
@@ -170,12 +194,13 @@ export function TaskFilters({
               <div className="text-sm text-muted-foreground p-1">No modules created</div>
             ) : (
               modules.map(module => (
-                <label key={module.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                <label key={module.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                   <Checkbox
                     checked={filters.moduleIds?.includes(module.id) || false}
                     onCheckedChange={() => toggleModule(module.id)}
+                    className="mt-0.5"
                   />
-                  <span className="text-sm">{module.name}</span>
+                  <span className="text-sm leading-tight">{module.name}</span>
                 </label>
               ))
             )}
@@ -219,11 +244,11 @@ export function TaskFilters({
         </SelectContent>
       </Select>
 
-      {/* Assignee Filter */}
+      {/* Assigned To Filter */}
       <Popover>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="gap-1">
-            Assignee
+            Assigned To
             {filters.assignee?.length ? (
               <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                 {filters.assignee.length}
@@ -235,20 +260,52 @@ export function TaskFilters({
         </PopoverTrigger>
         <PopoverContent className="w-48 p-2" align="start">
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            <label className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+            <label className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
               <Checkbox
                 checked={filters.assignee?.includes('unassigned') || false}
                 onCheckedChange={() => toggleAssignee('unassigned')}
+                className="mt-0.5"
               />
-              <span className="text-sm text-muted-foreground">Unassigned</span>
+              <span className="text-sm text-muted-foreground leading-tight">Unassigned</span>
             </label>
             {teamMembers.map(member => (
-              <label key={member.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+              <label key={member.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.assignee?.includes(member.id) || false}
                   onCheckedChange={() => toggleAssignee(member.id)}
+                  className="mt-0.5"
                 />
-                <span className="text-sm">{member.name}</span>
+                <span className="text-sm leading-tight">{member.name}</span>
+              </label>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* Assigned By Filter */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1">
+            Assigned By
+            {filters.assignedBy?.length ? (
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                {filters.assignedBy.length}
+              </Badge>
+            ) : (
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-48 p-2" align="start">
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {teamMembers.map(member => (
+              <label key={member.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                <Checkbox
+                  checked={filters.assignedBy?.includes(member.id) || false}
+                  onCheckedChange={() => toggleAssignedBy(member.id)}
+                  className="mt-0.5"
+                />
+                <span className="text-sm leading-tight">{member.name}</span>
               </label>
             ))}
           </div>
@@ -273,12 +330,13 @@ export function TaskFilters({
           <PopoverContent className="w-48 p-2" align="start">
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {allTags.map(tag => (
-                <label key={tag} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                <label key={tag} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                   <Checkbox
                     checked={filters.tags?.includes(tag) || false}
                     onCheckedChange={() => toggleTag(tag)}
+                    className="mt-0.5"
                   />
-                  <span className="text-sm">{tag}</span>
+                  <span className="text-sm leading-tight">{tag}</span>
                 </label>
               ))}
             </div>

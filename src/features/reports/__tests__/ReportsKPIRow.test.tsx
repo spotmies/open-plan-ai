@@ -66,9 +66,21 @@ describe('ReportsKPIRow', () => {
     expect(getByText('3')).toBeInTheDocument();
   });
 
-  it('should display correct avg cycle time', () => {
+  it('should display cycle time in days when >= 2 days', () => {
     const { getByText } = renderWithProviders(<ReportsKPIRow kpis={mockKPIs} />);
     expect(getByText('4.5d')).toBeInTheDocument();
+  });
+
+  it('should display cycle time in hours when < 2 days', () => {
+    const kpisShortCycle = { ...mockKPIs, avgCycleTime: 0.3 };
+    const { getByText } = renderWithProviders(<ReportsKPIRow kpis={kpisShortCycle} />);
+    expect(getByText('7 hrs')).toBeInTheDocument();
+  });
+
+  it('should display N/A when avg cycle time is 0', () => {
+    const kpisNoCycle = { ...mockKPIs, avgCycleTime: 0 };
+    const { getByText } = renderWithProviders(<ReportsKPIRow kpis={kpisNoCycle} />);
+    expect(getByText('N/A')).toBeInTheDocument();
   });
 
   it('should show critical issues warning when criticalIssues > 0', () => {

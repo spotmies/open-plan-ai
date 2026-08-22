@@ -49,6 +49,7 @@ export const useProjectStore = create<ProjectState>()(
     persist(
       immer((set) => ({
         ...initialState,
+
         
         setProjects: (projects) => set({ projects }),
         
@@ -70,51 +71,60 @@ export const useProjectStore = create<ProjectState>()(
         }),
         
         // Task actions
+        // `tasks`/`milestones` are absent on projects loaded via the org-level
+        // list/detail endpoints (only useProjectDetail's merged fetch populates
+        // them) — always default to [] rather than assuming the array exists.
         addTask: (projectId, task) => set((state) => {
           const project = state.projects.find(p => p.id === projectId);
           if (project) {
+            if (!project.tasks) {
+              project.tasks = [];
+            }
             project.tasks.push(task);
           }
         }),
-        
+
         updateTask: (projectId, taskId, updates) => set((state) => {
           const project = state.projects.find(p => p.id === projectId);
-          if (project) {
+          if (project?.tasks) {
             const task = project.tasks.find(t => t.id === taskId);
             if (task) {
               Object.assign(task, updates);
             }
           }
         }),
-        
+
         deleteTask: (projectId, taskId) => set((state) => {
           const project = state.projects.find(p => p.id === projectId);
-          if (project) {
+          if (project?.tasks) {
             project.tasks = project.tasks.filter(t => t.id !== taskId);
           }
         }),
-        
+
         // Milestone actions
         addMilestone: (projectId, milestone) => set((state) => {
           const project = state.projects.find(p => p.id === projectId);
           if (project) {
+            if (!project.milestones) {
+              project.milestones = [];
+            }
             project.milestones.push(milestone);
           }
         }),
-        
+
         updateMilestone: (projectId, milestoneId, updates) => set((state) => {
           const project = state.projects.find(p => p.id === projectId);
-          if (project) {
+          if (project?.milestones) {
             const milestone = project.milestones.find(m => m.id === milestoneId);
             if (milestone) {
               Object.assign(milestone, updates);
             }
           }
         }),
-        
+
         deleteMilestone: (projectId, milestoneId) => set((state) => {
           const project = state.projects.find(p => p.id === projectId);
-          if (project) {
+          if (project?.milestones) {
             project.milestones = project.milestones.filter(m => m.id !== milestoneId);
           }
         }),
@@ -152,7 +162,16 @@ export const useProjectStore = create<ProjectState>()(
         setError: (error) => set({ error }),
         reset: () => set(initialState),
       })),
-      { name: 'project-store' }
+      {
+        name: 'project-store',
+        // Only persist the selected project ID.
+        // React Query owns all server data (projects, tasks, milestones, issues)
+        // and keeps it fresh. Persisting the full tree to localStorage causes
+        // stale-data bugs and blocks the main thread on large datasets.
+        partialize: (state) => ({
+          selectedProjectId: state.selectedProjectId,
+        }),
+      }
     ),
     { name: 'ProjectStore' }
   )
@@ -170,8 +189,8 @@ export const useProjectById = (projectId: string) =>
   );
 
 export const useAllTasks = () =>
-  useProjectStore((state) => 
-    state.projects.flatMap(p => p.tasks)
+  useProjectStore((state) =>
+    state.projects.flatMap(p => p.tasks || [])
   );
 
 export const useAllIssues = () =>

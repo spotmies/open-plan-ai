@@ -12,15 +12,18 @@ import { chatService } from '@/services/chat.service';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { ReachableUser } from '../types';
+import { logger } from '@/services/monitoring/logger';
+import { resolveFileUrl } from '@/utils/fileUrl';
 
 interface NewGroupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (conversationId: string) => void;
   onConversationCreated?: () => Promise<void>;
+  orgId?: string;
 }
 
-export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCreated }: NewGroupDialogProps) {
+export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCreated, orgId }: NewGroupDialogProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -31,15 +34,16 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     chatService
-      .getReachableUsers()
+      .getReachableUsers(orgId)
       .then(setUsers)
       .catch((err) => {
-        console.error('Failed to fetch users:', err);
+        logger.error('Failed to fetch users:', err);
         toast.error('Failed to load users');
       })
       .finally(() => setLoading(false));
@@ -60,6 +64,8 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
   };
 
   const handleCreate = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
     try {
       const convId = await chatService.createGroup(
         name,
@@ -73,16 +79,22 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
       onOpenChange(false);
       onSelect(convId);
     } catch (err) {
-      console.error('Failed to create group:', err);
+      logger.error('Failed to create group:', err);
       toast.error('Failed to create group');
+    } finally {
+      setIsCreating(false);
     }
   };
 
   const reset = () => {
     setStep(1);
+    setName('');
+    setDescription('');
+    setSelectedIds(new Set());
     setSearch('');
     setAvatarUrl('');
     setAvatarError(false);
+    setIsCreating(false);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,7 +113,7 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
       setAvatarUrl(publicUrl);
       toast.success('Group photo uploaded');
     } catch (err: any) {
-      console.error(err);
+      logger.error(err);
       toast.error('Failed to upload image: ' + (err.message || 'Unknown error'));
     } finally {
       setIsUploading(false);
@@ -130,7 +142,7 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
                 <Avatar className="h-20 w-20 mx-auto border-4 border-primary/10 shadow-sm">
                   {avatarUrl && !isEmoji(avatarUrl) && !avatarError ? (
                     <AvatarImage
-                      src={avatarUrl}
+                      src={resolveFileUrl(avatarUrl) ?? avatarUrl}
                       onError={() => setAvatarError(true)}
                       className="object-cover"
                     />
@@ -220,9 +232,13 @@ export function NewGroupDialog({ open, onOpenChange, onSelect, onConversationCre
           {step === 1 ? (
             <Button onClick={() => setStep(2)} disabled={!name.trim()}>Next</Button>
           ) : (
-            <Button onClick={handleCreate} disabled={selectedIds.size === 0}>
-              <Check className="h-4 w-4 mr-2" />
-              Create Group
+            <Button onClick={handleCreate} disabled={selectedIds.size === 0 || isCreating}>
+              {isCreating ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4 mr-2" />
+              )}
+              {isCreating ? 'Creating...' : 'Create Group'}
             </Button>
           )}
         </DialogFooter>

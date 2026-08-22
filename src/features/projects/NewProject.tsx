@@ -51,14 +51,19 @@ import {
   Target,
   Pencil,
   Loader2,
-  Smile
+  Smile,
+  Eye,
+  Image as ImageIcon
 } from "lucide-react";
-import { format, isBefore, startOfMonth, startOfToday } from "date-fns";
-import { cn } from "@/lib/utils";
+import { format, isBefore, startOfMonth } from "date-fns";
+import { cn, isValidPhoneNumber } from "@/lib/utils";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCreateProject } from "@/hooks/useProjects";
+import { projectsService } from "@/services/projects.service";
 import { useOrganizationMembers } from "@/hooks/useProjectTeam";
 import { useCreateAttachment } from '@/hooks/useProjectAttachments';
 import { useCreateProjectLink } from '@/hooks/useProjectLinks';
@@ -70,8 +75,9 @@ import { projectStorageService, UploadedProjectFile } from "@/services/projectSt
 import { attachmentsService } from "@/services/attachments.service";
 import { projectLinksService } from "@/services/projectLinks.service";
 import { projectMembersService } from "@/services/projectMembers.service";
-import type { Database } from "@/integrations/supabase/types";
 import { isValidUuid } from "@/utils/uuid";
+import { logger } from '@/services/monitoring/logger';
+import type { ProjectRole } from "@/types";
 
 const projectTypes = [
   "Hardware Development",
@@ -107,7 +113,7 @@ const departments = [
 
 interface TeamMemberAssignment {
   memberId: string;
-  role: string;
+  role: ProjectRole;
 }
 
 interface Department {
@@ -118,7 +124,7 @@ interface Department {
 
 interface ProjectLink {
   id: string;
-  name: string;
+  title: string;
   url: string;
 }
 
@@ -155,6 +161,7 @@ const NewProject = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { currentOrganization } = useOrganization();
+  const { user: currentUser } = useAuth();
   const createProjectMutation = useCreateProject();
   const { data: teamMembers = [] } = useOrganizationMembers(currentOrganization?.id);
   const [isCreating, setIsCreating] = useState(false);
@@ -166,6 +173,9 @@ const NewProject = () => {
   const [projectStage, setProjectStage] = useState<string>("concept");
   const [projectEmoji, setProjectEmoji] = useState<string>("📁");
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [startDate, setStartDate] = useState<Date>();
   const [expectedEndDate, setExpectedEndDate] = useState<Date>();
   const [isStartDateOpen, setIsStartDateOpen] = useState(false);
@@ -193,16 +203,30 @@ const NewProject = () => {
     setProjectStage(stage);
   }, [projectType]);
 
+  // The project creator is always added as Admin by the backend on creation,
+  // so reflect that in the UI without requiring the user to add themselves.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    setAssignedMembers(prev =>
+      prev.some(m => m.memberId === currentUser.id)
+        ? prev
+        : [{ memberId: currentUser.id, role: 'admin' as ProjectRole }, ...prev]
+    );
+  }, [currentUser?.id]);
+
   // Optional Details
   const [showOptionalDetails, setShowOptionalDetails] = useState(false);
   const [clientName, setClientName] = useState("");
   const [clientOrganization, setClientOrganization] = useState("");
   const [clientContact, setClientContact] = useState("");
   const [notes, setNotes] = useState("");
+  const [clientContactError, setClientContactError] = useState("");
+  const [clientOrgError, setClientOrgError] = useState("");
 
   // Team Members
   const [assignedMembers, setAssignedMembers] = useState<TeamMemberAssignment[]>([]);
-  const [selectedMember, setSelectedMember] = useState("");
+  const [isMemberDropdownOpen, setIsMemberDropdownOpen] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
 
   // Departments
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
@@ -214,10 +238,16 @@ const NewProject = () => {
   const [links, setLinks] = useState<ProjectLink[]>([]);
   const [newLinkName, setNewLinkName] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
+  const isLinkUrlValid = !newLinkUrl || (() => {
+    try { const p = new URL(newLinkUrl); return p.protocol === 'https:' || p.protocol === 'http:'; }
+    catch { return false; }
+  })();
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
 
   // Tasks from document
   const [taskDocument, setTaskDocument] = useState<UploadedFile | null>(null);
@@ -320,12 +350,8 @@ const NewProject = () => {
   };
 
   const handleAddMilestone = () => {
-    if (startDate && newMilestoneStart && isBefore(newMilestoneStart, startDate)) {
-      toast.error("Milestone start date cannot be earlier than project start date");
-      return;
-    }
-    if (expectedEndDate && newMilestoneEnd && isBefore(expectedEndDate, newMilestoneEnd)) {
-      toast.error("Milestone end date cannot be later than project expected completion date");
+    if (newMilestoneStart && newMilestoneEnd && isBefore(newMilestoneEnd, newMilestoneStart)) {
+      toast.error("Milestone end date cannot be before the start date");
       return;
     }
     if (newMilestoneName.trim() && newMilestoneStart && newMilestoneEnd) {
@@ -365,19 +391,21 @@ const NewProject = () => {
     setDeleteConfirmation({ isOpen: true, type: 'milestone', id });
   };
 
-  const handleAddTeamMember = () => {
-    if (selectedMember) {
-      const exists = assignedMembers.find(m => m.memberId === selectedMember);
-      if (exists) return;
+  const handleChangeAssignedMemberRole = (memberId: string, role: ProjectRole) => {
+    setAssignedMembers(prev => prev.map(m => (m.memberId === memberId ? { ...m, role } : m)));
+  };
 
-      const member = getMemberById(selectedMember);
-      const inheritedRole = member?.role || 'member';
-      setAssignedMembers([...assignedMembers, { memberId: selectedMember, role: inheritedRole }]);
-      setSelectedMember("");
+  const handleToggleMemberSelection = (memberId: string) => {
+    const isAssigned = assignedMembers.some(am => am.memberId === memberId);
+    if (isAssigned) {
+      setAssignedMembers(prev => prev.filter(m => m.memberId !== memberId));
+    } else {
+      setAssignedMembers(prev => [...prev, { memberId, role: 'member' as ProjectRole }]);
     }
   };
 
   const handleRemoveTeamMember = (memberId: string) => {
+    if (memberId === currentUser?.id) return; // Creator is always Admin, can't be removed
     setAssignedMembers(assignedMembers.filter(m => m.memberId !== memberId));
   };
 
@@ -405,16 +433,31 @@ const NewProject = () => {
     }
   };
 
+  const handleDeleteCustomDepartment = (e: React.MouseEvent, departmentId: string) => {
+    e.stopPropagation();
+    setCustomDepartments(prev => prev.filter(d => d.id !== departmentId));
+    setSelectedDepartments(prev => prev.filter(id => id !== departmentId));
+  };
+
   const handleRemoveAttachment = (fileId: string) => {
     setDeleteConfirmation({ isOpen: true, type: 'attachment', id: fileId });
   };
 
   const handleAddLink = () => {
-    if (newLinkName && newLinkUrl) {
-      setLinks([...links, { id: Math.random().toString(36).substr(2, 9), name: newLinkName, url: newLinkUrl }]);
-      setNewLinkName("");
-      setNewLinkUrl("");
+    if (!newLinkName || !newLinkUrl) return;
+    try {
+      const parsed = new URL(newLinkUrl);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        toast.error('URL must start with https:// or http://');
+        return;
+      }
+    } catch {
+      toast.error('Please enter a valid URL (e.g., https://example.com)');
+      return;
     }
+    setLinks([...links, { id: Math.random().toString(36).substr(2, 9), title: newLinkName, url: newLinkUrl }]);
+    setNewLinkName("");
+    setNewLinkUrl("");
   };
 
   const handleRemoveLink = (linkId: string) => {
@@ -447,6 +490,8 @@ const NewProject = () => {
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'text/plain',
       'text/csv',
+      'text/markdown',
+      'text/x-markdown',
       'image/jpeg',
       'image/jpg',
       'image/png',
@@ -454,7 +499,9 @@ const NewProject = () => {
       'image/webp',
       'image/svg+xml',
       'application/zip',
+      'application/x-zip-compressed',
       'application/x-rar-compressed',
+      'application/vnd.rar',
     ];
 
     const maxSize = 50 * 1024 * 1024; // 50MB
@@ -494,6 +541,19 @@ const NewProject = () => {
     }
   }, []);
 
+  useEffect(() => {
+    const urls: Record<string, string> = {};
+    attachments.forEach(file => {
+      if (file.file && (file.file.type.startsWith('image/') || file.file.type === 'application/pdf')) {
+        urls[file.id] = URL.createObjectURL(file.file);
+      }
+    });
+    setPreviewUrls(urls);
+    return () => {
+      Object.values(urls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [attachments]);
+
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     processFiles(e.target.files);
     // Reset input value to allow selecting the same file again
@@ -524,6 +584,41 @@ const NewProject = () => {
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      toast.error('Only JPG, PNG, WebP, or GIF images are allowed');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Logo file size must be less than 5MB');
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoFile(null);
+    setLogoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    };
+  }, [logoPreviewUrl]);
 
   const handleTaskDocumentUpload = () => {
     // Task import feature - coming soon
@@ -564,6 +659,38 @@ const NewProject = () => {
 
     if (!expectedEndDate) {
       toast.error('Expected completion date is required');
+      return;
+    }
+
+    if (isBefore(expectedEndDate, startDate)) {
+      toast.error('Expected completion date must be after the start date');
+      return;
+    }
+
+    if (newMilestoneName.trim() || newMilestoneStart || newMilestoneEnd) {
+      toast.error("You have an unsaved milestone. Please click '+ Add Milestone' or clear the inputs.");
+      return;
+    }
+
+    if (newModuleName.trim()) {
+      toast.error("You have an unsaved module. Please click 'Add Module' or clear the input.");
+      return;
+    }
+
+    if (newLinkName.trim() || newLinkUrl.trim()) {
+      toast.error("You have an unsaved project link. Please click 'Add Link' or clear the inputs.");
+      return;
+    }
+
+    if (clientContact && !isValidPhoneNumber(clientContact)) {
+      toast.error('Please enter a valid phone number');
+      setShowOptionalDetails(true);
+      return;
+    }
+
+    if (clientOrganization && /[^a-zA-Z\s\-'.]/.test(clientOrganization)) {
+      toast.error('Organisation name must contain only letters and spaces');
+      setShowOptionalDetails(true);
       return;
     }
 
@@ -613,45 +740,43 @@ const NewProject = () => {
         ));
       }
 
-      // Upload files to Supabase Storage and create attachment records
+      // Upload the project logo, if one was selected
+      if (logoFile) {
+        try {
+          await projectsService.uploadLogo(project.id, logoFile);
+        } catch (logoError) {
+          logger.error('Error uploading project logo:', logoError);
+          toast.warning('Project created but the logo failed to upload');
+        }
+      }
+
+      // Upload files to S3 storage
       if (attachments.length > 0) {
         const filesToUpload = attachments.filter(att => att.file);
         if (filesToUpload.length > 0) {
           try {
-            const uploadResults = await Promise.all(
-              filesToUpload.map(att => projectStorageService.uploadFile(att.file!, project.id))
+            await Promise.all(
+              filesToUpload.map(att => projectStorageService.upload(project.id, att.file!))
             );
-
-            // Create attachment records in the database
-            const attachmentRecords = uploadResults.map(result => ({
-              entity_id: project.id,
-              entity_type: 'project' as const,
-              file_name: result.name,
-              file_path: result.path,
-              file_size: result.sizeBytes,
-              mime_type: result.mimeType,
-              project_id: project.id,
-            }));
-
-            await attachmentsService.createMany(attachmentRecords);
             toast.success(`${filesToUpload.length} file(s) uploaded successfully`);
           } catch (uploadError) {
-            console.error('Error uploading files:', uploadError);
+            logger.error('Error uploading files:', uploadError);
             toast.warning('Project created but some files failed to upload');
           }
         }
       }
 
-      // Add team members to the project
-      if (assignedMembers.length > 0) {
+      // Add team members to the project (exclude creator — backend already adds them as admin)
+      const membersToAdd = assignedMembers.filter(m => m.memberId !== currentUser?.id);
+      if (membersToAdd.length > 0) {
         try {
-          const memberData = assignedMembers.map(m => ({
+          const memberData = membersToAdd.map(m => ({
             userId: m.memberId,
             role: m.role,
           }));
           await projectMembersService.addMembers(project.id, memberData);
         } catch (memberError) {
-          console.error('Error adding team members:', memberError);
+          logger.error('Error adding team members:', memberError);
           toast.warning('Project created but some team members could not be added');
         }
       }
@@ -661,10 +786,10 @@ const NewProject = () => {
         try {
           await projectLinksService.createMany(
             project.id,
-            links.map(l => ({ name: l.name, url: l.url }))
+            links.map(l => ({ title: l.title, url: l.url }))
           );
         } catch (linkError) {
-          console.error('Error creating project links:', linkError);
+          logger.error('Error creating project links:', linkError);
           toast.warning('Project created but some links could not be saved');
         }
       }
@@ -672,7 +797,7 @@ const NewProject = () => {
       toast.success('Project created successfully!');
       navigate(`/projects/${project.id}`);
     } catch (error) {
-      console.error('Error creating project:', error);
+      logger.error('Error creating project:', error);
       const message = error instanceof Error ? error.message : 'Failed to create project';
       toast.error(message);
     } finally {
@@ -685,8 +810,8 @@ const NewProject = () => {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "critical": return "bg-priority-critical/10 text-priority-critical border-priority-critical/20";
-      case "high": return "bg-priority-high/10 text-priority-high border-priority-high/20";
-      case "medium": return "bg-priority-medium/10 text-priority-medium border-priority-medium/20";
+      case "major": return "bg-priority-high/10 text-priority-high border-priority-high/20";
+      case "minor": return "bg-priority-medium/10 text-priority-medium border-priority-medium/20";
       default: return "bg-priority-low/10 text-priority-low border-priority-low/20";
     }
   };
@@ -729,17 +854,69 @@ const NewProject = () => {
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-10 w-10 shrink-0 text-xl"
-                        title="Select project icon"
+                        className="h-10 w-10 shrink-0 text-xl overflow-hidden"
+                        title="Select project icon or logo"
                       >
-                        {projectEmoji}
+                        {logoPreviewUrl ? (
+                          <img src={logoPreviewUrl} alt="Project logo" className="h-full w-full object-contain" />
+                        ) : (
+                          projectEmoji
+                        )}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-72 p-3" align="start">
                       <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">Project Logo</span>
+                          </div>
+                          {logoPreviewUrl && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                              onClick={handleRemoveLogo}
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="h-12 w-12 rounded-lg border border-dashed border-border flex items-center justify-center bg-muted/30 overflow-hidden shrink-0">
+                            {logoPreviewUrl ? (
+                              <img src={logoPreviewUrl} alt="Project logo" className="h-full w-full object-contain" />
+                            ) : (
+                              <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            ref={logoInputRef}
+                            className="hidden"
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            onChange={handleLogoFileChange}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => logoInputRef.current?.click()}
+                          >
+                            <Upload className="h-3.5 w-3.5 mr-1.5" />
+                            {logoPreviewUrl ? 'Change' : 'Upload'}
+                          </Button>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          JPG, PNG, WebP or GIF. Max 5MB. Square images look best.
+                        </p>
+
+                        <Separator />
+
                         <div className="flex items-center gap-2">
                           <Smile className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">Select Project Icon</span>
+                          <span className="text-sm font-medium">Or Pick an Emoji Icon</span>
                         </div>
                         <div className="grid grid-cols-8 gap-1">
                           {projectEmojis.map((emoji) => (
@@ -845,9 +1022,11 @@ const NewProject = () => {
                       selected={startDate}
                       onSelect={(date) => {
                         setStartDate(date);
+                        if (date && expectedEndDate && isBefore(expectedEndDate, date)) {
+                          setExpectedEndDate(undefined);
+                        }
                         setIsStartDateOpen(false);
                       }}
-                      disabled={{ before: startOfToday() }}
                       initialFocus
                     />
                   </PopoverContent>
@@ -876,7 +1055,7 @@ const NewProject = () => {
                         setExpectedEndDate(date);
                         setIsExpectedEndDateOpen(false);
                       }}
-                      disabled={(date) => isBefore(date, startOfToday()) || (startDate ? isBefore(date, startDate) : false)}
+                      disabled={(date) => (startDate ? isBefore(date, startDate) : false)}
                       initialFocus
                     />
                   </PopoverContent>
@@ -905,7 +1084,7 @@ const NewProject = () => {
                       placeholder="Client name"
                       value={clientName}
                       maxLength={100}
-                      onChange={(e) => setClientName(e.target.value)}
+                      onChange={(e) => setClientName(e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
                     />
                   </div>
                   <div className="space-y-2">
@@ -915,21 +1094,24 @@ const NewProject = () => {
                       placeholder="Organisation"
                       value={clientOrganization}
                       maxLength={100}
-                      onChange={(e) => setClientOrganization(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="clientContact">Contact Number (10 digits)</Label>
-                    <Input
-                      id="clientContact"
-                      placeholder="e.g. 1234567890"
-                      value={clientContact}
-                      maxLength={10}
                       onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, "");
-                        setClientContact(val);
+                        const filtered = e.target.value.replace(/[^a-zA-Z\s\-'.]/g, "");
+                        setClientOrganization(filtered);
+                        setClientOrgError(filtered !== e.target.value ? "Only letters and spaces are allowed" : "");
                       }}
                     />
+                    {clientOrgError && <p className="text-xs text-destructive">{clientOrgError}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Contact Number</Label>
+                    <PhoneInput
+                      value={clientContact}
+                      onChange={(fullValue, error) => {
+                        setClientContact(fullValue);
+                        setClientContactError(error);
+                      }}
+                    />
+                    {clientContactError && <p className="text-xs text-destructive">{clientContactError}</p>}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -965,51 +1147,79 @@ const NewProject = () => {
               <Users className="h-5 w-5 text-primary" />
               Team Members
             </CardTitle>
-            <CardDescription>Assign team members to this project (organization role is inherited automatically)</CardDescription>
+            <CardDescription>Assign team members to this project and set their project role (defaults to Member)</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <Select value={selectedMember} onValueChange={setSelectedMember}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select team member" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teamMembers
-                      .filter(m => !assignedMembers.find(am => am.memberId === m.id))
+            {/* Multi-select dropdown with checkboxes */}
+            <Popover open={isMemberDropdownOpen} onOpenChange={(open) => { setIsMemberDropdownOpen(open); if (!open) setMemberSearch(""); }}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-between font-normal"
+                >
+                  {assignedMembers.length > 0
+                    ? `${assignedMembers.length} member${assignedMembers.length > 1 ? 's' : ''} selected`
+                    : "Select team member"}
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0" align="start" style={{ width: 'var(--radix-popover-trigger-width)' }}>
+                <div className="p-2 border-b">
+                  <Input
+                    placeholder="Search members..."
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    className="h-8 text-sm"
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-52 overflow-y-auto">
+                  {teamMembers
+                    .filter(m => m.id !== currentUser?.id)
+                    .filter(m => m.name.toLowerCase().includes(memberSearch.toLowerCase()))
+                    .length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      {memberSearch ? "No members match your search" : "No members available"}
+                    </p>
+                  ) : (
+                    teamMembers
+                      .filter(m => m.id !== currentUser?.id)
+                      .filter(m => m.name.toLowerCase().includes(memberSearch.toLowerCase()))
+                      .sort((a, b) => {
+                        const aSelected = assignedMembers.some(am => am.memberId === a.id);
+                        const bSelected = assignedMembers.some(am => am.memberId === b.id);
+                        if (aSelected === bSelected) return 0;
+                        return aSelected ? -1 : 1;
+                      })
                       .map((member) => (
-                        <SelectItem key={member.id} value={member.id}>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6">
-                              <AvatarImage src={member.avatar} />
-                              <AvatarFallback className="text-xs">{member.initials}</AvatarFallback>
-                            </Avatar>
-                            {member.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={handleAddTeamMember} disabled={!selectedMember}>
-                <Plus className="h-4 w-4 mr-1" />
-                Add
-              </Button>
-            </div>
-            {getMemberById(selectedMember) && (
-              <p className="text-[11px] text-muted-foreground">
-                Role will be inherited automatically from organization:{" "}
-                <span className="font-medium text-foreground capitalize">
-                  {getMemberById(selectedMember)?.role || 'member'}
-                </span>
-              </p>
-            )}
+                        <div
+                          key={member.id}
+                          className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => handleToggleMemberSelection(member.id)}
+                        >
+                          <Checkbox
+                            checked={assignedMembers.some(am => am.memberId === member.id)}
+                            onCheckedChange={() => handleToggleMemberSelection(member.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Avatar className="h-7 w-7">
+                            <AvatarImage src={member.avatar} />
+                            <AvatarFallback className="text-xs">{member.initials}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{member.name}</span>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
 
             {assignedMembers.length > 0 && (
               <div className="space-y-2">
                 {assignedMembers.map((assignment) => {
                   const member = getMemberById(assignment.memberId);
                   if (!member) return null;
+                  const isCreator = assignment.memberId === currentUser?.id;
                   return (
                     <div
                       key={assignment.memberId}
@@ -1021,20 +1231,43 @@ const NewProject = () => {
                           <AvatarFallback>{member.initials}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium text-sm">{member.name}</p>
+                          <p className="font-medium text-sm flex items-center gap-2">
+                            {member.name}
+                            {isCreator && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">You · Creator</Badge>
+                            )}
+                          </p>
                           <p className="text-xs text-muted-foreground">{member.email}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {assignment.role && <Badge variant="secondary">{assignment.role}</Badge>}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleRemoveTeamMember(assignment.memberId)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                        {isCreator ? (
+                          <Badge variant="outline" className="h-8 px-3 flex items-center text-xs font-normal">Admin</Badge>
+                        ) : (
+                          <>
+                            <Select
+                              value={assignment.role}
+                              onValueChange={(v) => handleChangeAssignedMemberRole(assignment.memberId, v as ProjectRole)}
+                            >
+                              <SelectTrigger className="h-8 w-[120px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="admin">Admin</SelectItem>
+                                <SelectItem value="maintainer">Maintainer</SelectItem>
+                                <SelectItem value="member">Member</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleRemoveTeamMember(assignment.memberId)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -1046,7 +1279,7 @@ const NewProject = () => {
               <div className="text-center py-8 text-muted-foreground">
                 <Users className="h-10 w-10 mx-auto mb-2 opacity-50" />
                 <p>No team members added yet</p>
-                <p className="text-sm">Select a team member to add them to this project</p>
+                <p className="text-sm">Select members from the dropdown above to assign them</p>
               </div>
             )}
           </CardContent>
@@ -1057,7 +1290,7 @@ const NewProject = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-primary" />
-              Departments
+              Departments <span className="text-destructive">*</span>
             </CardTitle>
             <CardDescription>Select the departments involved in this project</CardDescription>
           </CardHeader>
@@ -1091,12 +1324,20 @@ const NewProject = () => {
                   key={dept.id}
                   onClick={() => handleDepartmentToggle(dept.id)}
                   className={cn(
-                    "flex flex-col items-center gap-2 p-4 rounded-lg border-2 cursor-pointer transition-all",
+                    "flex flex-col items-center gap-2 p-4 rounded-lg border-2 cursor-pointer transition-all relative group",
                     selectedDepartments.includes(dept.id)
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/50 hover:bg-muted/50"
                   )}
                 >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={(e) => handleDeleteCustomDepartment(e, dept.id)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                   <dept.icon className={cn(
                     "h-8 w-8",
                     selectedDepartments.includes(dept.id) ? "text-primary" : "text-muted-foreground"
@@ -1150,7 +1391,7 @@ const NewProject = () => {
         </Card>
 
         {/* Section 4: Project Modules */}
-        <Card>
+        {/*<Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Cpu className="h-5 w-5 text-primary" />
@@ -1209,10 +1450,10 @@ const NewProject = () => {
               </p>
             )}
           </CardContent>
-        </Card>
+        </Card>*/}
 
         {/* Section 5: Project Milestones */}
-        <Card>
+        {/*<Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Flag className="h-5 w-5 text-primary" />
@@ -1248,6 +1489,7 @@ const NewProject = () => {
                   <PopoverContent className="w-auto p-0" align="start">
                     {isMilestoneStartOpen && (
                       <Calendar
+                        variant="dropdown"
                         mode="single"
                         month={milestoneStartCalendarMonth}
                         onMonthChange={setMilestoneStartCalendarMonth}
@@ -1257,7 +1499,6 @@ const NewProject = () => {
                           setIsMilestoneStartOpen(false);
                         }}
                         disabled={(date) =>
-                          isBefore(date, startOfToday()) ||
                           (startDate ? isBefore(date, startDate) : false) ||
                           (expectedEndDate ? isBefore(expectedEndDate, date) : false)
                         }
@@ -1285,6 +1526,7 @@ const NewProject = () => {
                   <PopoverContent className="w-auto p-0" align="start">
                     {isMilestoneEndOpen && (
                       <Calendar
+                        variant="dropdown"
                         mode="single"
                         month={milestoneEndCalendarMonth}
                         onMonthChange={setMilestoneEndCalendarMonth}
@@ -1294,7 +1536,6 @@ const NewProject = () => {
                           setIsMilestoneEndOpen(false);
                         }}
                         disabled={(date) =>
-                          isBefore(date, startOfToday()) ||
                           (newMilestoneStart ? isBefore(date, newMilestoneStart) : false) ||
                           (startDate ? isBefore(date, startDate) : false) ||
                           (expectedEndDate ? isBefore(expectedEndDate, date) : false)
@@ -1356,7 +1597,7 @@ const NewProject = () => {
               </p>
             )}
           </CardContent>
-        </Card>
+        </Card> */}
 
         {/* Section 6: Storage */}
         <Card>
@@ -1368,7 +1609,7 @@ const NewProject = () => {
             <CardDescription>Manage project documents, files, and external links</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* File Upload Section */}
+
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-medium">Files & Documents</Label>
@@ -1377,17 +1618,15 @@ const NewProject = () => {
                 )}
               </div>
 
-              {/* Hidden file input */}
               <input
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileInputChange}
                 multiple
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.svg,.zip,.rar"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.jpg,.jpeg,.png,.gif,.webp,.svg,.zip,.rar"
                 className="hidden"
               />
 
-              {/* Drag and drop zone */}
               <div
                 onClick={handleUploadClick}
                 onDragOver={handleDragOver}
@@ -1419,23 +1658,44 @@ const NewProject = () => {
                       key={file.id}
                       className="flex items-center justify-between p-3 rounded-lg border bg-card"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <FileText className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm">{file.name}</p>
+                      <div
+                        className="flex items-center gap-3 cursor-pointer min-w-0"
+                        onClick={() => setPreviewFile(file)}
+                      >
+                        {previewUrls[file.id] && file.file?.type.startsWith('image/') ? (
+                          <img
+                            src={previewUrls[file.id]}
+                            alt={file.name}
+                            className="h-10 w-10 rounded-lg object-cover flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <FileText className="h-5 w-5 text-primary" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{file.name}</p>
                           <p className="text-xs text-muted-foreground">{file.size}</p>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleRemoveAttachment(file.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          onClick={() => setPreviewFile(file)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleRemoveAttachment(file.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1444,7 +1704,6 @@ const NewProject = () => {
 
             <Separator />
 
-            {/* Links Section */}
             <div className="space-y-4">
               <Label className="text-base font-medium">Project Links</Label>
               <div className="flex gap-3">
@@ -1458,9 +1717,10 @@ const NewProject = () => {
                     placeholder="URL (e.g., https://...)"
                     value={newLinkUrl}
                     onChange={(e) => setNewLinkUrl(e.target.value)}
+                    className={cn(newLinkUrl && !isLinkUrlValid && "border-destructive focus-visible:ring-destructive")}
                   />
                 </div>
-                <Button onClick={handleAddLink} disabled={!newLinkName || !newLinkUrl}>
+                <Button onClick={handleAddLink} disabled={!newLinkName || !newLinkUrl || !isLinkUrlValid}>
                   <Plus className="h-4 w-4 mr-1" />
                   Add Link
                 </Button>
@@ -1478,7 +1738,7 @@ const NewProject = () => {
                           <Globe className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-sm">{link.name}</p>
+                          <p className="font-medium text-sm">{link.title}</p>
                           <a
                             href={link.url}
                             target="_blank"
@@ -1621,6 +1881,7 @@ const NewProject = () => {
               || !expectedEndDate
               || isCreating
               || !currentOrganization
+              || selectedDepartments.length === 0
             }
           >
             {isCreating ? (
@@ -1633,6 +1894,34 @@ const NewProject = () => {
             )}
           </Button>
         </div>
+
+        {/* File Preview Dialog */}
+        <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
+          <DialogContent className={cn(previewFile?.file?.type === 'application/pdf' ? "max-w-4xl" : "max-w-2xl")}>
+            <DialogHeader>
+              <DialogTitle className="truncate pr-6">{previewFile?.name}</DialogTitle>
+              <DialogDescription>{previewFile?.size}</DialogDescription>
+            </DialogHeader>
+            {previewFile && previewUrls[previewFile.id] && previewFile.file?.type.startsWith('image/') ? (
+              <img
+                src={previewUrls[previewFile.id]}
+                alt={previewFile.name}
+                className="max-h-[70vh] w-full object-contain rounded-lg bg-muted/30"
+              />
+            ) : previewFile && previewUrls[previewFile.id] && previewFile.file?.type === 'application/pdf' ? (
+              <iframe
+                src={previewUrls[previewFile.id]}
+                title={previewFile.name}
+                className="h-[75vh] w-full rounded-lg border"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground">
+                <FileText className="h-16 w-16" />
+                <p className="text-sm">Preview not available for this file type</p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteConfirmation.isOpen} onOpenChange={(open) => {

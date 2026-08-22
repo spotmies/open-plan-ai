@@ -142,7 +142,7 @@ export const projectIssues: Issue[] = [
     description: 'Primary MCU vendor (STMicroelectronics) reports 4-week delay on STM32H7 series due to global semiconductor shortage. Need to evaluate alternative suppliers or adjust timeline.',
     category: 'supplier',
     severity: 'major',
-    status: 'investigating',
+    status: 'in-progress',
     projectId: 'proj-1',
     moduleId: 'mod-4',
     blocksTaskIds: ['task-4'],
@@ -175,7 +175,7 @@ export const projectIssues: Issue[] = [
     description: 'Regulatory consultant identified missing biocompatibility testing documentation required for FDA submission. Need ISO 10993 testing for skin-contact materials.',
     category: 'compliance',
     severity: 'major',
-    status: 'investigating',
+    status: 'in-progress',
     projectId: 'proj-1',
     moduleId: 'mod-6',
     blocksTaskIds: ['task-15'],
@@ -207,7 +207,7 @@ export const projectIssues: Issue[] = [
     description: 'Long-running stability tests show gradual memory leak in BLE connection handling. Device crashes after approximately 72 hours of continuous operation.',
     category: 'defect',
     severity: 'major',
-    status: 'investigating',
+    status: 'in-progress',
     projectId: 'proj-1',
     moduleId: 'mod-3',
     blocksTaskIds: ['task-7', 'task-10'],
@@ -727,11 +727,11 @@ export const dashboardStats = {
     p.milestones.filter(m => !m.completed).slice(0, 2)
   ),
   openIssues: projects.reduce(
-    (sum, p) => sum + (p.issues?.filter(i => i.status !== 'resolved' && i.status !== 'closed').length || 0),
+    (sum, p) => sum + (p.issues?.filter(i => i.status !== 'resolved').length || 0),
     0
   ),
   criticalIssues: projects.reduce(
-    (sum, p) => sum + (p.issues?.filter(i => i.severity === 'critical' && i.status !== 'resolved' && i.status !== 'closed').length || 0),
+    (sum, p) => sum + (p.issues?.filter(i => i.severity === 'critical' && i.status !== 'resolved').length || 0),
     0
   ),
 };

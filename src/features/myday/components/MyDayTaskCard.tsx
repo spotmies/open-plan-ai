@@ -84,71 +84,68 @@ export const MyDayTaskCard = memo(function MyDayTaskCard({
   }, [onChecklistToggle, task.id]);
 
   return (
-    <Card 
+    <Card
       className={cn(
         'cursor-pointer transition-all duration-200',
         variantStyles[variant]
       )}
       onClick={handleCardClick}
     >
-      <CardContent className="p-4">
+      <CardContent className="p-3">
         {/* Header: Title and Priority */}
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <h4 className="font-medium text-sm text-foreground leading-tight flex-1">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <h4 className="font-medium text-sm text-foreground leading-tight flex-1 truncate">
             {task.title}
           </h4>
-          <Badge className={cn('text-xs shrink-0', priorityInfo.color)}>
+          <Badge className={cn('text-xs shrink-0 py-0 h-5', priorityInfo.color)}>
             {priorityInfo.label}
           </Badge>
         </div>
 
-        {/* Project and Module */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <Badge variant="outline" className="text-xs">
+        {/* Project, Module, and Date on one row */}
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          <Badge variant="outline" className="text-xs py-0 h-5">
             {task.projectName}
           </Badge>
-          <Badge className={cn('text-xs', moduleInfo.color)}>
+          <Badge className={cn('text-xs py-0 h-5', moduleInfo.color)}>
             {moduleInfo.label}
           </Badge>
-        </div>
-
-        {/* Status indicators */}
-        <div className="flex items-center gap-3 mb-3 text-xs">
-          {/* Due Date */}
           <div className={cn(
-            'flex items-center gap-1',
+            'flex items-center gap-1 text-xs ml-auto shrink-0',
             dueDateStatus === 'overdue' && 'text-destructive',
             dueDateStatus === 'today' && 'text-priority-high',
-            dueDateStatus === 'upcoming' && 'text-muted-foreground',
-            dueDateStatus === 'none' && 'text-muted-foreground'
+            (dueDateStatus === 'upcoming' || dueDateStatus === 'none') && 'text-muted-foreground',
           )}>
-            {dueDateStatus === 'overdue' && <AlertTriangle className="h-3 w-3" />}
-            {dueDateStatus !== 'overdue' && <Calendar className="h-3 w-3" />}
+            {dueDateStatus === 'overdue' ? <AlertTriangle className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
             <span>
               {task.startDate && task.dueDate
                 ? formatTaskDateRange(task.startDate, task.dueDate)
                 : formatDueDate(task.dueDate)}
             </span>
           </div>
-
-          {/* Dependency Status */}
-          {task.isBlocked && (
-            <div className="flex items-center gap-1 text-status-blocked">
-              <Lock className="h-3 w-3" />
-              <span>Blocked</span>
-            </div>
-          )}
-          {task.isBlockingOthers && !task.isBlocked && (
-            <div className="flex items-center gap-1 text-priority-high">
-              <Link2 className="h-3 w-3" />
-              <span>Blocking others</span>
-            </div>
-          )}
         </div>
+
+        {/* Dependency indicators — only when present */}
+        {(task.isBlocked || task.isBlockingOthers) && (
+          <div className="flex items-center gap-3 mb-2 text-xs">
+            {task.isBlocked && (
+              <div className="flex items-center gap-1 text-status-blocked">
+                <Lock className="h-3 w-3" />
+                <span>Blocked</span>
+              </div>
+            )}
+            {task.isBlockingOthers && !task.isBlocked && (
+              <div className="flex items-center gap-1 text-priority-high">
+                <Link2 className="h-3 w-3" />
+                <span>Blocking others</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Checklist Progress (if applicable) */}
         {totalItems > 0 && (
-          <div className="mb-3">
+          <div className="mb-2">
             <button
               className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground w-full"
               onClick={handleChecklistToggle}
@@ -188,7 +185,7 @@ export const MyDayTaskCard = memo(function MyDayTaskCard({
         )}
 
         {/* Quick Actions Footer */}
-        <div className="flex items-center justify-between pt-2 border-t border-border">
+        <div className="flex items-center justify-between pt-1.5 border-t border-border">
           <Select
             value={task.status}
             onValueChange={handleStatusChange}

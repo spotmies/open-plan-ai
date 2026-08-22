@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { chatTransport } from '../transport';
 import type { ConversationMember } from '../types';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import type { Unsubscribe } from '../transport/IChatTransport';
 
 export function useTypingIndicator(
   conversationId: string | null | undefined,
@@ -10,7 +10,7 @@ export function useTypingIndicator(
 ) {
   const [typingUserIds, setTypingUserIds] = useState<Set<string>>(new Set());
   const timersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const channelRef = useRef<RealtimeChannel | null>(null);
+  const channelRef = useRef<Unsubscribe | null>(null);
 
   useEffect(() => {
     if (!conversationId) return;

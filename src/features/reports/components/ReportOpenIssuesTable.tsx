@@ -3,7 +3,8 @@ import { AlertCircle, AlertTriangle, Info, ChevronUp, ChevronDown, ExternalLink 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { resolveFileUrl } from '@/utils/fileUrl';
 import { Issue, IssueSeverity } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -31,8 +32,8 @@ export const ReportOpenIssuesTable = memo(function ReportOpenIssuesTable({ issue
   const [sortField, setSortField] = useState<SortField>('severity');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   
-  const openIssues = useMemo(() => issues.filter(i => 
-    i.status === 'open' || i.status === 'investigating'
+  const openIssues = useMemo(() => issues.filter(i =>
+    i.status !== 'resolved' && i.status !== 'wont-fix'
   ), [issues]);
   
   const sortedIssues = useMemo(() => [...openIssues].sort((a, b) => {
@@ -60,12 +61,12 @@ export const ReportOpenIssuesTable = memo(function ReportOpenIssuesTable({ issue
   
   const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDirection('asc');
     }
-  }, []);
+  }, [sortField]);
 
   const handleIssueClick = useCallback((issueId: string) => {
     onIssueClick?.(issueId);
@@ -107,7 +108,7 @@ export const ReportOpenIssuesTable = memo(function ReportOpenIssuesTable({ issue
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-3 px-2">
-                    <SortHeader field="severity">Severity</SortHeader>
+                    <SortHeader field="severity">Priority</SortHeader>
                   </th>
                   <th className="text-left py-3 px-2">
                     <SortHeader field="title">Issue</SortHeader>
@@ -168,6 +169,7 @@ export const ReportOpenIssuesTable = memo(function ReportOpenIssuesTable({ issue
                           <div className="flex -space-x-2">
                             {issue.assignees.slice(0, 3).map((assignee) => (
                               <Avatar key={assignee.id} className="h-6 w-6 border-2 border-background">
+                                <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
                                 <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
                                   {assignee.initials}
                                 </AvatarFallback>

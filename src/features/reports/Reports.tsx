@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { downloadCSVReport, triggerPDFExport } from './utils/exportUtils';
 import { ReportsHeader } from './components/ReportsHeader';
@@ -10,6 +10,8 @@ import { ReportTeamWorkload } from './components/ReportTeamWorkload';
 import { ReportModuleProgress } from './components/ReportModuleProgress';
 import { ReportOpenIssuesTable } from './components/ReportOpenIssuesTable';
 import { ReportTrendChart } from './components/ReportTrendChart';
+import { ReportBomSection } from './components/ReportBomSection';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { useProjects } from '@/hooks/useProjects';
@@ -18,6 +20,9 @@ import { useOrgAllIssues } from '@/hooks/useIssues';
 import { useAllMilestones } from '@/hooks/useMilestones';
 import { useOrgAllModules } from '@/hooks/useModules';
 import { useTeamMembers } from '@/hooks/useTeam';
+import { useBomTree, useBomCostTrend } from '@/hooks/useBom';
+import { useCurrency } from '@/hooks/useCurrency';
+import { fromApiNode, bomFlatAll, applyPriceRollup } from '@/features/projects/components/bomData';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { TeamMember as ServiceTeamMember } from '@/services/team.service';
 import { Module as DbModule } from '@/services/modules.service';
@@ -26,6 +31,7 @@ import {
   ReportFilter,
   getDateRangeFromTimeRange,
   getTaskStatusBreakdown,
+  getIssueStatusBreakdown,
   getMilestoneHealth,
   getTeamWorkload,
   getModuleProgress,
@@ -63,7 +69,7 @@ function dbModuleToFrontend(dbM: DbModule): Module {
 
 function serviceTeamMemberToFrontend(m: ServiceTeamMember): TeamMember {
   return {
-    id: m.id,
+    id: m.userId,
     name: m.name,
     email: m.email,
     role: m.role,
@@ -76,7 +82,12 @@ function serviceTeamMemberToFrontend(m: ServiceTeamMember): TeamMember {
 
 export default function Reports() {
   const navigate = useNavigate();
-  const { currentOrganization } = useOrganization();
+  const { currentOrganization, isLoading: orgLoading } = useOrganization();
+
+  useEffect(() => {
+    document.title = 'Reports | Open Plan AI';
+    return () => { document.title = 'Open Plan AI'; };
+  }, []);
   const orgId = currentOrganization?.id;
 
   const [filter, setFilter] = useState<ReportFilter>({ timeRange: '30d' });
@@ -88,8 +99,9 @@ export default function Reports() {
   const { data: dbMilestones = [], isLoading: milestonesLoading } = useAllMilestones();
   const { data: dbModules = [], isLoading: modulesLoading } = useOrgAllModules();
   const { data: serviceTeamMembers = [], isLoading: teamLoading } = useTeamMembers(orgId);
+  const { formatCurrency } = useCurrency();
 
-  const isLoading = projectsLoading || tasksLoading || issuesLoading || milestonesLoading || modulesLoading || teamLoading;
+  const isLoading = orgLoading || projectsLoading || tasksLoading || issuesLoading || milestonesLoading || modulesLoading || teamLoading;
 
   // ─── Adapted frontend types ───────────────────────────────────────────────
   const allAdaptedMilestones = useMemo(
@@ -107,16 +119,24 @@ export default function Reports() {
     [serviceTeamMembers]
   );
 
+  // Org-level task/issue endpoints return data from ALL projects regardless of
+  // membership. Restrict to projects visible in the dropdown so "All Projects"
+  // and a single-project view are consistent when the org has one member-project.
+  const visibleProjectIds = useMemo(
+    () => new Set(allProjects.map(p => p.id)),
+    [allProjects]
+  );
+
   // ─── Project-scoped data ─────────────────────────────────────────────────
   const tasks = useMemo(() => {
-    if (!filter.projectId) return allTasks;
+    if (!filter.projectId) return allTasks.filter(t => visibleProjectIds.has(t.projectId));
     return allTasks.filter(t => t.projectId === filter.projectId);
-  }, [allTasks, filter.projectId]);
+  }, [allTasks, visibleProjectIds, filter.projectId]);
 
   const issues = useMemo(() => {
-    if (!filter.projectId) return allIssues;
+    if (!filter.projectId) return allIssues.filter(i => visibleProjectIds.has(i.projectId));
     return allIssues.filter(i => i.projectId === filter.projectId);
-  }, [allIssues, filter.projectId]);
+  }, [allIssues, visibleProjectIds, filter.projectId]);
 
   const milestones = useMemo(() => {
     if (!filter.projectId) return allAdaptedMilestones;
@@ -135,6 +155,16 @@ export default function Reports() {
     if (!filter.projectId) return undefined;
     return allProjects.find(p => p.id === filter.projectId)?.name;
   }, [allProjects, filter.projectId]);
+
+  // ─── BOM (project-scoped only — there is no org-wide BOM tree) ────────────
+  const { data: bomTree } = useBomTree(filter.projectId);
+  const [bomCostTrendGranularity, setBomCostTrendGranularity] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const { data: bomCostTrend, isLoading: bomCostTrendLoading } = useBomCostTrend(filter.projectId, bomCostTrendGranularity);
+  const bomNodes = useMemo(() => {
+    if (!bomTree?.roots?.length) return [];
+    const roots = bomTree.roots.map(r => applyPriceRollup(fromApiNode(r)));
+    return bomFlatAll(roots);
+  }, [bomTree]);
 
   // ─── Date range ───────────────────────────────────────────────────────────
   const dateRange = useMemo(
@@ -158,8 +188,9 @@ export default function Reports() {
 
   // ─── Chart data ───────────────────────────────────────────────────────────
   const statusBreakdown = useMemo(() => getTaskStatusBreakdown(filteredTasks), [filteredTasks]);
+  const issueStatusBreakdown = useMemo(() => getIssueStatusBreakdown(issues), [issues]);
   const milestoneHealth = useMemo(() => getMilestoneHealth(milestones, tasks), [milestones, tasks]);
-  const teamWorkload = useMemo(() => getTeamWorkload(filteredTasks, allAdaptedTeamMembers), [filteredTasks, allAdaptedTeamMembers]);
+  const teamWorkload = useMemo(() => getTeamWorkload(filteredTasks, allAdaptedTeamMembers, issues), [filteredTasks, allAdaptedTeamMembers, issues]);
   const moduleProgress = useMemo(() => getModuleProgress(tasks, modules), [tasks, modules]);
   const trendData = useMemo(() => getCompletedTasksTrend(filteredTasks, dateRange), [filteredTasks, dateRange]);
 
@@ -195,10 +226,6 @@ export default function Reports() {
 
   const handleMemberClick = useCallback((memberId: string) => {
     setFilter(prev => ({ ...prev, assigneeIds: [memberId] }));
-  }, []);
-
-  const handleModuleClick = useCallback((moduleId: string) => {
-    setFilter(prev => ({ ...prev, moduleIds: [moduleId] }));
   }, []);
 
   const handleIssueClick = useCallback((issueId: string) => {
@@ -255,6 +282,7 @@ export default function Reports() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ReportTaskStatusChart
             data={statusBreakdown}
+            issueData={issueStatusBreakdown}
             onStatusClick={handleStatusClick}
           />
           <ReportMilestoneHealth
@@ -267,7 +295,6 @@ export default function Reports() {
           />
           <ReportModuleProgress
             data={moduleProgress}
-            onModuleClick={handleModuleClick}
           />
         </div>
 
@@ -275,10 +302,31 @@ export default function Reports() {
         <ReportTrendChart data={trendData} />
 
         {/* Full Width: Open Issues Table */}
-        <ReportOpenIssuesTable
+        {/* <ReportOpenIssuesTable
           issues={issues}
           onIssueClick={handleIssueClick}
-        />
+        /> */}
+
+        {/* Bill of Materials — project-scoped only */}
+        {filter.projectId ? (
+          <ReportBomSection
+            projectName={projectName}
+            nodes={bomNodes}
+            formatCurrency={formatCurrency}
+            costTrendData={bomCostTrend}
+            costTrendLoading={bomCostTrendLoading}
+            costTrendGranularity={bomCostTrendGranularity}
+            onCostTrendGranularityChange={setBomCostTrendGranularity}
+          />
+        ) : (
+          <div className="pt-6 mt-2 border-t">
+            <Card>
+              <CardContent className="flex items-center justify-center h-[120px] text-muted-foreground text-sm">
+                Select a project above to see its Bill of Materials data.
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </>
   );

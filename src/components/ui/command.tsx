@@ -57,10 +57,14 @@ CommandInput.displayName = CommandPrimitive.Input.displayName;
 const CommandList = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.List>
->(({ className, ...props }, ref) => (
+>(({ className, onWheel, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
     className={cn("max-h-[300px] overflow-y-auto overflow-x-hidden", className)}
+    // Popovers portal outside the Dialog's scroll-lock region, so native wheel
+    // scrolling gets swallowed when this list is nested inside a Dialog. Drive
+    // scrollTop manually as a fallback.
+    onWheel={onWheel ?? ((e) => { e.currentTarget.scrollTop += e.deltaY; })}
     {...props}
   />
 ));

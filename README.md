@@ -4,6 +4,7 @@ A modern project management application built with React, TypeScript, and a feat
 
 ## 🚀 Quick Start
 
+
 ```bash
 # Install dependencies
 npm install
@@ -20,6 +21,7 @@ npm run type-check
 # Lint code
 npm run lint
 ```
+
 
 ## 📦 Available Scripts
 
@@ -110,3 +112,5 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 ## 📄 License
 
 MIT License - see LICENSE file for details.
+
+

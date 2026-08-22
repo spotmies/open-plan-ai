@@ -1,31 +1,46 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- TODO: Set the document title to the name of your application -->
-    <title>Open Plan AI</title>
-    <meta name="description" content="Open Plan AI">
-    <meta name="author" content="Open Plan AI" />
 
-    <!-- TODO: Update og:title to match your application name -->
-    
-    
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- TODO: Set the document title to the name of your application -->
+  <title>Open Plan AI</title>
+  <meta name="description" content="Open Plan AI">
+  <meta name="author" content="Open Plan AI" />
 
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@OpenPlanAI" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
-    <meta property="og:title" content="Open Plan AI">
+  <!-- TODO: Update og:title to match your application name -->
+
+
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://app.openplanai.com/" />
+  <meta property="og:image" content="https://app.openplanai.com/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@OpenPlanAI" />
+  <meta name="twitter:image" content="https://app.openplanai.com/og-image.png" />
+  <meta property="og:title" content="Open Plan AI">
   <meta name="twitter:title" content="Open Plan AI">
   <meta property="og:description" content="Open Plan AI">
   <meta name="twitter:description" content="Open Plan AI">
-  <link rel="icon" href="/favicon.png" type="image/png" />
+  <link rel="icon" href="/favicon-light.svg?v=6" type="image/svg+xml" media="(prefers-color-scheme: light)" />
+  <link rel="icon" href="/favicon-dark.svg?v=6" type="image/svg+xml" media="(prefers-color-scheme: dark)" />
+
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PQEQRP4K01"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PQEQRP4K01');
+  </script>
 </head>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>

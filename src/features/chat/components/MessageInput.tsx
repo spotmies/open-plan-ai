@@ -1,12 +1,14 @@
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { Send, Paperclip, Loader2, X, Smile, File as FileIcon } from 'lucide-react';
+import { useRef, useEffect, useCallback, useState, useMemo, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Send, Paperclip, Loader2, X, Smile, File as FileIcon, Users, CheckSquare, AlertCircle, Flag, Cpu, Layers, FileText, ChevronLeft, Plus, ArrowUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '../stores/useChatStore';
 import { chatService } from '@/services/chat.service';
+import { apiClient } from '@/services/api/client';
+import { ENDPOINTS } from '@/services/api/endpoints';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { ConversationMember, ChatMessage } from '../types';
+import { ConversationMember, ChatMessage, ChatEntityType, EntityTagRef } from '../types';
 import { cn } from '@/lib/utils';
 import { useNotifications } from '@/hooks/useNotifications';
 import Picker from '@emoji-mart/react';
@@ -14,22 +16,156 @@ import data from '@emoji-mart/data';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { WifiOff, Clock } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { logger } from '@/services/monitoring/logger';
+import { useProjectTasks } from '@/hooks/useTasks';
+import { useProjectIssues } from '@/hooks/useIssues';
+import { useProjectMilestones } from '@/hooks/useMilestones';
+import { useProjectModules } from '@/hooks/useModules';
+import { useECOList } from '@/hooks/useECOs';
+import { useBomTree } from '@/hooks/useBom';
+import { fromApiNode, bomFlatAll } from '@/features/projects/components/bomData';
+import EntityTagChip from './EntityTagChip';
 
 interface MessageInputProps {
   conversationId: string;
   onMessageSent?: () => void;
   onTyping?: () => void;
   members?: ConversationMember[];
-  sendMessage?: (content: string, type?: 'text' | 'file', fileData?: any, replyToMessageId?: string) => Promise<void>;
+  isGroup?: boolean;
+  sendMessage?: (content: string, type?: 'text' | 'file', fileData?: any, replyToMessageId?: string, entityTags?: EntityTagRef[]) => Promise<void>;
   readOnly?: boolean;
   readOnlyNotice?: string | null;
   replyingTo?: ChatMessage | null;
   onCancelReply?: () => void;
 }
 
+// Keep in sync with the `max-h-[140px]` on the textarea and its highlight overlay.
+const MAX_TEXTAREA_HEIGHT = 140;
+// The two gutters between the control groups and the textarea: `gap-1.5` (6px)
+// on mobile, `gap-1` (4px) on desktop.
+const CONTROL_GAPS_MOBILE = 12;
+const CONTROL_GAPS_DESKTOP = 8;
+
 const MAX_CHARS = 4000;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per file
 const MAX_FILES = 10;
+const MAX_ENTITY_TAGS = 5;
+
+type SlashStage = 'type' | 'project' | 'item';
+
+const ENTITY_TYPE_OPTIONS: { type: ChatEntityType; label: string; Icon: typeof CheckSquare }[] = [
+  { type: 'task', label: 'Task', Icon: CheckSquare },
+  { type: 'issue', label: 'Issue', Icon: AlertCircle },
+  { type: 'milestone', label: 'Milestone', Icon: Flag },
+  { type: 'hardware_module', label: 'Hardware Module', Icon: Cpu },
+  { type: 'bom_node', label: 'BOM', Icon: Layers },
+  { type: 'eco', label: 'ECO', Icon: FileText },
+];
+
+const ENTITY_TYPE_LABEL: Record<ChatEntityType, string> = Object.fromEntries(
+  ENTITY_TYPE_OPTIONS.map((o) => [o.type, o.label])
+) as Record<ChatEntityType, string>;
+
+/**
+ * Teams-style mention backspace: collapses a typed "@First Last " mention one
+ * word at a time (trailing space + last word per press) down to a bare "@",
+ * instead of deleting the whole mention in one shot or one character at a time.
+ * Returns the [start, end) range to remove, or null if the cursor isn't right
+ * after a run that's a word-prefix of a known mention name.
+ */
+function findMentionWordBackspaceRange(
+  value: string,
+  cursorPos: number,
+  knownNames: string[]
+): { start: number; end: number } | null {
+  const textBeforeCursor = value.slice(0, cursorPos);
+  const atIndex = textBeforeCursor.lastIndexOf('@');
+  if (atIndex === -1) return null;
+
+  const charBeforeAt = atIndex > 0 ? textBeforeCursor[atIndex - 1] : '';
+  if (charBeforeAt && !/\s/.test(charBeforeAt)) return null;
+
+  const run = textBeforeCursor.slice(atIndex);
+  if (run === '@') return null; // let default backspace remove the bare "@"
+
+  const hasTrailingSpace = run.endsWith(' ');
+  const core = hasTrailingSpace ? run.slice(0, -1) : run;
+  if (core === '@') return null;
+
+  const words = core.slice(1).split(' ');
+  if (words.some((w) => w.length === 0)) return null; // malformed run (e.g. double space)
+
+  const wordsLower = words.map((w) => w.toLowerCase());
+  const isKnownPrefix = knownNames.some((name) => {
+    const nameWords = name.toLowerCase().split(' ');
+    if (wordsLower.length > nameWords.length) return false;
+    return wordsLower.every((w, i) => w === nameWords[i]);
+  });
+  if (!isKnownPrefix) return null;
+
+  // Never touch the trailing space itself — it may be separating the mention
+  // from following text (e.g. "@Jagan Tripuragiri please review"), and eating
+  // it would merge the mention into whatever comes next.
+  const lastWord = words[words.length - 1];
+  const wordEnd = cursorPos - (hasTrailingSpace ? 1 : 0);
+  const wordStart = wordEnd - lastWord.length - (words.length > 1 ? 1 : 0);
+  return { start: wordStart, end: wordEnd };
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Some browsers auto-boost/shrink text-node font-size in plain <div>s but exempt
+// form controls from that heuristic, which desyncs the mention overlay's font size
+// from the textarea's even though both declare the same Tailwind text-sm class.
+// Locking both to 100% keeps them pixel-matched.
+const TEXT_SIZE_ADJUST_STYLE = { WebkitTextSizeAdjust: '100%', textSizeAdjust: '100%' } as const;
+
+/** Byte ranges of recognized "@Name"/"@everyone" runs anywhere in the draft, for live blue highlighting. */
+function findKnownMentionRanges(value: string, knownNames: string[]): { start: number; end: number }[] {
+  if (knownNames.length === 0) return [];
+  const sorted = [...knownNames].sort((a, b) => b.length - a.length).map(escapeRegExp);
+  const regex = new RegExp(`@(?:${sorted.join('|')})(?=\\s|$|[.,!?])`, 'gi');
+  const ranges: { start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(value)) !== null) {
+    ranges.push({ start: m.index, end: m.index + m[0].length });
+  }
+  return ranges;
+}
+
+/** Sorts + merges overlapping/adjacent ranges so the overlay never double-renders a span. */
+function mergeRanges(ranges: { start: number; end: number }[]): { start: number; end: number }[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [sorted[0]];
+  for (const r of sorted.slice(1)) {
+    const last = merged[merged.length - 1];
+    if (r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else merged.push({ ...r });
+  }
+  return merged;
+}
+
+/** Renders the draft as plain/blue-highlighted spans for the mention-preview overlay. */
+function renderMentionOverlay(value: string, ranges: { start: number; end: number }[]) {
+  if (value.length === 0) return null;
+  const merged = mergeRanges(ranges);
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  merged.forEach((r, i) => {
+    if (r.start > cursor) nodes.push(<span key={`t-${i}`}>{value.slice(cursor, r.start)}</span>);
+    nodes.push(
+      <span key={`m-${i}`} className="text-blue-600 dark:text-blue-400">
+        {value.slice(r.start, r.end)}
+      </span>
+    );
+    cursor = r.end;
+  });
+  if (cursor < value.length) nodes.push(<span key="t-last">{value.slice(cursor)}</span>);
+  return nodes;
+}
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes}B`;
@@ -56,12 +192,18 @@ function buildFileContent(payload: {
   };
 }
 
-export function MessageInput({ conversationId, onMessageSent, onTyping, members, sendMessage, readOnly = false, readOnlyNotice = null, replyingTo = null, onCancelReply }: MessageInputProps) {
+export function MessageInput({ conversationId, onMessageSent, onTyping, members, isGroup = false, sendMessage, readOnly = false, readOnlyNotice = null, replyingTo = null, onCancelReply }: MessageInputProps) {
   const isMobile = useIsMobile();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionOverlayRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const leftControlsRef = useRef<HTMLDivElement>(null);
+  const rightControlsRef = useRef<HTMLDivElement>(null);
+  // Desktop composer: controls sit inline beside a one-line textarea, and only
+  // drop to their own row once the text actually wraps.
+  const [isStacked, setIsStacked] = useState(false);
 
   const setDraft = useChatStore((s) => s.setDraft);
   const value = useChatStore((s) => s.draftMessages[conversationId] || '');
@@ -70,7 +212,9 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const lastTypingRef = useRef(0);
+  const dragCounterRef = useRef(0);
   const { user } = useAuth();
 
   const { isOnline, pendingCount, enqueueText, enqueueFile } = useOfflineQueue(user?.id);
@@ -79,12 +223,20 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionStartRef = useRef<number>(-1);
-  const { createNotification } = useNotifications();
 
   const otherMembers = useMemo(
     () => (members || []).filter((m) => m.id !== user?.id),
     [members, user?.id]
   );
+
+  // Show "Everyone" option in group chats with at least 2 other members
+  const showEveryoneOption = useMemo(() => {
+    if (!isGroup || otherMembers.length < 2) return false;
+    if (mentionQuery === null) return false;
+    const q = mentionQuery.toLowerCase();
+    const alreadyMentionedEveryone = value.toLowerCase().includes('@everyone');
+    return !alreadyMentionedEveryone && 'everyone'.includes(q);
+  }, [isGroup, otherMembers.length, mentionQuery, value]);
 
   const filteredMentions = useMemo(() => {
     if (mentionQuery === null) return [];
@@ -97,14 +249,293 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     });
   }, [mentionQuery, otherMembers, value]);
 
+  // Total items in the mention dropdown (everyone slot + individual members)
+  const totalMentionItems = (showEveryoneOption ? 1 : 0) + filteredMentions.length;
+
+  // Names Backspace is allowed to word-collapse a mention into (see findMentionWordBackspaceRange).
+  const knownMentionNames = useMemo(
+    () => [...otherMembers.map((m) => m.name), 'everyone'],
+    [otherMembers]
+  );
+
+  // Live blue highlighting for @mentions while composing: recognized "@Name"/"@everyone"
+  // runs anywhere in the draft, plus the mention query currently being typed (so the
+  // color appears immediately after "@", before the name is even complete).
+  const mentionHighlightNodes = useMemo(() => {
+    const ranges = findKnownMentionRanges(value, knownMentionNames);
+    if (mentionQuery !== null && mentionStartRef.current >= 0) {
+      ranges.push({
+        start: mentionStartRef.current,
+        end: mentionStartRef.current + 1 + mentionQuery.length,
+      });
+    }
+    return renderMentionOverlay(value, ranges);
+  }, [value, knownMentionNames, mentionQuery]);
+
+  // ── Slash-command entity tag picker ──────────────────────────────────────
+  const [slashStage, setSlashStage] = useState<SlashStage | null>(null);
+  const [slashSearch, setSlashSearch] = useState('');
+  const [slashItemSearch, setSlashItemSearch] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashEntityType, setSlashEntityType] = useState<ChatEntityType | null>(null);
+  const [slashProjectId, setSlashProjectId] = useState<string | null>(null);
+  const [pendingEntityTags, setPendingEntityTags] = useState<EntityTagRef[]>([]);
+  const slashStartRef = useRef<number>(-1);
+  const slashSearchInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: conversationProjectId } = useQuery({
+    queryKey: ['chat', 'conversationProjectId', conversationId],
+    queryFn: () => chatService.getProjectIdForConversation(conversationId),
+    enabled: !!conversationId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Only projects every active conversation member belongs to — a tagged entity
+  // must be openable by whoever receives it, not just by the sender.
+  const projectsQuery = useQuery({
+    queryKey: ['chat', 'mutualProjects', conversationId],
+    queryFn: () => chatService.getMutualProjects(conversationId),
+    enabled: !!conversationId,
+    staleTime: 45 * 1000,
+  });
+  const { data: projectsList } = projectsQuery;
+
+  const itemStageActive = slashStage === 'item';
+  const taskItemsQ = useProjectTasks(itemStageActive && slashEntityType === 'task' ? slashProjectId ?? undefined : undefined);
+  const issueItemsQ = useProjectIssues(itemStageActive && slashEntityType === 'issue' ? slashProjectId ?? undefined : undefined);
+  const milestoneItemsQ = useProjectMilestones(itemStageActive && slashEntityType === 'milestone' ? (slashProjectId ?? '') : '');
+  const moduleItemsQ = useProjectModules(itemStageActive && slashEntityType === 'hardware_module' ? (slashProjectId ?? '') : '');
+  const ecoItemsQ = useECOList(itemStageActive && slashEntityType === 'eco' ? slashProjectId ?? undefined : undefined);
+  const bomTreeQ = useBomTree(itemStageActive && slashEntityType === 'bom_node' ? slashProjectId ?? undefined : undefined);
+
+  const filteredEntityTypes = useMemo(() => {
+    if (slashStage !== 'type') return [];
+    const q = slashSearch.toLowerCase();
+    return ENTITY_TYPE_OPTIONS.filter((o) => o.label.toLowerCase().includes(q));
+  }, [slashStage, slashSearch]);
+
+  const projectOptions = useMemo(() => {
+    if (slashStage !== 'project') return [];
+    const q = slashItemSearch.toLowerCase();
+    return (projectsList ?? [])
+      .filter((p) => !!p.myRole)
+      .filter((p) => p.name.toLowerCase().includes(q))
+      .slice(0, 30);
+  }, [slashStage, slashItemSearch, projectsList]);
+
+  const isProjectOptionsLoading = slashStage === 'project' && projectsQuery.isLoading;
+
+  const isItemOptionsLoading = itemStageActive && !!slashEntityType && (
+    (slashEntityType === 'task' && taskItemsQ.isLoading) ||
+    (slashEntityType === 'issue' && issueItemsQ.isLoading) ||
+    (slashEntityType === 'milestone' && milestoneItemsQ.isLoading) ||
+    (slashEntityType === 'hardware_module' && moduleItemsQ.isLoading) ||
+    (slashEntityType === 'eco' && ecoItemsQ.isLoading) ||
+    (slashEntityType === 'bom_node' && bomTreeQ.isLoading)
+  );
+
+  const slashProjectName = useMemo(
+    () => (slashProjectId ? (projectsList ?? []).find((p) => p.id === slashProjectId)?.name ?? null : null),
+    [slashProjectId, projectsList]
+  );
+
+  const itemOptions = useMemo(() => {
+    if (!itemStageActive || !slashEntityType) return [];
+    let opts: { id: string; label: string }[] = [];
+    switch (slashEntityType) {
+      case 'task':
+        opts = (taskItemsQ.data ?? []).map((t: any) => ({ id: t.id, label: t.title }));
+        break;
+      case 'issue':
+        opts = (issueItemsQ.data ?? []).map((i: any) => ({ id: i.id, label: i.title }));
+        break;
+      case 'milestone':
+        opts = (milestoneItemsQ.data ?? []).map((m: any) => ({ id: m.id, label: m.title }));
+        break;
+      case 'hardware_module':
+        opts = (moduleItemsQ.data ?? []).map((m: any) => ({ id: m.id, label: m.name }));
+        break;
+      case 'eco':
+        opts = (ecoItemsQ.data?.data ?? []).map((e: any) => ({ id: e.id, label: `${e.num} — ${e.title}` }));
+        break;
+      case 'bom_node': {
+        const roots = (bomTreeQ.data?.roots ?? []).map((r: any) => fromApiNode(r));
+        opts = bomFlatAll(roots).map((n) => ({ id: n.id, label: `${n.pn} — ${n.name}` }));
+        break;
+      }
+    }
+    const q = slashItemSearch.toLowerCase();
+    return opts.filter((o) => o.label.toLowerCase().includes(q)).slice(0, 30);
+  }, [itemStageActive, slashEntityType, slashItemSearch, taskItemsQ.data, issueItemsQ.data, milestoneItemsQ.data, moduleItemsQ.data, ecoItemsQ.data, bomTreeQ.data]);
+
+  useEffect(() => {
+    if (slashStage === 'project' || slashStage === 'item') {
+      slashSearchInputRef.current?.focus();
+    }
+  }, [slashStage]);
+
+  const cancelSlash = useCallback(() => {
+    setSlashStage(null);
+    setSlashSearch('');
+    setSlashItemSearch('');
+    setSlashEntityType(null);
+    setSlashProjectId(null);
+    slashStartRef.current = -1;
+    setSlashIndex(0);
+  }, []);
+
+  // Close any open "@" mention / "/" entity picker when switching conversations —
+  // their trigger position and match list refer to the previous conversation.
+  useEffect(() => {
+    setMentionQuery(null);
+    mentionStartRef.current = -1;
+    setMentionIndex(0);
+    cancelSlash();
+  }, [conversationId, cancelSlash]);
+
+  const selectEntityType = (type: ChatEntityType) => {
+    const start = slashStartRef.current;
+    const el = textareaRef.current;
+    if (start >= 0 && el) {
+      const before = value.substring(0, start);
+      const after = value.substring(el.selectionStart ?? value.length);
+      setDraft(conversationId, before + after);
+      requestAnimationFrame(() => el.setSelectionRange(start, start));
+    }
+    slashStartRef.current = -1;
+    setSlashSearch('');
+    setSlashEntityType(type);
+    setSlashItemSearch('');
+    setSlashIndex(0);
+    if (conversationProjectId) {
+      setSlashProjectId(conversationProjectId);
+      setSlashStage('item');
+    } else {
+      setSlashStage('project');
+    }
+  };
+
+  const selectProject = (project: { id: string; name: string }) => {
+    setSlashProjectId(project.id);
+    setSlashStage('item');
+    setSlashItemSearch('');
+    setSlashIndex(0);
+  };
+
+  const selectItem = (item: { id: string; label: string }) => {
+    if (!slashEntityType || !slashProjectId) return;
+    if (pendingEntityTags.length >= MAX_ENTITY_TAGS) {
+      toast.warning(`Maximum ${MAX_ENTITY_TAGS} tagged items allowed.`);
+      cancelSlash();
+      return;
+    }
+    setPendingEntityTags((prev) => [...prev, { entityType: slashEntityType, entityId: item.id, projectId: slashProjectId, label: item.label }]);
+    cancelSlash();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const removeEntityTag = (index: number) => {
+    setPendingEntityTags((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const goBackSlashStage = () => {
+    if (slashStage === 'item' && !conversationProjectId) {
+      setSlashStage('project');
+      setSlashItemSearch('');
+      setSlashIndex(0);
+    } else {
+      cancelSlash();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  };
+
+  const handlePickerSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const list = slashStage === 'project' ? projectOptions : itemOptions;
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (list.length > 0) setSlashIndex((p) => (p + 1) % list.length); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); if (list.length > 0) setSlashIndex((p) => (p - 1 + list.length) % list.length); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (list.length === 0) return;
+      if (slashStage === 'project') selectProject(projectOptions[slashIndex]);
+      else selectItem(itemOptions[slashIndex]);
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); cancelSlash(); textareaRef.current?.focus(); return; }
+    if (e.key === 'Backspace' && slashItemSearch === '') { e.preventDefault(); goBackSlashStage(); }
+  };
+
   const resize = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+    // Measure with overflow off so a visible scrollbar can't change the wrap
+    // and feed back into the next measurement.
+    el.style.overflowY = 'hidden';
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 144) + 'px';
+    let fullHeight = el.scrollHeight;
+
+    // The controls sit beside the textarea until the text wraps, then drop to
+    // their own row underneath. That decision is made from how the text wraps
+    // at the *inline* width — the width the textarea has with the controls
+    // beside it. Judging it at the current width would oscillate, because
+    // stacking widens the textarea, which can pull the text back onto one line,
+    // which would immediately un-stack it and re-wrap it.
+    let inlineHeight = fullHeight;
+    if (isStacked) {
+      const controls =
+        (leftControlsRef.current?.offsetWidth ?? 0) +
+        (rightControlsRef.current?.offsetWidth ?? 0) +
+        (isMobile ? CONTROL_GAPS_MOBILE : CONTROL_GAPS_DESKTOP);
+      el.style.width = Math.max(0, el.offsetWidth - controls) + 'px';
+      el.style.height = 'auto';
+      inlineHeight = el.scrollHeight;
+      el.style.width = '';
+      el.style.height = 'auto';
+      fullHeight = el.scrollHeight;
+    }
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    setIsStacked(inlineHeight > lineHeight * 1.5);
+
+    const height = Math.min(fullHeight, MAX_TEXTAREA_HEIGHT);
+    el.style.height = height + 'px';
+    // Past the cap the box stops growing, so the textarea has to scroll itself —
+    // otherwise the overflow is simply unreachable.
+    el.style.overflowY = fullHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden';
+    const overlay = mentionOverlayRef.current;
+    if (overlay) {
+      // The @mention highlight layer sits behind the transparent text, so it has
+      // to be the exact same box — same height and same scrollbar gutter — or the
+      // highlights drift off the words they belong to once the text scrolls.
+      overlay.style.height = height + 'px';
+      overlay.style.overflowY = el.style.overflowY;
+      overlay.scrollTop = el.scrollTop;
+    }
+  }, [isMobile, isStacked]);
+
+  const syncOverlayScroll = useCallback(() => {
+    if (textareaRef.current && mentionOverlayRef.current) {
+      mentionOverlayRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
   }, []);
 
-  useEffect(() => { resize(); }, [value, resize]);
+  // Re-measure on layout swaps too: the mobile/desktop branches render structurally
+  // different textarea containers, so crossing the breakpoint remounts the textarea
+  // DOM node and this effect must rerun to size the fresh node correctly.
+  useEffect(() => { resize(); }, [value, resize, isMobile]);
+
+  // Mobile-only: when this screen is entered via a deep link (e.g. tapping a
+  // chat notification), the mobile header/bottom-nav chrome collapses away
+  // and the message pane's width settles *after* the textarea's first
+  // mount/measurement, leaving a stale inline height until something
+  // (previously only typing) re-triggers resize(). Re-measure whenever the
+  // textarea's own box actually changes size so it self-corrects immediately.
+  useEffect(() => {
+    if (!isMobile) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, resize]);
 
   // Create and revoke object URLs for file previews to avoid memory leaks
   useEffect(() => {
@@ -170,6 +601,24 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     });
   };
 
+  const insertEveryoneMention = () => {
+    const start = mentionStartRef.current;
+    const el = textareaRef.current;
+    if (start < 0 || !el) return;
+    const before = value.substring(0, start);
+    const after = value.substring(el.selectionStart);
+    const newValue = `${before}@everyone ${after}`;
+    setDraft(conversationId, newValue);
+    setMentionQuery(null);
+    mentionStartRef.current = -1;
+    setMentionIndex(0);
+    requestAnimationFrame(() => {
+      const pos = start + '@everyone '.length;
+      el.setSelectionRange(pos, pos);
+      el.focus();
+    });
+  };
+
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
     const newFiles = Array.from(incoming);
@@ -204,58 +653,71 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const sendFileMessage = async (file: File, text?: string) => {
-    const ext = file.name.split('.').pop() || 'bin';
-    const path = `${conversationId}/${crypto.randomUUID()}.${ext}`;
-
-    const { error: uploadErr } = await supabase.storage
-      .from('chat-attachments')
-      .upload(path, file);
-    if (uploadErr) throw uploadErr;
-
-    const fileData = buildFileContent({
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
-      storagePath: path,
-      text: text || undefined,
-    });
-
-    if (sendMessage) {
-      await sendMessage('', 'file', fileData, replyingTo?.id);
-    } else {
-      const userId = user?.id;
-      if (!userId) throw new Error('Not authenticated');
-      let error: any = null;
-      ({ error } = await supabase
-        .from('chat_messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: userId,
-          content: JSON.stringify(fileData),
-          content_type: 'file',
-          reply_to_message_id: replyingTo?.id || null,
-        } as any));
-      const missingReplyColumn =
-        !!error && typeof error.message === 'string' && /reply_to_message_id|column .* does not exist/i.test(error.message);
-      if (missingReplyColumn) {
-        ({ error } = await supabase
-          .from('chat_messages')
-          .insert({
-            conversation_id: conversationId,
-            sender_id: userId,
-            content: JSON.stringify(fileData),
-            content_type: 'file',
-          }));
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (readOnly) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const fileList: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        const file = items[i].getAsFile();
+        if (file) fileList.push(file);
       }
-      if (error) throw error;
     }
+    if (fileList.length > 0) {
+      e.preventDefault();
+      const dt = new DataTransfer();
+      fileList.forEach(f => dt.items.add(f));
+      addFiles(dt.files);
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.types.includes('Files')) setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) setIsDraggingOver(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDraggingOver(false);
+    if (readOnly) return;
+    addFiles(e.dataTransfer.files);
+  };
+
+  const sendFileMessage = async (file: File, caption?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (caption) formData.append('caption', caption);
+    if (replyingTo?.id) formData.append('replyToMessageId', replyingTo.id);
+    const res = await apiClient.raw.post<{ success: boolean; data: any }>(
+      `${ENDPOINTS.CONVERSATIONS.FILE_MESSAGE(conversationId)}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return res.data.data;
   };
 
   const handleSend = async () => {
     if (readOnly) return;
     const trimmed = value.trim();
-    if ((!trimmed && pendingFiles.length === 0) || isSending) return;
+    if ((!trimmed && pendingFiles.length === 0 && pendingEntityTags.length === 0) || isSending) return;
     if (pendingFiles.length > MAX_FILES) {
       toast.warning(`Maximum ${MAX_FILES} files allowed. Remove some before sending.`);
       return;
@@ -263,6 +725,7 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
 
     setDraft(conversationId, '');
     setMentionQuery(null);
+    cancelSlash();
 
     // ── OFFLINE: enqueue everything locally ──────────────────────────────
     if (!isOnline) {
@@ -274,49 +737,35 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
         setPendingFiles([]);
         toast.info('📵 Saved offline — will send when you reconnect');
       } catch (err) {
-        console.error('[MessageInput] Offline queue failed:', err);
+        logger.error('[MessageInput] Offline queue failed:', err);
         toast.error('Failed to save message offline. Please try again.');
       }
       return;
     }
 
     // ── ONLINE: send normally ─────────────────────────────────────────────
+    const tagsToSend = pendingEntityTags;
     setIsSending(true);
     try {
       if (pendingFiles.length > 0) {
-        if (trimmed) {
-          if (sendMessage) await sendMessage(trimmed, 'text', undefined, replyingTo?.id);
-          else await chatService.sendMessage(conversationId, trimmed, undefined, replyingTo?.id);
+        if (trimmed || tagsToSend.length > 0) {
+          if (sendMessage) await sendMessage(trimmed, 'text', undefined, replyingTo?.id, tagsToSend);
+          else await chatService.sendMessage(conversationId, trimmed, undefined, replyingTo?.id, tagsToSend);
         }
         for (const file of pendingFiles) {
           await sendFileMessage(file);
         }
         setPendingFiles([]);
       } else {
-        if (sendMessage) await sendMessage(trimmed, 'text', undefined, replyingTo?.id);
-        else await chatService.sendMessage(conversationId, trimmed, undefined, replyingTo?.id);
+        if (sendMessage) await sendMessage(trimmed, 'text', undefined, replyingTo?.id, tagsToSend);
+        else await chatService.sendMessage(conversationId, trimmed, undefined, replyingTo?.id, tagsToSend);
       }
 
-      otherMembers.forEach((member) => {
-        if (trimmed.includes(`@${member.name}`)) {
-          try {
-            createNotification.mutate({
-              user_id: member.id,
-              actor_id: user?.id,
-              type: 'mention',
-              title: 'Mentioned you in a message',
-              description: trimmed.length > 100 ? trimmed.substring(0, 97) + '...' : trimmed,
-            });
-          } catch (notifErr) {
-            console.warn('[MessageInput] Failed to create mention notification:', notifErr);
-          }
-        }
-      });
-
+      setPendingEntityTags([]);
       onMessageSent?.();
       onCancelReply?.();
     } catch (err) {
-      console.error('Failed to send message:', err);
+      logger.error('Failed to send message:', err);
       toast.error('Failed to send message');
       setDraft(conversationId, trimmed);
     } finally {
@@ -325,11 +774,43 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (mentionQuery !== null && filteredMentions.length > 0) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(p => (p + 1) % filteredMentions.length); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(p => (p - 1 + filteredMentions.length) % filteredMentions.length); return; }
-      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(filteredMentions[mentionIndex]); return; }
+    if (slashStage === 'type' && filteredEntityTypes.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(p => (p + 1) % filteredEntityTypes.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(p => (p - 1 + filteredEntityTypes.length) % filteredEntityTypes.length); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectEntityType(filteredEntityTypes[slashIndex].type); return; }
+      if (e.key === 'Escape') { e.preventDefault(); cancelSlash(); return; }
+    }
+    if (mentionQuery !== null && totalMentionItems > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(p => (p + 1) % totalMentionItems); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(p => (p - 1 + totalMentionItems) % totalMentionItems); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        if (showEveryoneOption && mentionIndex === 0) {
+          insertEveryoneMention();
+        } else {
+          const memberIdx = showEveryoneOption ? mentionIndex - 1 : mentionIndex;
+          insertMention(filteredMentions[memberIdx]);
+        }
+        return;
+      }
       if (e.key === 'Escape') { e.preventDefault(); setMentionQuery(null); mentionStartRef.current = -1; return; }
+    }
+    if (e.key === 'Backspace' && mentionQuery === null) {
+      const el = textareaRef.current;
+      if (el && el.selectionStart === el.selectionEnd) {
+        const cursorPos = el.selectionStart ?? 0;
+        const range = findMentionWordBackspaceRange(value, cursorPos, knownMentionNames);
+        if (range) {
+          e.preventDefault();
+          const newValue = value.substring(0, range.start) + value.substring(range.end);
+          setDraft(conversationId, newValue);
+          requestAnimationFrame(() => {
+            el.setSelectionRange(range.start, range.start);
+            el.focus();
+          });
+          return;
+        }
+      }
     }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
@@ -344,6 +825,27 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
 
     const cursorPos = e.target.selectionStart;
     const textBeforeCursor = newValue.substring(0, cursorPos);
+
+    if (slashStage === null || slashStage === 'type') {
+      const lastSlashIndex = textBeforeCursor.lastIndexOf('/');
+      if (lastSlashIndex >= 0) {
+        const charBefore = lastSlashIndex > 0 ? textBeforeCursor[lastSlashIndex - 1] : ' ';
+        const queryText = textBeforeCursor.substring(lastSlashIndex + 1);
+        if ((charBefore === ' ' || charBefore === '\n' || lastSlashIndex === 0) && !queryText.includes(' ')) {
+          slashStartRef.current = lastSlashIndex;
+          setSlashStage('type');
+          setSlashSearch(queryText);
+          setSlashIndex(0);
+          setMentionQuery(null);
+          mentionStartRef.current = -1;
+          return;
+        }
+      }
+      if (slashStage === 'type') {
+        cancelSlash();
+      }
+    }
+
     const lastAtIndex = textBeforeCursor.lastIndexOf('@');
     if (lastAtIndex >= 0) {
       const charBefore = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' ';
@@ -362,7 +864,25 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
   const showCharCount = value.length > MAX_CHARS * 0.9;
 
   return (
-    <div className="border-t border-border/70 bg-gradient-to-t from-background via-background/95 to-background/80 px-2 md:px-4 py-2">
+    <div
+      className={cn(
+        'border-t border-border/70 bg-gradient-to-t from-background via-background/95 to-background/80 px-2 md:px-4 py-2 relative',
+        isDraggingOver && 'ring-2 ring-primary ring-inset'
+      )}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drop overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center rounded-t-none bg-primary/10 border-2 border-dashed border-primary pointer-events-none">
+          <div className="flex flex-col items-center gap-1 text-primary">
+            <Paperclip className="h-6 w-6" />
+            <span className="text-sm font-medium">Drop files to attach</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Offline banner ── */}
       {!isOnline && (
@@ -413,6 +933,15 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
         </div>
       )}
 
+      {/* ── Pending entity tag chips ── */}
+      {pendingEntityTags.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {pendingEntityTags.map((tag, i) => (
+            <EntityTagChip key={`${tag.entityType}-${tag.entityId}-${i}`} tag={tag} variant="pending" onRemove={() => removeEntityTag(i)} />
+          ))}
+        </div>
+      )}
+
       {/* ── Pending files preview grid ── */}
       {pendingFiles.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
@@ -427,7 +956,7 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
                 className="relative group w-16 h-16 rounded-lg border bg-muted overflow-hidden shrink-0 flex items-center justify-center"
               >
                 {isImage && previewUrl ? (
-                  <img src={previewUrl} alt={file.name} className="w-full h-full object-cover" />
+                  <img src={previewUrl} alt={file.name} className="w-full h-full object-contain" />
                 ) : isVideo && previewUrl ? (
                   <video src={previewUrl} className="w-full h-full object-cover" />
                 ) : (
@@ -482,18 +1011,131 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
 
       <div className="relative">
         {/* Mention dropdown */}
-        {mentionQuery !== null && filteredMentions.length > 0 && (
-          <div className="absolute bottom-full mb-1 left-0 w-full max-w-[280px] bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[200px] overflow-y-auto">
-            {filteredMentions.map((member, i) => (
+        {mentionQuery !== null && totalMentionItems > 0 && (
+          <div className="absolute bottom-full mb-1 left-0 w-full max-w-[300px] bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[200px] overflow-y-auto">
+            {/* Everyone option — shown only in group chats */}
+            {showEveryoneOption && (
               <button
-                key={member.id}
-                className={cn('flex items-center gap-2 w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors', i === mentionIndex && 'bg-muted')}
-                onMouseDown={(e) => { e.preventDefault(); insertMention(member); }}
+                className={cn(
+                  'flex items-center gap-2.5 w-full px-3 py-2.5 text-left text-sm hover:bg-muted transition-colors border-b border-border/50',
+                  mentionIndex === 0 && 'bg-muted'
+                )}
+                onMouseDown={(e) => { e.preventDefault(); insertEveryoneMention(); }}
               >
-                <span className="font-medium">{member.name}</span>
-                <span className="text-xs text-muted-foreground truncate">{member.email}</span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                  <Users className="h-3.5 w-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <span className="font-semibold text-foreground block">Everyone</span>
+                  <span className="text-xs text-muted-foreground">Notify all group members</span>
+                </div>
               </button>
-            ))}
+            )}
+            {filteredMentions.map((member, i) => {
+              const itemIndex = (showEveryoneOption ? 1 : 0) + i;
+              return (
+                <button
+                  key={member.id}
+                  className={cn('flex items-center gap-2 w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors', itemIndex === mentionIndex && 'bg-muted')}
+                  onMouseDown={(e) => { e.preventDefault(); insertMention(member); }}
+                >
+                  <span className="font-medium">{member.name}</span>
+                  <span className="text-xs text-muted-foreground truncate">{member.email}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Slash-command entity tag picker */}
+        {slashStage !== null && (
+          <div className="absolute bottom-full mb-1 left-0 w-full max-w-[300px] bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[260px] overflow-hidden flex flex-col">
+            {slashStage !== 'type' && (
+              <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border text-xs text-muted-foreground shrink-0">
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); goBackSlashStage(); }}
+                  className="p-0.5 rounded hover:bg-muted"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="font-medium text-foreground">{slashEntityType && ENTITY_TYPE_LABEL[slashEntityType]}</span>
+                {slashStage === 'item' && slashProjectName && <span>· {slashProjectName}</span>}
+              </div>
+            )}
+
+            {slashStage === 'type' && (
+              <div className="overflow-y-auto">
+                {filteredEntityTypes.length === 0 && (
+                  <div className="px-3 py-4 text-xs text-center text-muted-foreground">No match</div>
+                )}
+                {filteredEntityTypes.map((opt, i) => (
+                  <button
+                    key={opt.type}
+                    type="button"
+                    className={cn('flex items-center gap-2 w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors', i === slashIndex && 'bg-muted')}
+                    onMouseDown={(e) => { e.preventDefault(); selectEntityType(opt.type); }}
+                  >
+                    <opt.Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="font-medium">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {(slashStage === 'project' || slashStage === 'item') && (
+              <>
+                <div className="px-2 py-1.5 border-b border-border shrink-0">
+                  <input
+                    ref={slashSearchInputRef}
+                    value={slashItemSearch}
+                    onChange={(e) => { setSlashItemSearch(e.target.value); setSlashIndex(0); }}
+                    onKeyDown={handlePickerSearchKeyDown}
+                    placeholder={slashStage === 'project' ? 'Search projects…' : `Search ${slashEntityType ? ENTITY_TYPE_LABEL[slashEntityType].toLowerCase() : 'items'}…`}
+                    className="w-full bg-transparent text-sm px-1 py-0.5 outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
+                <div className="overflow-y-auto">
+                  {slashStage === 'project' ? (
+                    isProjectOptionsLoading ? (
+                      <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading projects…
+                      </div>
+                    ) : projectOptions.length === 0 ? (
+                      <div className="px-3 py-4 text-xs text-center text-muted-foreground">No projects found</div>
+                    ) : (
+                      projectOptions.map((p, i) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className={cn('flex items-center w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors truncate', i === slashIndex && 'bg-muted')}
+                          onMouseDown={(e) => { e.preventDefault(); selectProject(p); }}
+                        >
+                          {p.name}
+                        </button>
+                      ))
+                    )
+                  ) : isItemOptionsLoading ? (
+                    <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading {slashEntityType ? ENTITY_TYPE_LABEL[slashEntityType].toLowerCase() : 'items'}…
+                    </div>
+                  ) : itemOptions.length === 0 ? (
+                    <div className="px-3 py-4 text-xs text-center text-muted-foreground">No results</div>
+                  ) : (
+                    itemOptions.map((opt, i) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={cn('flex items-center w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors truncate', i === slashIndex && 'bg-muted')}
+                        onMouseDown={(e) => { e.preventDefault(); selectItem(opt); }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -513,66 +1155,182 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
         )}
 
         {/* Hidden inputs — both support multiple */}
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
+        />
 
         {/* Input bar */}
-        <div className="mx-auto w-full max-w-[860px] flex items-center gap-1 rounded-2xl border border-input/80 bg-background/85 backdrop-blur-md px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.18)] focus-within:ring-2 focus-within:ring-ring/70 focus-within:ring-offset-2 ring-offset-background transition-all">
+        {isMobile ? (
+          <div className={cn(
+            'mx-auto w-full flex gap-1.5',
+            // Same behaviour as desktop: one row while the text fits on a single
+            // line, and once it wraps the input takes the full width on its own
+            // row with the controls dropping in underneath it.
+            isStacked ? 'flex-wrap items-center' : 'items-end'
+          )}>
 
-          {/* 😊 Emoji */}
-          <Button
-            ref={emojiButtonRef}
-            variant="ghost" size="icon" type="button"
-            className={cn(
-              'h-7 w-7 md:h-8 md:w-8 shrink-0 text-muted-foreground hover:text-yellow-500 transition-colors',
-              'rounded-full hover:bg-accent/70',
-              showEmojiPicker && 'text-yellow-500 bg-yellow-500/10'
-            )}
-            title="Emoji"
-            onClick={() => setShowEmojiPicker(v => !v)}
-          >
-            <Smile className="h-4 w-4" />
-          </Button>
+            <div ref={leftControlsRef} className={cn('flex items-center gap-1.5 shrink-0', isStacked && 'order-2')}>
+              {/* 😊 Emoji */}
+              <Button
+                ref={emojiButtonRef}
+                variant="ghost" size="icon" type="button"
+                className={cn(
+                  'h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:text-yellow-500 hover:bg-accent/70 transition-colors',
+                  showEmojiPicker && 'text-yellow-500 bg-yellow-500/10'
+                )}
+                title="Emoji"
+                onClick={() => setShowEmojiPicker(v => !v)}
+              >
+                <Smile className="h-5 w-5" />
+              </Button>
 
-          {/* 📎 File */}
-          <Button
-            variant="ghost" size="icon" type="button"
-            className="h-7 w-7 md:h-8 md:w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent/70 transition-colors"
-            title="Attach files"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={readOnly}
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
+              {/* + Attach */}
+              <Button
+                variant="ghost" size="icon" type="button"
+                className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent/70 transition-colors"
+                title="Attach files"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={readOnly}
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+            </div>
 
-          {/* Textarea */}
-          <div className="flex-1 min-w-0 relative px-0.5">
-            <textarea
-              ref={textareaRef}
-              value={value}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              placeholder={isMobile ? 'Type a message...' : 'Type a message... Use @ to mention'}
-              rows={1}
-              className="w-full resize-none bg-transparent py-1.5 text-sm leading-5 min-h-[32px] max-h-[140px] placeholder:text-muted-foreground/90 focus-visible:outline-none"
-              disabled={readOnly}
-            />
-            {showCharCount && (
-              <span className="absolute bottom-0.5 right-1 text-[10px] text-muted-foreground">
-                {value.length}/{MAX_CHARS}
-              </span>
-            )}
+            {/* Bordered message pill */}
+            <div className={cn(
+              'min-w-0 flex items-end gap-1 rounded-3xl border border-input bg-background px-4 py-[11px] min-h-[42px] focus-within:ring-2 focus-within:ring-ring/70 transition-all',
+              isStacked ? 'order-1 w-full' : 'flex-1'
+            )}>
+              <div className="relative flex-1 min-w-0 flex items-center">
+                <div
+                  ref={mentionOverlayRef}
+                  aria-hidden="true"
+                  className="custom-scrollbar absolute inset-x-0 flex items-start overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
+                  style={TEXT_SIZE_ADJUST_STYLE}
+                >
+                  <span className="w-full">{mentionHighlightNodes}</span>
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={value}
+                  onChange={handleChange}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  onScroll={syncOverlayScroll}
+                  placeholder="Type a message..."
+                  rows={1}
+                  className="custom-scrollbar relative w-full resize-none overflow-x-hidden bg-transparent text-sm leading-5 max-h-[140px] text-transparent caret-foreground placeholder:text-muted-foreground/90 focus-visible:outline-none"
+                  style={TEXT_SIZE_ADJUST_STYLE}
+                  disabled={readOnly}
+                />
+              </div>
+              {showCharCount && (
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {value.length}/{MAX_CHARS}
+                </span>
+              )}
+            </div>
+
+            <div ref={rightControlsRef} className={cn('flex items-center shrink-0', isStacked && 'order-3 ml-auto')}>
+              {/* Send */}
+              <Button
+                size="icon" type="button"
+                className="h-11 w-11 shrink-0 rounded-full bg-foreground text-background hover:bg-foreground/90"
+                disabled={readOnly || ((!value.trim() && pendingFiles.length === 0 && pendingEntityTags.length === 0) || isSending)}
+                onClick={handleSend}
+              >
+                {isSending ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
+              </Button>
+            </div>
           </div>
+        ) : (
+          <div className={cn(
+            'mx-auto w-full flex gap-1 rounded-2xl border border-input/80 bg-background/85 backdrop-blur-md px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.18)] focus-within:ring-2 focus-within:ring-ring/70 focus-within:ring-offset-2 ring-offset-background transition-all',
+            // One line: everything shares a row. Wrapped: the textarea takes the
+            // full width on its own row (`w-full` forces the wrap) and both
+            // control groups fall in underneath it.
+            isStacked ? 'flex-wrap items-center' : 'items-end'
+          )}>
 
-          {/* Send */}
-          <Button
-            size="icon" type="button"
-            className="h-8 w-8 shrink-0 rounded-full bg-primary text-primary-foreground shadow-[0_3px_10px_rgba(0,0,0,0.22)] hover:bg-primary/90"
-            disabled={readOnly || ((!value.trim() && pendingFiles.length === 0) || isSending)}
-            onClick={handleSend}
-          >
-            {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
-        </div>
+            <div ref={leftControlsRef} className={cn('flex items-center gap-1 shrink-0', isStacked && 'order-2')}>
+              {/* 😊 Emoji */}
+              <Button
+                ref={emojiButtonRef}
+                variant="ghost" size="icon" type="button"
+                className={cn(
+                  'h-7 w-7 md:h-8 md:w-8 shrink-0 text-muted-foreground hover:text-yellow-500 transition-colors',
+                  'rounded-full hover:bg-accent/70',
+                  showEmojiPicker && 'text-yellow-500 bg-yellow-500/10'
+                )}
+                title="Emoji"
+                onClick={() => setShowEmojiPicker(v => !v)}
+              >
+                <Smile className="h-4 w-4" />
+              </Button>
+
+              {/* 📎 File */}
+              <Button
+                variant="ghost" size="icon" type="button"
+                className="h-7 w-7 md:h-8 md:w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent/70 transition-colors"
+                title="Attach files"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={readOnly}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Textarea */}
+            <div className={cn(
+              'relative min-w-0 flex items-center min-h-[28px] md:min-h-[32px]',
+              isStacked ? 'order-1 w-full' : 'flex-1'
+            )}>
+              <div
+                ref={mentionOverlayRef}
+                aria-hidden="true"
+                className="custom-scrollbar absolute inset-x-0 flex items-start px-0.5 overflow-hidden whitespace-pre-wrap break-words text-sm leading-5 max-h-[140px] pointer-events-none"
+                style={TEXT_SIZE_ADJUST_STYLE}
+              >
+                <span className="w-full">{mentionHighlightNodes}</span>
+              </div>
+              <textarea
+                ref={textareaRef}
+                value={value}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                onScroll={syncOverlayScroll}
+                placeholder={otherMembers.length <= 1 ? 'Type a message...' : 'Type a message... Use @ to mention'}
+                rows={1}
+                className="custom-scrollbar relative w-full resize-none overflow-x-hidden bg-transparent px-0.5 text-sm leading-5 max-h-[140px] text-transparent caret-foreground placeholder:text-muted-foreground/90 focus-visible:outline-none"
+                style={TEXT_SIZE_ADJUST_STYLE}
+                disabled={readOnly}
+              />
+            </div>
+
+            <div ref={rightControlsRef} className={cn('flex items-center gap-1 shrink-0', isStacked && 'order-3 ml-auto')}>
+              {showCharCount && (
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {value.length}/{MAX_CHARS}
+                </span>
+              )}
+
+              {/* Send */}
+              <Button
+                size="icon" type="button"
+                className="h-8 w-8 shrink-0 rounded-full bg-primary text-primary-foreground shadow-[0_3px_10px_rgba(0,0,0,0.22)] hover:bg-primary/90"
+                disabled={readOnly || ((!value.trim() && pendingFiles.length === 0 && pendingEntityTags.length === 0) || isSending)}
+                onClick={handleSend}
+              >
+                {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { attachmentsService, AttachmentRecord, CreateAttachmentInput } from '@/services/attachments.service';
+import { attachmentsService, AttachmentRecord, UploadAttachmentInput } from '@/services/attachments.service';
 import { toast } from 'sonner';
 
 /**
@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 export function useProjectAttachments(projectId: string | undefined) {
   return useQuery({
     queryKey: ['project-attachments', projectId],
-    queryFn: () => attachmentsService.getByProject(projectId!),
+    queryFn: () => attachmentsService.getByEntity(projectId!, 'project'),
     enabled: !!projectId,
   });
 }
@@ -25,15 +25,14 @@ export function useEntityAttachments(entityId: string | undefined, entityType: s
 }
 
 /**
- * Create attachment mutation
+ * Create attachment mutation (uploads file and creates DB record in one call)
  */
 export function useCreateAttachment() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: CreateAttachmentInput) => attachmentsService.create(input),
+    mutationFn: (input: UploadAttachmentInput) => attachmentsService.upload(input),
     onSuccess: (data) => {
-      // Invalidate relevant queries
       if (data.project_id) {
         queryClient.invalidateQueries({ queryKey: ['project-attachments', data.project_id] });
       }

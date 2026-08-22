@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { chatService } from '@/services/chat.service';
 import { toast } from 'sonner';
+import { logger } from '@/services/monitoring/logger';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 500;
@@ -101,12 +101,12 @@ async function dbGetAll(): Promise<QueuedItem[]> {
 
         decryptedItems.push({ id: record.id, ...metadata } as QueuedItem);
       } catch (err) {
-        console.error('[OfflineQueue] Failed to decrypt item', record.id, err);
+        logger.error('[OfflineQueue] Failed to decrypt item', record.id, err);
       }
     }
     return decryptedItems;
   } catch (err) {
-    console.error('[OfflineQueue] dbGetAll failed:', err);
+    logger.error('[OfflineQueue] dbGetAll failed:', err);
     return [];
   }
 }
@@ -140,7 +140,7 @@ async function dbPut(item: QueuedItem): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
   } catch (err) {
-    console.error('[OfflineQueue] dbPut failed:', err);
+    logger.error('[OfflineQueue] dbPut failed:', err);
     throw err;
   }
 }
@@ -155,7 +155,7 @@ async function dbDelete(id: string): Promise<void> {
       tx.onerror = () => reject(tx.error ?? new Error('Transaction failed'));
     });
   } catch (err) {
-    console.error('[OfflineQueue] dbDelete failed', id, err);
+    logger.error('[OfflineQueue] dbDelete failed', id, err);
     throw err;
   }
 }
@@ -191,7 +191,7 @@ export function useOfflineQueue(userId: string | undefined) {
         (item) => typeof item.timestamp === 'number' && !Number.isNaN(item.timestamp)
       );
       if (validItems.length !== items.length) {
-        console.warn('[OfflineQueue] Some items had invalid timestamps and were skipped');
+        logger.warn('[OfflineQueue] Some items had invalid timestamps and were skipped');
       }
       validItems.sort((a, b) => a.timestamp - b.timestamp);
 
@@ -205,33 +205,9 @@ export function useOfflineQueue(userId: string | undefined) {
           return;
         }
 
-        const safeName = sanitizeFileName(item.fileName);
-        const ext = safeName.split('.').pop() || 'bin';
-        const path = `${item.conversationId}/${createUuid()}.${ext}`;
-        const file = new File([item.data], safeName, { type: item.mimeType });
-
-        const { error: uploadErr } = await supabase.storage
-          .from('chat-attachments')
-          .upload(path, file);
-        if (uploadErr) throw uploadErr;
-
-        const content = JSON.stringify({
-          fileName: item.fileName,
-          fileSize: item.fileSize,
-          mimeType: item.mimeType,
-          storagePath: path,
-          text: item.caption || undefined,
-        });
-
-        const { error } = await supabase
-          .from('chat_messages')
-          .insert({
-            conversation_id: item.conversationId,
-            sender_id: userId,
-            content,
-            content_type: 'file',
-          });
-        if (error) throw error;
+        // File attachments are not yet supported — skip silently
+        logger.warn('[OfflineQueue] File attachments not yet supported, skipping item', item.id);
+        throw new Error('File attachments are not yet supported in this backend version.');
       };
 
       for (const item of validItems) {
@@ -259,7 +235,7 @@ export function useOfflineQueue(userId: string | undefined) {
           await dbDelete(item.id);
           sentCount++;
         } catch (err) {
-          console.error('[OfflineQueue] Failed to send queued item', item.id, err);
+          logger.error('[OfflineQueue] Failed to send queued item', item.id, err);
           failedCount++;
           if (firstFailureDelayMs === null) {
             firstFailureDelayMs = RETRY_BASE_DELAY_MS * 2 ** (MAX_RETRY_ATTEMPTS - 1);
@@ -329,33 +305,19 @@ export function useOfflineQueue(userId: string | undefined) {
     refreshCount();
   }, [refreshCount]);
 
-  // Enqueue a file (reads it into ArrayBuffer for storage; sanitized filename)
-  const enqueueFile = useCallback(async (conversationId: string, file: File, caption?: string) => {
-    if (!conversationId) {
-      throw new Error('Cannot queue file without a conversation.');
-    }
-    if (!(file instanceof File) || file.size <= 0) {
-      throw new Error('Cannot queue an invalid file.');
-    }
-    if (file.size > MAX_QUEUE_FILE_SIZE) {
-      throw new Error('Cannot queue files larger than 10MB.');
-    }
-
-    const data = await file.arrayBuffer();
-    const item: QueuedFileMessage = {
-      id: createUuid(),
-      kind: 'file',
-      conversationId,
-      fileName: sanitizeFileName(file.name),
-      fileSize: file.size,
-      mimeType: file.type,
-      data,
-      caption,
-      timestamp: Date.now(),
-    };
-    await dbPut(item);
-    refreshCount();
-  }, [refreshCount]);
+  // File offline-queuing is not yet supported by the backend.
+  // Reject immediately so the caller shows the user a clear error
+  // rather than silently storing a file that will never be flushed.
+  const enqueueFile = useCallback(
+    (_conversationId: string, _file: File, _caption?: string): Promise<void> =>
+      Promise.reject(
+        new Error(
+          'File messages cannot be sent while offline. ' +
+          'Please reconnect and try sending the file again.'
+        )
+      ),
+    []
+  );
 
   return { isOnline, pendingCount, enqueueText, enqueueFile, flush };
 }

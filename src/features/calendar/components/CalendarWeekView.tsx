@@ -51,9 +51,9 @@ export const CalendarWeekView: React.FC<CalendarWeekViewProps> = ({
         {days.map((day, index) => {
           const dayEvents = getEventsForDate(events, day.date);
 
-          // Sort events: milestones first, then issues, then tasks
+          // Sort events: meetings first, then milestones, then issues, then tasks
           const sortedEvents = [...dayEvents].sort((a, b) => {
-            const typeOrder = { milestone: 0, issue: 1, task: 2 };
+            const typeOrder = { meeting: 0, milestone: 1, issue: 2, task: 3 };
             return typeOrder[a.type] - typeOrder[b.type];
           });
 
@@ -61,7 +61,7 @@ export const CalendarWeekView: React.FC<CalendarWeekViewProps> = ({
             <div
               key={index}
               className={cn(
-                'border-r border-border last:border-r-0 flex flex-col',
+                'border-r border-border last:border-r-0 flex flex-col min-h-0 overflow-hidden',
                 day.isToday && 'bg-primary/5'
               )}
             >

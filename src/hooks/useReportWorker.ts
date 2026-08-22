@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Task, Issue } from '@/types';
+import { logger } from '@/services/monitoring/logger';
 
 interface KPIResult {
   projectProgress: number;
@@ -43,7 +44,7 @@ export function useReportWorker() {
 
     // Handle errors
     workerRef.current.onerror = (error) => {
-      console.error('Worker error:', error);
+      logger.error('Worker error:', error);
       setIsCalculating(false);
     };
 

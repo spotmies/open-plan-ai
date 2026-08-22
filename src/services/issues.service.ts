@@ -1,579 +1,173 @@
-import { supabase } from '@/integrations/supabase/client';
-import { Issue, TeamMember, Comment } from '@/types';
-import { projects as mockProjects, projectIssues as mockIssues } from '@/data/mockData';
-import { config } from '@/config';
-import { attachmentsService } from './attachments.service';
-import { activitiesService } from './activities.service';
-
-// Environment flag to control data source
-const USE_MOCK_DATA = config.api.useMockData;
-const USE_SUPABASE = config.api.useSupabase;
-
-// Simulate network delay for mock data
-const mockDelay = (ms: number = 100) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Map database issue to frontend Issue type
-function mapDbIssueToIssue(
-  dbIssue: any,
-  assignees: TeamMember[] = [],
-  reportedBy?: TeamMember,
-): Issue {
-  const defaultReporter: TeamMember = {
-    id: dbIssue.reported_by || 'unknown',
-    name: 'Unknown User',
-    email: '',
-    role: 'member',
-    initials: 'UN',
-  };
-
-  return {
-    id: dbIssue.id,
-    projectId: dbIssue.project_id,
-    title: dbIssue.title,
-    description: dbIssue.description || '',
-    severity: dbIssue.severity,
-    status: dbIssue.status,
-    category: dbIssue.category || 'other',
-    reportedBy: reportedBy || defaultReporter,
-    reportedAt: dbIssue.reported_at || dbIssue.created_at,
-    resolvedAt: dbIssue.resolved_at || undefined,
-    dueDate: dbIssue.due_date || undefined,
-    assignees,
-    attachments: dbIssue.attachments || [],
-    comments: dbIssue.comments || [],
-    blockedBy: dbIssue.blocked_by_task_ids || [],
-    blocksTaskIds: dbIssue.blocks_task_ids || [],
-    blocksMilestoneIds: dbIssue.blocks_milestone_ids || [],
-  };
-}
-
-function mapDbCommentToComment(dbComment: any): Comment {
-  const profile = Array.isArray(dbComment.profiles) ? dbComment.profiles[0] : dbComment.profiles;
-  return {
-    id: dbComment.id,
-    content: dbComment.content,
-    createdAt: dbComment.created_at,
-    author: {
-      id: profile?.id || dbComment.author_id || 'unknown',
-      name: profile?.name || 'Unknown User',
-      email: profile?.email || '',
-      initials: profile?.initials || 'UN',
-      role: 'member',
-      avatar: profile?.avatar_url || undefined,
-    },
-  };
-}
+import { apiClient } from '@/services/api/client';
+import { ENDPOINTS } from '@/services/api/endpoints';
+import { fromApiIssue } from '@/services/projects.service';
+import { Issue } from '@/types';
 
 export const issuesService = {
   /**
-   * Get all issues across all projects
+   * Get all issues — returns empty array; use getByProject for actual data.
    */
   async getAll(): Promise<Issue[]> {
-    if (USE_MOCK_DATA && !USE_SUPABASE) {
-      await mockDelay();
-      const projectIssues = mockProjects.flatMap(p => p.issues || []);
-      return [...projectIssues, ...mockIssues];
-    }
+    return [];
+  },
 
-    // Step 1: Fetch issues without FK hints to profiles
-    const { data, error } = await supabase
-      .from('issues')
-      .select('*')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    if (!data || data.length === 0) return [];
-
-    const issueIds = data.map(i => i.id);
-
-    // Step 2: Fetch assignees and attachments separately (no FK hints)
-    const [assigneesResult, attachmentsResult, commentsResult] = await Promise.all([
-      supabase.from('issue_assignees').select('issue_id, user_id').in('issue_id', issueIds),
-      supabase.from('attachments').select('*').in('entity_id', issueIds).eq('entity_type', 'issue'),
-      supabase
-        .from('comments')
-        .select('id, content, created_at, author_id, entity_id, profiles:author_id(id, name, email, initials, avatar_url)')
-        .in('entity_id', issueIds)
-        .eq('entity_type', 'issue')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: true }),
-    ]);
-
-    // Step 3: Fetch profiles for all referenced user IDs (Bypassing URI Limits via Chunking)
-    // BATCH_SIZE=150 keeps each request well below PostgREST's URI length limit.
-    const allUserIds = [...new Set([
-      ...data.filter(i => i.reported_by).map(i => i.reported_by!),
-      ...(assigneesResult.data || []).map(a => a.user_id),
-      ...(attachmentsResult.data || []).filter(a => a.uploaded_by).map(a => a.uploaded_by!),
-    ])];
-    
-    const BATCH_SIZE = 150;
-    let profilesMap: Record<string, any> = {};
-    if (allUserIds.length > 0) {
-      for (let i = 0; i < allUserIds.length; i += BATCH_SIZE) {
-        const chunk = allUserIds.slice(i, i + BATCH_SIZE);
-        try {
-          const { data: chunkProfiles, error: chunkError } = await supabase
-            .from('profiles')
-            .select('id, name, email, avatar_url, initials')
-            .in('id', chunk);
-          if (chunkError) {
-            console.warn('[issues.service] Profile batch fetch failed (batch starting at', i, '):', chunkError.message);
-          } else if (chunkProfiles) {
-            chunkProfiles.forEach(p => { profilesMap[p.id] = p; });
-          }
-        } catch (err) {
-          console.warn('[issues.service] Unexpected error in profile batch at index', i, err);
-        }
-      }
-    }
-
-    // Step 4: Map everything together client-side
-    return data.map(issue => {
-      const issueAssigneeRows = (assigneesResult.data || []).filter(a => a.issue_id === issue.id);
-      const issueAttachments = (attachmentsResult.data || []).filter(a => a.entity_id === issue.id);
-      const issueComments = (commentsResult.data || [])
-        .filter((c: any) => c.entity_id === issue.id)
-        .map((c: any) => mapDbCommentToComment(c));
-
-      const reporterProfile = issue.reported_by ? profilesMap[issue.reported_by] : null;
-      const reporter = reporterProfile ? {
-        id: reporterProfile.id,
-        name: reporterProfile.name,
-        email: reporterProfile.email,
-        role: 'member',
-        avatar: reporterProfile.avatar_url || undefined,
-        initials: reporterProfile.initials || 'UN',
-      } as TeamMember : undefined;
-
-      const assignees: TeamMember[] = issueAssigneeRows.map(ia => {
-        const profile = profilesMap[ia.user_id];
-        return {
-          id: profile?.id || ia.user_id,
-          name: profile?.name || 'Unknown',
-          role: 'member' as const,
-          avatar: profile?.avatar_url || undefined,
-          initials: profile?.initials || 'UN',
-          email: profile?.email || '',
-        };
-      });
-
-      const attachments = issueAttachments.map((a: any) => {
-        const { data: { publicUrl } } = supabase.storage
-          .from('project-files')
-          .getPublicUrl(a.file_path);
-
-        const uploaderProfile = a.uploaded_by ? profilesMap[a.uploaded_by] : null;
-        return {
-          id: a.id,
-          filename: a.file_name,
-          fileType: a.mime_type || '',
-          fileSize: a.file_size || 0,
-          url: publicUrl,
-          uploadedAt: a.uploaded_at,
-          uploadedBy: uploaderProfile ? {
-            id: uploaderProfile.id,
-            name: uploaderProfile.name,
-            email: uploaderProfile.email,
-            initials: uploaderProfile.initials || 'UN',
-            role: 'member',
-          } : { id: a.uploaded_by, name: 'Unknown', email: '', initials: 'UN', role: 'member' }
-        };
-      });
-
-      return mapDbIssueToIssue({ ...issue, attachments, comments: issueComments }, assignees, reporter);
-    });
+  /**
+   * Get issues for a specific project
+   */
+  async getByProject(projectId: string): Promise<Issue[]> {
+    const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ISSUES.LIST(projectId));
+    return (data || []).map(fromApiIssue);
   },
 
   /**
    * Get issue by ID
    */
   async getById(issueId: string): Promise<Issue | null> {
-    if (USE_MOCK_DATA && !USE_SUPABASE) {
-      await mockDelay();
-      // Check project issues first
-      for (const project of mockProjects) {
-        const issue = project.issues?.find(i => i.id === issueId);
-        if (issue) return { ...issue };
-      }
-      // Check standalone issues
-      const standaloneIssue = mockIssues.find(i => i.id === issueId);
-      return standaloneIssue ? { ...standaloneIssue } : null;
+    try {
+      const data = await apiClient.get<Record<string, unknown>>(ENDPOINTS.ISSUES.BY_ID(issueId));
+      return data ? fromApiIssue(data) : null;
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) return null;
+      throw err;
     }
-
-    // Step 1: Fetch issue without FK hints to profiles
-    const { data, error } = await supabase
-      .from('issues')
-      .select('*')
-      .eq('id', issueId)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) return null;
-
-    // Step 2: Fetch assignees and attachments separately
-    const [assigneesResult, attachmentsResult, commentsResult] = await Promise.all([
-      supabase.from('issue_assignees').select('issue_id, user_id').eq('issue_id', issueId),
-      supabase.from('attachments').select('*').eq('entity_id', issueId).eq('entity_type', 'issue'),
-      supabase
-        .from('comments')
-        .select('id, content, created_at, author_id, entity_id, profiles:author_id(id, name, email, initials, avatar_url)')
-        .eq('entity_id', issueId)
-        .eq('entity_type', 'issue')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: true }),
-    ]);
-
-    // Step 3: Fetch profiles for all referenced user IDs
-    const allUserIds = [...new Set([
-      ...(data.reported_by ? [data.reported_by] : []),
-      ...(assigneesResult.data || []).map(a => a.user_id),
-      ...(attachmentsResult.data || []).filter(a => a.uploaded_by).map(a => a.uploaded_by!),
-    ])];
-    let profilesMap: Record<string, any> = {};
-    if (allUserIds.length > 0) {
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, name, email, avatar_url, initials')
-        .in('id', allUserIds);
-      profilesMap = Object.fromEntries((profilesData || []).map(p => [p.id, p]));
-    }
-
-    // Step 4: Map together
-    const reporterProfile = data.reported_by ? profilesMap[data.reported_by] : null;
-    const reporter = reporterProfile ? {
-      id: reporterProfile.id,
-      name: reporterProfile.name,
-      email: reporterProfile.email,
-      role: 'member',
-      avatar: reporterProfile.avatar_url || undefined,
-      initials: reporterProfile.initials || 'UN',
-    } as TeamMember : undefined;
-
-    const assignees: TeamMember[] = (assigneesResult.data || []).map(ia => {
-      const profile = profilesMap[ia.user_id];
-      return {
-        id: profile?.id || ia.user_id,
-        name: profile?.name || 'Unknown',
-        role: 'member' as const,
-        avatar: profile?.avatar_url || undefined,
-        initials: profile?.initials || 'UN',
-        email: profile?.email || '',
-      };
-    });
-
-    const attachments = (attachmentsResult.data || []).map((a: any) => {
-      const { data: { publicUrl } } = supabase.storage
-        .from('project-files')
-        .getPublicUrl(a.file_path);
-
-      const uploaderProfile = a.uploaded_by ? profilesMap[a.uploaded_by] : null;
-      return {
-        id: a.id,
-        filename: a.file_name,
-        fileType: a.mime_type || '',
-        fileSize: a.file_size || 0,
-        url: publicUrl,
-        uploadedAt: a.uploaded_at,
-        uploadedBy: uploaderProfile ? {
-          id: uploaderProfile.id,
-          name: uploaderProfile.name,
-          email: uploaderProfile.email,
-          initials: uploaderProfile.initials || 'UN',
-          role: 'member',
-        } : { id: a.uploaded_by, name: 'Unknown', email: '', initials: 'UN', role: 'member' }
-      };
-    });
-
-    const comments = (commentsResult.data || []).map((c: any) => mapDbCommentToComment(c));
-
-    return mapDbIssueToIssue({ ...data, attachments, comments }, assignees, reporter);
   },
 
   /**
    * Create new issue
    */
   async create(projectId: string, issue: Omit<Issue, 'id' | 'reportedAt'>): Promise<Issue> {
-    if (USE_MOCK_DATA && !USE_SUPABASE) {
-      await mockDelay();
-      const project = mockProjects.find(p => p.id === projectId);
-      if (!project) throw new Error('Project not found');
-
-      const newIssue: Issue = {
-        ...issue,
-        id: `issue-${Date.now()}`,
-        projectId,
-        reportedAt: new Date().toISOString(),
-      };
-
-      if (!project.issues) {
-        project.issues = [];
-      }
-      project.issues.push(newIssue);
-      return newIssue;
-    }
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const { data, error } = await supabase
-      .from('issues')
-      .insert({
-        project_id: projectId,
-        title: issue.title,
-        description: issue.description || null,
-        severity: issue.severity,
-        status: issue.status,
-        category: issue.category || 'other',
-        reported_by: user?.id || null,
-        due_date: issue.dueDate || null,
-        blocks_milestone_ids: issue.blocksMilestoneIds || [],
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Add assignees if provided
-    if (issue.assignees && issue.assignees.length > 0) {
-      const assigneeInserts = issue.assignees.map(a => ({
-        issue_id: data.id,
-        user_id: a.id,
-        assigned_by: user?.id || null,
-      }));
-
-      await supabase.from('issue_assignees').insert(assigneeInserts);
-    }
-
-    // Add attachments if provided
-    if (issue.attachments && issue.attachments.length > 0) {
-      const attachmentInserts = issue.attachments.map(att => {
-        const urlParts = att.url.split('project-files/');
-        const filePath = urlParts.length > 1 ? urlParts[1] : (att.id.includes('temp') ? att.url : att.url.split('/').pop() || '');
-
-        return {
-          entity_id: data.id,
-          entity_type: 'issue',
-          file_name: att.filename,
-          file_path: filePath,
-          file_size: att.fileSize,
-          mime_type: att.fileType,
-          project_id: projectId,
-          uploaded_by: user?.id || null
-        };
-      });
-      await supabase.from('attachments').insert(attachmentInserts);
-    }
-
-    // Log activity
-    activitiesService.create({
-      project_id: projectId,
-      activity_type: 'issue_created',
-      description: `opened issue "${data.title}"`,
-      user_id: user?.id || null,
-      entity_id: data.id,
-      entity_type: 'issue',
-    }).catch(() => { /* non-critical */ });
-
-    return this.getById(data.id) as Promise<Issue>;
+    const payload: Record<string, unknown> = {
+      title: issue.title,
+      category: issue.category,
+    };
+    if (issue.category === 'other' && issue.categoryOther) payload.categoryOther = issue.categoryOther;
+    if (issue.description) payload.description = issue.description;
+    if (issue.severity) payload.severity = issue.severity;
+    if (issue.status) payload.status = issue.status;
+    if ((issue as any).moduleId) payload.moduleId = (issue as any).moduleId;
+    // Normalise dueDate to YYYY-MM-DD — the backend rejects full ISO timestamps
+    // (see the same normalisation in update() below).
+    if ((issue as any).dueDate) payload.dueDate = String((issue as any).dueDate).substring(0, 10);
+    const assigneeIds = ((issue as any).assignees || []).map((a: any) => a.id).filter(Boolean);
+    if (assigneeIds.length > 0) payload.assigneeIds = assigneeIds;
+    const blocksTaskIds = (issue.blocksTaskIds || []).filter(Boolean);
+    if (blocksTaskIds.length > 0) payload.blocksTaskIds = blocksTaskIds;
+    const blockedByTaskIds = (issue.blockedBy || []).filter(Boolean);
+    if (blockedByTaskIds.length > 0) payload.blockedByTaskIds = blockedByTaskIds;
+    const blocksMilestoneIds = (issue.blocksMilestoneIds || []).filter(Boolean);
+    if (blocksMilestoneIds.length > 0) payload.blocksMilestoneIds = blocksMilestoneIds;
+    if (issue.tags && issue.tags.length > 0) payload.tags = issue.tags;
+    if (issue.checklist && issue.checklist.length > 0) payload.checklist = issue.checklist;
+    if (issue.descriptionBlocks && issue.descriptionBlocks.length > 0) payload.descriptionBlocks = issue.descriptionBlocks;
+    if (issue.videoLinks && issue.videoLinks.length > 0) payload.videoLinks = issue.videoLinks;
+    return apiClient.post<Issue>(ENDPOINTS.ISSUES.LIST(projectId), payload);
   },
 
   /**
    * Update existing issue
    */
   async update(issueId: string, updates: Partial<Issue>): Promise<Issue> {
-    if (USE_MOCK_DATA && !USE_SUPABASE) {
-      await mockDelay();
+    // Only send fields the backend update schema accepts — sending the full
+    // Issue object can trigger Zod validation errors (e.g. dueDate as an ISO
+    // timestamp instead of YYYY-MM-DD, or unknown fields).
+    const payload: Record<string, unknown> = {};
+    const u = updates as any;
 
-      // Check project issues first
-      for (const project of mockProjects) {
-        if (project.issues) {
-          const issueIndex = project.issues.findIndex(i => i.id === issueId);
-          if (issueIndex !== -1) {
-            project.issues[issueIndex] = {
-              ...project.issues[issueIndex],
-              ...updates,
-            };
-            return { ...project.issues[issueIndex] };
-          }
-        }
-      }
+    if (u.title !== undefined) payload.title = u.title;
+    if (u.description !== undefined) payload.description = u.description;
+    if (u.category !== undefined) payload.category = u.category;
+    if (u.categoryOther !== undefined) payload.categoryOther = u.categoryOther;
+    if (u.severity !== undefined) payload.severity = u.severity;
+    if (u.status !== undefined) payload.status = u.status;
+    if ('moduleId' in updates) payload.moduleId = u.moduleId ?? null;
+    if ('resolution' in updates) payload.resolution = u.resolution ?? null;
+    if (u.tags !== undefined) payload.tags = u.tags;
 
-      // Check standalone issues
-      const standaloneIndex = mockIssues.findIndex(i => i.id === issueId);
-      if (standaloneIndex !== -1) {
-        mockIssues[standaloneIndex] = {
-          ...mockIssues[standaloneIndex],
-          ...updates,
-        };
-        return { ...mockIssues[standaloneIndex] };
-      }
-
-      throw new Error('Issue not found');
+    // Normalise dueDate to YYYY-MM-DD (server may return full ISO timestamps)
+    if ('dueDate' in updates) {
+      payload.dueDate = u.dueDate
+        ? String(u.dueDate).substring(0, 10)
+        : null;
     }
 
-    const updateData: any = {};
-    if (updates.title !== undefined) updateData.title = updates.title;
-    if (updates.description !== undefined) updateData.description = updates.description;
-    if (updates.severity !== undefined) updateData.severity = updates.severity;
-    if (updates.status !== undefined) updateData.status = updates.status;
-    if (updates.category !== undefined) updateData.category = updates.category;
-    if (updates.resolvedAt !== undefined) updateData.resolved_at = updates.resolvedAt;
-    if (updates.dueDate !== undefined) updateData.due_date = updates.dueDate;
-    if (updates.blockedBy !== undefined) updateData.blocked_by_task_ids = updates.blockedBy;
-    if (updates.blocksTaskIds !== undefined) updateData.blocks_task_ids = updates.blocksTaskIds;
-    if (updates.blocksMilestoneIds !== undefined) updateData.blocks_milestone_ids = updates.blocksMilestoneIds;
-
-    const { data, error } = await supabase
-      .from('issues')
-      .update(updateData)
-      .eq('id', issueId)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Update assignees if provided
-    if (updates.assignees !== undefined) {
-      await supabase.from('issue_assignees').delete().eq('issue_id', issueId);
-
-      if (updates.assignees.length > 0) {
-        const { data: { user } } = await supabase.auth.getUser();
-        const assigneeInserts = updates.assignees.map(a => ({
-          issue_id: issueId,
-          user_id: a.id,
-          assigned_by: user?.id || null,
-        }));
-        await supabase.from('issue_assignees').insert(assigneeInserts);
-      }
+    // Backend expects assigneeIds (uuid[]); frontend tracks full TeamMember objects.
+    if (u.assignees !== undefined) {
+      payload.assigneeIds = (u.assignees || []).map((a: any) => a.id).filter(Boolean);
+    } else if (u.assigneeIds !== undefined) {
+      payload.assigneeIds = u.assigneeIds;
     }
 
-    // Update attachments if provided
-    if (updates.attachments !== undefined) {
-      // Fetch current attachments in DB for this issue
-      const { data: currentDbAttachments, error: fetchErr } = await supabase
-        .from('attachments')
-        .select('id')
-        .eq('entity_id', issueId)
-        .eq('entity_type', 'issue');
-
-      if (!fetchErr && currentDbAttachments) {
-        const updatedIds = updates.attachments.map(a => a.id);
-        const toDelete = currentDbAttachments.filter(dbA => !updatedIds.includes(dbA.id));
-
-        for (const attachment of toDelete) {
-          try {
-            await attachmentsService.delete(attachment.id);
-          } catch (err) {
-            console.error('Failed to delete attachment during issue update:', err);
-          }
-        }
-      }
+    if (u.blocksTaskIds !== undefined) {
+      payload.blocksTaskIds = u.blocksTaskIds;
     }
 
-    // Persist newly added comments into comments table.
-    if (updates.comments !== undefined) {
-      const { data: existingComments } = await supabase
-        .from('comments')
-        .select('id')
-        .eq('entity_id', issueId)
-        .eq('entity_type', 'issue')
-        .is('deleted_at', null);
-
-      const existingCommentIds = new Set((existingComments || []).map(c => c.id));
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const commentsToInsert = (updates.comments || [])
-        .filter(c => !!c.content?.trim())
-        .filter(c => !existingCommentIds.has(c.id))
-        .map(c => ({
-          entity_id: issueId,
-          entity_type: 'issue',
-          content: c.content.trim(),
-          author_id: user?.id || c.author?.id,
-        }))
-        .filter(c => !!c.author_id);
-
-      if (commentsToInsert.length > 0) {
-        const { error: commentInsertError } = await supabase
-          .from('comments')
-          .insert(commentsToInsert as any);
-        if (commentInsertError) throw commentInsertError;
-      }
+    if (u.blockedBy !== undefined) {
+      payload.blockedByTaskIds = u.blockedBy;
     }
 
-    return this.getById(issueId) as Promise<Issue>;
+    if (u.blocksMilestoneIds !== undefined) {
+      payload.blocksMilestoneIds = u.blocksMilestoneIds;
+    }
+
+    if (u.checklist !== undefined) {
+      payload.checklist = u.checklist;
+    }
+
+    if (u.descriptionBlocks !== undefined) {
+      payload.descriptionBlocks = u.descriptionBlocks;
+    }
+
+    if (u.videoLinks !== undefined) {
+      payload.videoLinks = u.videoLinks;
+    }
+
+    return apiClient.patch<Issue>(ENDPOINTS.ISSUES.BY_ID(issueId), payload);
   },
 
   /**
-   * Delete issue (soft delete)
+   * Update issue status
+   */
+  async updateStatus(issueId: string, status: Issue['status']): Promise<Issue> {
+    return apiClient.patch<Issue>(ENDPOINTS.ISSUES.STATUS(issueId), { status });
+  },
+
+  /**
+   * Delete issue
    */
   async delete(issueId: string): Promise<void> {
-    if (USE_MOCK_DATA && !USE_SUPABASE) {
-      await mockDelay();
-
-      // Check project issues first
-      for (const project of mockProjects) {
-        if (project.issues) {
-          const index = project.issues.findIndex(i => i.id === issueId);
-          if (index !== -1) {
-            project.issues.splice(index, 1);
-            return;
-          }
-        }
-      }
-
-      // Check standalone issues
-      const standaloneIndex = mockIssues.findIndex(i => i.id === issueId);
-      if (standaloneIndex !== -1) {
-        mockIssues.splice(standaloneIndex, 1);
-      }
-      return;
-    }
-
-    const { error } = await (supabase.rpc as any)('soft_delete_issue', { issue_id: issueId });
-    if (error) {
-      console.error('[issuesService] soft_delete_issue failed', error);
-      throw error;
-    }
+    return apiClient.delete<void>(ENDPOINTS.ISSUES.BY_ID(issueId));
   },
 
   /**
-   * Get open issues count
+   * Add assignee to issue
    */
-  async getOpenCount(): Promise<{ total: number; critical: number }> {
-    if (USE_MOCK_DATA && !USE_SUPABASE) {
-      await mockDelay();
-      const allIssues = await this.getAll();
-      const openIssues = allIssues.filter(i => i.status === 'open' || i.status === 'investigating');
-      const criticalIssues = openIssues.filter(i => i.severity === 'critical');
-      return {
-        total: openIssues.length,
-        critical: criticalIssues.length,
-      };
+  async addAssignee(issueId: string, userId: string): Promise<void> {
+    return apiClient.post<void>(ENDPOINTS.ISSUES.ASSIGNEES(issueId), { userId });
+  },
+
+  /**
+   * Remove assignee from issue
+   */
+  async removeAssignee(issueId: string, userId: string): Promise<void> {
+    return apiClient.delete<void>(ENDPOINTS.ISSUES.ASSIGNEE(issueId, userId));
+  },
+
+  /**
+   * Get open issues count for an org (fan-out across projects)
+   */
+  async getOpenCount(orgId?: string): Promise<{ total: number; critical: number }> {
+    if (!orgId) return { total: 0, critical: 0 };
+    try {
+      const { projectsService } = await import('./projects.service');
+      const projects = await projectsService.getAll(orgId);
+      const allResults = await Promise.all(projects.map(p => this.getByProject(p.id).catch(() => [])));
+      const allIssues = allResults.flat();
+      const open = allIssues.filter(i => i.status !== 'resolved' && i.status !== 'wont-fix');
+      const critical = open.filter(i => (i as any).severity === 'critical' || (i as any).priority === 'critical');
+      return { total: open.length, critical: critical.length };
+    } catch {
+      return { total: 0, critical: 0 };
     }
-
-    const { count: total, error: totalError } = await supabase
-      .from('issues')
-      .select('*', { count: 'exact', head: true })
-      .in('status', ['open', 'investigating'])
-      .is('deleted_at', null);
-
-    if (totalError) throw totalError;
-
-    const { count: critical, error: criticalError } = await supabase
-      .from('issues')
-      .select('*', { count: 'exact', head: true })
-      .in('status', ['open', 'investigating'])
-      .eq('severity', 'critical')
-      .is('deleted_at', null);
-
-    if (criticalError) throw criticalError;
-
-    return {
-      total: total || 0,
-      critical: critical || 0,
-    };
   },
 };

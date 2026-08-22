@@ -1,6 +1,15 @@
 export type ConversationType = 'dm' | 'group';
-export type MessageContentType = 'text' | 'system' | 'file';
+export type MessageContentType = 'text' | 'system' | 'file' | 'image';
 export type ConversationMemberRole = 'owner' | 'admin' | 'member';
+
+export type ChatEntityType = 'task' | 'issue' | 'milestone' | 'hardware_module' | 'bom_node' | 'eco';
+
+export interface EntityTagRef {
+  entityType: ChatEntityType;
+  entityId: string;
+  projectId: string;
+  label: string;
+}
 
 export interface ReadReceipt {
   messageId: string;
@@ -17,13 +26,20 @@ export interface ConversationMember {
   role: ConversationMemberRole;
   isOnline: boolean;
   lastSeenAt?: string;
+  lastReadAt?: string | null;
+  notificationsEnabled?: boolean;
 }
 
 export interface MessageAttachment {
   id: string;
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
+  // New backend fields
+  name?: string;
+  size?: number;
+  type?: string;
+  // Legacy fields
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
   storagePath?: string;
   url?: string;
 }
@@ -45,6 +61,7 @@ export interface ChatMessage {
   contentType: MessageContentType;
   content: string;
   attachments: MessageAttachment[];
+  entityTags?: EntityTagRef[];
   createdAt: string;
   updatedAt?: string;
   isEdited: boolean;
@@ -64,21 +81,34 @@ export interface ChatMessage {
   };
 }
 
+export interface PinnedMessage extends ChatMessage {
+  pinnedAt: string;
+  pinnedBy: string | null;
+}
+
+export interface FavouriteMessage extends ChatMessage {
+  favouritedAt: string;
+}
+
 export interface Conversation {
   id: string;
   type: ConversationType;
   name: string;
+  title?: string | null;
   description?: string;
   avatarUrl?: string;
   members: ConversationMember[];
   lastMessage?: {
     content: string;
+    senderId?: string;
     senderName: string;
     createdAt: string;
     status?: 'pending' | 'sending' | 'sent' | 'delivered' | 'read';
   };
   lastMessageAt: string;
   createdAt: string;
+  unreadCount?: number;
+  isFavourite?: boolean;
 }
 
 export interface ReachableUser {

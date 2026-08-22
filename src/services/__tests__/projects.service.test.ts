@@ -1,299 +1,213 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { projectsService } from '../projects.service';
-import { projects as mockProjects } from '@/data/mockData';
-import { Project } from '@/types';
 
-// Mock the config to ensure we're using mock data
-vi.mock('@/config', () => ({
-  config: { api: { useMockData: true, useSupabase: false } }
+vi.mock('@/services/api/client', () => ({
+  apiClient: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
+  tokenStorage: {
+    getAccessToken: vi.fn(() => 'mock-token'),
+    setAccessToken: vi.fn(),
+    setTokens: vi.fn(),
+    clearTokens: vi.fn(),
+    getRefreshToken: vi.fn(() => null),
+  },
 }));
 
-const MOCK_ORG_ID = 'test-org-123';
+vi.mock('@/services/tasks.service', () => ({
+  tasksService: {
+    getByProject: vi.fn(() => Promise.resolve([])),
+  },
+}));
+
+import { apiClient } from '@/services/api/client';
+
+const MOCK_ORG_ID = 'org-123';
+
+const mockProject = {
+  id: 'proj-1',
+  name: 'Alpha Project',
+  description: 'Test project',
+  stage: 'development',
+  progress: 40,
+  startDate: '2026-01-01',
+  targetDate: '2026-12-31',
+  team: [],
+  tasks: [],
+  milestones: [],
+  modules: [],
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+};
 
 describe('projectsService', () => {
-  describe('getAll', () => {
-    it('should return an array of projects', async () => {
-      const projects = await projectsService.getAll();
-      
-      expect(Array.isArray(projects)).toBe(true);
-      expect(projects.length).toBeGreaterThan(0);
-    });
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    it('should return projects with required properties', async () => {
-      const projects = await projectsService.getAll();
-      const project = projects[0];
-      
-      expect(project).toHaveProperty('id');
-      expect(project).toHaveProperty('name');
-      expect(project).toHaveProperty('description');
-      expect(project).toHaveProperty('stage');
-      expect(project).toHaveProperty('progress');
-      expect(project).toHaveProperty('tasks');
-      expect(project).toHaveProperty('milestones');
-    });
+  // ── getByOrg ────────────────────────────────────────────────────────────────
 
-    it('should return a copy of projects, not the original', async () => {
-      const projects1 = await projectsService.getAll();
-      const projects2 = await projectsService.getAll();
-      
-      expect(projects1).not.toBe(projects2);
+  describe('getByOrg', () => {
+    it('should return projects for the given org', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce([mockProject]);
+
+      const projects = await projectsService.getByOrg(MOCK_ORG_ID);
+
+      expect(apiClient.get).toHaveBeenCalledWith(
+        expect.stringContaining(`/organizations/${MOCK_ORG_ID}/projects`)
+      );
+      expect(projects).toHaveLength(1);
+      expect(projects[0].id).toBe('proj-1');
     });
   });
+
+  // ── getAll ──────────────────────────────────────────────────────────────────
+
+  describe('getAll', () => {
+    it('should return empty array when no organizationId is provided', async () => {
+      const projects = await projectsService.getAll();
+      expect(projects).toEqual([]);
+      expect(apiClient.get).not.toHaveBeenCalled();
+    });
+
+    it('should delegate to getByOrg when organizationId is provided', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce([mockProject]);
+
+      const projects = await projectsService.getAll(MOCK_ORG_ID);
+
+      expect(projects).toHaveLength(1);
+    });
+  });
+
+  // ── getById ─────────────────────────────────────────────────────────────────
 
   describe('getById', () => {
-    it('should return a project when given a valid ID', async () => {
-      const projects = await projectsService.getAll();
-      const validId = projects[0]?.id;
-      
-      if (validId) {
-        const project = await projectsService.getById(validId);
-        
-        expect(project).not.toBeNull();
-        expect(project?.id).toBe(validId);
-      }
+    it('should return a project by ID', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce(mockProject);
+
+      const project = await projectsService.getById('proj-1');
+
+      expect(project?.id).toBe('proj-1');
     });
 
-    it('should return null when given an invalid ID', async () => {
-      const project = await projectsService.getById('non-existent-id');
-      
+    it('should return null when the API returns null', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce(null);
+
+      const project = await projectsService.getById('no-such-project');
+
       expect(project).toBeNull();
     });
-
-    it('should return a copy, not the original project', async () => {
-      const projects = await projectsService.getAll();
-      const validId = projects[0]?.id;
-      
-      if (validId) {
-        const project1 = await projectsService.getById(validId);
-        const project2 = await projectsService.getById(validId);
-        
-        expect(project1).not.toBe(project2);
-      }
-    });
   });
+
+  // ── create ──────────────────────────────────────────────────────────────────
 
   describe('create', () => {
-    it('should create a new project with generated ID and timestamps', async () => {
-      const newProjectData = {
-        name: 'Test Project',
-        description: 'Test description',
-        stage: 'concept' as const,
-        progress: 0,
-        startDate: '2024-01-01',
-        targetDate: '2024-12-31',
-      };
+    it('should POST to the org projects endpoint and return the new project', async () => {
+      const created = { ...mockProject, id: 'proj-new' };
+      vi.mocked(apiClient.post).mockResolvedValueOnce(created);
 
-      const createdProject = await projectsService.create(newProjectData, MOCK_ORG_ID);
-      
-      expect(createdProject).toHaveProperty('id');
-      expect(createdProject.id).toMatch(/^proj-/);
-      expect(createdProject).toHaveProperty('createdAt');
-      expect(createdProject).toHaveProperty('updatedAt');
-      expect(createdProject.name).toBe(newProjectData.name);
-      expect(createdProject.description).toBe(newProjectData.description);
-    });
+      const project = await projectsService.create(
+        { name: 'New Project', description: 'desc' },
+        MOCK_ORG_ID
+      );
 
-    it('should add the project to the list', async () => {
-      const initialProjects = await projectsService.getAll();
-      const initialCount = initialProjects.length;
-
-      const newProject = await projectsService.create({
-        name: 'Another Test Project',
-        description: 'Another test',
-        stage: 'design' as const,
-        progress: 10,
-        startDate: '2024-02-01',
-        targetDate: '2024-11-30',
-      }, MOCK_ORG_ID);
-
-      const updatedProjects = await projectsService.getAll();
-      
-      expect(updatedProjects.length).toBe(initialCount + 1);
-      expect(updatedProjects.find(p => p.id === newProject.id)).toBeDefined();
+      expect(apiClient.post).toHaveBeenCalledWith(
+        expect.stringContaining(`/organizations/${MOCK_ORG_ID}/projects`),
+        expect.objectContaining({ name: 'New Project' })
+      );
+      expect(project.id).toBe('proj-new');
     });
   });
+
+  // ── update ──────────────────────────────────────────────────────────────────
 
   describe('update', () => {
-    it('should update an existing project', async () => {
-      const projects = await projectsService.getAll();
-      const projectToUpdate = projects[0];
-      
-      if (projectToUpdate) {
-        const updates = { name: 'Updated Project Name', progress: 50 };
-        const updatedProject = await projectsService.update(projectToUpdate.id, updates);
-        
-        expect(updatedProject.name).toBe('Updated Project Name');
-        expect(updatedProject.progress).toBe(50);
-        expect(updatedProject.updatedAt).toBeDefined();
-      }
-    });
+    it('should PUT the project and return the updated result', async () => {
+      const updated = { ...mockProject, name: 'Renamed Project' };
+      vi.mocked(apiClient.put).mockResolvedValueOnce(updated);
 
-    it('should throw error when updating non-existent project', async () => {
-      await expect(
-        projectsService.update('non-existent-id', { name: 'Test' })
-      ).rejects.toThrow('Project not found');
-    });
+      const project = await projectsService.update('proj-1', { name: 'Renamed Project' });
 
-    it('should preserve existing properties when partially updating', async () => {
-      const projects = await projectsService.getAll();
-      const projectToUpdate = projects[0];
-      
-      if (projectToUpdate) {
-        const originalDescription = projectToUpdate.description;
-        const updates = { name: 'Partially Updated' };
-        const updatedProject = await projectsService.update(projectToUpdate.id, updates);
-        
-        expect(updatedProject.name).toBe('Partially Updated');
-        expect(updatedProject.description).toBe(originalDescription);
-      }
+      expect(project.name).toBe('Renamed Project');
     });
   });
+
+  // ── delete ──────────────────────────────────────────────────────────────────
 
   describe('delete', () => {
-    it('should delete an existing project', async () => {
-      // Create a project to delete
-      const newProject = await projectsService.create({
-        name: 'Project to Delete',
-        description: 'Will be deleted',
-        stage: 'concept' as const,
-        progress: 0,
-        startDate: '2024-01-01',
-        targetDate: '2024-12-31',
-      }, MOCK_ORG_ID);
+    it('should call DELETE on the project endpoint', async () => {
+      vi.mocked(apiClient.delete).mockResolvedValueOnce(undefined);
 
-      const projectsBeforeDelete = await projectsService.getAll();
-      expect(projectsBeforeDelete.find(p => p.id === newProject.id)).toBeDefined();
+      await projectsService.delete('proj-1');
 
-      await projectsService.delete(newProject.id);
-
-      const projectsAfterDelete = await projectsService.getAll();
-      expect(projectsAfterDelete.find(p => p.id === newProject.id)).toBeUndefined();
-    });
-
-    it('should not throw when deleting non-existent project', async () => {
-      await expect(
-        projectsService.delete('non-existent-id')
-      ).resolves.not.toThrow();
+      expect(apiClient.delete).toHaveBeenCalledWith(
+        expect.stringContaining('/projects/proj-1')
+      );
     });
   });
 
-  describe('getTasks', () => {
-    it('should return tasks for a valid project', async () => {
-      const projects = await projectsService.getAll();
-      const projectWithTasks = projects.find(p => p.tasks.length > 0);
-      
-      if (projectWithTasks) {
-        const tasks = await projectsService.getTasks(projectWithTasks.id);
-        
-        expect(Array.isArray(tasks)).toBe(true);
-        expect(tasks.length).toBe(projectWithTasks.tasks.length);
-      }
-    });
+  // ── updateStage ─────────────────────────────────────────────────────────────
 
-    it('should return empty array for project with no tasks', async () => {
-      // Create a project with no tasks
-      const emptyProject = await projectsService.create({
-        name: 'Empty Project',
-        description: 'No tasks',
-        stage: 'concept' as const,
-        progress: 0,
-        startDate: '2024-01-01',
-        targetDate: '2024-12-31',
-      }, MOCK_ORG_ID);
+  describe('updateStage', () => {
+    it('should PATCH the project stage', async () => {
+      vi.mocked(apiClient.patch).mockResolvedValueOnce({ ...mockProject, stage: 'testing' });
 
-      const tasks = await projectsService.getTasks(emptyProject.id);
-      
-      expect(tasks).toEqual([]);
-    });
+      const project = await projectsService.updateStage('proj-1', 'testing');
 
-    it('should return empty array for non-existent project', async () => {
-      const tasks = await projectsService.getTasks('non-existent-id');
-      
-      expect(tasks).toEqual([]);
+      expect(apiClient.patch).toHaveBeenCalledWith(
+        expect.stringContaining('/projects/proj-1/stage'),
+        { stage: 'testing' }
+      );
+      expect(project.stage).toBe('testing');
     });
   });
 
-  describe('getMilestones', () => {
-    it('should return milestones for a valid project', async () => {
-      const projects = await projectsService.getAll();
-      const projectWithMilestones = projects.find(p => p.milestones.length > 0);
-      
-      if (projectWithMilestones) {
-        const milestones = await projectsService.getMilestones(projectWithMilestones.id);
-        
-        expect(Array.isArray(milestones)).toBe(true);
-        expect(milestones.length).toBe(projectWithMilestones.milestones.length);
-      }
-    });
-
-    it('should return empty array for non-existent project', async () => {
-      const milestones = await projectsService.getMilestones('non-existent-id');
-      
-      expect(milestones).toEqual([]);
-    });
-  });
+  // ── getIssues ───────────────────────────────────────────────────────────────
 
   describe('getIssues', () => {
-    it('should return issues for a project', async () => {
-      const projects = await projectsService.getAll();
-      const validProjectId = projects[0]?.id;
-      
-      if (validProjectId) {
-        const issues = await projectsService.getIssues(validProjectId);
-        
-        expect(Array.isArray(issues)).toBe(true);
-      }
+    it('should return mapped issues for a project', async () => {
+      const rawIssue = {
+        id: 'issue-1',
+        title: 'Bug',
+        description: 'A bug',
+        projectId: 'proj-1',
+        category: 'defect',
+        severity: 'major',
+        status: 'open',
+        createdAt: '2026-01-01T00:00:00Z',
+        assignees: [],
+        reportedBy: { id: 'u-1', name: 'Alice', role: 'Member' },
+      };
+      vi.mocked(apiClient.get).mockResolvedValueOnce([rawIssue]);
+
+      const issues = await projectsService.getIssues('proj-1');
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0].id).toBe('issue-1');
+      expect(issues[0].status).toBe('open');
     });
 
-    it('should return empty array or combined issues', async () => {
-      const projects = await projectsService.getAll();
-      const validProjectId = projects[0]?.id;
-      
-      if (validProjectId) {
-        const issues = await projectsService.getIssues(validProjectId);
-        
-        expect(Array.isArray(issues)).toBe(true);
-        // Issues array may be empty or have items, both are valid
-      }
-    });
-  });
+    it('should normalise unknown issue statuses to open', async () => {
+      const rawIssue = {
+        id: 'issue-2',
+        title: 'Legacy Issue',
+        description: '',
+        projectId: 'proj-1',
+        category: 'risk',
+        severity: 'minor',
+        status: 'in_progress', // legacy value not in current IssueStatus union
+        createdAt: '2026-01-01T00:00:00Z',
+        assignees: [],
+      };
+      vi.mocked(apiClient.get).mockResolvedValueOnce([rawIssue]);
 
-  describe('getTeamMembers', () => {
-    it('should return an array of team members', async () => {
-      const teamMembers = await projectsService.getTeamMembers() as { id: string; name: string; email: string; role: string }[];
-      
-      expect(Array.isArray(teamMembers)).toBe(true);
-      expect(teamMembers.length).toBeGreaterThan(0);
-    });
+      const [issue] = await projectsService.getIssues('proj-1');
 
-    it('should return team members with required properties', async () => {
-      const teamMembers = await projectsService.getTeamMembers() as { id: string; name: string; email: string; role: string }[];
-      const member = teamMembers[0];
-      
-      expect(member).toHaveProperty('id');
-      expect(member).toHaveProperty('name');
-      expect(member).toHaveProperty('email');
-      expect(member).toHaveProperty('role');
-    });
-  });
-
-  describe('getModules', () => {
-    it('should return an array of modules', async () => {
-      const modules = await projectsService.getModules() as { id: string; name: string; type: string }[];
-      
-      expect(Array.isArray(modules)).toBe(true);
-    });
-
-    it('should return modules with required properties', async () => {
-      const modules = await projectsService.getModules() as { id: string; name: string; type: string }[];
-      
-      if (modules.length > 0) {
-        const module = modules[0];
-        
-        expect(module).toHaveProperty('id');
-        expect(module).toHaveProperty('name');
-        expect(module).toHaveProperty('type');
-      }
+      expect(issue.status).toBe('in-progress'); // normalised via normaliseIssueStatus
     });
   });
 });

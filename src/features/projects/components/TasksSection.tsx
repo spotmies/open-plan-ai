@@ -7,9 +7,13 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Task, TaskViewMode, TaskFilter, Milestone, Issue, ModuleType, TeamMember } from '@/types';
 import { KanbanView } from './KanbanView';
 import { ListView } from './ListView';
+import { MobileTaskListView } from './MobileTaskListView';
 import { TaskFilters } from './TaskFilters';
 import { TaskFiltersDropdown } from './TaskFiltersDropdown';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
+import { buildTaskStatusOptions } from '../utils/taskStatusOptions';
 
 interface TasksSectionProps {
   projectId: string;
@@ -25,10 +29,11 @@ interface TasksSectionProps {
   onFiltersOpenChange?: (open: boolean) => void;
   filters?: TaskFilter;
   onFiltersChange?: (filters: TaskFilter) => void;
-  onTaskCreate?: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onTaskCreate?: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, files?: File[]) => void;
   onTaskUpdate?: (task: Task, onError?: () => void) => void;
   onBatchTaskUpdate?: (updates: Array<{ id: string; updates: Partial<Task> }>) => void;
   onTaskDelete?: (taskId: string) => void;
+  userProjectRole?: string;
   onAddModule?: () => void;
 }
 
@@ -47,7 +52,7 @@ export function ViewControls({
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0 md:flex-none">
       {/* Search Input */}
-      <div className="relative flex items-center flex-1 md:flex-none min-w-0 max-w-none sm:max-w-[240px]">
+      {/* <div className="relative flex items-center flex-1 md:flex-none min-w-0 max-w-none sm:max-w-[240px]">
         <Search className="absolute left-3 h-4 w-4 text-muted-foreground shrink-0" />
         <Input
           placeholder="Search tasks..."
@@ -67,13 +72,13 @@ export function ViewControls({
             <X className="h-4 w-4" />
           </Button>
         )}
-      </div>
+      </div> */}
 
-      {/* View Toggle */}
-      <div className="flex items-center gap-0.5 bg-muted/50 p-1 rounded-lg shrink-0">
-        <Button 
+      {/* View Toggle (Kanban/List has no distinct mobile layout — hidden below md) */}
+      <div className="hidden md:flex items-center gap-0.5 bg-muted/50 p-1 rounded-lg shrink-0">
+        <Button
           variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-          size="sm" 
+          size="sm"
           onClick={() => onViewModeChange('kanban')}
           className={cn(
             "h-8 w-8 p-0",
@@ -116,9 +121,13 @@ export function TasksSection({
   onTaskUpdate,
   onBatchTaskUpdate,
   onTaskDelete,
+  userProjectRole,
   onAddModule,
 }: TasksSectionProps) {
   const dependencyTasks = allTasks ?? tasks;
+  const isMobile = useIsMobile();
+  const { data: boardColumns } = useProjectTaskColumns(projectId);
+  const statusOptions = useMemo(() => buildTaskStatusOptions(boardColumns), [boardColumns]);
 
   const [internalViewMode, setInternalViewMode] = useState<TaskViewMode>('kanban');
   const [internalFilters, setInternalFilters] = useState<TaskFilter>({});
@@ -139,8 +148,13 @@ export function TasksSection({
     if (filters.priority?.length) count++;
     if (filters.moduleIds?.length || filters.module?.length) count++;
     if (filters.assignee?.length) count++;
+    if (filters.assignedBy?.length) count++;
+    if (filters.updatedBy?.length) count++;
     if (filters.milestoneId) count++;
     if (filters.dueDate) count++;
+    if (filters.dueDateCustom) count++;
+    if (filters.completedDate) count++;
+    if (filters.completedDateCustom) count++;
     if (filters.tags?.length) count++;
     if (filters.hasBlockers) count++;
     return count;
@@ -206,20 +220,42 @@ export function TasksSection({
         }
       }
 
-      // Milestone filter
-      if (filters.milestoneId && task.milestoneId !== filters.milestoneId) {
-        return false;
+      // Assigned By filter (task creator)
+      if (filters.assignedBy?.length) {
+        const createdById = task.createdBy?.id;
+        if (!createdById && !filters.assignedBy.includes('unassigned')) return false;
+        if (createdById && !filters.assignedBy.includes(createdById)) return false;
       }
 
-      // Due date filter
-      if (filters.dueDate) {
+      // Updated By filter
+      if (filters.updatedBy?.length) {
+        const updatedById = task.updatedBy?.id;
+        if (!updatedById || !filters.updatedBy.includes(updatedById)) return false;
+      }
+
+      // Milestone filter
+      if (filters.milestoneId) {
+        if (filters.milestoneId === 'none') {
+          if (task.milestoneId) return false;
+        } else if (task.milestoneId !== filters.milestoneId) {
+          return false;
+        }
+      }
+
+      // Exact due date filter (calendar-picked, takes precedence over preset)
+      if (filters.dueDateCustom) {
+        const taskDueDate = task.dueDate ? new Date(task.dueDate) : null;
+        if (!taskDueDate || taskDueDate.toDateString() !== new Date(filters.dueDateCustom).toDateString()) {
+          return false;
+        }
+      } else if (filters.dueDate) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const taskDueDate = task.dueDate ? new Date(task.dueDate) : null;
 
         switch (filters.dueDate) {
           case 'overdue':
-            if (!taskDueDate || taskDueDate >= today) return false;
+            if (!taskDueDate || taskDueDate >= today || task.status === 'done') return false;
             break;
           case 'today':
             if (!taskDueDate || taskDueDate.toDateString() !== today.toDateString()) return false;
@@ -238,6 +274,37 @@ export function TasksSection({
           case 'no-date':
             if (taskDueDate) return false;
             break;
+        }
+      }
+
+      // Exact completion date filter (calendar-picked, takes precedence over preset)
+      if (filters.completedDateCustom) {
+        const taskCompletedDate = task.completedAt ? new Date(task.completedAt) : null;
+        if (!taskCompletedDate || taskCompletedDate.toDateString() !== new Date(filters.completedDateCustom).toDateString()) {
+          return false;
+        }
+      } else if (filters.completedDate) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+        const taskCompletedDate = task.completedAt ? new Date(task.completedAt) : null;
+
+        switch (filters.completedDate) {
+          case 'today':
+            if (!taskCompletedDate || taskCompletedDate.toDateString() !== todayStart.toDateString()) return false;
+            break;
+          case 'this-week': {
+            const weekStart = new Date(todayStart);
+            weekStart.setDate(todayStart.getDate() - 7);
+            if (!taskCompletedDate || taskCompletedDate < weekStart || taskCompletedDate > todayEnd) return false;
+            break;
+          }
+          case 'this-month': {
+            const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+            if (!taskCompletedDate || taskCompletedDate < monthStart || taskCompletedDate > todayEnd) return false;
+            break;
+          }
         }
       }
 
@@ -260,7 +327,7 @@ export function TasksSection({
     setFilters({});
   };
 
-  // Get unique team members from tasks
+  // Get unique team members from tasks (assignees + creators for filter options)
   const teamMembers = useMemo(() => {
     const members = new Map<string, { id: string; name: string; initials: string }>();
     tasks.forEach(task => {
@@ -271,6 +338,13 @@ export function TasksSection({
             name: assignee.name,
             initials: assignee.initials,
           });
+        });
+      }
+      if (task.createdBy) {
+        members.set(task.createdBy.id, {
+          id: task.createdBy.id,
+          name: task.createdBy.name,
+          initials: task.createdBy.initials,
         });
       }
     });
@@ -297,12 +371,27 @@ export function TasksSection({
           modules={modules}
           teamMembers={teamMembers}
           allTags={allTags}
+          statusOptions={statusOptions}
         />
       )}
 
       {/* View Content */}
       <div className="min-h-[400px] w-full min-w-0">
-        {viewMode === 'kanban' ? (
+        {isMobile ? (
+          <MobileTaskListView
+            projectId={projectId}
+            tasks={filteredTasks}
+            allTasks={dependencyTasks}
+            modules={modules}
+            milestones={milestones}
+            assignableMembers={assignableMembers}
+            onTaskUpdate={onTaskUpdate}
+            onBatchTaskUpdate={onBatchTaskUpdate}
+            onTaskDelete={onTaskDelete}
+            userProjectRole={userProjectRole}
+            onAddModule={onAddModule}
+          />
+        ) : viewMode === 'kanban' ? (
           <KanbanView
             projectId={projectId}
             tasks={filteredTasks}
@@ -313,7 +402,9 @@ export function TasksSection({
             onTaskUpdate={onTaskUpdate}
             onBatchTaskUpdate={onBatchTaskUpdate}
             onTaskDelete={onTaskDelete}
+            userProjectRole={userProjectRole}
             modules={modules}
+            milestones={milestones}
             onAddModule={onAddModule}
           />
         ) : (
@@ -328,6 +419,7 @@ export function TasksSection({
             onTaskUpdate={onTaskUpdate}
             onBatchTaskUpdate={onBatchTaskUpdate}
             onTaskDelete={onTaskDelete}
+            userProjectRole={userProjectRole}
             onAddModule={onAddModule}
           />
         )}

@@ -6,45 +6,30 @@ import { modulesService, type ModuleInsert, type ModuleUpdate } from '@/services
 import { queryKeys } from '@/lib/queryClient';
 import { Task, Issue, Milestone } from '@/types';
 import { toast } from 'sonner';
-import { useNotifications } from '@/hooks/useNotifications';
-import { useAuth } from '@/contexts/AuthContext';
+import { logger } from '@/services/monitoring/logger';
 
 // ==================== Task Mutations ====================
 
 export function useCreateTask(projectId: string) {
   const queryClient = useQueryClient();
-  const { createNotification } = useNotifications();
-  const { user } = useAuth();
 
   return useMutation({
     mutationFn: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) =>
       tasksService.create(projectId, task),
-    onSuccess: (newTask, variables) => {
-      variables.assignees?.forEach((assignee) => {
-        if (assignee.id !== user?.id) {
-          createNotification.mutate({
-            user_id: assignee.id,
-            actor_id: user?.id,
-            type: 'assignment',
-            title: 'New task assigned',
-            description: `You have been assigned to "${variables.title}"`,
-            project_id: projectId,
-            entity_id: newTask.id,
-            entity_type: 'task',
-          }, {
-            onError: (err) => console.error('Failed to send task-assignment notification:', err),
-          });
-        }
-      });
+    onSuccess: (createdTask) => {
+      // Patch the cache directly rather than relying solely on the invalidated
+      // refetch landing — see the matching comment in useCreateIssue above.
+      queryClient.setQueryData(queryKeys.projects.detail(projectId), (old: any) =>
+        old ? { ...old, tasks: [...(old.tasks || []), createdTask] } : old
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Task created successfully');
     },
     onError: (error) => {
-      console.error('Error creating task:', error);
+      logger.error('Error creating task:', error);
       toast.error('Failed to create task');
     },
   });
@@ -52,8 +37,6 @@ export function useCreateTask(projectId: string) {
 
 export function useUpdateTask(projectId: string) {
   const queryClient = useQueryClient();
-  const { createNotification } = useNotifications();
-  const { user } = useAuth();
 
   return useMutation({
     mutationFn: ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) =>
@@ -80,68 +63,18 @@ export function useUpdateTask(projectId: string) {
 
       return { previousProject, previousTask };
     },
-    onError: (_err, _vars, context) => {
+    onError: (err, _vars, context) => {
       if (context?.previousProject) {
         queryClient.setQueryData(queryKeys.projects.detail(projectId), context.previousProject);
       }
-      toast.error('Failed to update task');
+      toast.error(err instanceof Error ? err.message : 'Failed to update task');
     },
-    onSuccess: (updatedTask, variables, context) => {
-      // Find newly added assignees
-      if (variables.updates.assignees) {
-        const previousTask = context?.previousTask;
-
-        const previousAssigneeIds = new Set(previousTask?.assignees?.map((a: any) => a.id) || []);
-
-        variables.updates.assignees.forEach((assignee: any) => {
-          if (assignee.id !== user?.id && !previousAssigneeIds.has(assignee.id)) {
-            createNotification.mutate({
-              user_id: assignee.id,
-              actor_id: user?.id,
-              type: 'assignment',
-              title: 'New task assigned',
-              description: `You have been assigned to "${updatedTask.title || variables.updates.title || previousTask?.title}"`,
-              project_id: projectId,
-              entity_id: variables.taskId,
-              entity_type: 'task',
-            }, {
-              onError: (err) => console.error('Failed to send task-update notification:', err),
-            });
-          }
-        });
-      }
-
-      // Notify on completion
-      const wasDone = context?.previousTask?.status === 'done';
-      const isNowDone = updatedTask.status === 'done';
-      if (!wasDone && isNowDone) {
-        const task = updatedTask;
-
-        if (task) {
-          task.assignees?.forEach((assignee: any) => {
-            if (assignee.id && assignee.id !== user?.id) {
-              createNotification.mutate({
-                user_id: assignee.id,
-                actor_id: user?.id || undefined,
-                type: 'completed',
-                title: 'Task completed',
-                description: `Task "${task.title}" has been marked as completed`,
-                project_id: projectId || undefined,
-                entity_id: variables.taskId || undefined,
-                entity_type: 'task',
-              }, {
-                onError: (err) => console.error('Failed to send task-completed notification:', err),
-              });
-            }
-          });
-        }
-      }
-
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
+      toast.success('Task updated successfully');
     },
   });
 }
@@ -151,10 +84,14 @@ export function useDeleteTask(projectId: string) {
 
   return useMutation({
     mutationFn: (taskId: string) => tasksService.delete(projectId, taskId),
-    onSuccess: () => {
+    onSuccess: (_data, taskId) => {
+      // Patch the cache directly rather than relying solely on the invalidated
+      // refetch landing — see the matching comment in useCreateIssue above.
+      queryClient.setQueryData(queryKeys.projects.detail(projectId), (old: any) =>
+        old ? { ...old, tasks: (old.tasks || []).filter((t: Task) => t.id !== taskId) } : old
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Task deleted');
@@ -173,13 +110,12 @@ export function useBatchUpdateTasks(projectId: string) {
       tasksService.batchUpdate(projectId, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
     },
-    onError: () => {
-      toast.error('Failed to update tasks');
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update tasks');
     },
   });
 }
@@ -192,16 +128,29 @@ export function useCreateIssue(projectId: string) {
   return useMutation({
     mutationFn: (issue: Omit<Issue, 'id' | 'reportedAt'>) =>
       issuesService.create(projectId, issue),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+    onSuccess: (createdIssue) => {
+      // Patch the cache directly rather than relying solely on the invalidated
+      // refetch landing — if that refetch gets cancelled/raced (it shares an
+      // AbortSignal with the other project-detail sub-fetches and can lose that
+      // race right after a mutation), the board would otherwise be left showing
+      // stale empty data until a hard reload. See useProjectDetail.ts.
+      queryClient.setQueryData(queryKeys.projects.detail(projectId), (old: any) =>
+        old ? { ...old, issues: [...(old.issues || []), createdIssue] } : old
+      );
+      // refetchType: 'none' — the detail cache above is already patched with the
+      // new issue, so an immediate refetch here only serves other (unmounted)
+      // consumers of queryKeys.projects.root. Forcing it right away would abort
+      // the project-detail query's in-flight combined fetch (see useProjectDetail.ts),
+      // which shares one AbortSignal across its tasks/milestones/issues sub-requests
+      // and shows up in devtools as those requests being cancelled and re-fired.
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.root, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Issue created successfully');
     },
     onError: (error) => {
-      console.error('Error creating issue:', error);
+      logger.error('Error creating issue:', error);
       toast.error('Failed to create issue');
     },
   });
@@ -237,9 +186,45 @@ export function useUpdateIssue(projectId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
+      toast.success('Issue updated successfully');
+    },
+  });
+}
+
+export function useUpdateIssueStatus(projectId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ issueId, status }: { issueId: string; status: string }) =>
+      issuesService.updateStatus(issueId, status as Issue['status']),
+    onMutate: async ({ issueId, status }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.projects.detail(projectId) });
+      const previousProject = queryClient.getQueryData(queryKeys.projects.detail(projectId));
+
+      queryClient.setQueryData(queryKeys.projects.detail(projectId), (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          issues: old.issues?.map((i: Issue) =>
+            i.id === issueId ? { ...i, status } : i
+          ) || [],
+        };
+      });
+
+      return { previousProject };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousProject) {
+        queryClient.setQueryData(queryKeys.projects.detail(projectId), context.previousProject);
+      }
+      toast.error('Failed to update issue status');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
     },
   });
@@ -250,10 +235,14 @@ export function useDeleteIssue(projectId: string) {
 
   return useMutation({
     mutationFn: (issueId: string) => issuesService.delete(issueId),
-    onSuccess: () => {
+    onSuccess: (_data, issueId) => {
+      // Patch the cache directly rather than relying solely on the invalidated
+      // refetch landing — see the matching comment in useCreateIssue above.
+      queryClient.setQueryData(queryKeys.projects.detail(projectId), (old: any) =>
+        old ? { ...old, issues: (old.issues || []).filter((i: Issue) => i.id !== issueId) } : old
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.myDay.all });
       toast.success('Issue deleted');
@@ -274,13 +263,12 @@ export function useCreateMilestone(projectId: string) {
       milestonesService.create({ ...milestone, project_id: projectId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       toast.success('Milestone created successfully');
     },
     onError: (error) => {
-      console.error('Error creating milestone:', error);
+      logger.error('Error creating milestone:', error);
       toast.error('Failed to create milestone');
     },
   });
@@ -316,9 +304,25 @@ export function useUpdateMilestone(projectId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+    },
+  });
+}
+
+export function useToggleMilestoneComplete(projectId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ milestoneId, completed }: { milestoneId: string; completed: boolean }) =>
+      milestonesService.complete(milestoneId, completed),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+    },
+    onError: () => {
+      toast.error('Failed to update milestone status');
     },
   });
 }
@@ -328,10 +332,14 @@ export function useDeleteMilestone(projectId: string) {
 
   return useMutation({
     mutationFn: (milestoneId: string) => milestonesService.delete(milestoneId),
-    onSuccess: () => {
+    onSuccess: (_data, milestoneId) => {
+      // Patch the cache directly rather than relying solely on the invalidated
+      // refetch landing — see the matching comment in useCreateIssue above.
+      queryClient.setQueryData(queryKeys.projects.detail(projectId), (old: any) =>
+        old ? { ...old, milestones: (old.milestones || []).filter((m: Milestone) => m.id !== milestoneId) } : old
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
       toast.success('Milestone deleted');
     },
@@ -354,7 +362,7 @@ export function useCreateModule(projectId: string) {
       toast.success('Module created successfully');
     },
     onError: (error) => {
-      console.error('Error creating module:', error);
+      logger.error('Error creating module:', error);
       toast.error('Failed to create module');
     },
   });
@@ -366,12 +374,13 @@ export function useUpdateModule(projectId: string) {
   return useMutation({
     mutationFn: ({ moduleId, updates }: { moduleId: string; updates: ModuleUpdate }) =>
       modulesService.update(moduleId, updates),
+    // No success toast: the module detail modal autosaves per field on
+    // blur/select-change, so a toast here would fire on every single field
+    // edit instead of once for the overall edit session.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.modules.list(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
-      toast.success('Module updated successfully');
     },
     onError: () => {
       toast.error('Failed to update module');
@@ -402,7 +411,6 @@ export function useBatchUpdateModules(projectId: string) {
       modulesService.updateMany(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.root });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.modules.list(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
     },

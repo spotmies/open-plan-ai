@@ -13,7 +13,7 @@ export { activitiesService } from './activities.service';
 export { teamService } from './team.service';
 export { dashboardService } from './dashboard.service';
 export { apiClient } from './api/client';
-export { API_ENDPOINTS } from './api/endpoints';
+export { ENDPOINTS } from './api/endpoints';
 
 // New services for project creation flow
 export { attachmentsService } from './attachments.service';

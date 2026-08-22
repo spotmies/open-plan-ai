@@ -1,23 +1,24 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { InputOTP, InputOTPGroup, InputOTPSlot, REGEXP_ONLY_DIGITS } from "@/components/ui/input-otp";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Layers, Mail, AlertCircle, CheckCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useOrganization } from "@/contexts/OrganizationContext";
+import { authService } from "@/services/auth.service";
+import { useAuth } from "@/contexts/AuthContext";
 
 const VerifyEmail = () => {
-  const { createOrganization } = useOrganization();
+  const { refreshProfile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const locationState = (location.state ?? {}) as {
     email?: string;
     fromLogin?: boolean;
     message?: string;
   };
-  const locationEmail = locationState.email || "";
+  const locationEmail = locationState.email || searchParams.get('email') || "";
   const [persistedEmail, setPersistedEmail] = useState("");
   const email = (locationEmail || persistedEmail || "").trim();
   const fromLogin = locationState.fromLogin || false;
@@ -71,69 +72,26 @@ const VerifyEmail = () => {
     setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("verify-otp", {
-        body: { email, otp },
-      });
-
-      if (fnError) {
-        // Try to extract the actual error message from the response context
-        let errorMessage = "Verification failed";
-        try {
-          // The fnError.context contains the Response object for FunctionsHttpError
-          if (fnError.context && typeof fnError.context.json === "function") {
-            const errorData = await fnError.context.json();
-            errorMessage = errorData?.error || errorMessage;
-          } else if (fnError.message) {
-            // Check if the message itself is JSON
-            const parsed = JSON.parse(fnError.message);
-            errorMessage = parsed?.error || errorMessage;
-          }
-        } catch {
-          // If parsing fails, use a user-friendly message based on error type
-          if (fnError.message?.includes("non-2xx")) {
-            errorMessage = "Invalid or expired verification code";
-          } else {
-            errorMessage = fnError.message || "Verification failed";
-          }
-        }
-        setError(errorMessage);
-        setOtp("");
-        return;
-      }
-
-      if (data?.error) {
-        setError(data.error);
-        setOtp("");
-        return;
-      }
+      await authService.verifyOtp(email, otp);
 
       setSuccess(true);
-      setOtp(""); // Clear OTP on success
+      setOtp("");
 
       sessionStorage.removeItem('openplan_pending_verify');
 
-      // If signup stored a pending org, create it now that email is verified.
-      try {
-        const raw = sessionStorage.getItem('openplan_pending_org');
-        if (raw) {
-          const parsed = JSON.parse(raw) as { name?: string; description?: string };
-          if (typeof parsed?.name === 'string' && parsed.name.trim()) {
-            await createOrganization(parsed.name.trim(), parsed.description || '');
-          }
-          sessionStorage.removeItem('openplan_pending_org');
-        }
-      } catch {
-        // Non-fatal — Dashboard will prompt user to create org if none exists.
-      }
+      // Refresh auth context so isEmailVerified becomes true
+      await refreshProfile();
 
+      // If there's a pending invite, redirect to join-org to complete the flow
+      const pendingInvite = localStorage.getItem('pending_invite_token');
       setTimeout(() => {
-        navigate("/login", {
-          state: {
-            message: "Email verified! You can now sign in.",
-            email
-          }
-        });
-      }, 2000);
+        if (pendingInvite) {
+          localStorage.removeItem('pending_invite_token');
+          navigate(`/join-org?invite=${encodeURIComponent(pendingInvite)}`);
+        } else {
+          navigate("/");
+        }
+      }, 1500);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Verification failed";
       setError(message);
@@ -141,7 +99,7 @@ const VerifyEmail = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [email, otp, navigate, createOrganization]);
+  }, [email, otp, navigate, refreshProfile]);
 
   // Auto-submit when OTP reaches 6 digits — handleVerify is stable via useCallback.
   useEffect(() => {
@@ -155,37 +113,7 @@ const VerifyEmail = () => {
     setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("send-otp", {
-        body: { email },
-      });
-
-      if (fnError) {
-        // Try to extract the actual error message from the response context
-        let errorMessage = "Failed to resend code";
-        try {
-          if (fnError.context && typeof fnError.context.json === "function") {
-            const errorData = await fnError.context.json();
-            errorMessage = errorData?.error || errorMessage;
-          } else if (fnError.message) {
-            const parsed = JSON.parse(fnError.message);
-            errorMessage = parsed?.error || errorMessage;
-          }
-        } catch {
-          if (fnError.message?.includes("non-2xx")) {
-            errorMessage = "Failed to resend verification code. Please try again.";
-          } else {
-            errorMessage = fnError.message || "Failed to resend code";
-          }
-        }
-        setError(errorMessage);
-        return;
-      }
-
-      if (data?.error) {
-        setError(data.error);
-        return;
-      }
-
+      await authService.sendOtp(email);
       setCountdown(60); // 60 second cooldown
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to resend code";
@@ -257,6 +185,7 @@ const VerifyEmail = () => {
               <div className="flex justify-center">
                 <InputOTP
                   maxLength={6}
+                  pattern={REGEXP_ONLY_DIGITS}
                   value={otp}
                   onChange={setOtp}
                   disabled={isLoading}

@@ -225,7 +225,7 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
     }
   };
 
-  const renderBlockContent = (block: EditorBlock) => {
+  const renderBlockContent = (block: EditorBlock, blockIndex: number) => {
     switch (block.type) {
       case 'text':
         return (
@@ -303,11 +303,18 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
             />
           </div>
         );
-      case 'number':
-        // We might need an index to show correct number, but for now simple 1. is fine or we map properly in parent
+      case 'number': {
+        let num = 1;
+        for (let i = blockIndex - 1; i >= 0; i--) {
+          if (blocks[i].type === 'number') {
+            num++;
+          } else {
+            break;
+          }
+        }
         return (
           <div className="flex gap-2 items-start w-full">
-            <span className="font-medium mt-0.5">1.</span>
+            <span className="font-medium mt-0.5">{num}.</span>
             <Textarea
               id={`editor-block-${block.id}`}
               value={block.content}
@@ -325,6 +332,7 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
             />
           </div>
         );
+      }
       case 'check':
         return (
           <div className="flex gap-2 items-start w-full group">
@@ -494,7 +502,7 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
                     )}
 
                     <div className="flex-1 min-w-0 relative">
-                      {renderBlockContent(block)}
+                      {renderBlockContent(block, index)}
 
                       {activeBlockIdForMenu === block.id && (
                         <div className="absolute left-0 bottom-0 w-full h-0 z-50">

@@ -123,14 +123,13 @@ export function hasUnresolvedDependencies(task: Task, allTasks: Task[]): boolean
  * Get all tasks assigned to a user across all projects
  */
 export function getUserTasks(projects: Project[], userId: string): MyDayTask[] {
-  const allTasks: Task[] = projects.flatMap(p => p.tasks);
+  const allTasks: Task[] = projects.flatMap(p => p.tasks || []);
 
   return projects.flatMap(project =>
-    project.tasks
+    (project.tasks || [])
       .filter(task => {
         const isAssignedToUser = task.assignees?.some(a => a.id === userId) ?? false;
-        const isDueToday = getDueDateStatus(task.dueDate) === 'today';
-        return (isAssignedToUser || isDueToday) && (task.status !== 'done' || isCompletedToday(task));
+        return isAssignedToUser && (task.status !== 'done' || isCompletedToday(task));
       })
       .map(task => {
         const dueDateStatus = getDueDateStatus(task.dueDate);
@@ -141,7 +140,7 @@ export function getUserTasks(projects: Project[], userId: string): MyDayTask[] {
           isOverdue: dueDateStatus === 'overdue',
           isDueToday: dueDateStatus === 'today',
           isBlockingOthers: isBlockingOthers(task, allTasks),
-          isBlocked: task.status === 'blocked' || task.blockedBy.length > 0,
+          isBlocked: task.status === 'blocked' || (task.blockedBy?.length ?? 0) > 0,
           hasUnresolvedDependencies: hasUnresolvedDependencies(task, allTasks),
         };
       })
@@ -154,8 +153,8 @@ export function getUserTasks(projects: Project[], userId: string): MyDayTask[] {
 export function getUserIssues(projects: Project[], userId: string): Issue[] {
   return projects.flatMap(project =>
     (project.issues || []).filter(issue =>
-      ((issue.assignees?.some(a => a.id === userId) ?? false) || getDueDateStatus(issue.dueDate) === 'today') &&
-      ((issue.status !== 'resolved' && issue.status !== 'closed') || isCompletedToday(issue))
+      (issue.assignees?.some(a => a.id === userId) ?? false) &&
+      ((issue.status !== 'resolved') || isCompletedToday(issue))
     )
   );
 }
@@ -205,7 +204,7 @@ export function mapIssueToMyDayItem(issue: Issue, project: Project): MyDayItem {
     projectName: project.name,
     isOverdue: dueDateStatus === 'overdue',
     isDueToday: dueDateStatus === 'today',
-    isBlocked: issue.status === 'investigating',
+    isBlocked: false,
     originalIssue: issue,
   };
 }
@@ -214,16 +213,15 @@ export function mapIssueToMyDayItem(issue: Issue, project: Project): MyDayItem {
  * Get all items (tasks and issues) assigned to a user across all projects
  */
 export function getUserItems(projects: Project[], userId: string): MyDayItem[] {
-  const allTasks: Task[] = projects.flatMap(p => p.tasks);
+  const allTasks: Task[] = projects.flatMap(p => p.tasks || []);
   const items: MyDayItem[] = [];
 
   // Add tasks
   projects.forEach(project => {
-    project.tasks
+    (project.tasks || [])
       .filter(task => {
         const isAssignedToUser = task.assignees?.some(a => a.id === userId) ?? false;
-        const isDueToday = getDueDateStatus(task.dueDate) === 'today';
-        return (isAssignedToUser || isDueToday) && (task.status !== 'done' || isCompletedToday(task));
+        return isAssignedToUser && (task.status !== 'done' || isCompletedToday(task));
       })
       .forEach(task => {
         items.push(mapTaskToMyDayItem(task, project, allTasks));
@@ -234,8 +232,8 @@ export function getUserItems(projects: Project[], userId: string): MyDayItem[] {
   projects.forEach(project => {
     (project.issues || [])
       .filter(issue =>
-        ((issue.assignees?.some(a => a.id === userId) ?? false) || getDueDateStatus(issue.dueDate) === 'today') &&
-        ((issue.status !== 'resolved' && issue.status !== 'closed') || isCompletedToday(issue))
+        (issue.assignees?.some(a => a.id === userId) ?? false) &&
+        ((issue.status !== 'resolved') || isCompletedToday(issue))
       )
       .forEach(issue => {
         items.push(mapIssueToMyDayItem(issue, project));
@@ -265,9 +263,8 @@ export function categorizeMyDayTasks(tasks: MyDayTask[]): {
     // Check if task needs attention
     const needsAttentionCheck =
       task.isOverdue ||
-      task.isDueToday ||
       task.priority === 'critical' ||
-      task.priority === 'high' ||
+      task.priority === 'major' ||
       task.isBlockingOthers;
 
     // Check if task is blocked
@@ -284,7 +281,7 @@ export function categorizeMyDayTasks(tasks: MyDayTask[]): {
 
   // Sort by priority and due date
   const sortTasks = (a: MyDayTask, b: MyDayTask) => {
-    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    const priorityOrder = { critical: 0, major: 1, minor: 2, trivial: 3 };
     const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
     if (priorityDiff !== 0) return priorityDiff;
 
@@ -317,17 +314,15 @@ export function categorizeMyDayItems(items: MyDayItem[]): {
   const waitingBlocked: MyDayItem[] = [];
 
   for (const item of items) {
-    if (item.status === 'done' || item.status === 'resolved' || item.status === 'closed') {
+    if (item.status === 'done' || item.status === 'resolved') {
       continue;
     }
 
     // Check if item needs attention
     const needsAttentionCheck =
       item.isOverdue ||
-      item.isDueToday ||
       item.priority === 'critical' ||
-      item.priority === 'high' ||
-      item.priority === 'major' || // Issue severity
+      item.priority === 'major' ||
       item.isBlockingOthers;
 
     // Check if item is blocked
@@ -346,15 +341,12 @@ export function categorizeMyDayItems(items: MyDayItem[]): {
   const sortItems = (a: MyDayItem, b: MyDayItem) => {
     const priorityOrder: Record<string, number> = {
       critical: 0,
-      high: 1,
-      major: 1, // Issue severity
-      medium: 2,
-      minor: 2, // Issue severity
-      low: 3,
-      trivial: 3, // Issue severity
+      major: 1,
+      minor: 2,
+      trivial: 3,
     };
-    const aPriority = a.priority || 'low';
-    const bPriority = b.priority || 'low';
+    const aPriority = a.priority || 'trivial';
+    const bPriority = b.priority || 'trivial';
     const priorityDiff = (priorityOrder[aPriority] || 3) - (priorityOrder[bPriority] || 3);
     if (priorityDiff !== 0) return priorityDiff;
 
@@ -532,12 +524,12 @@ export function groupTasksByProgress(items: MyDayTask[] | MyDayItem[]): {
   };
 
   for (const item of items) {
-    if (item.status === 'done' || item.status === 'resolved' || item.status === 'closed') {
+    if (item.status === 'done' || item.status === 'resolved') {
       groups.completed.push(item);
+    } else if (item.status === 'in-progress' || item.status === 'review') {
+      groups.inProgress.push(item);
     } else if (item.status === 'blocked' || item.isBlocked || item.hasUnresolvedDependencies) {
       groups.dependency.push(item);
-    } else if (item.status === 'in-progress' || item.status === 'review' || item.status === 'investigating') {
-      groups.inProgress.push(item);
     } else {
       groups.notStarted.push(item);
     }
@@ -624,17 +616,15 @@ export function groupTasksByPriority(items: MyDayTask[] | MyDayItem[]): {
   };
 
   for (const item of items) {
-    const priority = item.priority || 'low';
+    const priority = item.priority || 'trivial';
     switch (priority) {
       case 'critical':
         groups.urgent.push(item);
         break;
-      case 'high':
-      case 'major': // Issue severity
+      case 'major':
         groups.important.push(item);
         break;
-      case 'medium':
-      case 'minor': // Issue severity
+      case 'minor':
         groups.medium.push(item);
         break;
       default:

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble } from './MessageBubble';
+import { MediaGroupBubble } from './MediaGroupBubble';
 import { MessageDateDivider } from './MessageDateDivider';
 import { SystemMessage } from './SystemMessage';
+import { CallHistoryCard } from './CallHistoryCard';
 import { EmptyState } from './EmptyState';
 import { ChatMessage, Conversation, ReadReceipt, MessageReaction } from '../types';
+import { parseCallCardContent } from '../utils/callCard';
 import { isSameDay, differenceInMinutes } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '../stores/useChatStore';
@@ -19,36 +21,155 @@ interface MessageAreaProps {
   reactionMap?: Record<string, MessageReaction[]>;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string, senderName: string) => void;
+  onDeleteMessageForMe?: (messageId: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onReplyMessage?: (message: ChatMessage) => void;
+  onForwardMessage?: (messages: ChatMessage[]) => void;
+  /** When set, only pinned/favourite messages render — the rest of the timeline is filtered out. */
+  filterMode?: 'pinned' | 'favourites' | null;
+  pinnedMessageIds?: Set<string>;
+  favouriteMessageIds?: Set<string>;
+  onTogglePin?: (messageId: string) => void;
+  onToggleFavourite?: (messageId: string) => void;
+  /** Scrolls to and briefly highlights this message once it's loaded (paging older history if needed). */
+  highlightMessageId?: string | null;
+  onHighlightHandled?: () => void;
+  /** Jumps to a message within this same conversation, e.g. clicking a reply quote. */
+  onJumpToMessage?: (messageId: string) => void;
 }
 
-export function MessageArea({ messages, conversation, hasMore, onLoadMore, readReceiptMap, reactionMap, onEditMessage, onDeleteMessage, onToggleReaction, onReplyMessage }: MessageAreaProps) {
+export function MessageArea({
+  messages, conversation, hasMore, onLoadMore, readReceiptMap, reactionMap,
+  onEditMessage, onDeleteMessage, onDeleteMessageForMe, onToggleReaction, onReplyMessage, onForwardMessage,
+  filterMode, pinnedMessageIds, favouriteMessageIds, onTogglePin, onToggleFavourite,
+  highlightMessageId, onHighlightHandled, onJumpToMessage,
+}: MessageAreaProps) {
   const { user } = useAuth();
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevConvIdRef = useRef<string | null>(null);
+  const prevMessageCountRef = useRef(0);
+  const atBottomRef = useRef(true);
+  const highlightedRef = useRef<string | null>(null);
   const isGroup = conversation.type === 'group';
   const searchQuery = useChatStore((s) => s.messageSearchQuery);
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Consider "at bottom" if within 80px of the bottom
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
+
+  // On conversation change: instant jump to bottom (sync, before paint to avoid flash)
+  useLayoutEffect(() => {
+    const convChanged = prevConvIdRef.current !== conversation.id;
+    if (convChanged) {
+      prevConvIdRef.current = conversation.id;
+      prevMessageCountRef.current = messages.length;
+      atBottomRef.current = true;
+      scrollToBottom('instant');
+    }
+  }, [conversation.id, messages.length, scrollToBottom]);
+
+  // On new messages in the same conversation: smooth scroll only if already at bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    const isNewConv = prevConvIdRef.current !== conversation.id;
+    if (isNewConv) return; // handled by useLayoutEffect above
+
+    const prevCount = prevMessageCountRef.current;
+    const newCount = messages.length;
+
+    if (newCount <= prevCount) {
+      prevMessageCountRef.current = newCount;
+      return;
+    }
+
+    // Messages were appended (new messages, not history load)
+    // Only auto-scroll if user was already at the bottom
+    if (atBottomRef.current) {
+      scrollToBottom('smooth');
+    }
+
+    prevMessageCountRef.current = newCount;
+  }, [messages.length, conversation.id, scrollToBottom]);
 
   const filteredMessages = useMemo(() => {
     if (!searchQuery.trim()) return messages;
     const q = searchQuery.toLowerCase();
     return messages.filter((m) => m.content.toLowerCase().includes(q));
   }, [messages, searchQuery]);
+
   const messageById = useMemo(() => {
     return new Map(messages.map((message) => [message.id, message]));
   }, [messages]);
 
+  // Jumping to a message from the Saved panel: page older history until the
+  // target is loaded, then scroll to it and flash a highlight. The revert timeout
+  // runs as a one-shot DOM side effect (not tied to this effect's cleanup) so
+  // clearing highlightMessageId right after finding the message can't cancel it.
+  useEffect(() => {
+    if (!highlightMessageId || highlightedRef.current === highlightMessageId) return;
+    const target = messageById.get(highlightMessageId);
+    if (!target) {
+      if (hasMore && onLoadMore) onLoadMore();
+      return;
+    }
+    highlightedRef.current = highlightMessageId;
+    const el = document.getElementById(`msg-${highlightMessageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'background-color 1.2s ease';
+      el.style.backgroundColor = 'rgba(251, 191, 36, 0.25)';
+      window.setTimeout(() => {
+        el.style.backgroundColor = '';
+        // Allow jumping to this same message again on a later click.
+        if (highlightedRef.current === highlightMessageId) highlightedRef.current = null;
+      }, 1000);
+    }
+    onHighlightHandled?.();
+  }, [highlightMessageId, messageById, hasMore, onLoadMore, onHighlightHandled]);
+
+  const otherMembersCount = useMemo(
+    () => conversation.members.filter((m) => m.id !== user?.id).length,
+    [conversation.members, user?.id]
+  );
+
+  const reactionUsers = useMemo(
+    () => Object.fromEntries(conversation.members.map((m) => [m.id, m.name])),
+    [conversation.members]
+  );
+
   if (messages.length === 0) {
+    if (filterMode === 'pinned') {
+      return (
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-muted-foreground px-8">
+          No pinned messages yet. Pin up to 5 important messages to see them here.
+        </div>
+      );
+    }
+    if (filterMode === 'favourites') {
+      return (
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-muted-foreground px-8">
+          No saved messages yet. Save a message to see it here.
+        </div>
+      );
+    }
     return <EmptyState type="no-messages" />;
   }
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="flex flex-col gap-0.5 pt-4 pb-2">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto overflow-x-hidden"
+    >
+      <div className="flex flex-col gap-0.5 pt-4 pb-2 w-full min-w-0">
         {hasMore && onLoadMore && (
           <div className="flex justify-center py-2">
             <Button variant="ghost" size="sm" onClick={onLoadMore} className="text-xs text-muted-foreground">
@@ -56,62 +177,155 @@ export function MessageArea({ messages, conversation, hasMore, onLoadMore, readR
             </Button>
           </div>
         )}
-        {filteredMessages.map((msg, i) => {
-          const prev = i > 0 ? filteredMessages[i - 1] : null;
-          const next = i < filteredMessages.length - 1 ? filteredMessages[i + 1] : null;
-          const msgDate = new Date(msg.createdAt);
+        {(() => {
+          const nodes: JSX.Element[] = [];
+          const isImageMsg = (m: ChatMessage) => m.contentType === 'image';
+          let i = 0;
 
-          const showDateDivider = !prev || !isSameDay(new Date(prev.createdAt), msgDate);
+          while (i < filteredMessages.length) {
+            const msg = filteredMessages[i];
+            const prev = i > 0 ? filteredMessages[i - 1] : null;
+            const msgDate = new Date(msg.createdAt);
+            const showDateDivider = !prev || !isSameDay(new Date(prev.createdAt), msgDate);
 
-          if (msg.contentType === 'system') {
-            return (
-              <div key={msg.id}>
+            // Checked regardless of contentType: the backend doesn't reliably
+            // echo back the 'system' type we post a call card as (it can come
+            // back as 'text'), so detection has to rely on the JSON shape of
+            // the content itself, not the server's reported contentType.
+            const callCard = parseCallCardContent(msg.content);
+            if (callCard) {
+              nodes.push(
+                <div key={msg.id}>
+                  {showDateDivider && <MessageDateDivider date={msgDate} />}
+                  <CallHistoryCard message={msg} content={callCard} isGroupChat={isGroup} currentUserId={user?.id} />
+                </div>
+              );
+              i += 1;
+              continue;
+            }
+
+            if (msg.contentType === 'system') {
+              nodes.push(
+                <div key={msg.id}>
+                  {showDateDivider && <MessageDateDivider date={msgDate} />}
+                  <SystemMessage content={msg.content} />
+                </div>
+              );
+              i += 1;
+              continue;
+            }
+
+            const isSameSenderAsPrev = prev && prev.senderId === msg.senderId && prev.contentType !== 'system' &&
+              differenceInMinutes(msgDate, new Date(prev.createdAt)) < 2 && !showDateDivider;
+            const showSenderInfo = !isSameSenderAsPrev;
+
+            // Batch consecutive image-only messages from the same sender (tight
+            // time gap, same day) into a single WhatsApp/Telegram-style grid
+            // instead of stacking each as its own full-width bubble.
+            if (isImageMsg(msg)) {
+              const run: ChatMessage[] = [msg];
+              let j = i + 1;
+              while (
+                j < filteredMessages.length &&
+                isImageMsg(filteredMessages[j]) &&
+                filteredMessages[j].senderId === msg.senderId &&
+                isSameDay(new Date(filteredMessages[j].createdAt), msgDate) &&
+                differenceInMinutes(new Date(filteredMessages[j].createdAt), new Date(filteredMessages[j - 1].createdAt)) < 2
+              ) {
+                run.push(filteredMessages[j]);
+                j += 1;
+              }
+
+              if (run.length > 1) {
+                const last = run[run.length - 1];
+                const afterRun = j < filteredMessages.length ? filteredMessages[j] : null;
+                const isSameSenderAsNext = afterRun && afterRun.senderId === last.senderId && afterRun.contentType !== 'system' &&
+                  isSameDay(new Date(afterRun.createdAt), new Date(last.createdAt)) &&
+                  differenceInMinutes(new Date(afterRun.createdAt), new Date(last.createdAt)) < 2;
+                const showTimestamp = !isSameSenderAsNext;
+
+                nodes.push(
+                  <div key={msg.id} id={`msg-${last.id}`}>
+                    {showDateDivider && <MessageDateDivider date={msgDate} />}
+                    <div className={showSenderInfo && i > 0 ? 'mt-3' : 'mt-0.5'}>
+                      <MediaGroupBubble
+                        messages={run}
+                        showSenderInfo={showSenderInfo}
+                        showTimestamp={showTimestamp}
+                        isGroupChat={isGroup}
+                        currentUserId={user?.id}
+                        readReceipts={readReceiptMap?.[last.id]}
+                        otherMembersCount={otherMembersCount}
+                        reactions={reactionMap?.[last.id]}
+                        reactionUsers={reactionUsers}
+                        isPinned={pinnedMessageIds?.has(last.id)}
+                        isFavourited={favouriteMessageIds?.has(last.id)}
+                        onDelete={onDeleteMessage}
+                        onDeleteForMe={onDeleteMessageForMe}
+                        onToggleReaction={onToggleReaction}
+                        onReply={onReplyMessage}
+                        onForward={onForwardMessage}
+                        onTogglePin={onTogglePin}
+                        onToggleFavourite={onToggleFavourite}
+                      />
+                    </div>
+                  </div>
+                );
+                i = j;
+                continue;
+              }
+            }
+
+            const next = i < filteredMessages.length - 1 ? filteredMessages[i + 1] : null;
+            const isSameSenderAsNext = next && next.senderId === msg.senderId && next.contentType !== 'system' &&
+              differenceInMinutes(new Date(next.createdAt), msgDate) < 2 &&
+              (next ? isSameDay(new Date(next.createdAt), msgDate) : false);
+            const showTimestamp = !isSameSenderAsNext;
+
+            nodes.push(
+              <div key={msg.id} id={`msg-${msg.id}`}>
                 {showDateDivider && <MessageDateDivider date={msgDate} />}
-                <SystemMessage content={msg.content} />
+                <div className={showSenderInfo && i > 0 ? 'mt-3' : 'mt-0.5'}>
+                  <MessageBubble
+                    message={{
+                      ...msg,
+                      replyToMessage: msg.replyToMessageId ? messageById.get(msg.replyToMessageId) : undefined,
+                    }}
+                    showSenderInfo={showSenderInfo}
+                    showTimestamp={showTimestamp}
+                    isGroupChat={isGroup}
+                    currentUserId={user?.id}
+                    currentUserName={user?.name}
+                    searchQuery={searchQuery}
+                    memberNames={conversation.members.map((m) => m.name)}
+                    readReceipts={readReceiptMap?.[msg.id]}
+                    otherMembersCount={otherMembersCount}
+                    reactions={reactionMap?.[msg.id]}
+                    reactionUsers={reactionUsers}
+                    isPinned={pinnedMessageIds?.has(msg.id)}
+                    isFavourited={favouriteMessageIds?.has(msg.id)}
+                    onEdit={onEditMessage}
+                    onDelete={onDeleteMessage}
+                    onDeleteForMe={onDeleteMessageForMe}
+                    onToggleReaction={onToggleReaction}
+                    onReply={onReplyMessage}
+                    onForward={onForwardMessage ? (message) => onForwardMessage([message]) : undefined}
+                    onTogglePin={onTogglePin}
+                    onToggleFavourite={onToggleFavourite}
+                    onJumpToMessage={onJumpToMessage}
+                  />
+                </div>
               </div>
             );
+            i += 1;
           }
 
-          const isSameSenderAsPrev = prev && prev.senderId === msg.senderId && prev.contentType !== 'system' &&
-            differenceInMinutes(msgDate, new Date(prev.createdAt)) < 2 && !showDateDivider;
-
-          const isSameSenderAsNext = next && next.senderId === msg.senderId && next.contentType !== 'system' &&
-            differenceInMinutes(new Date(next.createdAt), msgDate) < 2 &&
-            (next ? isSameDay(new Date(next.createdAt), msgDate) : false);
-
-          const showSenderInfo = !isSameSenderAsPrev;
-          const showTimestamp = !isSameSenderAsNext;
-
-          return (
-            <div key={msg.id}>
-              {showDateDivider && <MessageDateDivider date={msgDate} />}
-              <div className={showSenderInfo && i > 0 ? 'mt-3' : 'mt-0.5'}>
-                <MessageBubble
-                  message={{
-                    ...msg,
-                    replyToMessage: msg.replyToMessageId ? messageById.get(msg.replyToMessageId) : undefined,
-                  }}
-                  showSenderInfo={showSenderInfo}
-                  showTimestamp={showTimestamp}
-                  isGroupChat={isGroup}
-                  currentUserId={user?.id}
-                  searchQuery={searchQuery}
-                  readReceipts={readReceiptMap?.[msg.id]}
-                  reactions={reactionMap?.[msg.id]}
-                  onEdit={onEditMessage}
-                  onDelete={onDeleteMessage}
-                  onToggleReaction={onToggleReaction}
-                  onReply={onReplyMessage}
-                />
-              </div>
-            </div>
-          );
-        })}
+          return nodes;
+        })()}
         {searchQuery.trim() && filteredMessages.length === 0 && (
           <div className="text-center text-sm text-muted-foreground py-8">No messages match your search</div>
         )}
-        <div ref={bottomRef} />
       </div>
-    </ScrollArea>
+    </div>
   );
 }

@@ -8,7 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ReportKPI, StatusBreakdown, getStatusColor } from '../utils/reportsUtils';
+import { ReportKPI, StatusBreakdown, getStatusColor, formatCycleTime } from '../utils/reportsUtils';
 import { cn } from '@/lib/utils';
 
 interface ReportsKPIRowProps {
@@ -135,7 +135,7 @@ export const ReportsKPIRow = memo(function ReportsKPIRow({ kpis, statusBreakdown
         value={kpis.openIssues}
         subtitle={kpis.criticalIssues > 0 ? `${kpis.criticalIssues} critical` : 'No critical issues'}
         icon={<AlertCircle className="h-4 w-4" />}
-        tooltip="Count of issues with status 'open' or 'investigating'"
+        tooltip="All issues except 'Resolved' and 'Won't Fix' — includes custom column statuses"
         variant={kpis.criticalIssues > 0 ? 'danger' : 'default'}
         onClick={handleIssuesClick}
       />
@@ -152,10 +152,10 @@ export const ReportsKPIRow = memo(function ReportsKPIRow({ kpis, statusBreakdown
 
       <KPICard
         title="Avg Cycle Time"
-        value={kpis.avgCycleTime === 0 ? 'N/A' : `${kpis.avgCycleTime}d`}
-        subtitle="days per task"
+        value={formatCycleTime(kpis.avgCycleTime).value}
+        subtitle={formatCycleTime(kpis.avgCycleTime).subtitle}
         icon={<Timer className="h-4 w-4" />}
-        tooltip="Average days from task start date to completion for all completed tasks"
+        tooltip="Average time from task start date to completion for all completed tasks"
         onClick={handleCycleClick}
       />
     </div>

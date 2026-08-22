@@ -26,13 +26,22 @@ export function getMilestoneTasks(milestone: Milestone, tasks: Task[]): Task[] {
 }
 
 /**
+ * Get modules linked to a milestone
+ */
+export function getMilestoneModules(milestone: Milestone, modules: Module[]): Module[] {
+  return modules.filter(m =>
+    milestone.linkedModuleIds?.includes(m.id) || m.milestoneId === milestone.id
+  );
+}
+
+/**
  * Get issues blocking a task
  */
 export function getBlockingIssues(taskId: string, issues: Issue[]): Issue[] {
   return issues.filter(issue =>
     issue.blocksTaskIds?.includes(taskId) &&
     issue.status !== 'resolved' &&
-    issue.status !== 'closed'
+    issue.status !== 'wont-fix'
   );
 }
 
@@ -43,7 +52,7 @@ export function getMilestoneIssues(milestoneId: string, issues: Issue[]): Issue[
   return issues.filter(issue =>
     issue.blocksMilestoneIds?.includes(milestoneId) &&
     issue.status !== 'resolved' &&
-    issue.status !== 'closed'
+    issue.status !== 'wont-fix'
   );
 }
 
@@ -88,7 +97,7 @@ export function isMilestoneBlockedByIssues(milestoneId: string, issues: Issue[])
  * Get issue counts by severity
  */
 export function getIssueCounts(issues: Issue[]): Record<string, number> {
-  const openIssues = issues.filter(i => i.status !== 'resolved' && i.status !== 'closed' && i.status !== 'wont-fix');
+  const openIssues = issues.filter(i => i.status !== 'resolved' && i.status !== 'wont-fix');
 
   return {
     total: openIssues.length,
@@ -104,6 +113,9 @@ export function getIssueCounts(issues: Issue[]): Record<string, number> {
  */
 export function getMilestoneStatus(milestone: Milestone, tasks: Task[], issues: Issue[]): 'completed' | 'blocked' | 'at-risk' | 'on-track' {
   if (milestone.completed) return 'completed';
+
+  // A manually-selected status takes precedence over the computed one.
+  if (milestone.status && milestone.status !== 'completed') return milestone.status;
 
   if (isMilestoneBlockedByIssues(milestone.id, issues)) return 'blocked';
 
@@ -230,9 +242,9 @@ export function calculateProjectProgress(
     )
     : 0;
 
-  // Issue progress: % of issues resolved/closed
+  // Issue progress: % of issues resolved
   const resolvedIssues = issues.filter(i =>
-    i.status === 'resolved' || i.status === 'closed'
+    i.status === 'resolved'
   ).length;
   const issueProgress = issues.length > 0
     ? Math.round((resolvedIssues / issues.length) * 100)

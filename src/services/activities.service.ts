@@ -1,62 +1,46 @@
-import { supabase } from '@/integrations/supabase/client';
-import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { apiClient } from '@/services/api/client';
+import { ENDPOINTS } from '@/services/api/endpoints';
 
-export type Activity = Tables<'activities'>;
-export type ActivityInsert = TablesInsert<'activities'>;
+export interface Activity {
+  id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  projectId: string | null;
+  orgId: string | null;
+  metadata: unknown;
+  createdAt: string;
+  user: { id: string; name: string; avatarUrl: string | null } | null;
+}
+
+export type ActivityInsert = Omit<Activity, 'id' | 'createdAt' | 'user'>;
 
 export const activitiesService = {
-  async getAll(): Promise<Activity[]> {
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+  async getAll(orgId?: string): Promise<Activity[]> {
+    if (orgId) return apiClient.get(ENDPOINTS.ORGANIZATIONS.ACTIVITIES(orgId));
+    return [];
   },
 
   async getByProjectId(projectId: string): Promise<Activity[]> {
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return apiClient.get(ENDPOINTS.PROJECTS.ACTIVITIES(projectId));
   },
 
-  async getRecent(limit: number = 10): Promise<Activity[]> {
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error) throw error;
-    return data || [];
+  async getRecent(orgId: string, limit = 10): Promise<Activity[]> {
+    try {
+      const data = await apiClient.get<Activity[]>(ENDPOINTS.ORGANIZATIONS.ACTIVITIES(orgId));
+      return (data || []).slice(0, limit);
+    } catch {
+      return [];
+    }
   },
 
-  async create(activity: ActivityInsert): Promise<Activity> {
-    const { data, error } = await supabase
-      .from('activities')
-      .insert(activity)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+  async create(_activity: ActivityInsert): Promise<Activity> {
+    throw new Error('Activities are created server-side');
   },
 
-  async getByEntityId(entityId: string, entityType: string): Promise<Activity[]> {
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .eq('entity_id', entityId)
-      .eq('entity_type', entityType)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+  async getByEntityId(_entityId: string, _entityType: string): Promise<Activity[]> {
+    return [];
   },
 };

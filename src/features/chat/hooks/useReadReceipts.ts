@@ -1,108 +1,68 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { chatService } from '@/services/chat.service';
 import { chatTransport } from '../transport';
-import type { ChatMessage, ReadReceipt } from '../types';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import type { ChatMessage, ConversationMember, ReadReceipt } from '../types';
+import type { Unsubscribe } from '../transport/IChatTransport';
+import { logger } from '@/services/monitoring/logger';
 
 /**
- * Manages read receipts for an active conversation.
- *
- * - Marks the conversation as read whenever it is opened or new messages arrive.
- * - Fetches existing read receipts for all visible messages.
- * - Subscribes to realtime INSERT events on `message_reads` using a ref
- *   so new message IDs are always visible inside the callback (no stale closure).
+ * Derives per-message read ("blue tick") state from each member's
+ * conversation-level lastReadAt, rather than per-message receipts — the
+ * backend only tracks one read marker per member per conversation.
  */
 export function useReadReceipts(
   conversationId: string | null | undefined,
   messages: ChatMessage[],
-  currentUserId: string | undefined
+  currentUserId: string | undefined,
+  members: ConversationMember[] = []
 ) {
-  const [readReceiptMap, setReadReceiptMap] = useState<Record<string, ReadReceipt[]>>({});
-  const channelRef = useRef<RealtimeChannel | null>(null);
+  const [memberLastReadAt, setMemberLastReadAt] = useState<Record<string, string>>({});
+  const channelRef = useRef<Unsubscribe | null>(null);
 
-  // Always-current set of message IDs – used inside the realtime callback
-  // so we never filter out receipts due to a stale closure.
-  const messageIdsRef = useRef<Set<string>>(new Set());
+  // Stable primitive key to avoid infinite useEffect loops when members array reference changes
+  const membersKey = (members || []).map((m) => `${m.id}:${m.lastReadAt ?? ''}`).join('|');
+
+  // Seed from the conversation's member list whenever it changes (e.g. on conversation switch).
   useEffect(() => {
-    messageIdsRef.current = new Set(messages.map((m) => m.id));
-  }, [messages]);
-
-  // ─── Mark as read + fetch receipts ───────────────────────────────────────
-  const markAndFetch = useCallback(async (convId: string, msgs: ChatMessage[]) => {
-    if (!msgs.length) return;
-    try {
-      // Mark conversation as read (fire-and-forget; errors are logged not thrown)
-      chatService.markConversationAsRead(convId).catch((err) => {
-        console.error('[ReadReceipts] markConversationAsRead failed:', err);
-      });
-
-      const ids = msgs.map((m) => m.id).filter(id => !id.startsWith('temp-'));
-      if (ids.length === 0) {
-        setReadReceiptMap({});
-        return;
+    const seed: Record<string, string> = {};
+    for (const m of members || []) {
+      if (m.lastReadAt) seed[m.id] = m.lastReadAt;
+    }
+    setMemberLastReadAt((prev) => {
+      const prevKeys = Object.keys(prev);
+      const seedKeys = Object.keys(seed);
+      if (
+        prevKeys.length === seedKeys.length &&
+        seedKeys.every((k) => prev[k] === seed[k])
+      ) {
+        return prev;
       }
-      const map = await chatService.getReadReceipts(ids);
-      setReadReceiptMap(map);
-    } catch (err) {
-      console.error('[ReadReceipts] getReadReceipts failed:', err);
-    }
-  }, []);
+      return seed;
+    });
+  }, [membersKey]);
 
-  // Fire when conversation changes (reset state) or when messages load/grow
+  // Mark the conversation as read whenever it's opened or new messages arrive.
   useEffect(() => {
-    if (!conversationId) {
-      setReadReceiptMap({});
-      return;
-    }
-    markAndFetch(conversationId, messages);
-    // Intentionally depend on messages.length so we retrigger on new arrivals
-    // without recreating the effect on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!conversationId || !messages.length) return;
+    chatService.markConversationAsRead(conversationId).catch((err) => {
+      logger.error('[ReadReceipts] markConversationAsRead failed:', err);
+    });
   }, [conversationId, messages.length]);
 
-  // ─── Realtime subscription ────────────────────────────────────────────────
+  // Realtime: other members' read markers as they mark the conversation read.
   useEffect(() => {
     if (!conversationId) return;
 
-    // Clean up any previous subscription before creating a new one
     if (channelRef.current) {
       chatTransport.unsubscribe(channelRef.current);
       channelRef.current = null;
     }
 
-    channelRef.current = chatTransport.subscribeToReadReceipts(
-      conversationId,
-      (payload) => {
-        const row = payload.new as {
-          message_id: string;
-          user_id: string;
-          read_at: string;
-        };
-        if (!row?.message_id) return;
-
-        // Use the ref so we always have the latest message IDs (no stale closure)
-        if (!messageIdsRef.current.has(row.message_id)) return;
-
-        // Skip the current user's own receipt
-        if (row.user_id === currentUserId) return;
-
-        const receipt: ReadReceipt = {
-          messageId: row.message_id,
-          userId: row.user_id,
-          readAt: row.read_at,
-        };
-
-        setReadReceiptMap((prev) => {
-          const existing = prev[row.message_id] ?? [];
-          // Avoid duplicate entries
-          if (existing.some((r) => r.userId === row.user_id)) return prev;
-          return {
-            ...prev,
-            [row.message_id]: [...existing, receipt],
-          };
-        });
-      }
-    );
+    channelRef.current = chatTransport.subscribeToReadReceipts(conversationId, (payload) => {
+      const p = payload as { conversationId: string; userId: string; lastReadAt: string };
+      if (!p?.userId || p.userId === currentUserId) return;
+      setMemberLastReadAt((prev) => ({ ...prev, [p.userId]: p.lastReadAt }));
+    });
 
     return () => {
       if (channelRef.current) {
@@ -111,6 +71,22 @@ export function useReadReceipts(
       }
     };
   }, [conversationId, currentUserId]);
+
+  const readReceiptMap = useMemo(() => {
+    const map: Record<string, ReadReceipt[]> = {};
+    for (const msg of messages) {
+      const msgTime = new Date(msg.createdAt).getTime();
+      const receipts: ReadReceipt[] = [];
+      for (const [userId, lastReadAt] of Object.entries(memberLastReadAt)) {
+        if (userId === currentUserId) continue;
+        if (new Date(lastReadAt).getTime() >= msgTime) {
+          receipts.push({ messageId: msg.id, userId, readAt: lastReadAt });
+        }
+      }
+      if (receipts.length) map[msg.id] = receipts;
+    }
+    return map;
+  }, [messages, memberLastReadAt, currentUserId]);
 
   return { readReceiptMap };
 }

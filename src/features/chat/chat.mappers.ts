@@ -5,7 +5,43 @@ import type {
   ConversationMemberRole,
   MessageContentType,
   ConversationType,
+  ChatEntityType,
+  EntityTagRef,
 } from './types';
+import { resolveFileUrl } from '@/utils/fileUrl';
+import { callCardPreviewText, parseCallCardContent } from './utils/callCard';
+
+const ENTITY_TAG_TYPE_LABEL: Record<ChatEntityType, string> = {
+  task: 'Task',
+  issue: 'Issue',
+  milestone: 'Milestone',
+  hardware_module: 'Module',
+  bom_node: 'BOM',
+  eco: 'ECO',
+};
+
+/** Computes initials from a display name: first letter of the first 2 words, or the single letter for a one-word name. */
+function computeInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return words[0].charAt(0).toUpperCase();
+  return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+}
+
+/** Renders a message's raw content for single-line previews (chat list, toasts) — decodes the call-card JSON payload into human text instead of showing it raw. */
+export function messagePreviewText(content: string): string {
+  const callCard = parseCallCardContent(content);
+  return callCard ? callCardPreviewText(callCard) : content;
+}
+
+/** Fallback preview text for a message whose content is empty (tag-only message). */
+export function entityTagsPreviewText(entityTags: EntityTagRef[] | undefined | null): string {
+  if (!entityTags?.length) return '';
+  if (entityTags.length === 1) {
+    return `${ENTITY_TAG_TYPE_LABEL[entityTags[0].entityType]}: ${entityTags[0].label}`;
+  }
+  return `${entityTags.length} items tagged`;
+}
 
 interface DbProfile {
   id: string;
@@ -53,11 +89,12 @@ export function mapMember(
   dbMember: DbConversationMember,
   profile: DbProfile | undefined
 ): ConversationMember {
+  const rawAvatarUrl = profile?.avatar_url ?? undefined;
   return {
     id: dbMember.user_id,
     name: profile?.name ?? 'Unknown',
     email: profile?.email ?? '',
-    avatarUrl: profile?.avatar_url ?? undefined,
+    avatarUrl: resolveFileUrl(rawAvatarUrl) ?? rawAvatarUrl,
     initials: profile?.initials ?? '??',
     role: dbMember.role as ConversationMemberRole,
     isOnline: false,
@@ -66,25 +103,51 @@ export function mapMember(
 }
 
 export function mapMessage(
-  dbMsg: DbMessage & { deleted_by_name?: string | null },
-  senderProfile: DbProfile | undefined
+  dbMsg: (DbMessage & { deleted_by_name?: string | null }) | any,
+  senderProfile: DbProfile | undefined | null
 ): ChatMessage {
+  // Handle both snake_case (Supabase/DB) and camelCase (SocketIO/REST API) shapes
+  const m = dbMsg as any;
+  const senderId = m.sender_id ?? m.senderId ?? m.sender?.id ?? '';
+  const conversationId = m.conversation_id ?? m.conversationId ?? '';
+  const createdAt = m.created_at ?? m.createdAt ?? new Date().toISOString();
+  const updatedAt = m.updated_at ?? m.updatedAt ?? createdAt;
+  const deletedAt = m.deleted_at ?? m.deletedAt ?? null;
+  const contentType = m.content_type ?? m.contentType ?? 'text';
+
+  // For SocketIO messages, sender info is nested in msg.sender
+  const senderName = senderProfile?.name ?? m.sender?.name ?? m.senderName ?? 'Unknown';
+  const rawSenderAvatar = senderProfile?.avatar_url ?? m.sender?.avatarUrl ?? m.sender?.avatar_url ?? undefined;
+  const senderAvatar = resolveFileUrl(rawSenderAvatar) ?? rawSenderAvatar ?? undefined;
+  const senderInitials = senderProfile?.initials ?? m.sender?.initials ?? computeInitials(senderName) ?? '??';
+
+  const fileUrl = m.fileUrl ?? m.file_url ?? null;
+  const resolvedFileUrl = fileUrl ? (resolveFileUrl(fileUrl) ?? fileUrl) : undefined;
+
   return {
-    id: dbMsg.id,
-    conversationId: dbMsg.conversation_id,
-    senderId: dbMsg.sender_id,
-    senderName: senderProfile?.name ?? 'Unknown',
-    senderAvatar: senderProfile?.avatar_url ?? undefined,
-    senderInitials: senderProfile?.initials ?? '??',
-    contentType: dbMsg.content_type as MessageContentType,
-    content: dbMsg.content,
-    attachments: [],
-    createdAt: dbMsg.created_at,
-    updatedAt: dbMsg.updated_at,
-    isEdited: dbMsg.updated_at !== dbMsg.created_at && !dbMsg.deleted_at,
-    deletedAt: dbMsg.deleted_at ?? undefined,
-    deletedByName: dbMsg.deleted_by_name ?? undefined,
-    replyToMessageId: dbMsg.reply_to_message_id ?? undefined,
+    id: m.id,
+    conversationId,
+    senderId,
+    senderName,
+    senderAvatar,
+    senderInitials,
+    contentType: contentType as MessageContentType,
+    content: m.content,
+    attachments: resolvedFileUrl ? [{
+      id: m.id,
+      type: contentType === 'image' ? 'image' : 'file',
+      url: resolvedFileUrl,
+      name: m.fileName ?? m.file_name ?? m.content ?? 'file',
+      size: m.fileSize ?? m.file_size ?? 0,
+      mimeType: m.fileMimeType ?? m.file_mime_type ?? '',
+    }] : (m.attachments ?? []),
+    entityTags: m.entityTags ?? m.entity_tags ?? [],
+    createdAt,
+    updatedAt,
+    isEdited: updatedAt !== createdAt && !deletedAt,
+    deletedAt: deletedAt ?? undefined,
+    deletedByName: m.deleted_by_name ?? m.deletedByName ?? undefined,
+    replyToMessageId: m.reply_to_message_id ?? m.replyToMessageId ?? undefined,
   };
 }
 

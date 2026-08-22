@@ -1,14 +1,17 @@
-import { format, isToday, isYesterday } from 'date-fns';
+import { useUserTimezone } from '@/hooks/useUserTimezone';
+import { isTodayInTimezone, isYesterdayInTimezone, formatDateInTimezone } from '@/utils/dateTime';
 
 interface MessageDateDividerProps {
   date: Date;
 }
 
 export function MessageDateDivider({ date }: MessageDateDividerProps) {
+  const timezone = useUserTimezone();
+
   let label: string;
-  if (isToday(date)) label = 'Today';
-  else if (isYesterday(date)) label = 'Yesterday';
-  else label = format(date, 'MMM d, yyyy');
+  if (isTodayInTimezone(date, timezone)) label = 'Today';
+  else if (isYesterdayInTimezone(date, timezone)) label = 'Yesterday';
+  else label = formatDateInTimezone(date, timezone);
 
   return (
     <div className="flex items-center gap-3 py-3 px-4">

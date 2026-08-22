@@ -130,8 +130,33 @@
     @apply border-border;
   }
 
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    position: relative;
+    margin: 0;
+    padding: 0;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
+    min-height: 100vh;
+    min-height: 100dvh;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  /* While the app shell is mounted (see AppLayout) the document itself must not
+     scroll: the shell is exactly one viewport tall and its <main> owns the
+     scrolling. Auth/public pages never get this class, so they keep normal
+     document scrolling. */
+  html.app-shell-locked,
+  html.app-shell-locked body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   /* Typography */
@@ -243,5 +268,22 @@
   main > * {
     max-width: 100% !important;
     padding: 0 !important;
+  }
+
+  /* Hide browser-native password reveal button (Edge/IE) so only the custom one shows */
+  input[type="password"]::-ms-reveal,
+  input[type="password"]::-ms-clear {
+    display: none;
+  }
+}
+
+@layer utilities {
+  /* Scrollable row that stays visually clean (no scrollbar track) */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }

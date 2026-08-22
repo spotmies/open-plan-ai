@@ -156,10 +156,10 @@ describe('projectUtils', () => {
       expect(result[0].id).toBe('issue-1');
     });
 
-    it('should not return resolved or closed issues', () => {
+    it('should not return resolved issues', () => {
       const issues = [
         createIssue({ id: 'issue-1', blocksTaskIds: ['task-1'], status: 'resolved' }),
-        createIssue({ id: 'issue-2', blocksTaskIds: ['task-1'], status: 'closed' }),
+        createIssue({ id: 'issue-2', blocksTaskIds: ['task-1'], status: 'wont-fix' }),
       ];
 
       const result = getBlockingIssues('task-1', issues);

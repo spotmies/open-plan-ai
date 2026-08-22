@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { defaultUserSettings } from '@/data/mockData';
 import { UserSettings } from '@/types';
+import { defaultPreferences as defaultUserSettings } from '@/stores/useUserStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -31,12 +31,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
   Settings as SettingsIcon,
   User,
   Bell,
@@ -54,16 +48,42 @@ import {
   Moon,
   Eye,
   EyeOff,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { profileService } from '@/services/profile.service';
+import { notificationPreferencesService, NotificationPreferences } from '@/services/notificationPreferences.service';
 import { organizationsService, OrganizationSettings } from '@/services/organizations.service';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useUserStore } from '@/stores/useUserStore';
 import { getPasswordRequirements } from '@/lib/passwordValidation';
+import { resolveFileUrl } from '@/utils/fileUrl';
+import { cn } from '@/lib/utils';
+import { logger } from '@/services/monitoring/logger';
+import { SUPPORTED_CURRENCIES } from '@/hooks/useCurrency';
+import { useOrgPermissions } from '@/hooks/useProjectPermissions';
+
+const COMPANY_SIZE_LABELS: Record<string, string> = {
+  '1-10': '1-10 employees',
+  '10-50': '10-50 employees',
+  '50-200': '50-200 employees',
+  '200-500': '200-500 employees',
+  '500+': '500+ employees',
+};
+
+const TIMEZONE_LABELS: Record<string, string> = {
+  'America/New_York': 'Eastern Time (ET)',
+  'America/Chicago': 'Central Time (CT)',
+  'America/Denver': 'Mountain Time (MT)',
+  'America/Los_Angeles': 'Pacific Time (PT)',
+  'Europe/London': 'Greenwich Mean Time (GMT)',
+  'Europe/Paris': 'Central European Time (CET)',
+  'Asia/Kolkata': 'India Standard Time (IST)',
+};
 
 type ThemePreference = 'light' | 'dark' | 'system';
 
@@ -76,10 +96,17 @@ function normalizeTheme(value: unknown): ThemePreference {
 
 
 const Settings = () => {
+  useEffect(() => {
+    document.title = 'Settings | Open Plan AI';
+    return () => { document.title = 'Open Plan AI'; };
+  }, []);
+
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, profile, refreshProfile, updatePassword, deleteAccount } = useAuth();
-  const { currentOrganization, refreshOrganizations, createOrganization, isLoading: orgContextLoading } = useOrganization();
+  const { user, refreshProfile, updatePassword, deleteAccount, signOut } = useAuth();
+  const profile = user;
+  const { currentOrganization, createOrganization, refreshOrganizations, isLoading: orgContextLoading } = useOrganization();
+  const { canManageOrgSettings: canEditOrganizationSettings } = useOrgPermissions();
   const { theme, changeTheme } = useAppTheme();
   const preferences = useUserStore((s) => s.preferences);
   const updatePreferences = useUserStore((s) => s.updatePreferences);
@@ -94,8 +121,43 @@ const Settings = () => {
     setTempPreferences(preferences);
   }, [theme, preferences]);
 
-  // User settings for notifications/appearance (still local - coming soon)
-  const [userSettings] = useState<UserSettings>(defaultUserSettings);
+  // Notification preferences (fetched from the backend)
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(
+    defaultUserSettings.notifications,
+  );
+  const [notificationPrefsLoading, setNotificationPrefsLoading] = useState(false);
+  const [notificationPrefsSaving, setNotificationPrefsSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNotificationPrefsLoading(true);
+    notificationPreferencesService
+      .getPreferences()
+      .then((prefs) => {
+        if (!cancelled) setNotificationPrefs(prefs);
+      })
+      .catch((error) => {
+        logger.error('Error loading notification preferences:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setNotificationPrefsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSaveNotificationPreferences = async () => {
+    setNotificationPrefsSaving(true);
+    try {
+      const saved = await notificationPreferencesService.updatePreferences(notificationPrefs);
+      setNotificationPrefs(saved);
+      toast.success('Notification preferences saved');
+    } catch (error) {
+      logger.error('Error saving notification preferences:', error);
+      toast.error('Failed to save notification preferences');
+    } finally {
+      setNotificationPrefsSaving(false);
+    }
+  };
 
 
   // Profile form state
@@ -114,11 +176,18 @@ const Settings = () => {
     companySize: '',
     timezone: 'America/New_York',
     dateFormat: 'MM/DD/YYYY',
+    currency: 'USD',
     logoUrl: '',
   });
+  const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingAvatarRemoval, setPendingAvatarRemoval] = useState(false);
+  const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [orgLoading, setOrgLoading] = useState(false);
   const [logoLoading, setLogoLoading] = useState(false);
-  const [currentOrgRole, setCurrentOrgRole] = useState<'owner' | 'admin' | 'member' | null>(null);
+  const [isEditingOrg, setIsEditingOrg] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   // New organization creation state
   const [isCreatingOrg, setIsCreatingOrg] = useState(false);
@@ -129,9 +198,11 @@ const Settings = () => {
 
   // Password form state
   const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
@@ -148,7 +219,6 @@ const Settings = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(getTabFromParams);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Sync profile data to form
   useEffect(() => {
@@ -160,12 +230,42 @@ const Settings = () => {
     }
   }, [profile]);
 
+  // Discard any unsaved avatar preview when leaving the page
+  const localAvatarPreviewRef = useRef<string | null>(null);
+  localAvatarPreviewRef.current = localAvatarPreview;
+  useEffect(() => {
+    return () => {
+      if (localAvatarPreviewRef.current) {
+        URL.revokeObjectURL(localAvatarPreviewRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     setActiveTab(getTabFromParams());
   }, [searchParams]);
 
-  // Sync organization data to form - preserve local logoUrl if server hasn't updated yet
+  // Discard any unsaved avatar/name edits when leaving the Profile tab
   useEffect(() => {
+    if (activeTab !== 'profile') {
+      if (localAvatarPreviewRef.current) {
+        URL.revokeObjectURL(localAvatarPreviewRef.current);
+      }
+      setPendingAvatarFile(null);
+      setPendingAvatarRemoval(false);
+      setLocalAvatarPreview(null);
+      setIsEditingProfile(false);
+      if (profile) {
+        setProfileForm({
+          name: profile.name || '',
+          initials: profile.initials || '',
+        });
+      }
+    }
+  }, [activeTab, profile]);
+
+  // Sync organization data to form - preserve local logoUrl if server hasn't updated yet
+  const resetOrgFormFromOrganization = () => {
     if (currentOrganization) {
       const settings = (currentOrganization.settings || {}) as OrganizationSettings;
       setOrgForm(prev => ({
@@ -176,43 +276,16 @@ const Settings = () => {
         companySize: settings.companySize || '',
         timezone: settings.timezone || 'America/New_York',
         dateFormat: settings.dateFormat || 'MM/DD/YYYY',
-        logoUrl: settings.logoUrl || prev.logoUrl, // Preserve local logoUrl if server hasn't updated yet
+        currency: settings.currency || 'USD',
+        logoUrl: resolveFileUrl(settings.logoUrl) ?? settings.logoUrl ?? prev.logoUrl,
       }));
     }
-  }, [currentOrganization]);
+  };
 
   useEffect(() => {
-    let mounted = true;
+    resetOrgFormFromOrganization();
+  }, [currentOrganization]);
 
-    const loadCurrentOrgRole = async () => {
-      if (!user?.id || !currentOrganization?.id) {
-        if (mounted) setCurrentOrgRole(null);
-        return;
-      }
-
-      try {
-        const memberships = await organizationsService.getMemberOrganizations(user.id);
-        const membership = memberships.find((m) => m.organization_id === currentOrganization.id);
-        const resolvedRole =
-          membership?.role === 'owner' || membership?.role === 'admin' || membership?.role === 'member'
-            ? membership.role
-            : null;
-        if (mounted) setCurrentOrgRole(resolvedRole);
-      } catch (error) {
-        console.error('Error loading organization role:', error);
-        if (mounted) setCurrentOrgRole(null);
-      }
-    };
-
-    void loadCurrentOrgRole();
-
-    return () => {
-      mounted = false;
-    };
-  }, [user?.id, currentOrganization?.id]);
-
-  const canEditOrganizationSettings = currentOrgRole === 'owner' || currentOrgRole === 'admin';
-  const roleLabel = currentOrgRole ? currentOrgRole.charAt(0).toUpperCase() + currentOrgRole.slice(1) : 'Member';
 
   const handleCreateOrganization = async () => {
     if (!newOrgForm.name.trim()) {
@@ -226,80 +299,11 @@ const Settings = () => {
       toast.success('Workspace created successfully');
       setNewOrgForm({ name: '', description: '' });
     } catch (error) {
-      console.error('Error creating workspace:', error);
+      logger.error('Error creating workspace:', error);
       toast.error('Failed to create workspace');
     } finally {
       setIsCreatingOrg(false);
     }
-  };
-
-  const handleSaveGeneral = async () => {
-    if (!canEditOrganizationSettings) {
-      toast.error(`Access denied: ${roleLabel} role cannot edit organization settings. Contact an admin.`);
-      return;
-    }
-
-    if (!currentOrganization) {
-      toast.error('No organization selected');
-      return;
-    }
-
-    setOrgLoading(true);
-    try {
-      // Update organization name and description
-      await organizationsService.update(currentOrganization.id, {
-        name: orgForm.name,
-        description: orgForm.description,
-      });
-
-      // Update organization settings
-      await organizationsService.updateSettings(currentOrganization.id, {
-        companyName: orgForm.companyName,
-        companySize: orgForm.companySize,
-        timezone: orgForm.timezone,
-        dateFormat: orgForm.dateFormat,
-      });
-
-      await refreshOrganizations();
-      toast.success('Workspace settings saved');
-    } catch (error) {
-      console.error('Error saving workspace settings:', error);
-      const maybe = error as { code?: string; message?: string; details?: string };
-      const isPermissionLikeError =
-        maybe?.code === 'PGRST116' ||
-        (typeof maybe?.message === 'string' &&
-          (maybe.message.includes('0 rows') || maybe.message.toLowerCase().includes('not acceptable'))) ||
-        (typeof maybe?.details === 'string' && maybe.details.includes('0 rows'));
-
-      if (isPermissionLikeError) {
-        toast.error(`Access denied: ${roleLabel} role cannot update organization settings.`);
-      } else {
-        toast.error('Failed to save workspace settings');
-      }
-    } finally {
-      setOrgLoading(false);
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    setProfileLoading(true);
-    try {
-      await profileService.updateProfile({
-        name: profileForm.name,
-        initials: profileForm.initials,
-      });
-      await refreshProfile();
-      toast.success('Profile updated successfully');
-    } catch (error) {
-      console.error('Error saving profile:', error);
-      toast.error('Failed to update profile');
-    } finally {
-      setProfileLoading(false);
-    }
-  };
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
   };
 
   const handleLogoClick = () => {
@@ -307,55 +311,37 @@ const Settings = () => {
     logoInputRef.current?.click();
   };
 
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error('File size must be less than 2MB');
-        return;
-      }
-
-      setAvatarLoading(true);
-      try {
-        await profileService.uploadAvatar(file);
-        await refreshProfile();
-        toast.success('Avatar updated successfully');
-      } catch (error) {
-        console.error('Error uploading avatar:', error);
-        toast.error('Failed to upload avatar');
-      } finally {
-        setAvatarLoading(false);
-      }
-    }
-  };
-
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!canEditOrganizationSettings) {
       toast.error('Only admins and owners can change the organization logo');
       return;
     }
-
     if (!currentOrganization) return;
 
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error('File size must be less than 2MB');
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File size must be less than 5MB');
         return;
       }
+
+      const localPreview = URL.createObjectURL(file);
+      setOrgForm(prev => ({ ...prev, logoUrl: localPreview }));
 
       setLogoLoading(true);
       try {
         const logoUrl = await organizationsService.uploadLogo(currentOrganization.id, file);
+        URL.revokeObjectURL(localPreview);
         setOrgForm(prev => ({ ...prev, logoUrl }));
         await refreshOrganizations();
         toast.success('Organization logo updated successfully');
       } catch (error) {
-        console.error('Error uploading logo:', error);
+        URL.revokeObjectURL(localPreview);
+        setOrgForm(prev => ({ ...prev, logoUrl: '' }));
+        logger.error('Error uploading logo:', error);
         toast.error('Failed to upload logo');
       } finally {
         setLogoLoading(false);
-        // Reset file input to allow re-uploading the same file
         if (logoInputRef.current) {
           logoInputRef.current.value = '';
         }
@@ -368,7 +354,6 @@ const Settings = () => {
       toast.error('Only admins and owners can remove the organization logo');
       return;
     }
-
     if (!currentOrganization) return;
 
     setLogoLoading(true);
@@ -378,11 +363,129 @@ const Settings = () => {
       await refreshOrganizations();
       toast.success('Organization logo removed');
     } catch (error) {
-      console.error('Error removing logo:', error);
+      logger.error('Error removing logo:', error);
       toast.error('Failed to remove logo');
     } finally {
       setLogoLoading(false);
     }
+  };
+
+  const handleSaveOrganization = async () => {
+    if (!canEditOrganizationSettings) {
+      toast.error('Only organization admins and owners can edit these settings.');
+      return;
+    }
+    if (!currentOrganization) {
+      toast.error('No organization selected');
+      return;
+    }
+    if (!orgForm.name.trim()) {
+      toast.error('Organization name is required');
+      return;
+    }
+
+    setOrgLoading(true);
+    try {
+      await organizationsService.update(currentOrganization.id, {
+        name: orgForm.name,
+        description: orgForm.description || null,
+        settings: {
+          companyName: orgForm.companyName,
+          companySize: orgForm.companySize,
+          timezone: orgForm.timezone,
+          dateFormat: orgForm.dateFormat,
+          currency: orgForm.currency,
+        },
+      });
+      await refreshOrganizations();
+      toast.success('Workspace settings saved');
+      setIsEditingOrg(false);
+    } catch (error) {
+      logger.error('Error saving workspace settings:', error);
+      toast.error('Failed to save workspace settings');
+    } finally {
+      setOrgLoading(false);
+    }
+  };
+
+  const handleCancelEditOrganization = () => {
+    resetOrgFormFromOrganization();
+    setIsEditingOrg(false);
+  };
+
+  const hasProfileChanges =
+    profileForm.name !== (profile?.name || '') ||
+    profileForm.initials !== (profile?.initials || '') ||
+    pendingAvatarFile !== null ||
+    pendingAvatarRemoval;
+
+  const handleSaveProfile = async () => {
+    if (!hasProfileChanges) {
+      return;
+    }
+
+    setProfileLoading(true);
+    try {
+      if (pendingAvatarFile) {
+        await profileService.uploadAvatar(pendingAvatarFile);
+      } else if (pendingAvatarRemoval) {
+        await profileService.deleteAvatar();
+      }
+      await profileService.updateProfile({
+        name: profileForm.name,
+        initials: profileForm.initials,
+      });
+      await refreshProfile();
+      if (localAvatarPreview) {
+        URL.revokeObjectURL(localAvatarPreview);
+      }
+      setPendingAvatarFile(null);
+      setPendingAvatarRemoval(false);
+      setLocalAvatarPreview(null);
+      setIsEditingProfile(false);
+      toast.success('Profile updated successfully');
+    } catch (error) {
+      logger.error('Error saving profile:', error);
+      toast.error('Failed to update profile');
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleRemoveAvatar = () => {
+    if (localAvatarPreview) {
+      URL.revokeObjectURL(localAvatarPreview);
+    }
+
+    setPendingAvatarFile(null);
+    setLocalAvatarPreview(null);
+    setPendingAvatarRemoval(true);
+    setIsEditingProfile(true);
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File size must be less than 5MB');
+        return;
+      }
+
+      // Only preview locally — actual upload happens when Save Profile is clicked
+      if (localAvatarPreview) {
+        URL.revokeObjectURL(localAvatarPreview);
+      }
+      const localPreview = URL.createObjectURL(file);
+      setLocalAvatarPreview(localPreview);
+      setPendingAvatarFile(file);
+      setPendingAvatarRemoval(false);
+      setIsEditingProfile(true);
+    }
+    e.target.value = '';
   };
 
   const handleUpdatePassword = async () => {
@@ -401,15 +504,25 @@ const Settings = () => {
 
     setPasswordLoading(true);
     try {
-      const { error } = await updatePassword(passwordForm.newPassword);
+      if (!passwordForm.currentPassword) {
+        toast.error('Please enter your current password');
+        setPasswordLoading(false);
+        return;
+      }
+      const { error } = await updatePassword(passwordForm.currentPassword, passwordForm.newPassword);
       if (error) {
         toast.error(error.message);
       } else {
-        toast.success('Password updated successfully');
-        setPasswordForm({ newPassword: '', confirmPassword: '' });
+        toast.success('Password updated. Please sign in again.');
+        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        // Backend revokes all refresh tokens on password change, but the current
+        // access token cookie stays valid until it expires — sign out explicitly
+        // so the user is forced to re-authenticate immediately.
+        await signOut();
+        navigate('/login');
       }
     } catch (error) {
-      console.error('Error updating password:', error);
+      logger.error('Error updating password:', error);
       toast.error('Failed to update password');
     } finally {
       setPasswordLoading(false);
@@ -433,7 +546,7 @@ const Settings = () => {
         navigate('/login');
       }
     } catch (error) {
-      console.error('Error deleting account:', error);
+      logger.error('Error deleting account:', error);
       toast.error('Failed to delete account');
     } finally {
       setDeleteLoading(false);
@@ -472,22 +585,10 @@ const Settings = () => {
               <User className="h-4 w-4" />
               <span className="hidden sm:inline">Profile</span>
             </TabsTrigger>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <TabsTrigger value="notifications" className="gap-1 px-0 sm:px-3" title="Notifications (Coming Soon)">
-                    <Bell className="h-4 w-4" />
-                    <span className="hidden sm:inline">Notifications</span>
-                    <Badge variant="outline" className="ml-1 bg-amber-100 text-amber-800 border-amber-300 text-xs hidden sm:inline-flex">
-                      Soon
-                    </Badge>
-                  </TabsTrigger>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>This feature is coming soon</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <TabsTrigger value="notifications" className="gap-1 px-0 sm:px-3" title="Notifications">
+              <Bell className="h-4 w-4" />
+              <span className="hidden sm:inline">Notifications</span>
+            </TabsTrigger>
             <TabsTrigger value="appearance" className="gap-1 px-0 sm:px-3" title="Appearance">
               <Palette className="h-4 w-4" />
               <span className="hidden sm:inline">Appearance</span>
@@ -501,11 +602,19 @@ const Settings = () => {
           {/* General Tab */}
           <TabsContent value="general">
             <Card>
-              <CardHeader>
-                <CardTitle>Organization Settings</CardTitle>
-                <CardDescription>
-                  Configure your organization preferences and defaults
-                </CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Organization Settings</CardTitle>
+                  <CardDescription>
+                    Configure your organization preferences and defaults
+                  </CardDescription>
+                </div>
+                {currentOrganization && canEditOrganizationSettings && !isEditingOrg && (
+                  <Button variant="outline" size="sm" onClick={() => setIsEditingOrg(true)} className="shrink-0">
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-6">
                 {!currentOrganization ? (
@@ -560,13 +669,14 @@ const Settings = () => {
                     </div>
                   </div>
                 ) : (
-                  /* Existing Workspace Settings */
+                  /* Existing Workspace Settings (editable inline) */
                   <>
                     {!canEditOrganizationSettings && (
                       <div className="rounded-md border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
                         You have view-only access. Only organization admins and owners can edit these settings.
                       </div>
                     )}
+
                     {/* Organization Logo */}
                     <div className="space-y-2">
                       <Label>Organization Logo</Label>
@@ -576,7 +686,7 @@ const Settings = () => {
                             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                           ) : orgForm.logoUrl ? (
                             <img
-                              src={orgForm.logoUrl}
+                              src={resolveFileUrl(orgForm.logoUrl) ?? orgForm.logoUrl}
                               alt="Organization logo"
                               className="h-full w-full object-contain"
                             />
@@ -587,82 +697,82 @@ const Settings = () => {
                             </div>
                           )}
                         </div>
-                        <div className="space-y-2">
-                          <input
-                            type="file"
-                            ref={logoInputRef}
-                            className="hidden"
-                            accept="image/png, image/jpeg, image/gif, image/svg+xml"
-                            onChange={handleLogoChange}
-                          />
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm" onClick={handleLogoClick} disabled={logoLoading || !canEditOrganizationSettings}>
-                              <Upload className="h-4 w-4 mr-2" />
-                              {orgForm.logoUrl ? 'Change Logo' : 'Upload Logo'}
-                            </Button>
-                            {orgForm.logoUrl && (
-                              <Button variant="outline" size="sm" onClick={handleRemoveLogo} disabled={logoLoading || !canEditOrganizationSettings}>
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Remove
+                        {canEditOrganizationSettings && isEditingOrg && (
+                          <div className="space-y-2">
+                            <input
+                              type="file"
+                              ref={logoInputRef}
+                              className="hidden"
+                              accept="image/png, image/jpeg, image/gif, image/svg+xml"
+                              onChange={handleLogoChange}
+                            />
+                            <div className="flex gap-2">
+                              <Button variant="outline" size="sm" onClick={handleLogoClick} disabled={logoLoading}>
+                                <Upload className="h-4 w-4 mr-2" />
+                                {orgForm.logoUrl ? 'Change Logo' : 'Upload Logo'}
                               </Button>
-                            )}
+                              {orgForm.logoUrl && (
+                                <Button variant="outline" size="sm" onClick={handleRemoveLogo} disabled={logoLoading}>
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Remove
+                                </Button>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              JPG, PNG, GIF or SVG. Max 5MB. Recommended size: 200x200px.
+                            </p>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            JPG, PNG, GIF or SVG. Max 2MB. Recommended size: 200x200px.
-                          </p>
-                        </div>
+                        )}
                       </div>
                     </div>
 
                     <Separator />
 
                     <div className="space-y-2">
-                      <Label htmlFor="workspace-name">Organization Name</Label>
+                      <Label htmlFor="org-name">Organization Name</Label>
                       <Input
-                        id="workspace-name"
+                        id="org-name"
                         value={orgForm.name}
+                        disabled={!canEditOrganizationSettings || !isEditingOrg}
                         onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
-                        disabled={!canEditOrganizationSettings}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="workspace-desc">Description</Label>
+                      <Label htmlFor="org-desc">Description</Label>
                       <Textarea
-                        id="workspace-desc"
+                        id="org-desc"
                         value={orgForm.description}
+                        disabled={!canEditOrganizationSettings || !isEditingOrg}
                         onChange={(e) => setOrgForm({ ...orgForm, description: e.target.value })}
                         rows={3}
-                        disabled={!canEditOrganizationSettings}
                       />
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="company-name">Company Name</Label>
+                        <Label htmlFor="org-company-name">Company Name</Label>
                         <Input
-                          id="company-name"
-                          value={orgForm.companyName}
-                          onChange={(e) => setOrgForm({ ...orgForm, companyName: e.target.value })}
+                          id="org-company-name"
                           placeholder="e.g. Acme Corp"
-                          disabled={!canEditOrganizationSettings}
+                          value={orgForm.companyName}
+                          disabled={!canEditOrganizationSettings || !isEditingOrg}
+                          onChange={(e) => setOrgForm({ ...orgForm, companyName: e.target.value })}
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="company-size">Company Size</Label>
+                        <Label htmlFor="org-company-size">Company Size</Label>
                         <Select
                           value={orgForm.companySize}
+                          disabled={!canEditOrganizationSettings || !isEditingOrg}
                           onValueChange={(value) => setOrgForm({ ...orgForm, companySize: value })}
-                          disabled={!canEditOrganizationSettings}
                         >
-                          <SelectTrigger id="company-size">
+                          <SelectTrigger id="org-company-size">
                             <SelectValue placeholder="Select size" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="1-10">1-10 employees</SelectItem>
-                            <SelectItem value="10-50">10-50 employees</SelectItem>
-                            <SelectItem value="50-200">50-200 employees</SelectItem>
-                            <SelectItem value="200-500">200-500 employees</SelectItem>
-                            <SelectItem value="500+">500+ employees</SelectItem>
+                            {Object.entries(COMPANY_SIZE_LABELS).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>{label}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -673,20 +783,16 @@ const Settings = () => {
                         <Label>Timezone</Label>
                         <Select
                           value={orgForm.timezone}
+                          disabled={!canEditOrganizationSettings || !isEditingOrg}
                           onValueChange={(value) => setOrgForm({ ...orgForm, timezone: value })}
-                          disabled={!canEditOrganizationSettings}
                         >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="America/New_York">Eastern Time (ET)</SelectItem>
-                            <SelectItem value="America/Chicago">Central Time (CT)</SelectItem>
-                            <SelectItem value="America/Denver">Mountain Time (MT)</SelectItem>
-                            <SelectItem value="America/Los_Angeles">Pacific Time (PT)</SelectItem>
-                            <SelectItem value="Europe/London">Greenwich Mean Time (GMT)</SelectItem>
-                            <SelectItem value="Europe/Paris">Central European Time (CET)</SelectItem>
-                            <SelectItem value="Asia/Kolkata">India Standard Time (IST)</SelectItem>
+                            {Object.entries(TIMEZONE_LABELS).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>{label}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -694,8 +800,8 @@ const Settings = () => {
                         <Label>Date Format</Label>
                         <Select
                           value={orgForm.dateFormat}
+                          disabled={!canEditOrganizationSettings || !isEditingOrg}
                           onValueChange={(value) => setOrgForm({ ...orgForm, dateFormat: value })}
-                          disabled={!canEditOrganizationSettings}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -708,14 +814,43 @@ const Settings = () => {
                         </Select>
                       </div>
                     </div>
-                    <Button onClick={handleSaveGeneral} disabled={orgLoading || !canEditOrganizationSettings}>
-                      {orgLoading ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4 mr-2" />
-                      )}
-                      Save Changes
-                    </Button>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Currency</Label>
+                        <Select
+                          value={orgForm.currency}
+                          disabled={!canEditOrganizationSettings || !isEditingOrg}
+                          onValueChange={(value) => setOrgForm({ ...orgForm, currency: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SUPPORTED_CURRENCIES.map(c => (
+                              <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {canEditOrganizationSettings && isEditingOrg && (
+                      <div className="flex gap-2">
+                        <Button onClick={handleSaveOrganization} disabled={orgLoading}>
+                          {orgLoading ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4 mr-2" />
+                          )}
+                          Save Changes
+                        </Button>
+                        <Button variant="outline" onClick={handleCancelEditOrganization} disabled={orgLoading}>
+                          <X className="h-4 w-4 mr-2" />
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
                   </>
                 )}
               </CardContent>
@@ -733,17 +868,30 @@ const Settings = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="flex items-center gap-6">
-                    <Avatar className="h-20 w-20">
-                      {avatarLoading ? (
+                  <div className="flex flex-col sm:flex-row items-center sm:items-center gap-4 sm:gap-6">
+                    <Avatar
+                      className={cn(
+                        'h-20 w-20 shrink-0',
+                        (localAvatarPreview || profile?.avatarUrl) && 'cursor-pointer'
+                      )}
+                      onClick={() => {
+                        if (localAvatarPreview || (!pendingAvatarRemoval && profile?.avatarUrl)) {
+                          setIsAvatarPreviewOpen(true);
+                        }
+                      }}
+                    >
+                      {avatarLoading && !localAvatarPreview && !pendingAvatarRemoval ? (
                         <AvatarFallback className="bg-primary/10">
                           <Loader2 className="h-6 w-6 animate-spin" />
                         </AvatarFallback>
-                      ) : profile?.avatar_url ? (
-                        <AvatarImage src={profile.avatar_url} alt={profile.name} />
+                      ) : localAvatarPreview || (!pendingAvatarRemoval && profile?.avatarUrl) ? (
+                        <AvatarImage
+                          src={localAvatarPreview || (!pendingAvatarRemoval ? resolveFileUrl(profile?.avatarUrl) || '' : '')}
+                          alt={profile?.name || 'Avatar'}
+                        />
                       ) : (
                         <AvatarFallback className="bg-primary/10 text-primary text-2xl">
-                          {profileForm.initials || 'U'}
+                          {profileForm.initials || profile?.name?.slice(0, 2).toUpperCase() || 'U'}
                         </AvatarFallback>
                       )}
                     </Avatar>
@@ -755,33 +903,82 @@ const Settings = () => {
                       accept="image/png, image/jpeg, image/webp"
                         onChange={handleAvatarChange}
                       />
-                      <Button variant="outline" size="sm" onClick={handleAvatarClick} disabled={avatarLoading}>
-                        <Upload className="h-4 w-4 mr-2" />
-                        Change Avatar
-                      </Button>
+                      <div className="flex flex-wrap justify-center sm:justify-start gap-2">
+                        <Button variant="outline" size="sm" onClick={handleAvatarClick} disabled={avatarLoading}>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Change Avatar
+                        </Button>
+                        {(profile?.avatarUrl || localAvatarPreview || pendingAvatarRemoval) && (
+                          <Button variant="outline" size="sm" onClick={handleRemoveAvatar} disabled={avatarLoading}>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Remove
+                          </Button>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        JPG, PNG or GIF. Max 2MB.
+                        {pendingAvatarFile
+                          ? 'Click Save Profile to apply your new picture.'
+                          : pendingAvatarRemoval
+                            ? 'Click Save Profile to remove your current picture.'
+                            : 'JPG, PNG or GIF. Max 5MB.'}
                       </p>
                     </div>
                   </div>
+
+                  <Dialog open={isAvatarPreviewOpen} onOpenChange={setIsAvatarPreviewOpen}>
+                    <DialogContent className="max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Profile Picture</DialogTitle>
+                      </DialogHeader>
+                      <div className="flex items-center justify-center py-2">
+                        <img
+                          src={localAvatarPreview || (!pendingAvatarRemoval ? resolveFileUrl(profile?.avatarUrl) || '' : '')}
+                          alt={profile?.name || 'Avatar'}
+                          className="max-h-[60vh] w-full rounded-md object-contain"
+                        />
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                   <Separator />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="full-name">Full Name</Label>
-                      <Input
-                        id="full-name"
-                        value={profileForm.name}
-                        onChange={(e) => {
-                          const name = e.target.value;
-                          const initials = name
-                            .split(' ')
-                            .map(n => n[0])
-                            .join('')
-                            .toUpperCase()
-                            .slice(0, 2);
-                          setProfileForm({ ...profileForm, name, initials });
-                        }}
-                      />
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="full-name">Full Name</Label>
+                        {!isEditingProfile && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => setIsEditingProfile(true)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      {isEditingProfile ? (
+                        <Input
+                          id="full-name"
+                          value={profileForm.name}
+                          autoFocus
+                          onChange={(e) => {
+                            const name = e.target.value;
+                            const initials = name
+                              .split(' ')
+                              .map(n => n[0])
+                              .join('')
+                              .toUpperCase()
+                              .slice(0, 2);
+                            setProfileForm({ ...profileForm, name, initials });
+                          }}
+                        />
+                      ) : (
+                        <p
+                          id="full-name"
+                          className="min-h-10 w-full break-words rounded-md border border-input bg-muted px-3 py-2 text-sm"
+                        >
+                          {profileForm.name || '—'}
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
@@ -793,7 +990,7 @@ const Settings = () => {
                       />
                     </div>
                   </div>
-                  <Button onClick={handleSaveProfile} disabled={profileLoading}>
+                  <Button onClick={handleSaveProfile} disabled={profileLoading || !hasProfileChanges}>
                     {profileLoading ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
@@ -806,21 +1003,16 @@ const Settings = () => {
             </div>
           </TabsContent>
 
-          {/* Notifications Tab - Coming Soon */}
+          {/* Notifications Tab */}
           <TabsContent value="notifications">
             <Card>
               <CardHeader>
-                <div className="flex items-center gap-2">
-                  <CardTitle>Notification Preferences</CardTitle>
-                  <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300">
-                    Coming Soon
-                  </Badge>
-                </div>
+                <CardTitle>Notification Preferences</CardTitle>
                 <CardDescription>
                   Choose what notifications you want to receive
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6 opacity-50 pointer-events-none">
+              <CardContent className="space-y-6">
                 <div className="space-y-4">
                   <h4 className="text-sm font-medium">Email Notifications</h4>
                   <div className="space-y-4">
@@ -831,7 +1023,13 @@ const Settings = () => {
                           When you're assigned to a task
                         </p>
                       </div>
-                      <Switch checked={userSettings.notifications.taskAssignments} disabled />
+                      <Switch
+                        checked={notificationPrefs.taskAssignments}
+                        disabled={notificationPrefsLoading}
+                        onCheckedChange={(checked) =>
+                          setNotificationPrefs((prev) => ({ ...prev, taskAssignments: checked }))
+                        }
+                      />
                     </div>
                     <Separator />
                     <div className="flex items-center justify-between">
@@ -841,7 +1039,13 @@ const Settings = () => {
                           When tasks you're following are completed
                         </p>
                       </div>
-                      <Switch checked={userSettings.notifications.taskCompletions} disabled />
+                      <Switch
+                        checked={notificationPrefs.taskCompletions}
+                        disabled={notificationPrefsLoading}
+                        onCheckedChange={(checked) =>
+                          setNotificationPrefs((prev) => ({ ...prev, taskCompletions: checked }))
+                        }
+                      />
                     </div>
                     <Separator />
                     <div className="flex items-center justify-between">
@@ -851,7 +1055,13 @@ const Settings = () => {
                           When someone mentions you or comments on your tasks
                         </p>
                       </div>
-                      <Switch checked={userSettings.notifications.comments} disabled />
+                      <Switch
+                        checked={notificationPrefs.comments}
+                        disabled={notificationPrefsLoading}
+                        onCheckedChange={(checked) =>
+                          setNotificationPrefs((prev) => ({ ...prev, comments: checked }))
+                        }
+                      />
                     </div>
                     <Separator />
                     <div className="flex items-center justify-between">
@@ -861,7 +1071,13 @@ const Settings = () => {
                           Important updates to projects you're part of
                         </p>
                       </div>
-                      <Switch checked={userSettings.notifications.projectUpdates} disabled />
+                      <Switch
+                        checked={notificationPrefs.projectUpdates}
+                        disabled={notificationPrefsLoading}
+                        onCheckedChange={(checked) =>
+                          setNotificationPrefs((prev) => ({ ...prev, projectUpdates: checked }))
+                        }
+                      />
                     </div>
                     <Separator />
                     <div className="flex items-center justify-between">
@@ -871,14 +1087,29 @@ const Settings = () => {
                           Reminders for upcoming milestones
                         </p>
                       </div>
-                      <Switch checked={userSettings.notifications.milestoneReminders} disabled />
+                      <Switch
+                        checked={notificationPrefs.milestoneReminders}
+                        disabled={notificationPrefsLoading}
+                        onCheckedChange={(checked) =>
+                          setNotificationPrefs((prev) => ({ ...prev, milestoneReminders: checked }))
+                        }
+                      />
                     </div>
                   </div>
                 </div>
                 <Separator />
                 <div className="space-y-2">
                   <Label>Email Digest Frequency</Label>
-                  <Select value={userSettings.notifications.emailDigest} disabled>
+                  <Select
+                    value={notificationPrefs.emailDigest}
+                    disabled={notificationPrefsLoading}
+                    onValueChange={(value) =>
+                      setNotificationPrefs((prev) => ({
+                        ...prev,
+                        emailDigest: value as NotificationPreferences['emailDigest'],
+                      }))
+                    }
+                  >
                     <SelectTrigger className="w-48">
                       <SelectValue />
                     </SelectTrigger>
@@ -892,8 +1123,12 @@ const Settings = () => {
                     Receive a summary of activity in your workspace
                   </p>
                 </div>
-                <Button disabled>
-                  <Save className="h-4 w-4 mr-2" />
+                <Button onClick={handleSaveNotificationPreferences} disabled={notificationPrefsSaving || notificationPrefsLoading}>
+                  {notificationPrefsSaving ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
                   Save Preferences
                 </Button>
               </CardContent>
@@ -934,13 +1169,20 @@ const Settings = () => {
                               <Check className="h-2.5 w-2.5" />
                             </span>
                           )}
-                          <div className={`h-12 rounded mb-3 flex items-center justify-center ${id === 'light'
-                            ? 'bg-background border border-border'
-                            : id === 'dark'
-                              ? 'bg-foreground'
-                              : 'bg-gradient-to-r from-background to-foreground border border-border'
-                            }`}>
-                            <Icon className={`h-5 w-5 ${id === 'dark' ? 'text-background' : 'text-foreground'}`} />
+                          <div
+                            className="h-12 rounded mb-3 flex items-center justify-center"
+                            style={
+                              id === 'light'
+                                ? { backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }
+                                : id === 'dark'
+                                  ? { backgroundColor: '#0f172a' }
+                                  : { background: 'linear-gradient(to right, #ffffff, #0f172a)', border: '1px solid #e2e8f0' }
+                            }
+                          >
+                            <Icon
+                              className="h-5 w-5"
+                              style={{ color: id === 'light' ? '#1e293b' : '#f8fafc' }}
+                            />
                           </div>
                           <span className={`text-sm font-medium ${isActive ? 'text-primary' : 'text-foreground'}`}>
                             {label}
@@ -965,19 +1207,6 @@ const Settings = () => {
                     <Switch
                       checked={tempPreferences.sidebarCollapsed}
                       onCheckedChange={(checked) => setTempPreferences(prev => ({ ...prev, sidebarCollapsed: checked }))}
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Compact Mode</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Reduce spacing to show more content
-                      </p>
-                    </div>
-                    <Switch
-                      checked={tempPreferences.compactMode}
-                      onCheckedChange={(checked) => setTempPreferences(prev => ({ ...prev, compactMode: checked }))}
                     />
                   </div>
                 </div>
@@ -1038,6 +1267,27 @@ const Settings = () => {
                       </p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="current-password">Current Password</Label>
+                        <div className="relative">
+                          <Input
+                            id="current-password"
+                            type={showCurrentPassword ? "text" : "password"}
+                            value={passwordForm.currentPassword}
+                            onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                            placeholder="Enter current password"
+                            className="pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                          >
+                            {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
                       <div className="space-y-2">
                         <Label htmlFor="new-password">New Password</Label>
                         <div className="relative">

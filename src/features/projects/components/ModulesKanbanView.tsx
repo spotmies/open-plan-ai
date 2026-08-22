@@ -2,10 +2,11 @@ import { Module, Task } from '@/types';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AlertTriangle, CheckCircle2, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatModuleType, getModuleColor } from '../utils/projectUtils';
+import { resolveFileUrl } from '@/utils/fileUrl';
 
 interface ModuleWithStats extends Module {
   taskCount: number;
@@ -97,6 +98,7 @@ export function ModulesKanbanView({ modules, onModuleClick }: ModulesKanbanViewP
                 {module.owner ? (
                   <div className="flex items-center gap-1.5">
                     <Avatar className="h-5 w-5">
+                      <AvatarImage src={resolveFileUrl(module.owner.avatar) ?? module.owner.avatar} alt={module.owner.name} />
                       <AvatarFallback className="text-[9px] bg-muted">
                         {module.owner.initials}
                       </AvatarFallback>

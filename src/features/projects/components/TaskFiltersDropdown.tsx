@@ -1,21 +1,132 @@
+import { useState } from 'react';
+import { format } from 'date-fns';
 import { TaskFilter, Milestone, ModuleType, TaskStatus, Priority } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-  DropdownMenuCheckboxItem,
-} from '@/components/ui/dropdown-menu';
-import { Filter, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MultiSelect } from '@/components/ui/multi-select';
+import { Filter, Flag, Clock, User, Boxes, Target, Tag, ChevronDown, ChevronLeft } from 'lucide-react';
+
+const BASE_DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'this-week', label: 'This Week' },
+  { value: 'this-month', label: 'This Month' },
+];
+
+function DateFilterSelect({
+  label,
+  preset,
+  custom,
+  extraOptions = [],
+  onChange,
+}: {
+  label: string;
+  preset?: string;
+  custom?: string;
+  extraOptions?: { value: string; label: string }[];
+  onChange: (value: { preset?: string; custom?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const allOptions = [...extraOptions, ...BASE_DATE_OPTIONS];
+  const displayLabel = custom
+    ? format(new Date(custom), 'PPP')
+    : (allOptions.find((o) => o.value === preset)?.label ?? 'Any Date');
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs flex items-center gap-1">
+        <Clock className="h-3 w-3" />
+        {label}
+      </Label>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setView('list');
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 w-full justify-between font-normal"
+          >
+            <span className="truncate">{displayLabel}</span>
+            <ChevronDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          {view === 'list' ? (
+            <div className="py-1 min-w-[10rem]">
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => { onChange({ preset: undefined, custom: undefined }); setOpen(false); }}
+              >
+                Any Date
+              </button>
+              {allOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => { onChange({ preset: opt.value, custom: undefined }); setOpen(false); }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => setView('calendar')}
+              >
+                Custom...
+              </button>
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                className="w-full flex items-center gap-1 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+                onClick={() => setView('list')}
+              >
+                <ChevronLeft className="h-3 w-3" />
+                Back
+              </button>
+              <CalendarPicker
+                mode="single"
+                selected={custom ? new Date(custom) : undefined}
+                onSelect={(date) => {
+                  onChange({ preset: undefined, custom: date ? format(date, 'yyyy-MM-dd') : undefined });
+                  setOpen(false);
+                }}
+              />
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+      {custom && (
+        <div className="flex items-center justify-between pl-1">
+          <span className="text-xs text-muted-foreground">{format(new Date(custom), 'PPP')}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1.5 text-xs"
+            onClick={() => onChange({ preset: undefined, custom: undefined })}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface TaskFiltersDropdownProps {
   filters: TaskFilter;
@@ -25,28 +136,28 @@ interface TaskFiltersDropdownProps {
   teamMembers: { id: string; name: string; initials: string }[];
   allTags: string[];
   activeFilterCount: number;
+  statusOptions?: { value: string; label: string; color?: string }[];
 }
 
-const statusOptions: { value: TaskStatus; label: string; color: string }[] = [
-  { value: 'todo', label: 'To Do', color: 'bg-status-todo' },
-  { value: 'in-progress', label: 'In Progress', color: 'bg-status-in-progress' },
-  { value: 'review', label: 'Review', color: 'bg-status-review' },
-  { value: 'done', label: 'Done', color: 'bg-status-done' },
-  { value: 'blocked', label: 'Blocked', color: 'bg-status-blocked' },
+// Fallback used only when the caller hasn't loaded the project's dynamic
+// task buckets yet (e.g. no projectId). See TaskFilters for the same pattern.
+const DEFAULT_STATUS_OPTIONS = [
+  { value: 'todo', label: 'To Do' },
+  { value: 'in-progress', label: 'In Progress' },
+  { value: 'review', label: 'Review' },
+  { value: 'done', label: 'Done' },
+  { value: 'blocked', label: 'Blocked' },
 ];
 
-const priorityOptions: { value: Priority; label: string; color: string }[] = [
-  { value: 'critical', label: 'Critical', color: 'bg-priority-critical' },
-  { value: 'high', label: 'High', color: 'bg-priority-high' },
-  { value: 'medium', label: 'Medium', color: 'bg-priority-medium' },
-  { value: 'low', label: 'Low', color: 'bg-priority-low' },
+const priorityOptions = [
+  { value: 'critical', label: 'Critical' },
+  { value: 'major', label: 'Major' },
+  { value: 'minor', label: 'Minor' },
+  { value: 'trivial', label: 'Trivial' },
 ];
 
-const dueDateOptions = [
+const dueDateExtraOptions = [
   { value: 'overdue', label: 'Overdue' },
-  { value: 'today', label: 'Today' },
-  { value: 'this-week', label: 'This Week' },
-  { value: 'this-month', label: 'This Month' },
   { value: 'no-date', label: 'No Date' },
 ];
 
@@ -58,266 +169,202 @@ export function TaskFiltersDropdown({
   teamMembers,
   allTags,
   activeFilterCount,
+  statusOptions,
 }: TaskFiltersDropdownProps) {
-  const toggleStatus = (status: TaskStatus) => {
-    const current = filters.status || [];
-    const updated = current.includes(status)
-      ? current.filter(s => s !== status)
-      : [...current, status];
-    onFiltersChange({ ...filters, status: updated.length ? updated : undefined });
+  const [open, setOpen] = useState(false);
+  const clearAll = () => {
+    onFiltersChange({});
+    setOpen(false);
   };
-
-  const togglePriority = (priority: Priority) => {
-    const current = filters.priority || [];
-    const updated = current.includes(priority)
-      ? current.filter(p => p !== priority)
-      : [...current, priority];
-    onFiltersChange({ ...filters, priority: updated.length ? updated : undefined });
-  };
-
-  const toggleModule = (moduleId: string) => {
-    const current = filters.moduleIds || [];
-    const updated = current.includes(moduleId)
-      ? current.filter(id => id !== moduleId)
-      : [...current, moduleId];
-    onFiltersChange({ ...filters, moduleIds: updated.length ? updated : undefined });
-  };
-
-  const toggleAssignee = (assigneeId: string) => {
-    const current = filters.assignee || [];
-    const updated = current.includes(assigneeId)
-      ? current.filter(a => a !== assigneeId)
-      : [...current, assigneeId];
-    onFiltersChange({ ...filters, assignee: updated.length ? updated : undefined });
-  };
-
-  const toggleTag = (tag: string) => {
-    const current = filters.tags || [];
-    const updated = current.includes(tag)
-      ? current.filter(t => t !== tag)
-      : [...current, tag];
-    onFiltersChange({ ...filters, tags: updated.length ? updated : undefined });
-  };
+  const effectiveStatusOptions = statusOptions?.length ? statusOptions : DEFAULT_STATUS_OPTIONS;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
           <Filter className="h-4 w-4" />
           <span className="hidden sm:inline">Filter</span>
           {activeFilterCount > 0 && (
-            <Badge variant="secondary" className="h-5 px-1.5 text-[10px] bg-primary text-primary-foreground">
+            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
               {activeFilterCount}
             </Badge>
           )}
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>Filter Tasks</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-
-        {/* Status Filter */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span>Status</span>
-            {filters.status?.length ? (
-              <Badge variant="secondary" className="ml-auto h-4 px-1.5 text-[10px]">
-                {filters.status.length}
-              </Badge>
-            ) : null}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {statusOptions.map(option => (
-              <DropdownMenuCheckboxItem
-                key={option.value}
-                checked={filters.status?.includes(option.value) || false}
-                onCheckedChange={() => toggleStatus(option.value)}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={cn('w-2 h-2 rounded-full', option.color)} />
-                  <span>{option.label}</span>
-                </div>
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-
-        {/* Priority Filter */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span>Priority</span>
-            {filters.priority?.length ? (
-              <Badge variant="secondary" className="ml-auto h-4 px-1.5 text-[10px]">
-                {filters.priority.length}
-              </Badge>
-            ) : null}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {priorityOptions.map(option => (
-              <DropdownMenuCheckboxItem
-                key={option.value}
-                checked={filters.priority?.includes(option.value) || false}
-                onCheckedChange={() => togglePriority(option.value)}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={cn('w-2 h-2 rounded-full', option.color)} />
-                  <span>{option.label}</span>
-                </div>
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-
-        {/* Module Filter */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span>Module</span>
-            {filters.moduleIds?.length ? (
-              <Badge variant="secondary" className="ml-auto h-4 px-1.5 text-[10px]">
-                {filters.moduleIds.length}
-              </Badge>
-            ) : null}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
-            {modules.length === 0 ? (
-              <DropdownMenuItem disabled>No modules created</DropdownMenuItem>
-            ) : (
-              modules.map(module => (
-                <DropdownMenuCheckboxItem
-                  key={module.id}
-                  checked={filters.moduleIds?.includes(module.id) || false}
-                  onCheckedChange={() => toggleModule(module.id)}
-                >
-                  {module.name}
-                </DropdownMenuCheckboxItem>
-              ))
+      </PopoverTrigger>
+      <PopoverContent className="w-72" align="end">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-sm">Filter Tasks</h4>
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearAll} className="h-6 px-2 text-xs">
+                Clear all
+              </Button>
             )}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+          </div>
 
-        {/* Milestone Filter */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span>Milestone</span>
-            {filters.milestoneId && filters.milestoneId !== 'all' ? (
-              <Badge variant="secondary" className="ml-auto h-4 px-1.5 text-[10px]">
-                1
-              </Badge>
-            ) : null}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
-            <DropdownMenuItem onClick={() => onFiltersChange({ ...filters, milestoneId: undefined })}>
-              All Milestones
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onFiltersChange({ ...filters, milestoneId: 'none' })}>
-              No Milestone
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {milestones.map(m => (
-              <DropdownMenuItem
-                key={m.id}
-                onClick={() => onFiltersChange({ ...filters, milestoneId: m.id })}
-              >
-                {m.title}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+          {/* Status Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              Status
+            </Label>
+            <MultiSelect
+              options={effectiveStatusOptions}
+              selected={filters.status || []}
+              onChange={(values) => onFiltersChange({ ...filters, status: values.length ? (values as TaskStatus[]) : undefined })}
+              placeholder="All Status"
+            />
+          </div>
 
-        {/* Due Date Filter */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span>Due Date</span>
-            {filters.dueDate ? (
-              <Badge variant="secondary" className="ml-auto h-4 px-1.5 text-[10px]">
-                1
-              </Badge>
-            ) : null}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuItem onClick={() => onFiltersChange({ ...filters, dueDate: undefined })}>
-              Any Date
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {dueDateOptions.map(option => (
-              <DropdownMenuItem
-                key={option.value}
-                onClick={() => onFiltersChange({ ...filters, dueDate: option.value as TaskFilter['dueDate'] })}
-              >
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+          {/* Priority Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <Flag className="h-3 w-3" />
+              Priority
+            </Label>
+            <MultiSelect
+              options={priorityOptions}
+              selected={filters.priority || []}
+              onChange={(values) => onFiltersChange({ ...filters, priority: values.length ? (values as Priority[]) : undefined })}
+              placeholder="All Priorities"
+            />
+          </div>
 
-        {/* Assignee Filter */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span>Assignee</span>
-            {filters.assignee?.length ? (
-              <Badge variant="secondary" className="ml-auto h-4 px-1.5 text-[10px]">
-                {filters.assignee.length}
-              </Badge>
-            ) : null}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
-            <DropdownMenuCheckboxItem
-              checked={filters.assignee?.includes('unassigned') || false}
-              onCheckedChange={() => toggleAssignee('unassigned')}
+          {/* Module Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <Boxes className="h-3 w-3" />
+              Module
+            </Label>
+            <MultiSelect
+              options={modules.map(m => ({ value: m.id, label: m.name }))}
+              selected={filters.moduleIds || []}
+              onChange={(values) => onFiltersChange({ ...filters, moduleIds: values.length ? values : undefined })}
+              placeholder="All Modules"
+            />
+          </div>
+
+          {/* Milestone Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <Target className="h-3 w-3" />
+              Milestone
+            </Label>
+            <Select
+              value={filters.milestoneId ?? 'all'}
+              onValueChange={(v) => onFiltersChange({ ...filters, milestoneId: v === 'all' ? undefined : v })}
             >
-              <span className="text-muted-foreground">Unassigned</span>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
-            {teamMembers.map(member => (
-              <DropdownMenuCheckboxItem
-                key={member.id}
-                checked={filters.assignee?.includes(member.id) || false}
-                onCheckedChange={() => toggleAssignee(member.id)}
-              >
-                {member.name}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="All Milestones" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Milestones</SelectItem>
+                <SelectItem value="none">No Milestone</SelectItem>
+                {milestones.map(m => (
+                  <SelectItem key={m.id} value={m.id}>{m.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        {/* Tags Filter */}
-        {allTags.length > 0 && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <span>Tags</span>
-              {filters.tags?.length ? (
-                <Badge variant="secondary" className="ml-auto h-4 px-1.5 text-[10px]">
-                  {filters.tags.length}
-                </Badge>
-              ) : null}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
-              {allTags.map(tag => (
-                <DropdownMenuCheckboxItem
-                  key={tag}
-                  checked={filters.tags?.includes(tag) || false}
-                  onCheckedChange={() => toggleTag(tag)}
-                >
-                  {tag}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
+          {/* Due Date Filter */}
+          <DateFilterSelect
+            label="Due Date"
+            preset={filters.dueDate}
+            custom={filters.dueDateCustom}
+            extraOptions={dueDateExtraOptions}
+            onChange={({ preset, custom }) => onFiltersChange({
+              ...filters,
+              dueDate: preset as TaskFilter['dueDate'],
+              dueDateCustom: custom,
+            })}
+          />
 
-        <DropdownMenuSeparator />
+          {/* Completion Date Filter */}
+          <DateFilterSelect
+            label="Completion Date"
+            preset={filters.completedDate}
+            custom={filters.completedDateCustom}
+            onChange={({ preset, custom }) => onFiltersChange({
+              ...filters,
+              completedDate: preset as TaskFilter['completedDate'],
+              completedDateCustom: custom,
+            })}
+          />
 
-        {/* Has Blockers Toggle */}
-        <DropdownMenuCheckboxItem
-          checked={filters.hasBlockers || false}
-          onCheckedChange={(checked) => onFiltersChange({ 
-            ...filters, 
-            hasBlockers: checked ? true : undefined 
-          })}
-        >
-          Show Only Blocked Tasks
-        </DropdownMenuCheckboxItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {/* Assigned To Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <User className="h-3 w-3" />
+              Assigned To
+            </Label>
+            <MultiSelect
+              options={[
+                { value: 'unassigned', label: 'Unassigned' },
+                ...teamMembers.map(m => ({ value: m.id, label: m.name })),
+              ]}
+              selected={filters.assignee || []}
+              onChange={(values) => onFiltersChange({ ...filters, assignee: values.length ? values : undefined })}
+              placeholder="All Assignees"
+            />
+          </div>
+
+          {/* Assigned By Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <User className="h-3 w-3" />
+              Assigned By
+            </Label>
+            <MultiSelect
+              options={teamMembers.map(m => ({ value: m.id, label: m.name }))}
+              selected={filters.assignedBy || []}
+              onChange={(values) => onFiltersChange({ ...filters, assignedBy: values.length ? values : undefined })}
+              placeholder="All Members"
+            />
+          </div>
+
+          {/* Updated By Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <User className="h-3 w-3" />
+              Updated By
+            </Label>
+            <MultiSelect
+              options={teamMembers.map(m => ({ value: m.id, label: m.name }))}
+              selected={filters.updatedBy || []}
+              onChange={(values) => onFiltersChange({ ...filters, updatedBy: values.length ? values : undefined })}
+              placeholder="All Members"
+            />
+          </div>
+
+          {/* Tags Filter */}
+          {allTags.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <Tag className="h-3 w-3" />
+                Tags
+              </Label>
+              <MultiSelect
+                options={allTags.map(t => ({ value: t, label: t }))}
+                selected={filters.tags || []}
+                onChange={(values) => onFiltersChange({ ...filters, tags: values.length ? values : undefined })}
+                placeholder="All Tags"
+              />
+            </div>
+          )}
+
+          {/* Show Only Blocked Tasks */}
+          <label className="flex items-center gap-2 cursor-pointer pt-1">
+            <Checkbox
+              checked={filters.hasBlockers || false}
+              onCheckedChange={(checked) => onFiltersChange({
+                ...filters,
+                hasBlockers: checked ? true : undefined,
+              })}
+            />
+            <span className="text-sm">Show Only Blocked Tasks</span>
+          </label>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

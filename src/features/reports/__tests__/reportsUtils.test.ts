@@ -81,23 +81,25 @@ describe('reportsUtils', () => {
       expect(result).toEqual({ total: 0, critical: 0 });
     });
 
-    it('should count open and investigating issues', () => {
+    it('should count all issues except resolved and wont-fix', () => {
       const issues = [
         createIssue({ status: 'open' }),
-        createIssue({ status: 'investigating' }),
+        createIssue({ status: 'in-progress' }),
+        createIssue({ status: 'future-scope' }),
+        createIssue({ status: 'mobile-view-open-issues' }),
         createIssue({ status: 'resolved' }),
-        createIssue({ status: 'closed' }),
+        createIssue({ status: 'wont-fix' }),
       ];
 
       const result = countOpenIssues(issues);
-      expect(result.total).toBe(2);
+      expect(result.total).toBe(4);
     });
 
     it('should count critical issues separately', () => {
       const issues = [
         createIssue({ status: 'open', severity: 'critical' }),
         createIssue({ status: 'open', severity: 'minor' }),
-        createIssue({ status: 'investigating', severity: 'critical' }),
+        createIssue({ status: 'in-progress', severity: 'critical' }),
       ];
 
       const result = countOpenIssues(issues);
@@ -107,14 +109,16 @@ describe('reportsUtils', () => {
   });
 
   describe('countOverdueTasks', () => {
+    const wideRange = { start: subDays(new Date(), 365), end: new Date() };
+
     it('should return 0 for empty task list', () => {
-      const result = countOverdueTasks([]);
+      const result = countOverdueTasks([], wideRange);
       expect(result).toBe(0);
     });
 
     it('should not count tasks without due dates', () => {
       const tasks = [createTask({ dueDate: undefined })];
-      const result = countOverdueTasks(tasks);
+      const result = countOverdueTasks(tasks, wideRange);
       expect(result).toBe(0);
     });
 
@@ -126,7 +130,7 @@ describe('reportsUtils', () => {
         createTask({ status: 'done', dueDate: format(pastDate, 'yyyy-MM-dd') }),
       ];
 
-      const result = countOverdueTasks(tasks);
+      const result = countOverdueTasks(tasks, wideRange);
       expect(result).toBe(0);
     });
 
@@ -139,8 +143,21 @@ describe('reportsUtils', () => {
         createTask({ status: 'todo', dueDate: format(pastDate, 'yyyy-MM-dd') }),
       ];
 
-      const result = countOverdueTasks(tasks);
+      const result = countOverdueTasks(tasks, wideRange);
       expect(result).toBe(2);
+    });
+
+    it('should not count overdue tasks whose due date falls outside the selected range', () => {
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 7);
+
+      const tasks = [
+        createTask({ status: 'in-progress', dueDate: format(pastDate, 'yyyy-MM-dd') }),
+      ];
+
+      const narrowRange = { start: subDays(new Date(), 400), end: subDays(new Date(), 380) };
+      const result = countOverdueTasks(tasks, narrowRange);
+      expect(result).toBe(0);
     });
   });
 
@@ -222,12 +239,22 @@ describe('reportsUtils', () => {
   });
 
   describe('filterTasksByTimeRange', () => {
-    it('includes non-done tasks even when due date is in the future', () => {
+    it('includes a non-done task created within the range even if its due date is in the future', () => {
       const futureDue = format(new Date(Date.now() + 86400000 * 60), 'yyyy-MM-dd');
       const tasks = [
         createTask({ status: 'todo', dueDate: futureDue }),
       ];
       const range = { start: subDays(new Date(), 30), end: new Date() };
+      const filtered = filterTasksByTimeRange(tasks, range);
+      expect(filtered).toHaveLength(1);
+    });
+
+    it('includes a non-done task whose due date falls in the range even if created long ago', () => {
+      const dueSoon = format(new Date(Date.now() + 86400000 * 5), 'yyyy-MM-dd');
+      const tasks = [
+        createTask({ status: 'in-progress', createdAt: '2020-01-01T00:00:00.000Z', dueDate: dueSoon }),
+      ];
+      const range = { start: subDays(new Date(), 30), end: subDays(new Date(), -30) };
       const filtered = filterTasksByTimeRange(tasks, range);
       expect(filtered).toHaveLength(1);
     });
@@ -239,6 +266,15 @@ describe('reportsUtils', () => {
       ];
       const range = { start: subDays(new Date(), 30), end: new Date() };
       const filtered = filterTasksByTimeRange(tasks, range);
+      expect(filtered).toHaveLength(0);
+    });
+
+    it('excludes a non-done task that was neither created nor due within an old empty range', () => {
+      const tasks = [
+        createTask({ status: 'in-progress', createdAt: new Date().toISOString(), dueDate: undefined }),
+      ];
+      const emptyRange = { start: new Date('2020-08-04'), end: new Date('2020-08-04') };
+      const filtered = filterTasksByTimeRange(tasks, emptyRange);
       expect(filtered).toHaveLength(0);
     });
   });
@@ -322,8 +358,8 @@ describe('reportsUtils', () => {
       ...overrides,
     });
 
-    it('should return empty array when no tasks are assigned', () => {
-      const members = [createTeamMember()];
+    it('should return empty array when no team members exist', () => {
+      const members: TeamMember[] = [];
       const tasks: Task[] = [];
 
       const result = getTeamWorkload(tasks, members);
@@ -357,10 +393,12 @@ describe('reportsUtils', () => {
       ...overrides,
     });
 
-    it('should return empty array for no tasks', () => {
+    it('should still include modules with no tasks at 0% progress', () => {
       const modules = [createModule()];
       const result = getModuleProgress([], modules);
-      expect(result).toEqual([]);
+      expect(result).toHaveLength(1);
+      expect(result[0].progress).toBe(0);
+      expect(result[0].totalTasks).toBe(0);
     });
 
     it('should calculate progress per module', () => {

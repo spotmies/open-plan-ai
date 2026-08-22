@@ -1,14 +1,19 @@
-import { useState, useMemo } from 'react';
-import { LayoutGrid, List, Plus, Search, X } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { LayoutGrid, List, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Module, ModuleViewMode, Task, Issue, TeamMember, ModuleType } from '@/types';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { ModulesKanbanView } from './ModulesKanbanView';
 import { ModulesListView } from './ModulesListView';
+import { ModulesMobileView } from './ModulesMobileView';
+import { ModuleDetailMobileView } from './ModuleDetailMobileView';
 import { ModuleDetailModal } from './ModuleDetailModal';
+import { TaskDetailModal } from './TaskDetailModal';
+import { IssueDetailModal } from './IssueDetailModal';
 import { AddModuleDialog } from './AddModuleDialog';
 import { getModuleTasks, getModuleProgress } from '../utils/projectUtils';
+
 
 interface ModuleWithStats extends Module {
   taskCount: number;
@@ -22,6 +27,7 @@ interface ModulesSectionProps {
   tasks: Task[];
   issues: Issue[];
   teamMembers: TeamMember[];
+  projectId?: string;
   viewMode?: ModuleViewMode;
   onViewModeChange?: (mode: ModuleViewMode) => void;
   searchQuery?: string;
@@ -34,63 +40,35 @@ interface ModulesSectionProps {
   onIssueClick?: (issue: Issue) => void;
   onTaskUpdate?: (task: Task) => void;
   onIssueUpdate?: (issue: Issue) => void;
+  /** Notifies the parent when the mobile full-page module detail view opens/closes,
+   *  so it can hide its own tab strip and search bar (which live outside this component). */
+  onMobileDetailOpenChange?: (isOpen: boolean) => void;
 }
 
 export function ModuleViewControls({
   viewMode,
   onViewModeChange,
   onAddModule,
-  searchQuery = '',
-  onSearchQueryChange,
 }: {
   viewMode: ModuleViewMode;
   onViewModeChange: (mode: ModuleViewMode) => void;
   onAddModule?: () => void;
-  searchQuery?: string;
-  onSearchQueryChange?: (query: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-2 w-full justify-between md:justify-end">
-      <div className="flex items-center gap-2 flex-1 min-w-0 md:flex-none">
-        {/* Search Input */}
-        <div className="relative flex items-center flex-1 md:flex-none min-w-0">
-          <Search className="absolute left-3 h-4 w-4 text-muted-foreground shrink-0" />
-          <Input
-            type="text"
-            placeholder="Search modules..."
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange?.(e.target.value)}
-            className="pl-9 w-full md:w-[200px] h-8 min-w-0"
-          />
-        {searchQuery && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute right-0 h-8 w-8 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (onSearchQueryChange) onSearchQueryChange('');
-              else if (import.meta.env.DEV) console.warn('[ModulesSection] onSearchQueryChange undefined');
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
-
+    <div className="flex items-center gap-2">
       <ToggleGroup
         type="single"
         value={viewMode}
         onValueChange={(value) => value && onViewModeChange(value as ModuleViewMode)}
         className="bg-muted/50 p-1 rounded-lg"
       >
-        <ToggleGroupItem value="kanban" aria-label="Kanban view" className="px-2 data-[state=on]:bg-background">
+        <ToggleGroupItem value="kanban" aria-label="Kanban view" className="h-8 w-8 p-0 data-[state=on]:bg-background">
           <LayoutGrid className="h-4 w-4" />
         </ToggleGroupItem>
-        <ToggleGroupItem value="list" aria-label="List view" className="px-2 data-[state=on]:bg-background">
+        <ToggleGroupItem value="list" aria-label="List view" className="h-8 w-8 p-0 data-[state=on]:bg-background">
           <List className="h-4 w-4" />
         </ToggleGroupItem>
       </ToggleGroup>
-      </div>
 
       {onAddModule && (
         <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={onAddModule}>
@@ -107,6 +85,7 @@ export function ModulesSection({
   tasks,
   issues,
   teamMembers,
+  projectId,
   viewMode: externalViewMode,
   onViewModeChange: externalOnViewModeChange,
   searchQuery = '',
@@ -119,9 +98,44 @@ export function ModulesSection({
   onIssueClick,
   onTaskUpdate,
   onIssueUpdate,
+  onMobileDetailOpenChange,
 }: ModulesSectionProps) {
+  const isMobile = useIsMobile();
   const [selectedModule, setSelectedModule] = useState<ModuleWithStats | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+
+  useEffect(() => {
+    onMobileDetailOpenChange?.(isMobile && !!selectedModule);
+    // Restore the parent's tab strip/search bar if this component unmounts
+    // (e.g. navigating away) while the mobile detail view is open.
+    return () => onMobileDetailOpenChange?.(false);
+  }, [isMobile, selectedModule, onMobileDetailOpenChange]);
+
+  // Hide the module modal while a task/issue modal is open on top of it — otherwise
+  // both dialogs' overlays stack and compound into a near-opaque black background.
+  const handleInternalTaskClick = (task: Task) => {
+    setSelectedTask(task);
+    setIsDetailModalOpen(false);
+  };
+  const effectiveOnTaskClick = onTaskClick ?? handleInternalTaskClick;
+
+  const handleInternalIssueClick = (issue: Issue) => {
+    setSelectedIssue(issue);
+    setIsDetailModalOpen(false);
+  };
+  const effectiveOnIssueClick = onIssueClick ?? handleInternalIssueClick;
+
+  const handleCloseTaskModal = () => {
+    setSelectedTask(null);
+    if (selectedModule) setIsDetailModalOpen(true);
+  };
+
+  const handleCloseIssueModal = () => {
+    setSelectedIssue(null);
+    if (selectedModule) setIsDetailModalOpen(true);
+  };
 
   const viewMode = externalViewMode || 'kanban';
 
@@ -139,7 +153,7 @@ export function ModulesSection({
       const moduleTasks = getModuleTasks(module.id, tasks);
       const progress = getModuleProgress(module.id, tasks);
       const openIssues = issues.filter(
-        i => i.moduleId === module.id && i.status !== 'resolved' && i.status !== 'closed'
+        i => i.moduleId === module.id && i.status !== 'resolved'
       ).length;
 
       return {
@@ -154,7 +168,7 @@ export function ModulesSection({
 
   const handleModuleClick = (module: ModuleWithStats) => {
     setSelectedModule(module);
-    setIsDetailModalOpen(true);
+    if (!isMobile) setIsDetailModalOpen(true);
   };
 
   const handleCloseDetailModal = () => {
@@ -178,7 +192,7 @@ export function ModulesSection({
           taskCount: updatedTasks.length,
           progress: getModuleProgress(updatedModule.id, tasks),
           openIssues: issues.filter(
-            i => i.moduleId === updatedModule.id && i.status !== 'resolved' && i.status !== 'closed'
+            i => i.moduleId === updatedModule.id && i.status !== 'resolved'
           ).length,
         };
       });
@@ -247,7 +261,29 @@ export function ModulesSection({
       <div className="space-y-4 grid grid-cols-1 w-full min-w-0">
         {/* View Content */}
         <div className="min-h-[400px] w-full min-w-0">
-          {viewMode === 'kanban' ? (
+          {isMobile ? (
+            selectedModule ? (
+              <ModuleDetailMobileView
+                module={selectedModule}
+                allTasks={tasks}
+                allIssues={issues}
+                teamMembers={teamMembers}
+                projectId={projectId}
+                onBack={handleCloseDetailModal}
+                onUpdate={handleModuleUpdateFromModal}
+                onDelete={onModuleDelete}
+                onTaskClick={effectiveOnTaskClick}
+                onIssueClick={effectiveOnIssueClick}
+                onLinkTask={handleLinkTask}
+                onLinkIssue={handleLinkIssue}
+              />
+            ) : (
+              <ModulesMobileView
+                modules={modulesWithStats}
+                onModuleClick={handleModuleClick}
+              />
+            )
+          ) : viewMode === 'kanban' ? (
             <ModulesKanbanView
               modules={modulesWithStats}
               onModuleClick={handleModuleClick}
@@ -261,23 +297,52 @@ export function ModulesSection({
         </div>
       </div>
 
-      {/* Module Detail Modal */}
+      {/* Module Detail Modal (desktop only — mobile uses ModuleDetailMobileView above) */}
       <ModuleDetailModal
         module={selectedModule}
         allTasks={tasks}
         allIssues={issues}
         teamMembers={teamMembers}
-        isOpen={isDetailModalOpen}
+        isOpen={isDetailModalOpen && !isMobile}
         onClose={handleCloseDetailModal}
         onUpdate={handleModuleUpdateFromModal}
         onDelete={onModuleDelete}
-        onTaskClick={onTaskClick}
-        onIssueClick={onIssueClick}
+        onTaskClick={effectiveOnTaskClick}
+        onIssueClick={effectiveOnIssueClick}
         onLinkTask={handleLinkTask}
         onUnlinkTask={handleUnlinkTask}
         onLinkIssue={handleLinkIssue}
         onUnlinkIssue={handleUnlinkIssue}
       />
+
+      {!onTaskClick && (
+        <TaskDetailModal
+          task={selectedTask}
+          allTasks={tasks}
+          isOpen={selectedTask !== null}
+          onClose={handleCloseTaskModal}
+          onUpdate={(updatedTask) => {
+            onTaskUpdate?.(updatedTask);
+            setSelectedTask(updatedTask);
+          }}
+          modules={modules.map(m => ({ id: m.id, name: m.name, type: m.type }))}
+          assignableMembers={teamMembers}
+        />
+      )}
+
+      {!onIssueClick && (
+        <IssueDetailModal
+          issue={selectedIssue}
+          tasks={tasks}
+          teamMembers={teamMembers}
+          isOpen={selectedIssue !== null}
+          onClose={handleCloseIssueModal}
+          onUpdate={(updatedIssue) => {
+            onIssueUpdate?.(updatedIssue);
+            setSelectedIssue(updatedIssue);
+          }}
+        />
+      )}
     </>
   );
 }

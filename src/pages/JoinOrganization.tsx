@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { apiClient } from '@/services/api/client';
 import { teamService } from '@/services/team.service';
 import {
   normalizeInviteEmail,
@@ -11,15 +12,16 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Building2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { format } from 'date-fns';
 
 export default function JoinOrganization() {
   const [searchParams] = useSearchParams();
   const inviteParam = searchParams.get('invite');
   const navigate = useNavigate();
-  const { user, profile, isLoading: authLoading, signOut } = useAuth();
+  const { user, isLoading: authLoading, signOut } = useAuth();
+  const { refreshOrganizations } = useOrganization();
 
   const [invitation, setInvitation] = useState<any>(null);
-  const [resolvedInvite, setResolvedInvite] = useState<{ inviteId?: string; token?: string } | null>(null);
   const [orgName, setOrgName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -28,22 +30,15 @@ export default function JoinOrganization() {
 
   const inviteEmailMismatch = useMemo(() => {
     if (!invitation?.email || !user) return false;
-    const candidates = [
-      ...candidateEmailsFromAuthUser(user),
-      normalizeInviteEmail(profile?.email),
-    ].filter((e): e is string => Boolean(e));
+    const candidates = candidateEmailsFromAuthUser(user).filter((e): e is string => Boolean(e));
     if (candidates.length === 0) return false;
     return !inviteMatchesAnyEmail(invitation.email, candidates);
-  }, [invitation, user, profile?.email]);
+  }, [invitation, user]);
 
   const signedInEmailHint = useMemo(() => {
     if (!user) return '';
-    return (
-      normalizeInviteEmail(user.email) ||
-      normalizeInviteEmail(profile?.email) ||
-      'this account'
-    );
-  }, [user, profile?.email]);
+    return normalizeInviteEmail(user.email) || 'this account';
+  }, [user]);
 
   useEffect(() => {
     if (!inviteParam) {
@@ -53,67 +48,30 @@ export default function JoinOrganization() {
     }
 
     const fetchInvitation = async () => {
-      const byId = await supabase
-        .from('team_invitations')
-        .select('*, organizations(name)')
-        .eq('id', inviteParam)
-        .eq('status', 'pending')
-        .maybeSingle();
-
-      let data = byId.data;
-      let fetchErr = byId.error;
-
-      if (!data) {
-        const byToken = await supabase
-          .from('team_invitations')
-          .select('*, organizations(name)')
-          .eq('token', inviteParam)
-          .eq('status', 'pending')
-          .maybeSingle();
-        data = byToken.data;
-        fetchErr = byToken.error;
-        if (data) {
-          setResolvedInvite({ token: inviteParam });
-        }
-      } else {
-        setResolvedInvite({ inviteId: inviteParam });
-      }
-
-      if (fetchErr || !data) {
+      try {
+        const data = await apiClient.get<any>(`/invitations/lookup?invite=${encodeURIComponent(inviteParam)}`);
+        setInvitation(data);
+        setOrgName(data?.organizationName || data?.organization?.name || 'the organization');
+      } catch {
         setError('This invitation is invalid or has already been used.');
+      } finally {
         setLoading(false);
-        return;
       }
-
-      if (new Date(data.expires_at) < new Date()) {
-        setError('This invitation has expired.');
-        setLoading(false);
-        return;
-      }
-
-      setInvitation(data);
-      setOrgName((data as any).organizations?.name || 'the organization');
-      setLoading(false);
     };
 
     fetchInvitation();
   }, [inviteParam]);
 
   const handleAccept = async () => {
-    if (!resolvedInvite) return;
+    if (!inviteParam) return;
     setAccepting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError('You need to be logged in.');
-        return;
-      }
-
-      await teamService.acceptInvitation(resolvedInvite.inviteId || resolvedInvite.token || '');
+      await teamService.acceptInvitation(inviteParam);
+      localStorage.removeItem('pending_invite_token');
+      await refreshOrganizations();
       setSuccess(true);
       setTimeout(() => navigate('/'), 1500);
     } catch (err: any) {
-      console.error(err);
       setError(err.message || 'Failed to accept invitation.');
     } finally {
       setAccepting(false);
@@ -169,19 +127,21 @@ export default function JoinOrganization() {
               <p className="text-sm text-muted-foreground">You've joined {orgName}. Redirecting...</p>
             </div>
           ) : !user ? (
-            <div className="flex flex-col items-center gap-3 text-center">
+            <div className="flex flex-col items-center gap-4 text-center">
               <p className="text-sm text-muted-foreground">
-                Please log in to accept this invitation.
+                You've been invited to join <strong>{orgName}</strong> as a <strong>{invitation?.role || 'member'}</strong>.
+                Sign in or create an account to accept.
               </p>
-              <Link to={`/login?redirect=${encodeURIComponent(`/join-org?invite=${inviteParam}`)}`}>
-                <Button>Log In</Button>
-              </Link>
-              <p className="text-xs text-muted-foreground">
-                Don't have an account?{' '}
-                <Link to={`/signup?invite=${inviteParam}`} className="text-primary underline">
-                  Sign up
+              <div className="flex w-full flex-col gap-2">
+                <Link to={`/signup?invite=${inviteParam}`} className="w-full">
+                  <Button className="w-full">Create Account</Button>
                 </Link>
-              </p>
+              </div>
+              {invitation?.expiresAt && (
+                <p className="text-xs text-muted-foreground">
+                  Invitation expires {format(new Date(invitation.expiresAt), "dd- MMM yyyy")}
+                </p>
+              )}
             </div>
           ) : inviteEmailMismatch ? (
             <div className="flex flex-col items-center gap-4 text-center">
@@ -209,12 +169,17 @@ export default function JoinOrganization() {
           ) : (
             <div className="flex flex-col items-center gap-4 text-center">
               <p className="text-sm text-muted-foreground">
-                Join <strong>{orgName}</strong> as a <strong>{invitation?.role || 'member'}</strong>.
+                You'll join <strong>{orgName}</strong> as a <strong>{invitation?.role || 'member'}</strong>.
               </p>
               <Button onClick={handleAccept} disabled={accepting} className="w-full">
                 {accepting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Join Organization
+                Accept & Join Organization
               </Button>
+              {invitation?.expiresAt && (
+                <p className="text-xs text-muted-foreground">
+                  Invitation expires {format(new Date(invitation.expiresAt), "dd- MMM yyyy")}
+                </p>
+              )}
             </div>
           )}
         </CardContent>

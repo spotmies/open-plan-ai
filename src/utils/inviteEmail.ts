@@ -1,4 +1,4 @@
-import type { User } from '@supabase/supabase-js';
+import type { BackendUser } from '@/services/auth.service';
 
 /** Trim + lowercase (preserves +tags; used for storage and display normalization). */
 export function normalizeInviteEmail(value: unknown): string {
@@ -37,23 +37,13 @@ export function inviteMatchesAnyEmail(invitedEmail: string, candidates: string[]
   return filtered.some((c) => emailsMatchForInvitation(invitedEmail, c));
 }
 
-/** Emails from the JWT user object (primary + linked OAuth identities). */
-export function candidateEmailsFromAuthUser(user: User): string[] {
+/** Emails from the BackendUser object. */
+export function candidateEmailsFromAuthUser(user: BackendUser): string[] {
   const out = new Set<string>();
   const add = (e: unknown) => {
     const n = normalizeInviteEmail(e);
     if (n) out.add(n);
   };
-
   add(user.email);
-
-  const identities = user.identities;
-  if (Array.isArray(identities)) {
-    for (const row of identities) {
-      const data = row?.identity_data as Record<string, unknown> | undefined;
-      if (data && typeof data.email === 'string') add(data.email);
-    }
-  }
-
   return Array.from(out);
 }

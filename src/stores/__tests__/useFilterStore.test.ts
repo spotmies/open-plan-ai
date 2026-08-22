@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useFilterStore, ReportFilter, TaskFilterState } from '../useFilterStore';
+import { useFilterStore } from '../useFilterStore';
 
 describe('useFilterStore', () => {
   beforeEach(() => {

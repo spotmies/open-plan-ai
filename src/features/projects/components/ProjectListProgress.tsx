@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Progress } from '@/components/ui/progress';
 import {
     HoverCard,
@@ -6,7 +6,6 @@ import {
     HoverCardTrigger,
 } from '@/components/ui/hover-card';
 import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
-import { useUpdateProject } from '@/hooks/useProjects';
 import { calculateProjectProgress } from '../utils/projectUtils';
 import { ProjectProgressBreakdown } from './ProjectProgressPopover';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,8 +21,6 @@ export function ProjectListProgress({ projectId, progress }: ProjectListProgress
     // Fetch full project details and modules only when popover is open
     const { data: project, isLoading: isLoadingProject } = useProjectDetail(projectId, { enabled: isOpen });
     const { data: projectModules = [], isLoading: isLoadingModules } = useProjectModules(projectId, { enabled: isOpen });
-
-    const { mutate, isPending } = useUpdateProject();
 
     const isLoading = isLoadingProject || isLoadingModules;
 
@@ -48,17 +45,7 @@ export function ProjectListProgress({ projectId, progress }: ProjectListProgress
         );
     }, [project, modules]);
 
-    // Self-healing: Update project progress if calculated differs from stored
-    // This happens when user hovers and we discover a mismatch
     const displayProgress = breakdown ? breakdown.overallProgress : progress || 0;
-
-    useEffect(() => {
-        if (!breakdown || !project || isPending) return;
-        const next = breakdown.overallProgress;
-        const stored = project.progress ?? 0;
-        if (next === stored) return;
-        mutate({ id: projectId, updates: { progress: next } });
-    }, [breakdown, project, projectId, mutate, isPending]);
 
     return (
         <HoverCard open={isOpen} onOpenChange={setIsOpen}>

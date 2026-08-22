@@ -1,13 +1,18 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
-import { ListTodo, Boxes, Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, ChevronLeft, LayoutGrid, List, Loader2, MessageCircle, Trash2 } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag, ChevronDown, ChevronLeft, FolderOpen } from 'lucide-react';
+import { BOMView } from './components/BOMView';
+import RequirementsView from './components/RequirementsView';
+import { ECOView } from './components/ECOView';
+import { GateView } from './components/GateView';
+import { RiskView } from './components/RiskView';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
+
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Dialog,
   DialogContent,
@@ -21,26 +26,33 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { TasksSection, ViewControls } from './components/TasksSection';
 import { ModulesSection, ModuleViewControls } from './components/ModulesSection';
 import { MilestonesView } from './components/MilestonesView';
 import { IssuesView } from './components/IssuesView';
+import { SupportLinksSheet } from './components/SupportLinksSheet';
 import { ProjectDetailSkeleton } from './components/ProjectDetailSkeleton';
 import { ProjectProgressPopover } from './components/ProjectProgressPopover';
 import { AddModuleDialog } from './components/AddModuleDialog';
 import { TaskDetailModal } from './components/TaskDetailModal';
+import { ModuleDetailModal } from './components/ModuleDetailModal';
+import { MilestoneDetailModal } from './components/MilestoneDetailModal';
+import { IssueDetailModal } from './components/IssueDetailModal';
 import { TaskFiltersDropdown } from './components/TaskFiltersDropdown';
+import { ProjectTeamButton } from './components/ProjectTeamButton';
+import { resolveProjectTabConfig, visibleOrderedTabDefinitions } from './projectTabsConfig';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
-import { useOrganizationMembers } from '@/hooks/useProjectTeam';
+import { useProjectRealtime } from '@/hooks/useProjectRealtime';
+import { useOrganizationMembers, useProjectMembers } from '@/hooks/useProjectTeam';
+import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
+import { buildTaskStatusOptions } from './utils/taskStatusOptions';
+import { useIssueColumns } from '@/hooks/useIssueColumns';
+import { DEFAULT_ISSUE_COLUMNS, type ProjectIssueColumn } from '@/services/issueColumns.service';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useUpdateProject } from '@/hooks/useProjects';
+import { useUpdateProjectProgress } from '@/hooks/useProjects';
 import {
   useCreateTask,
   useUpdateTask,
@@ -50,6 +62,7 @@ import {
   useDeleteIssue,
   useCreateMilestone,
   useUpdateMilestone,
+  useToggleMilestoneComplete,
   useDeleteMilestone,
   useCreateModule,
   useUpdateModule,
@@ -63,26 +76,34 @@ import { queryKeys } from '@/lib/queryClient';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { projectMembersService } from '@/services/projectMembers.service';
+import { attachmentsService } from '@/services/attachments.service';
+import { commentsService } from '@/services/comments.service';
 import { chatService } from '@/services/chat.service';
+import { ProjectChatPanel } from './components/ProjectChatPanel';
 import { toast } from 'sonner';
-import { calculateProjectProgress } from './utils/projectUtils';
-import { ProjectSection, Module, TaskViewMode, TaskFilter, ModuleViewMode, Issue, Milestone, Task, IssueStatus, IssueSeverity, TeamMember } from '@/types';
+import { calculateProjectProgress, getModuleTasks, getModuleProgress } from './utils/projectUtils';
+import { ProjectSection, ProjectTabId, Module, TaskViewMode, TaskFilter, ModuleViewMode, Issue, Milestone, Task, IssueStatus, IssueSeverity, TeamMember, ProjectRole } from '@/types';
+import { logger } from '@/services/monitoring/logger';
+import { format } from 'date-fns';
+import { resolveFileUrl } from '@/utils/fileUrl';
 
 // Issue Filter interface
 interface IssueFilter {
-  status?: IssueStatus | 'all';
-  severity?: IssueSeverity | 'all';
-  assigneeId?: string | 'all';
-  hasDueDate?: boolean | 'all';
+  status?: string[]; // status keys from the project's issue buckets (custom, not a fixed enum)
+  severity?: IssueSeverity[];
+  assigneeId?: string[];
+  assignedById?: string[];
+  updatedById?: string[];
+  dueDate?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
+  dueDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides dueDate preset
+  reportedDate?: 'today' | 'this-week' | 'this-month';
+  reportedDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides reportedDate preset
+  completedDate?: 'today' | 'this-week' | 'this-month';
+  completedDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides completedDate preset
+  tags?: string[];
 }
 
-const stageColors = {
-  concept: 'bg-muted text-muted-foreground',
-  design: 'bg-chart-1/10 text-chart-1',
-  development: 'bg-chart-2/10 text-chart-2',
-  testing: 'bg-chart-4/10 text-chart-4',
-  production: 'bg-chart-3/10 text-chart-3',
-};
+
 
 const DEFAULT_MEMBER_REMOVAL_PROMPT: {
   open: boolean;
@@ -94,270 +115,373 @@ const DEFAULT_MEMBER_REMOVAL_PROMPT: {
   memberName: '',
 };
 
-// Milestone View Controls Component
+/** Normalizes a loosely-typed TeamMember.role (or missing role) to a ProjectRole. */
+const toProjectRole = (role: string | undefined | null): ProjectRole => {
+  const normalized = (role || '').toLowerCase();
+  if (normalized === 'admin' || normalized === 'maintainer') return normalized;
+  return 'member';
+};
+
+// Milestone View Controls Component — only the toggle (search is in parent)
 function MilestoneViewControls({
   viewMode,
   onViewModeChange,
-  searchQuery,
-  onSearchQueryChange,
-  onAddMilestone,
 }: {
   viewMode: 'list' | 'kanban';
   onViewModeChange: (mode: 'list' | 'kanban') => void;
-  searchQuery: string;
-  onSearchQueryChange: (query: string) => void;
-  onAddMilestone?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 w-full justify-between md:justify-end">
-      <div className="flex items-center gap-2 flex-1 min-w-0 md:flex-none">
-        <div className="relative flex items-center flex-1 md:flex-none min-w-0">
-          <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search milestones..."
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            className="pl-9 w-full md:w-[200px] h-8"
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-0 h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => onSearchQueryChange('')}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+    <div className="flex items-center gap-0.5 bg-muted/50 p-1 rounded-lg shrink-0">
+      <Button
+        variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+        size="sm"
+        className="h-8 w-8 p-0"
+        onClick={() => onViewModeChange('kanban')}
+      >
+        <LayoutGrid className="h-4 w-4" />
+      </Button>
+      <Button
+        variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+        size="sm"
+        className="h-8 w-8 p-0"
+        onClick={() => onViewModeChange('list')}
+      >
+        <List className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+const BASE_DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'this-week', label: 'This Week' },
+  { value: 'this-month', label: 'This Month' },
+];
+
+// Issue View Controls Component — view toggle + filter only (search is in parent)
+function DateFilterSelect({
+  label,
+  preset,
+  custom,
+  extraOptions = [],
+  onChange,
+}: {
+  label: string;
+  preset?: string;
+  custom?: string;
+  extraOptions?: { value: string; label: string }[];
+  onChange: (value: { preset?: string; custom?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const allOptions = [...extraOptions, ...BASE_DATE_OPTIONS];
+  const displayLabel = custom
+    ? format(new Date(custom), 'PPP')
+    : (allOptions.find((o) => o.value === preset)?.label ?? 'Any Date');
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs flex items-center gap-1">
+        <Clock className="h-3 w-3" />
+        {label}
+      </Label>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setView('list');
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 w-full justify-between font-normal"
+          >
+            <span className="truncate">{displayLabel}</span>
+            <ChevronDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          {view === 'list' ? (
+            <div className="py-1 min-w-[10rem]">
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => { onChange({ preset: undefined, custom: undefined }); setOpen(false); }}
+              >
+                Any Date
+              </button>
+              {allOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => { onChange({ preset: opt.value, custom: undefined }); setOpen(false); }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => setView('calendar')}
+              >
+                Custom...
+              </button>
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                className="w-full flex items-center gap-1 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+                onClick={() => setView('list')}
+              >
+                <ChevronLeft className="h-3 w-3" />
+                Back
+              </button>
+              <CalendarPicker
+                mode="single"
+                selected={custom ? new Date(custom) : undefined}
+                onSelect={(date) => {
+                  onChange({ preset: undefined, custom: date ? format(date, 'yyyy-MM-dd') : undefined });
+                  setOpen(false);
+                }}
+              />
+            </div>
           )}
-        </div>
-
-        <div className="flex items-center rounded-md border p-1">
+        </PopoverContent>
+      </Popover>
+      {custom && (
+        <div className="flex items-center justify-between pl-1">
+          <span className="text-xs text-muted-foreground">{format(new Date(custom), 'PPP')}</span>
           <Button
-            variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+            type="button"
+            variant="ghost"
             size="sm"
-            className="h-7 px-2"
-            onClick={() => onViewModeChange('kanban')}
+            className="h-5 px-1.5 text-xs"
+            onClick={() => onChange({ preset: undefined, custom: undefined })}
           >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => onViewModeChange('list')}
-          >
-            <List className="h-4 w-4" />
+            Clear
           </Button>
         </div>
-      </div>
-
-      {onAddMilestone && (
-        <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={onAddMilestone}>
-          <Plus className="h-4 w-4" />
-          <span className="hidden md:inline">Add Milestone</span>
-        </Button>
       )}
     </div>
   );
 }
 
-// Issue View Controls Component
 function IssueViewControls({
   viewMode,
   onViewModeChange,
-  searchQuery,
-  onSearchQueryChange,
   filters,
   onFiltersChange,
   teamMembers,
+  issueColumns,
+  allTags,
   activeFilterCount,
   onClearFilters,
-  onReportIssue,
 }: {
   viewMode: 'table' | 'kanban';
   onViewModeChange: (mode: 'table' | 'kanban') => void;
-  searchQuery: string;
-  onSearchQueryChange: (query: string) => void;
   filters: IssueFilter;
   onFiltersChange: (filters: IssueFilter) => void;
   teamMembers: TeamMember[];
+  issueColumns: ProjectIssueColumn[];
+  allTags: string[];
   activeFilterCount: number;
   onClearFilters: () => void;
-  onReportIssue: () => void;
 }) {
+  const [filterOpen, setFilterOpen] = useState(false);
   return (
-    <div className="flex items-center gap-2 w-full justify-between md:justify-end">
-      <div className="flex items-center gap-2 flex-1 min-w-0 md:flex-none">
-        {/* Search Input */}
-        <div className="relative flex items-center flex-1 md:flex-none">
-          <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search issues..."
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            className="pl-9 w-full md:w-[200px] h-8"
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-0 h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => onSearchQueryChange('')}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-
-        <div className="flex items-center rounded-md border p-1">
-          <Button
-            variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => onViewModeChange('kanban')}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => onViewModeChange('table')}
-          >
-            <List className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Filter Dropdown */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2 relative">
-              <Filter className="h-4 w-4" />
-              Filter
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72" align="end">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium text-sm">Filter Issues</h4>
-                {activeFilterCount > 0 && (
-                  <Button variant="ghost" size="sm" onClick={onClearFilters} className="h-6 px-2 text-xs">
-                    Clear all
-                  </Button>
-                )}
-              </div>
-
-              {/* Status Filter */}
-              <div className="space-y-2">
-                <Label className="text-xs flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3" />
-                  Status
-                </Label>
-                <Select
-                  value={filters.status || 'all'}
-                  onValueChange={(v) => onFiltersChange({ ...filters, status: v as IssueStatus | 'all' })}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="investigating">Investigating</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                    <SelectItem value="wont-fix">Won't Fix</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Severity Filter */}
-              <div className="space-y-2">
-                <Label className="text-xs flex items-center gap-1">
-                  <Flag className="h-3 w-3" />
-                  Severity
-                </Label>
-                <Select
-                  value={filters.severity || 'all'}
-                  onValueChange={(v) => onFiltersChange({ ...filters, severity: v as IssueSeverity | 'all' })}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Severity</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="major">Major</SelectItem>
-                    <SelectItem value="minor">Minor</SelectItem>
-                    <SelectItem value="trivial">Trivial</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Assignee Filter */}
-              <div className="space-y-2">
-                <Label className="text-xs flex items-center gap-1">
-                  <User className="h-3 w-3" />
-                  Assignee
-                </Label>
-                <Select
-                  value={filters.assigneeId || 'all'}
-                  onValueChange={(v) => onFiltersChange({ ...filters, assigneeId: v })}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Assignees</SelectItem>
-                    <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {teamMembers.map((member) => (
-                      <SelectItem key={member.id} value={member.id}>
-                        {member.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Due Date Filter */}
-              <div className="space-y-2">
-                <Label className="text-xs flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  Due Date
-                </Label>
-                <Select
-                  value={filters.hasDueDate === undefined || filters.hasDueDate === 'all' ? 'all' : filters.hasDueDate ? 'has-due' : 'no-due'}
-                  onValueChange={(v) => onFiltersChange({
-                    ...filters,
-                    hasDueDate: v === 'all' ? 'all' : v === 'has-due'
-                  })}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="has-due">Has Due Date</SelectItem>
-                    <SelectItem value="no-due">No Due Date</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
+    <div className="flex items-center gap-2">
+      {/* View Toggle (kanban/table has no distinct mobile layout — hidden below md) */}
+      <div className="hidden md:flex items-center gap-0.5 bg-muted/50 p-1 rounded-lg shrink-0">
+        <Button
+          variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={() => onViewModeChange('kanban')}
+        >
+          <LayoutGrid className="h-4 w-4" />
+        </Button>
+        <Button
+          variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={() => onViewModeChange('table')}
+        >
+          <List className="h-4 w-4" />
+        </Button>
       </div>
 
-      <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={onReportIssue}>
-        <Plus className="h-4 w-4" />
-        <span className="hidden md:inline">Report Issue</span>
-      </Button>
+      {/* Filter Dropdown */}
+      <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
+            <Filter className="h-4 w-4" />
+            <span className="hidden md:inline">Filter</span>
+            {activeFilterCount > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+                {activeFilterCount}
+              </Badge>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72" align="end">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-medium text-sm">Filter Issues</h4>
+              {activeFilterCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    onClearFilters();
+                    setFilterOpen(false);
+                  }}
+                  className="h-6 px-2 text-xs"
+                >
+                  Clear all
+                </Button>
+              )}
+            </div>
+
+            {/* Status Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Status
+              </Label>
+              <MultiSelect
+                options={issueColumns.map((column) => ({ value: column.status, label: column.label }))}
+                selected={filters.status || []}
+                onChange={(values) => onFiltersChange({ ...filters, status: values.length ? values : undefined })}
+                placeholder="All Status"
+              />
+            </div>
+
+            {/* Priority Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <Flag className="h-3 w-3" />
+                Priority
+              </Label>
+              <MultiSelect
+                options={[
+                  { value: 'critical', label: 'Critical' },
+                  { value: 'major', label: 'Major' },
+                  { value: 'minor', label: 'Minor' },
+                  { value: 'trivial', label: 'Trivial' },
+                ]}
+                selected={filters.severity || []}
+                onChange={(values) => onFiltersChange({ ...filters, severity: values.length ? (values as IssueSeverity[]) : undefined })}
+                placeholder="All Priorities"
+              />
+            </div>
+
+            {/* Assigned To Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Assigned To
+              </Label>
+              <MultiSelect
+                options={[
+                  { value: 'unassigned', label: 'Unassigned' },
+                  ...teamMembers.map(member => ({ value: member.id, label: member.name }))
+                ]}
+                selected={filters.assigneeId || []}
+                onChange={(values) => onFiltersChange({ ...filters, assigneeId: values.length ? values : undefined })}
+                placeholder="All Assignees"
+              />
+            </div>
+
+            {/* Assigned By Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Assigned By
+              </Label>
+              <MultiSelect
+                options={teamMembers.map(member => ({ value: member.id, label: member.name }))}
+                selected={filters.assignedById || []}
+                onChange={(values) => onFiltersChange({ ...filters, assignedById: values.length ? values : undefined })}
+                placeholder="All Members"
+              />
+            </div>
+
+            {/* Updated By Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Updated By
+              </Label>
+              <MultiSelect
+                options={teamMembers.map(member => ({ value: member.id, label: member.name }))}
+                selected={filters.updatedById || []}
+                onChange={(values) => onFiltersChange({ ...filters, updatedById: values.length ? values : undefined })}
+                placeholder="All Members"
+              />
+            </div>
+
+            {/* Tags Filter */}
+            {allTags.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-1">
+                  <Tag className="h-3 w-3" />
+                  Tags
+                </Label>
+                <MultiSelect
+                  options={allTags.map((tag) => ({ value: tag, label: tag }))}
+                  selected={filters.tags || []}
+                  onChange={(values) => onFiltersChange({ ...filters, tags: values.length ? values : undefined })}
+                  placeholder="All Tags"
+                />
+              </div>
+            )}
+
+            {/* Due Date Filter */}
+            <DateFilterSelect
+              label="Due Date"
+              preset={filters.dueDate}
+              custom={filters.dueDateCustom}
+              extraOptions={[
+                { value: 'overdue', label: 'Overdue' },
+                { value: 'no-date', label: 'No Date' },
+              ]}
+              onChange={({ preset, custom }) => onFiltersChange({
+                ...filters,
+                dueDate: preset as IssueFilter['dueDate'],
+                dueDateCustom: custom,
+              })}
+            />
+
+            {/* Reported Date Filter */}
+            <DateFilterSelect
+              label="Reported Date"
+              preset={filters.reportedDate}
+              custom={filters.reportedDateCustom}
+              onChange={({ preset, custom }) => onFiltersChange({
+                ...filters,
+                reportedDate: preset as IssueFilter['reportedDate'],
+                reportedDateCustom: custom,
+              })}
+            />
+
+            {/* Completion Date Filter */}
+            <DateFilterSelect
+              label="Completion Date"
+              preset={filters.completedDate}
+              custom={filters.completedDateCustom}
+              onChange={({ preset, custom }) => onFiltersChange({
+                ...filters,
+                completedDate: preset as IssueFilter['completedDate'],
+                completedDateCustom: custom,
+              })}
+            />
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -367,21 +491,45 @@ export default function ProjectDetail() {
   const { currentOrganization } = useOrganization();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { id } = useParams();
-  const location = useLocation();
-  const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get('tab') as ProjectSection;
+  const { id, tab: tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
+  const { data: boardColumns } = useProjectTaskColumns(id);
+  const filterStatusOptions = useMemo(() => buildTaskStatusOptions(boardColumns), [boardColumns]);
+  const { data: apiIssueColumns } = useIssueColumns(id);
+  const issueColumns = apiIssueColumns && apiIssueColumns.length > 0 ? apiIssueColumns : DEFAULT_ISSUE_COLUMNS;
+
+  // The /bom/:partId, /eng-changes/:ecoId, /tasks/:taskId, /modules/:moduleId,
+  // /milestones/:milestoneId, and /issues/:issueId routes encode the section as a
+  // literal path segment rather than the generic :tab param, so infer it from which
+  // item id is present.
+  const ALL_SECTIONS: ProjectSection[] = ['bom', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
+  const section: ProjectSection = partId
+    ? 'bom'
+    : ecoId
+      ? 'eng-changes'
+      : taskId
+        ? 'tasks'
+        : moduleId
+          ? 'modules'
+          : milestoneId
+            ? 'milestones'
+            : issueId
+              ? 'issues'
+              : ALL_SECTIONS.includes(tabParam as ProjectSection)
+                ? (tabParam as ProjectSection)
+                : 'bom';
 
   const isMobile = useIsMobile();
-  const [section, setSection] = useState<ProjectSection>(tabParam || 'tasks');
   const [viewModeStr, setViewModeStr] = useState<TaskViewMode | null>(null);
   const [moduleViewModeStr, setModuleViewModeStr] = useState<ModuleViewMode | null>(null);
   const [issueViewModeStr, setIssueViewModeStr] = useState<'table' | 'kanban' | null>(null);
+  const [bomAddOpen, setBomAddOpen] = useState(false);
+  const [ecoNewOpen, setEcoNewOpen] = useState(false);
   const [milestoneViewModeStr, setMilestoneViewModeStr] = useState<'list' | 'kanban' | null>(null);
 
   const viewMode = viewModeStr || (isMobile ? 'list' : 'kanban');
   const moduleViewMode = moduleViewModeStr || (isMobile ? 'list' : 'kanban');
-  const issueViewMode = issueViewModeStr || (isMobile ? 'table' : 'kanban');
+  // Mobile has no kanban/table toggle — it always uses the grouped card list.
+  const issueViewMode = isMobile ? 'table' : (issueViewModeStr || 'kanban');
   const milestoneViewMode = milestoneViewModeStr || (isMobile ? 'list' : 'kanban');
 
   const setViewMode = (val: TaskViewMode) => setViewModeStr(val);
@@ -389,9 +537,41 @@ export default function ProjectDetail() {
   const setIssueViewMode = (val: 'table' | 'kanban') => setIssueViewModeStr(val);
   const setMilestoneViewMode = (val: 'list' | 'kanban') => setMilestoneViewModeStr(val);
 
+  // Mobile-only: long-press a section tab to reveal its name below the icon.
+  const [longPressedTab, setLongPressedTab] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (longPressHideTimerRef.current) clearTimeout(longPressHideTimerRef.current);
+    };
+  }, []);
+
+  const handleTabLongPressStart = (value: string) => {
+    if (!isMobile) return;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      setLongPressedTab(value);
+      if (longPressHideTimerRef.current) clearTimeout(longPressHideTimerRef.current);
+      longPressHideTimerRef.current = setTimeout(() => setLongPressedTab(null), 1500);
+    }, 500);
+  };
+
+  const handleTabLongPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
   const [filters, setFilters] = useState<TaskFilter>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [moduleSearchQuery, setModuleSearchQuery] = useState('');
+  // Mobile-only: the module detail full-page view supplies its own header/back
+  // button, so the tab strip + search bar above it must hide while it's open.
+  const [isMobileModuleDetailOpen, setIsMobileModuleDetailOpen] = useState(false);
   const [milestoneSearchQuery, setMilestoneSearchQuery] = useState('');
   const [issueSearchQuery, setIssueSearchQuery] = useState('');
   const [issueFilters, setIssueFilters] = useState<IssueFilter>({});
@@ -400,14 +580,18 @@ export default function ProjectDetail() {
   const [isAddIssueDialogOpen, setIsAddIssueDialogOpen] = useState(false);
   const [isAddTaskDialogOpen, setIsAddTaskDialogOpen] = useState(false);
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
+  const [selectedMemberRoleToAdd, setSelectedMemberRoleToAdd] = useState<ProjectRole>('member');
   const [isAddingProjectMember, setIsAddingProjectMember] = useState(false);
   const [isStartingChat, setIsStartingChat] = useState(false);
+  const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
+  const [projectChatConversationId, setProjectChatConversationId] = useState<string | null>(null);
   const [memberRemovalPrompt, setMemberRemovalPrompt] = useState<{
     open: boolean;
     memberId: string | null;
     memberName: string;
   }>(DEFAULT_MEMBER_REMOVAL_PROMPT);
   const [isRemovingMember, setIsRemovingMember] = useState(false);
+  const [memberRoleUpdatingId, setMemberRoleUpdatingId] = useState<string | null>(null);
   const isRemovingMemberRef = useRef(isRemovingMember);
 
   useEffect(() => {
@@ -416,8 +600,17 @@ export default function ProjectDetail() {
 
   // Fetch project data using React Query
   const { data: project, isLoading, error } = useProjectDetail(id);
+  // Live-updates BOM/ECO/Issues caches from other users' actions, regardless
+  // of which tab is currently mounted (see useProjectRealtime.ts).
+  useProjectRealtime(id);
   const { data: projectModules = [] } = useProjectModules(id);
   const { data: organizationMembers = [] } = useOrganizationMembers(currentOrganization?.id);
+  const { data: projectMembers = [] } = useProjectMembers(id);
+  const {
+    canManageMembers,
+    isProjectMaintainerPlus,
+    isProjectMemberPlus,
+  } = useProjectPermissions(id);
 
   // Mutation hooks
   const createTaskMutation = useCreateTask(id || '');
@@ -428,20 +621,31 @@ export default function ProjectDetail() {
   const deleteIssueMutation = useDeleteIssue(id || '');
   const createMilestoneMutation = useCreateMilestone(id || '');
   const updateMilestoneMutation = useUpdateMilestone(id || '');
+  const toggleMilestoneCompleteMutation = useToggleMilestoneComplete(id || '');
   const deleteMilestoneMutation = useDeleteMilestone(id || '');
   const createModuleMutation = useCreateModule(id || '');
   const updateModuleMutation = useUpdateModule(id || '');
   const deleteModuleMutation = useDeleteModule(id || '');
   const batchUpdateTasksMutation = useBatchUpdateTasks(id || '');
   const batchUpdateModulesMutation = useBatchUpdateModules(id || '');
-  const updateProjectMutation = useUpdateProject();
+  const updateProjectProgressMutation = useUpdateProjectProgress();
 
-  // Update section from URL params
+  // Project-configurable tab order/visibility (set in Edit Project). Falls back
+  // to the default order with everything visible when the project has no saved config.
+  const visibleTabs = useMemo(
+    () => visibleOrderedTabDefinitions(resolveProjectTabConfig(project?.tabConfig)),
+    [project?.tabConfig]
+  );
+
+  // If the current section's tab has been hidden by the project's tab config,
+  // fall back to the first visible tab instead of rendering an unreachable section.
   useEffect(() => {
-    if (tabParam) {
-      setSection(tabParam);
+    if (!project || !tabParam || partId || ecoId || taskId || moduleId || milestoneId || issueId) return;
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.some((t) => t.id === tabParam)) {
+      navigate(`/projects/${id}/${visibleTabs[0].id}`, { replace: true });
     }
-  }, [tabParam]);
+  }, [project, tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId, visibleTabs, navigate, id]);
 
   // Calculate active filter count - moved before early returns
   const activeFilterCount = useMemo(() => {
@@ -483,21 +687,77 @@ export default function ProjectDetail() {
     return Array.from(tags);
   }, [project?.tasks]);
 
+  // Get unique tags from issues
+  const allIssueTags = useMemo(() => {
+    if (!project?.issues) return [];
+    const tags = new Set<string>();
+    project.issues.forEach(issue => {
+      issue.tags?.forEach(tag => tags.add(tag));
+    });
+    return Array.from(tags);
+  }, [project?.issues]);
+
   // Map database modules to frontend Module type
   const modules: Module[] = useMemo(() => {
-    return projectModules.map((m) => ({
-      id: m.id,
-      name: m.name,
-      type: m.module_type,
-      description: m.description || '',
-      progress: m.progress || 0,
-      status: m.status || 'active',
-      owner: m.owner_id ? { id: m.owner_id, name: '', initials: '', email: '', role: 'member' } : undefined,
-      createdAt: m.created_at || new Date().toISOString(),
-    }));
-  }, [projectModules]);
+    return projectModules.map((m) => {
+      const owner = m.owner_id
+        ? organizationMembers.find((member) => member.id === m.owner_id) ?? {
+          id: m.owner_id,
+          name: m.owner?.name || 'Unknown',
+          initials: (m.owner?.name || '?').slice(0, 2).toUpperCase(),
+          email: '',
+          role: 'member',
+        }
+        : undefined;
+      const createdBy = m.created_by
+        ? organizationMembers.find((member) => member.id === m.created_by!.id) ?? {
+          id: m.created_by.id,
+          name: m.created_by.name || 'Unknown',
+          initials: (m.created_by.name || '?').slice(0, 2).toUpperCase(),
+          email: '',
+          role: 'member',
+        }
+        : undefined;
+      return {
+        id: m.id,
+        name: m.name,
+        type: m.module_type,
+        description: m.description || '',
+        progress: m.progress || 0,
+        status: m.status || 'active',
+        owner,
+        createdBy,
+        createdAt: m.created_at || new Date().toISOString(),
+        milestoneId: m.milestone_id || undefined,
+      };
+    });
+  }, [projectModules, organizationMembers]);
 
   const existingModuleNames = useMemo(() => modules.map(m => m.name), [modules]);
+
+  // Deep-linked entities (e.g. opened via a chat entity tag) — looked up from
+  // already-loaded project data rather than fetched separately.
+  const deepLinkTask = useMemo(
+    () => (taskId ? (project?.tasks || []).find(t => t.id === taskId) ?? null : null),
+    [taskId, project?.tasks]
+  );
+  const deepLinkModule = useMemo(() => {
+    if (!moduleId) return null;
+    const mod = modules.find(m => m.id === moduleId);
+    if (!mod) return null;
+    const moduleTasks = getModuleTasks(mod.id, project?.tasks || []);
+    const progress = getModuleProgress(mod.id, project?.tasks || []);
+    const openIssues = (project?.issues || []).filter(i => i.moduleId === mod.id && i.status !== 'resolved').length;
+    return { ...mod, taskCount: moduleTasks.length, progress, openIssues, tasks: moduleTasks };
+  }, [moduleId, modules, project?.tasks, project?.issues]);
+  const deepLinkMilestone = useMemo(
+    () => (milestoneId ? (project?.milestones || []).find(m => m.id === milestoneId) ?? null : null),
+    [milestoneId, project?.milestones]
+  );
+  const deepLinkIssue = useMemo(
+    () => (issueId ? (project?.issues || []).find(i => i.id === issueId) ?? null : null),
+    [issueId, project?.issues]
+  );
 
   // Calculate project progress breakdown
   const progressBreakdown = useMemo(() => {
@@ -509,42 +769,40 @@ export default function ProjectDetail() {
     );
   }, [project?.tasks, project?.milestones, modules, project?.issues]);
 
-  // Sync calculated progress with project progress
-  useEffect(() => {
-    if (
-      project &&
-      progressBreakdown.overallProgress !== project.progress &&
-      !updateProjectMutation.isPending
-    ) {
-      updateProjectMutation.mutate({
-        id: project.id,
-        updates: { progress: progressBreakdown.overallProgress }
-      });
-    }
-  }, [project, progressBreakdown.overallProgress, updateProjectMutation]);
+  // Refs for progress-sync effect (defined here so they're stable across renders)
+  const updateProjectProgressMutateRef = useRef(updateProjectProgressMutation.mutate);
+  updateProjectProgressMutateRef.current = updateProjectProgressMutation.mutate;
+  const updateProjectIsPendingRef = useRef(updateProjectProgressMutation.isPending);
+  updateProjectIsPendingRef.current = updateProjectProgressMutation.isPending;
+  // Tracks the last progress value we attempted to sync, so a failed sync
+  // (e.g. permission or network error) can't be retried on every re-render —
+  // only a genuinely NEW target value triggers another attempt.
+  const lastAttemptedProgressRef = useRef<number | null>(null);
 
   // Filter tasks by search query
   const filteredTasks = useMemo(() => {
     if (!project?.tasks || !searchQuery.trim()) return project?.tasks || [];
     const query = searchQuery.toLowerCase();
     return project.tasks.filter(task =>
-      task.title.toLowerCase().includes(query) ||
-      task.description?.toLowerCase().includes(query) ||
-      task.tags?.some(tag => tag.toLowerCase().includes(query))
+      task.title.toLowerCase().includes(query)
     );
   }, [project?.tasks, searchQuery]);
-
-  const clearFilters = () => {
-    setFilters({});
-  };
 
   // Calculate active issue filter count
   const activeIssueFilterCount = useMemo(() => {
     let count = 0;
-    if (issueFilters.status && issueFilters.status !== 'all') count++;
-    if (issueFilters.severity && issueFilters.severity !== 'all') count++;
-    if (issueFilters.assigneeId && issueFilters.assigneeId !== 'all') count++;
-    if (issueFilters.hasDueDate !== undefined && issueFilters.hasDueDate !== 'all') count++;
+    if (issueFilters.status?.length) count++;
+    if (issueFilters.severity?.length) count++;
+    if (issueFilters.assigneeId?.length) count++;
+    if (issueFilters.assignedById?.length) count++;
+    if (issueFilters.updatedById?.length) count++;
+    if (issueFilters.dueDate !== undefined) count++;
+    if (issueFilters.dueDateCustom !== undefined) count++;
+    if (issueFilters.reportedDate !== undefined) count++;
+    if (issueFilters.reportedDateCustom !== undefined) count++;
+    if (issueFilters.completedDate !== undefined) count++;
+    if (issueFilters.completedDateCustom !== undefined) count++;
+    if (issueFilters.tags?.length) count++;
     return count;
   }, [issueFilters]);
 
@@ -552,44 +810,49 @@ export default function ProjectDetail() {
     setIssueFilters({});
   };
 
-  const canManageProjectMembers = useMemo(() => {
-    if (!project || !user?.id) return false;
-    if (project.createdBy === user.id) return true;
-    const myMembership = (project.team || []).find((member) => member.id === user.id);
-    return (myMembership?.role || '').toLowerCase() === 'admin';
-  }, [project, user?.id]);
+  // Member management (add/remove/change role) is Admin-only.
+  const canManageProjectMembers = canManageMembers;
 
-  const canAddModulesAndMilestones = useMemo(() => {
-    if (!user?.id) return false;
-    const membership = organizationMembers.find((member) => member.id === user.id);
-    const role = (membership?.role || '').toLowerCase();
-    return role === 'owner' || role === 'admin';
-  }, [organizationMembers, user?.id]);
+  // Adding modules/milestones plus changing project stage/status is
+  // Maintainer+ (manages all content, not just their own).
+  const canAddModulesAndMilestones = isProjectMaintainerPlus;
 
-  const canStartProjectChat = useMemo(() => {
-    if (!project || !user?.id) return false;
-    if (project.createdBy === user.id) return true;
-    return (project.team || []).some((member) => member.id === user.id);
-  }, [project, user?.id]);
+  // Sync calculated progress — Maintainer+ only, via the dedicated
+  // Maintainer-accessible progress endpoint (not the Admin-only general
+  // project-update endpoint). Guarded by lastAttemptedProgressRef so a
+  // failed sync is attempted once per distinct target value, never looped.
+  useEffect(() => {
+    if (
+      project &&
+      progressBreakdown.overallProgress !== project.progress &&
+      progressBreakdown.overallProgress !== lastAttemptedProgressRef.current &&
+      !updateProjectIsPendingRef.current &&
+      canAddModulesAndMilestones
+    ) {
+      lastAttemptedProgressRef.current = progressBreakdown.overallProgress;
+      updateProjectProgressMutateRef.current({
+        id: project.id,
+        progress: progressBreakdown.overallProgress
+      });
+    }
+  }, [project, progressBreakdown.overallProgress, canAddModulesAndMilestones]);
+
+  // Starting the project chat is available to any project member (any access at all).
+  const canStartProjectChat = isProjectMemberPlus;
 
   const availableOrganizationMembers = useMemo(() => {
-    const projectMemberIds = new Set((project?.team || []).map((member) => member.id));
+    const projectMemberIds = new Set(projectMembers.map((member) => member.id));
     return organizationMembers.filter((member) => !projectMemberIds.has(member.id));
-  }, [organizationMembers, project?.team]);
-
-  const selectedOrganizationMember = useMemo(
-    () => availableOrganizationMembers.find((member) => member.id === selectedMemberToAdd),
-    [availableOrganizationMembers, selectedMemberToAdd]
-  );
+  }, [organizationMembers, projectMembers]);
 
   const handleAddProjectMember = async () => {
     if (!project || !selectedMemberToAdd) return;
     if (!canManageProjectMembers) {
-      toast.error('Only the project creator or an Admin can add or remove members');
+      toast.error('Only a project Admin can add or remove members');
       return;
     }
 
-    const isMemberAlreadyInProject = (project.team || []).some((m) => m.id === selectedMemberToAdd);
+    const isMemberAlreadyInProject = projectMembers.some((m) => m.id === selectedMemberToAdd);
     if (isMemberAlreadyInProject) {
       toast.error('Member is already in this project');
       return;
@@ -608,7 +871,7 @@ export default function ProjectDetail() {
       await projectMembersService.addMember({
         project_id: project.id,
         user_id: selectedMemberToAdd,
-        role: selectedOrganizationMember?.role || 'member',
+        role: selectedMemberRoleToAdd,
       });
 
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.id) });
@@ -617,6 +880,7 @@ export default function ProjectDetail() {
 
       toast.success('Member added to project');
       setSelectedMemberToAdd('');
+      setSelectedMemberRoleToAdd('member');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to add member to project';
       toast.error(message);
@@ -625,10 +889,33 @@ export default function ProjectDetail() {
     }
   };
 
+  const handleUpdateProjectMemberRole = async (memberId: string, role: ProjectRole) => {
+    if (!project || !canManageProjectMembers) return;
+
+    setMemberRoleUpdatingId(memberId);
+    try {
+      await projectMembersService.updateRole(project.id, memberId, role);
+      await queryClient.invalidateQueries({ queryKey: ['project-members', project.id] });
+      toast.success('Member role updated');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update member role';
+      toast.error(message);
+    } finally {
+      setMemberRoleUpdatingId(null);
+    }
+  };
+
   const handleStartProjectChat = async () => {
     if (!project) return;
     if (!canStartProjectChat) {
       toast.error('Only project team members can start this project chat');
+      return;
+    }
+
+    // Already resolved this project's chat — just toggle the docked panel
+    // instead of re-hitting the lookup/ensure endpoints.
+    if (projectChatConversationId) {
+      setIsChatPanelOpen((prev) => !prev);
       return;
     }
 
@@ -687,7 +974,8 @@ export default function ProjectDetail() {
         throw new Error('Failed to start project chat. Please try again.');
       }
 
-      navigate(`/chat/${conversationId}`);
+      setProjectChatConversationId(conversationId);
+      setIsChatPanelOpen(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start project chat';
       if (message && message.toLowerCase().includes('access denied')) {
@@ -705,7 +993,7 @@ export default function ProjectDetail() {
   const handleRemoveProjectMember = async (removeFromChatToo: boolean) => {
     if (!project || !memberRemovalPrompt.memberId) return;
     if (!canManageProjectMembers) {
-      toast.error('Only the project creator or an Admin can add or remove members');
+      toast.error('Only a project Admin can add or remove members');
       return;
     }
 
@@ -722,7 +1010,7 @@ export default function ProjectDetail() {
       toast.error('Invalid member selection');
       return;
     }
-    const isMemberInProject = (project.team || []).some((m) => m.id === memberId);
+    const isMemberInProject = projectMembers.some((m) => m.id === memberId);
     if (!isMemberInProject) {
       toast.error('That member is not part of this project anymore');
       return;
@@ -745,7 +1033,7 @@ export default function ProjectDetail() {
             await chatService.forceRemoveProjectChatMembers(project.id, [memberId]);
           }
         } catch (chatErr) {
-          console.warn('[ProjectDetail] chat cleanup failed during member removal', {
+          logger.warn('[ProjectDetail] chat cleanup failed during member removal', {
             projectId: project.id,
             memberId,
             error: chatErr instanceof Error ? chatErr.message : String(chatErr),
@@ -773,33 +1061,62 @@ export default function ProjectDetail() {
     }
   };
 
-  const handleIssueCreate = (newIssuePartial: Partial<Issue>) => {
+  const handleIssueCreate = async (newIssuePartial: Partial<Issue>, pendingFiles?: File[]) => {
     if (!project) return;
 
-    // Strip id/reportedAt/projectId so Supabase generates a proper UUID
-    const { id: _id, reportedAt: _reportedAt, projectId: _pid, ...rest } = newIssuePartial;
-
-    createIssueMutation.mutate({
-      title: rest.title || 'New Issue',
-      description: rest.description || '',
-      status: 'open',
-      severity: rest.severity || 'minor',
-      category: rest.category || 'other',
-      assignees: rest.assignees || [],
-      reportedBy: {
-        id: 'current-user',
-        name: 'Current User',
-        email: '',
-        role: 'member',
-        initials: 'CU',
-      },
-      descriptionBlocks: rest.descriptionBlocks || [],
-      ...rest,
+    const created = await createIssueMutation.mutateAsync({
+      ...newIssuePartial,
+      title: newIssuePartial.title || 'New Issue',
+      description: newIssuePartial.description || '',
+      descriptionBlocks: newIssuePartial.descriptionBlocks || [],
+      status: newIssuePartial.status || 'open',
+      severity: newIssuePartial.severity || 'minor',
+      category: newIssuePartial.category || 'other',
+      assignees: newIssuePartial.assignees || [],
+      tags: newIssuePartial.tags || [],
+      checklist: newIssuePartial.checklist || [],
+      dueDate: newIssuePartial.dueDate,
+      blocksTaskIds: newIssuePartial.blocksTaskIds || [],
+      reportedBy: newIssuePartial.reportedBy || { id: '', name: '', email: '', role: 'Member', initials: '' },
     } as Omit<Issue, 'id' | 'reportedAt'>);
+
+    if (pendingFiles && pendingFiles.length > 0 && created?.id) {
+      try {
+        await Promise.all(
+          pendingFiles.map(file =>
+            attachmentsService.upload({
+              entityId: created.id,
+              entityType: 'issue',
+              projectId: project.id,
+              file,
+            })
+          )
+        );
+      } catch {
+        toast.warning('Issue created but some attachments failed to upload');
+      }
+    }
+
+    if (newIssuePartial.comments && newIssuePartial.comments.length > 0 && created?.id) {
+      try {
+        await Promise.all(
+          newIssuePartial.comments.map(comment =>
+            commentsService.create({
+              content: comment.content,
+              entity_id: created.id,
+              entity_type: 'issue',
+            })
+          )
+        );
+      } catch {
+        toast.warning('Issue created but some comments failed to save');
+      }
+    }
   };
 
   const handleIssueUpdate = (updatedIssue: Issue) => {
     updateIssueMutation.mutate({
+      projectId: updatedIssue.projectId || id || '',
       issueId: updatedIssue.id,
       updates: updatedIssue,
     });
@@ -809,15 +1126,21 @@ export default function ProjectDetail() {
     setIsAddModuleDialogOpen(true);
   };
 
-  const handleModuleAdd = (newModule: Omit<Module, 'id' | 'createdAt'>) => {
-    createModuleMutation.mutate({
-      name: newModule.name,
-      module_type: newModule.type,
-      description: newModule.description || null,
-      status: 'active',
-      progress: 0,
-    });
-    setIsAddModuleDialogOpen(false);
+  const handleModuleAdd = async (newModule: Omit<Module, 'id' | 'createdAt'>): Promise<boolean> => {
+    try {
+      await createModuleMutation.mutateAsync({
+        name: newModule.name,
+        module_type: newModule.type,
+        description: newModule.description || undefined,
+        status: 'active',
+        progress: 0,
+        owner_id: newModule.owner?.id || null,
+      });
+      setIsAddModuleDialogOpen(false);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const handleModuleUpdate = async (updatedModule: Module): Promise<boolean> => {
@@ -864,8 +1187,23 @@ export default function ProjectDetail() {
           newMilestonePartial.linkedModuleIds.map(moduleId => ({ id: moduleId, milestone_id: createdMilestone.id }))
         );
       }
-    } catch (error) {
-      console.error('Failed to create milestone and link tasks:', error);
+
+      // Link issues if any were selected during creation
+      if (newMilestonePartial.linkedIssueIds && newMilestonePartial.linkedIssueIds.length > 0) {
+        const allIssues = project.issues || [];
+        newMilestonePartial.linkedIssueIds.forEach(issueId => {
+          const issue = allIssues.find(i => i.id === issueId);
+          if (!issue) return;
+          updateIssueMutation.mutate({
+            projectId: issue.projectId || id || '',
+            issueId,
+            updates: { blocksMilestoneIds: [...(issue.blocksMilestoneIds || []), createdMilestone.id] },
+          });
+        });
+      }
+    } catch (error: any) {
+      logger.error('Failed to create milestone and link tasks:', error);
+      toast.error(error?.message || 'Failed to create milestone');
     }
   };
 
@@ -877,9 +1215,18 @@ export default function ProjectDetail() {
         name: updatedMilestone.title,
         due_date: updatedMilestone.date || null,
         description: updatedMilestone.description || null,
-        status: updatedMilestone.completed ? 'completed' : 'upcoming',
+        status: updatedMilestone.completed ? undefined : (updatedMilestone.status || null),
       },
     });
+
+    // Completion is a separate endpoint on the backend, not part of the general update.
+    const previousMilestone = (project?.milestones || []).find(m => m.id === updatedMilestone.id);
+    if (previousMilestone && previousMilestone.completed !== updatedMilestone.completed) {
+      toggleMilestoneCompleteMutation.mutate({
+        milestoneId: updatedMilestone.id,
+        completed: updatedMilestone.completed,
+      });
+    }
 
     // Persist linked task changes by updating ONLY each task's milestoneId field
     const previousLinkedTaskIds = (project?.tasks || [])
@@ -892,7 +1239,7 @@ export default function ProjectDetail() {
 
     const taskUpdates = [
       ...addedTaskIds.map(id => ({ id, updates: { milestoneId: updatedMilestone.id } })),
-      ...removedTaskIds.map(id => ({ id, updates: { milestoneId: undefined } }))
+      ...removedTaskIds.map(id => ({ id, updates: { milestoneId: null } }))
     ];
 
     if (taskUpdates.length > 0) {
@@ -920,8 +1267,40 @@ export default function ProjectDetail() {
   };
 
 
-  const handleTaskCreate = (newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
-    createTaskMutation.mutate(newTask);
+  const handleTaskCreate = async (newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, pendingFiles?: File[]) => {
+    const created = await createTaskMutation.mutateAsync(newTask);
+    if (pendingFiles && pendingFiles.length > 0 && created?.id) {
+      try {
+        await Promise.all(
+          pendingFiles.map(file =>
+            attachmentsService.upload({
+              entityId: created.id,
+              entityType: 'task',
+              projectId: id!,
+              file,
+            })
+          )
+        );
+      } catch {
+        toast.warning('Task created but some attachments failed to upload');
+      }
+    }
+
+    if (newTask.comments && newTask.comments.length > 0 && created?.id) {
+      try {
+        await Promise.all(
+          newTask.comments.map(comment =>
+            commentsService.create({
+              content: comment.content,
+              entity_id: created.id,
+              entity_type: 'task',
+            })
+          )
+        );
+      } catch {
+        toast.warning('Task created but some comments failed to save');
+      }
+    }
   };
 
   const handleTaskUpdate = async (updatedTask: Task, onError?: () => void) => {
@@ -982,281 +1361,111 @@ export default function ProjectDetail() {
     );
   }
 
-  const openIssuesCount = project.issues?.filter(i => i.status !== 'resolved' && i.status !== 'closed').length || 0;
-  const criticalIssuesCount = project.issues?.filter(i => i.severity === 'critical' && i.status !== 'resolved' && i.status !== 'closed').length || 0;
+  const openIssuesCount = project.issues?.filter(i => i.status !== 'resolved' && i.status !== 'wont-fix').length || 0;
+  const criticalIssuesCount = project.issues?.filter(i => i.severity === 'critical' && i.status !== 'resolved' && i.status !== 'wont-fix').length || 0;
+
+  const tabBadges: Partial<Record<ProjectTabId, { count: number; variant: 'secondary' | 'destructive' }>> = {
+    tasks: { count: (project.tasks || []).length, variant: 'secondary' },
+    modules: { count: modules.length, variant: 'secondary' },
+    milestones: { count: (project.milestones || []).length, variant: 'secondary' },
+    ...(openIssuesCount > 0
+      ? { issues: { count: openIssuesCount, variant: criticalIssuesCount > 0 ? 'destructive' : 'secondary' } }
+      : {}),
+  };
+  const TAB_GRID_COLS_CLASS: Record<number, string> = {
+    1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3',
+    4: 'grid-cols-4', 5: 'grid-cols-5', 6: 'grid-cols-6',
+  };
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-6 animate-fade-in w-full min-w-0">
-        {/* Project Stats with Title */}
-        <div className={cn(
-          "flex flex-col md:flex-row md:items-center md:justify-between gap-3 py-3 border-y",
-          isMobile && "rounded-xl border bg-card/60 px-3 py-3"
-        )}>
-          {/* Left: Project Title and Stage */}
-          <div className={cn("flex items-center gap-2 sm:gap-3 min-w-0 w-full md:w-auto md:flex-1", isMobile && "pb-1")}>
-            <Button variant="ghost" size="sm" asChild className="shrink-0 gap-1 -ml-2 h-8 px-2 text-muted-foreground hover:text-foreground">
-              <Link to="/projects">
-                <ChevronLeft className="h-4 w-4" />
-                <span className="hidden sm:inline">Back</span>
-              </Link>
-            </Button>
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <h1 className="text-lg sm:text-xl md:text-2xl font-semibold tracking-tight truncate">{project.name}</h1>
-              <Badge variant="secondary" className={cn(stageColors[project.stage], "shrink-0")}>
-                {project.stage.charAt(0).toUpperCase() + project.stage.slice(1)}
-              </Badge>
-            </div>
-            {isMobile && (
-              <div className="ml-1 flex items-center justify-end gap-2 shrink-0 rounded-lg border border-border/70 bg-background/80 px-2 py-1.5">
-                <Progress value={progressBreakdown.overallProgress} className="w-16 h-2" />
-                <span className="text-xs font-semibold text-muted-foreground leading-none">
-                  {progressBreakdown.overallProgress}%
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Right: Stats */}
-          <div className="w-full md:w-auto overflow-visible md:overflow-x-auto md:pl-4">
-            <div className={cn(
-              "flex flex-wrap md:flex-nowrap items-center gap-3 sm:gap-4 md:gap-6 w-full text-xs sm:text-sm text-muted-foreground pb-1 md:pb-0",
-              isMobile && "gap-2"
-            )}>
-              <div className={cn(
-                "flex flex-wrap items-center gap-2 sm:gap-4 md:gap-6 w-full md:w-auto md:ml-auto",
-                isMobile && "order-1 rounded-lg border bg-background/70 px-2 py-2"
-              )}>
-              {!isMobile && <ProjectProgressPopover breakdown={progressBreakdown} />}
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <Calendar className="h-4 w-4 shrink-0" />
-                <span>Due {project.targetDate ? new Date(project.targetDate).toLocaleDateString() : 'Not set'}</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className={cn("h-8 gap-1.5 whitespace-nowrap", isMobile && "h-9 rounded-lg")}
-                onClick={handleStartProjectChat}
-                disabled={isStartingChat || !canStartProjectChat}
-              >
-                {isStartingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-                <span>Start Chat</span>
-              </Button>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex items-center gap-2 whitespace-nowrap cursor-pointer rounded-md border border-foreground/50 px-2 py-1 text-foreground hover:bg-muted transition-colors",
-                      isMobile && "h-9 rounded-lg border-border px-2.5"
-                    )}
-                  >
-                    <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="text-xs font-medium">Team</span>
-                    <span className="text-xs">{project.team?.length || 0}</span>
-                    <div className="hidden md:flex -space-x-2">
-                      {(project.team || []).slice(0, 5).map((member) => (
-                        <Avatar key={member.id} className="h-5 w-5 md:h-6 md:w-6 border-2 border-background">
-                          <AvatarFallback className="text-[10px] bg-muted">
-                            {member.initials}
-                          </AvatarFallback>
-                        </Avatar>
-                      ))}
-                    </div>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80" align="end">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Project Team</p>
-                    {project.team && project.team.length > 0 ? (
-                      <div className="space-y-2 max-h-52 overflow-y-auto">
-                        {project.team.map((member) => (
-                          <div key={member.id} className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Avatar className="h-7 w-7">
-                                <AvatarFallback className="text-[11px]">
-                                  {member.initials}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="text-sm truncate">{member.name}</span>
-                            </div>
-                            <Badge variant="outline" className="text-[10px] max-w-[120px] truncate">
-                              {member.role || 'Member'}
-                            </Badge>
-                            {canManageProjectMembers && member.role?.toLowerCase() !== 'admin' && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                                onClick={() => {
-                                  const memberId = member.id;
-                                  const memberName = typeof member.name === 'string' ? member.name : '';
-                                  if (!memberId) return;
-                                  if (!project.team?.some((m) => m.id === memberId)) return;
-                                  setMemberRemovalPrompt({
-                                    open: true,
-                                    memberId,
-                                    memberName,
-                                  });
-                                }}
-                                title="Remove member"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">No team members assigned yet.</p>
-                    )}
-
-                    {canManageProjectMembers ? (
-                      <div className="pt-3 mt-2 border-t space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground">Add Member</p>
-                        <div className="space-y-2">
-                          <Select value={selectedMemberToAdd} onValueChange={setSelectedMemberToAdd}>
-                            <SelectTrigger className="h-8">
-                              <SelectValue placeholder="Select organization member" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableOrganizationMembers.map((member) => (
-                                <SelectItem key={member.id} value={member.id}>
-                                  {member.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {selectedOrganizationMember && (
-                            <p className="text-[11px] text-muted-foreground">
-                              Role will be inherited automatically from organization:{" "}
-                              <span className="font-medium text-foreground capitalize">
-                                {selectedOrganizationMember.role || 'member'}
-                              </span>
-                            </p>
-                          )}
-                          <Button
-                            size="sm"
-                            className="w-full"
-                            onClick={handleAddProjectMember}
-                            disabled={
-                              isAddingProjectMember ||
-                              !selectedMemberToAdd ||
-                              availableOrganizationMembers.length === 0
-                            }
-                            title={
-                              availableOrganizationMembers.length === 0
-                                ? 'All organization members are already in this project'
-                                : undefined
-                            }
-                          >
-                            {isAddingProjectMember && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                            Add Member
-                          </Button>
-                          {availableOrganizationMembers.length === 0 && (
-                            <p className="text-[11px] text-muted-foreground">
-                              All organization members are already in this project.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="pt-3 mt-2 border-t">
-                        <p className="text-[11px] text-muted-foreground">
-                          Only the project creator or an Admin can add or remove project members.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              </div>
-              {criticalIssuesCount > 0 && (
-                <Badge variant="destructive" className="gap-1 shrink-0 hidden sm:inline-flex">
-                  <AlertTriangle className="h-3 w-3 shrink-0" />
-                  {criticalIssuesCount} Critical Issue{criticalIssuesCount > 1 ? 's' : ''}
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-6 w-full min-w-0">
 
         {/* Section Tabs - Entity-based navigation */}
-        <Tabs value={section} onValueChange={(v) => setSection(v as ProjectSection)} className="w-full">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            {/* Left Side: Tabs and Filters */}
-            <div className="w-full py-1 md:mr-auto md:w-auto">
-              <TabsList className="bg-muted/50 grid grid-cols-4 w-full h-9 md:w-auto md:flex md:shrink-0">
-                <TabsTrigger value="tasks" className="gap-1 sm:gap-2 px-2 justify-center min-w-0 overflow-hidden" title="Tasks">
-                  <ListTodo className="h-4 w-4 shrink-0" />
-                  {!isMobile && <span className="truncate">Tasks</span>}
-                  {!isMobile && (
-                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                      {(project.tasks || []).length}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="modules" className="gap-1 sm:gap-2 px-2 justify-center min-w-0 overflow-hidden" title="Modules">
-                  <Boxes className="h-4 w-4 shrink-0" />
-                  {!isMobile && <span className="truncate">Modules</span>}
-                  {!isMobile && (
-                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                      {modules.length}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="milestones" className="gap-1 sm:gap-2 px-2 justify-center min-w-0 overflow-hidden" title="Milestones">
-                  <Flag className="h-4 w-4 shrink-0" />
-                  {!isMobile && <span className="truncate">Milestones</span>}
-                  {!isMobile && (
-                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                      {(project.milestones || []).length}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="issues" className="gap-1 sm:gap-2 px-2 justify-center min-w-0 overflow-hidden" title="Issues">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  {!isMobile && <span className="truncate">Issues</span>}
-                  {!isMobile && openIssuesCount > 0 && (
-                    <Badge variant={criticalIssuesCount > 0 ? "destructive" : "secondary"} className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                      {openIssuesCount}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </div>
+        <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
+          <div className="sticky top-0 z-20 bg-background -mx-4 px-4 pt-2.5 pb-2.5 border-b md:border-b-0 md:static md:top-auto md:pt-0 md:mx-0 md:px-0 md:pb-0 [transform:translateZ(0)] will-change-transform">
+          {!partId && !ecoId && !isMobileModuleDetailOpen && (
+            <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
+              {/* Left Side: Tabs */}
+              <div className="flex-1 md:flex-none w-full md:w-auto py-1 min-w-0 md:mr-auto overflow-x-auto hide-scrollbar">
+                <TabsList
+                  className={`bg-muted/50 grid ${TAB_GRID_COLS_CLASS[visibleTabs.length] || 'grid-cols-6'} min-w-[300px] md:min-w-0 w-full h-11 md:w-auto md:flex md:shrink-0`}
+                >
+                  {visibleTabs.map(({ id: tabId, label, title, icon: Icon }) => {
+                    const badge = tabBadges[tabId];
+                    return (
+                      <TabsTrigger
+                        key={tabId}
+                        value={tabId}
+                        className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
+                        title={title}
+                        onTouchStart={() => handleTabLongPressStart(tabId)}
+                        onTouchEnd={handleTabLongPressEnd}
+                        onTouchCancel={handleTabLongPressEnd}
+                        onTouchMove={handleTabLongPressEnd}
+                      >
+                        <Icon className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
+                        {!isMobile && <span className="truncate">{label}</span>}
+                        {!isMobile && badge && (
+                          <Badge variant={badge.variant} className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
+                            {badge.count}
+                          </Badge>
+                        )}
+                        {isMobile && longPressedTab === tabId && (
+                          <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
+                            {label}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </div>
 
-            {/* Right Side: View Controls */}
-            <div className="flex-1 min-w-0 md:max-w-[60%]">
-              {section === 'tasks' && (
-                <div className="flex items-center gap-2 w-full justify-end min-w-0 flex-nowrap overflow-x-auto no-scrollbar py-1">
-                  <ViewControls
-                    viewMode={viewMode}
-                    onViewModeChange={setViewMode}
-                    searchQuery={searchQuery}
-                    onSearchQueryChange={setSearchQuery}
-                  />
-                  <TaskFiltersDropdown
-                    milestones={project.milestones || []}
-                    modules={modules.map(m => ({ id: m.id, name: m.name, type: m.type }))}
-                    teamMembers={teamMembers}
-                    allTags={allTags}
-                    filters={filters}
-                    onFiltersChange={setFilters}
-                    activeFilterCount={activeFilterCount}
-                  />
-                  {activeFilterCount > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearFilters}
-                      className="gap-1 text-muted-foreground hover:text-foreground h-9 px-2 shrink-0"
-                    >
-                      <X className="h-4 w-4" />
-                      <span className="hidden sm:inline">Clear</span>
-                    </Button>
-                  )}
+              {/* Right Side: Team + Chat + Add Button */}
+              <div className="flex items-center gap-2 shrink-0 justify-end md:w-auto">
+                {!isMobile && <ProjectProgressPopover breakdown={progressBreakdown} />}
+                {/* Project details — the full record (description, dates,
+                    departments, links). Unreachable from inside the project
+                    before this. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 whitespace-nowrap rounded-lg px-2 md:px-3"
+                  onClick={() => navigate(`/projects/${id}/details`)}
+                  title="Project details"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  <span className="hidden md:inline">Project Details</span>
+                </Button>
+                {/* Start Chat */}
+                <Button
+                  type="button"
+                  variant={isChatPanelOpen ? 'secondary' : 'outline'}
+                  size="sm"
+                  className="h-9 gap-1.5 whitespace-nowrap rounded-lg hidden sm:flex"
+                  onClick={handleStartProjectChat}
+                  disabled={isStartingChat || !canStartProjectChat}
+                >
+                  {isStartingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                  <span className="hidden md:inline">Chat</span>
+                </Button>
+                {/* Team Popover */}
+                <div className="hidden md:block">
+                  <ProjectTeamButton projectId={id!} />
+                </div>
+                {/* Critical Issues Badge */}
+                {/* {criticalIssuesCount > 0 && (
+                <Badge variant="destructive" className="gap-1 shrink-0 hidden sm:inline-flex">
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  {criticalIssuesCount} Critical
+                </Badge>
+              )} */}
+                {/* Section Add/Action Buttons — on mobile these move down next to each
+                    section's search bar instead (see the "Second Row" block below),
+                    so the tab strip doesn't end in a floating "+" square. */}
+                {section === 'tasks' && !isMobile && (
                   <Button
                     size="sm"
                     onClick={() => setIsAddTaskDialogOpen(true)}
@@ -1265,41 +1474,254 @@ export default function ProjectDetail() {
                     <Plus className="h-4 w-4" />
                     <span className="hidden sm:inline">Create Task</span>
                   </Button>
-                </div>
+                )}
+                {section === 'modules' && canAddModulesAndMilestones && !isMobile && (
+                  <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={handleAddModule}>
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden md:inline">Add Module</span>
+                  </Button>
+                )}
+                {section === 'milestones' && canAddModulesAndMilestones && !isMobile && (
+                  <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={() => setIsAddMilestoneDialogOpen(true)}>
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden md:inline">Add Milestone</span>
+                  </Button>
+                )}
+                {section === 'issues' && !isMobile && (
+                  <>
+                    {id && <SupportLinksSheet projectId={id} />}
+                    <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={() => setIsAddIssueDialogOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                      <span className="hidden md:inline">Report Issue</span>
+                    </Button>
+                  </>
+                )}
+                {section === 'bom' && !isMobile && (
+                  <Button size="sm" onClick={() => setBomAddOpen(true)} className="gap-2 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-0 w-9 sm:w-auto sm:px-3 rounded-lg">
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">Add Part</span>
+                  </Button>
+                )}
+                {section === 'eng-changes' && !isMobile && (
+                  <Button size="sm" onClick={() => setEcoNewOpen(true)} className="gap-2 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-0 w-9 sm:w-auto sm:px-3 rounded-lg">
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">New ECO</span>
+                  </Button>
+                )}
+                {section === 'gate-reviews' && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="gap-1.5 shrink-0 h-9">
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Export</span>
+                    </Button>
+                    <Button size="sm" className="gap-2 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-0 w-9 sm:w-auto sm:px-3 rounded-lg">
+                      <Plus className="h-4 w-4" />
+                      <span className="hidden sm:inline">Add Gate</span>
+                    </Button>
+                  </div>
+                )}
+                {section === 'risk' && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="gap-1.5 shrink-0 h-9">
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Export</span>
+                    </Button>
+                    <Button size="sm" className="gap-2 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-0 w-9 sm:w-auto sm:px-3 rounded-lg">
+                      <Plus className="h-4 w-4" />
+                      <span className="hidden sm:inline">Add Risk</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Second Row: Search + View Toggle + Filter toolbar (below tabs, like BOM UI) */}
+          {(section === 'tasks' || section === 'modules' || section === 'milestones' || section === 'issues') && !isMobileModuleDetailOpen && (
+            <div className="flex items-center justify-between gap-3 mt-3 md:pb-3 md:border-b w-full">
+              {section === 'tasks' && (
+                <>
+                  {/* Left: Search */}
+                  <div className="relative flex items-center flex-1 min-w-0 max-w-xs">
+                    <Search className="absolute left-3 h-4 w-4 text-muted-foreground shrink-0" />
+                    <Input
+                      placeholder="Search tasks..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-lg"
+                    />
+                    {searchQuery && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
+                        onClick={() => setSearchQuery('')}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {/* Right: View toggle + Filter */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <ViewControls
+                      viewMode={viewMode}
+                      onViewModeChange={setViewMode}
+                    />
+                    <TaskFiltersDropdown
+                      milestones={project.milestones || []}
+                      modules={modules.map(m => ({ id: m.id, name: m.name, type: m.type }))}
+                      teamMembers={teamMembers}
+                      allTags={allTags}
+                      filters={filters}
+                      onFiltersChange={setFilters}
+                      activeFilterCount={activeFilterCount}
+                      statusOptions={filterStatusOptions}
+                    />
+                    {isMobile && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddTaskDialogOpen(true)}
+                        aria-label="Create Task"
+                        className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center shrink-0 active:opacity-90 transition-opacity"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
               {section === 'modules' && (
-                <ModuleViewControls
-                  viewMode={moduleViewMode}
-                  onViewModeChange={setModuleViewMode}
-                  searchQuery={moduleSearchQuery}
-                  onSearchQueryChange={setModuleSearchQuery}
-                  onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
-                />
+                <>
+                  {/* Left: Search */}
+                  <div className="relative flex items-center flex-1 min-w-0 max-w-none md:max-w-xs">
+                    <Search className="absolute left-3 h-4 w-4 text-muted-foreground shrink-0" />
+                    <Input
+                      placeholder="Search modules..."
+                      value={moduleSearchQuery}
+                      onChange={(e) => setModuleSearchQuery(e.target.value)}
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-full md:rounded-lg"
+                    />
+                    {moduleSearchQuery && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
+                        onClick={() => setModuleSearchQuery('')}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {/* Right: View toggle (desktop/tablet only — mobile always uses the card view) */}
+                  <div className="hidden md:flex items-center gap-2 shrink-0">
+                    <ModuleViewControls
+                      viewMode={moduleViewMode}
+                      onViewModeChange={setModuleViewMode}
+                    />
+                  </div>
+                  {isMobile && canAddModulesAndMilestones && (
+                    <button
+                      type="button"
+                      onClick={handleAddModule}
+                      aria-label="Add Module"
+                      className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center shrink-0 active:opacity-90 transition-opacity"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  )}
+                </>
               )}
               {section === 'milestones' && (
-                <MilestoneViewControls
-                  viewMode={milestoneViewMode}
-                  onViewModeChange={setMilestoneViewMode}
-                  searchQuery={milestoneSearchQuery}
-                  onSearchQueryChange={setMilestoneSearchQuery}
-                  onAddMilestone={canAddModulesAndMilestones ? () => setIsAddMilestoneDialogOpen(true) : undefined}
-                />
+                <>
+                  {/* Left: Search */}
+                  <div className="relative flex items-center flex-1 min-w-0 max-w-xs">
+                    <Search className="absolute left-3 h-4 w-4 text-muted-foreground shrink-0" />
+                    <Input
+                      placeholder="Search milestones..."
+                      value={milestoneSearchQuery}
+                      onChange={(e) => setMilestoneSearchQuery(e.target.value)}
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-lg"
+                    />
+                    {milestoneSearchQuery && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
+                        onClick={() => setMilestoneSearchQuery('')}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {/* Right: View toggle */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <MilestoneViewControls
+                      viewMode={milestoneViewMode}
+                      onViewModeChange={setMilestoneViewMode}
+                    />
+                    {isMobile && canAddModulesAndMilestones && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddMilestoneDialogOpen(true)}
+                        aria-label="Add Milestone"
+                        className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center shrink-0 active:opacity-90 transition-opacity"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
               {section === 'issues' && (
-                <IssueViewControls
-                  viewMode={issueViewMode}
-                  onViewModeChange={setIssueViewMode}
-                  searchQuery={issueSearchQuery}
-                  onSearchQueryChange={setIssueSearchQuery}
-                  filters={issueFilters}
-                  onFiltersChange={setIssueFilters}
-                  teamMembers={organizationMembers}
-                  activeFilterCount={activeIssueFilterCount}
-                  onClearFilters={clearIssueFilters}
-                  onReportIssue={() => setIsAddIssueDialogOpen(true)}
-                />
+                <>
+                  {/* Left: Search */}
+                  <div className="relative flex items-center flex-1 min-w-0 max-w-xs">
+                    <Search className="absolute left-3 h-4 w-4 text-muted-foreground shrink-0" />
+                    <Input
+                      placeholder="Search issues..."
+                      value={issueSearchQuery}
+                      onChange={(e) => setIssueSearchQuery(e.target.value)}
+                      className="pl-9 pr-9 h-9 w-full bg-background rounded-lg"
+                    />
+                    {issueSearchQuery && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 h-9 w-9 text-foreground hover:opacity-70"
+                        onClick={() => setIssueSearchQuery('')}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {/* Right: View toggle + Filter */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <IssueViewControls
+                      viewMode={issueViewMode}
+                      onViewModeChange={setIssueViewMode}
+                      filters={issueFilters}
+                      onFiltersChange={setIssueFilters}
+                      teamMembers={projectMembers}
+                      issueColumns={issueColumns}
+                      allTags={allIssueTags}
+                      activeFilterCount={activeIssueFilterCount}
+                      onClearFilters={clearIssueFilters}
+                    />
+                    {isMobile && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddIssueDialogOpen(true)}
+                        aria-label="Report Issue"
+                        className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center shrink-0 active:opacity-90 transition-opacity"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
             </div>
+          )}
           </div>
 
           <TabsContent value="tasks" className="mt-6">
@@ -1310,7 +1732,7 @@ export default function ProjectDetail() {
               milestones={project.milestones || []}
               issues={project.issues || []}
               modules={modules.map(m => ({ id: m.id, name: m.name, type: m.type }))}
-              assignableMembers={project.team || []}
+              assignableMembers={projectMembers}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
               filters={filters}
@@ -1319,15 +1741,17 @@ export default function ProjectDetail() {
               onTaskUpdate={handleTaskUpdate}
               onBatchTaskUpdate={handleBatchTaskUpdate}
               onTaskDelete={handleTaskDelete}
-              onAddModule={handleAddModule}
+              userProjectRole={project?.myRole}
+              onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
             />
           </TabsContent>
-          <TabsContent value="modules" className="mt-6">
+          <TabsContent value="modules" className={isMobileModuleDetailOpen ? '-mx-4' : 'mt-6'}>
             <ModulesSection
               modules={modules}
               tasks={project.tasks || []}
               issues={project.issues || []}
-              teamMembers={organizationMembers}
+              teamMembers={projectMembers}
+              projectId={project.id}
               viewMode={moduleViewMode}
               onViewModeChange={setModuleViewMode}
               searchQuery={moduleSearchQuery}
@@ -1338,6 +1762,7 @@ export default function ProjectDetail() {
               onModuleDelete={handleModuleDelete}
               onTaskUpdate={handleTaskUpdate}
               onIssueUpdate={handleIssueUpdate}
+              onMobileDetailOpenChange={setIsMobileModuleDetailOpen}
             />
           </TabsContent>
           <TabsContent value="milestones" className="mt-6">
@@ -1362,18 +1787,61 @@ export default function ProjectDetail() {
               issues={project.issues || []}
               viewMode={issueViewMode}
               tasks={project.tasks || []}
-              teamMembers={organizationMembers}
+              teamMembers={projectMembers}
               searchQuery={issueSearchQuery}
               severityFilter={issueFilters.severity}
               statusFilter={issueFilters.status}
               assigneeFilter={issueFilters.assigneeId}
-              dueDateFilter={issueFilters.hasDueDate}
+              assignedByFilter={issueFilters.assignedById}
+              updatedByFilter={issueFilters.updatedById}
+              dueDateFilter={issueFilters.dueDate}
+              dueDateCustomFilter={issueFilters.dueDateCustom}
+              reportedDateFilter={issueFilters.reportedDate}
+              reportedDateCustomFilter={issueFilters.reportedDateCustom}
+              completedDateFilter={issueFilters.completedDate}
+              completedDateCustomFilter={issueFilters.completedDateCustom}
+              tagsFilter={issueFilters.tags}
               isAddDialogOpen={isAddIssueDialogOpen}
               onAddDialogClose={() => setIsAddIssueDialogOpen(false)}
               onIssueCreate={handleIssueCreate}
               onIssueUpdate={handleIssueUpdate}
               onIssueDelete={handleIssueDelete}
+              userProjectRole={project?.myRole}
             />
+          </TabsContent>
+          <TabsContent value="bom" className="mt-0 -mx-4 md:-mx-6 -mb-6 flex flex-col">
+            <BOMView
+              projectId={project.id}
+              orgId={currentOrganization?.id ?? ''}
+              addOpen={bomAddOpen}
+              onAddClose={() => setBomAddOpen(false)}
+              selectedId={partId ?? null}
+              onSelectedIdChange={(newId) =>
+                navigate(`/projects/${id}/bom${newId ? `/${newId}` : ''}`)
+              }
+              onEcoCreated={(ecoId) => navigate(`/projects/${id}/eng-changes/${ecoId}`)}
+            />
+          </TabsContent>
+          <TabsContent value="requirements" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">
+            <RequirementsView />
+          </TabsContent>
+          <TabsContent value="eng-changes" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">
+            <ECOView
+              projectId={id!}
+              projectName={project?.name}
+              newTrigger={ecoNewOpen}
+              onNewConsumed={() => setEcoNewOpen(false)}
+              openEcoId={ecoId ?? null}
+              onOpenEcoIdChange={(newId) =>
+                navigate(`/projects/${id}/eng-changes${newId ? `/${newId}` : ''}`)
+              }
+            />
+          </TabsContent>
+          <TabsContent value="gate-reviews" className="mt-6">
+            <GateView />
+          </TabsContent>
+          <TabsContent value="risk" className="mt-6">
+            <RiskView />
           </TabsContent>
         </Tabs>
       </div>
@@ -1382,7 +1850,7 @@ export default function ProjectDetail() {
         isOpen={isAddModuleDialogOpen}
         onClose={() => setIsAddModuleDialogOpen(false)}
         onAdd={handleModuleAdd}
-        teamMembers={organizationMembers}
+        teamMembers={projectMembers}
         existingModuleNames={existingModuleNames}
       />
 
@@ -1395,10 +1863,79 @@ export default function ProjectDetail() {
         mode="create"
         onCreate={handleTaskCreate}
         modules={modules}
+        milestones={project.milestones || []}
         projectId={id}
-        onAddModule={handleAddModule}
-        assignableMembers={project.team || []}
+        onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
+        assignableMembers={projectMembers}
+        statusOptions={(boardColumns ?? []).map((c) => ({
+          value: c.status,
+          label: c.label,
+          color: c.color,   // hex kept as-is; TaskDetailModal dot uses inline style
+        }))}
       />
+
+      {/* Deep-linked entity modals — opened via a route param (e.g. /tasks/:taskId),
+          such as when navigating from a chat entity tag. */}
+      {taskId && (
+        <TaskDetailModal
+          task={deepLinkTask}
+          allTasks={project.tasks || []}
+          isOpen={!!taskId}
+          onClose={() => navigate(`/projects/${id}/tasks`)}
+          onUpdate={handleTaskUpdate}
+          onDelete={handleTaskDelete}
+          mode="view"
+          modules={modules}
+          milestones={project.milestones || []}
+          projectId={id}
+          onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
+          assignableMembers={organizationMembers}
+          statusOptions={(boardColumns ?? []).map((c) => ({
+            value: c.status,
+            label: c.label,
+            color: c.color,
+          }))}
+        />
+      )}
+
+      {moduleId && (
+        <ModuleDetailModal
+          module={deepLinkModule}
+          allTasks={project.tasks || []}
+          allIssues={project.issues || []}
+          teamMembers={organizationMembers}
+          isOpen={!!moduleId}
+          onClose={() => navigate(`/projects/${id}/modules`)}
+          onUpdate={handleModuleUpdate}
+        />
+      )}
+
+      {milestoneId && (
+        <MilestoneDetailModal
+          milestone={deepLinkMilestone}
+          tasks={project.tasks || []}
+          issues={project.issues || []}
+          modules={modules}
+          isOpen={!!milestoneId}
+          onClose={() => navigate(`/projects/${id}/milestones`)}
+          onUpdate={handleMilestoneUpdate}
+          onIssueUpdate={handleIssueUpdate}
+        />
+      )}
+
+      {issueId && (
+        <IssueDetailModal
+          issue={deepLinkIssue}
+          tasks={project.tasks || []}
+          teamMembers={projectMembers}
+          isOpen={!!issueId}
+          onClose={() => navigate(`/projects/${id}/issues`)}
+          onUpdate={handleIssueUpdate}
+          onDelete={handleIssueDelete}
+          userProjectRole={project?.myRole}
+          mode="view"
+        />
+      )}
 
       <Dialog
         open={memberRemovalPrompt.open}
@@ -1442,6 +1979,12 @@ export default function ProjectDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProjectChatPanel
+        open={isChatPanelOpen}
+        onOpenChange={setIsChatPanelOpen}
+        conversationId={projectChatConversationId}
+      />
     </>
   );
 }

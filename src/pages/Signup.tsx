@@ -5,13 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Layers, Mail, Lock, User, Building2, Factory, ArrowRight, Check, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Layers, Mail, Lock, User, Building2, Factory, ArrowRight, Check, AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useOrganization } from "@/contexts/OrganizationContext";
-import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { getPasswordRequirements, getUnmetRequirementLabels } from "@/lib/passwordValidation";
+import { apiClient } from "@/services/api/client";
 
 const industries = [
   "Medical Devices",
@@ -31,10 +30,8 @@ const Signup = () => {
   const [searchParams] = useSearchParams();
   const inviteToken = searchParams.get("invite");
   const { signUp, isLoading: authLoading } = useAuth();
-  const { createOrganization } = useOrganization();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -45,50 +42,27 @@ const Signup = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState<string>('');
+  const [inviteOrgName, setInviteOrgName] = useState<string>('');
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
 
-  // If there's an invite token, store it and fetch the invited email
+  // Validate invite token, pre-fill and lock the email
   useEffect(() => {
-    if (inviteToken) {
-      const fetchInvitation = async () => {
-        // Try match by UUID (invite ID first)
-        let { data } = await supabase
-          .from('team_invitations')
-          .select('email')
-          .eq('id', inviteToken)
-          .eq('status', 'pending')
-          .maybeSingle();
-
-        if (data?.email) {
-          // Clear any stale token key before writing invite ID
-          localStorage.removeItem('pending_invite_token');
-          localStorage.setItem('pending_invite_id', inviteToken);
-        } else {
-          const fallback = await supabase
-            .from('team_invitations')
-            .select('email')
-            .eq('token', inviteToken)
-            .eq('status', 'pending')
-            .maybeSingle();
-
-          data = fallback.data;
-          if (data?.email) {
-            // Clear any stale ID key before writing invite token
-            localStorage.removeItem('pending_invite_id');
-            localStorage.setItem('pending_invite_token', inviteToken);
-          }
-        }
-
-        if (data?.email) {
-          setFormData(prev => ({ ...prev, email: data.email }));
-        } else {
-          // Token matched neither table — it's invalid or already used
-          setInviteError(
-            'This invitation link is invalid or has already been used. Please request a new invitation from your team admin.'
-          );
-        }
-      };
-      fetchInvitation();
-    }
+    if (!inviteToken) return;
+    localStorage.setItem('pending_invite_token', inviteToken);
+    setInviteLoading(true);
+    apiClient.get<any>(`/invitations/lookup?invite=${encodeURIComponent(inviteToken)}`)
+      .then((data) => {
+        setInviteEmail(data.email || '');
+        setInviteOrgName(data.organizationName || '');
+        setFormData(prev => ({ ...prev, email: data.email || '' }));
+      })
+      .catch(() => {
+        setInviteError('This invitation is invalid, expired, or already used.');
+        localStorage.removeItem('pending_invite_token');
+      })
+      .finally(() => setInviteLoading(false));
   }, [inviteToken]);
 
   const handleChange = (field: string, value: string) => {
@@ -104,6 +78,16 @@ const Signup = () => {
       setError(message);
     };
 
+    if (formData.fullName.trim().length < 2) {
+      setError("Full name must be at least 2 characters");
+      return;
+    }
+
+    if (formData.password !== formData.password.trim()) {
+      setError("Password cannot start or end with spaces");
+      return;
+    }
+
     const unmetLabels = getUnmetRequirementLabels(formData.password);
     if (unmetLabels.length > 0) {
       setError(`Password is too weak. Missing: ${unmetLabels.join(", ")}`);
@@ -115,61 +99,29 @@ const Signup = () => {
       return;
     }
 
+    if (!isInviteSignup && formData.companyName.trim().length < 2) {
+      setError("Organization name must be at least 2 characters");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      // For invite signups, use the create-auth-user edge function to avoid anonymous sign-in issues
-      if (inviteToken) {
-        const { data, error: createError } = await supabase.functions.invoke('create-auth-user', {
-          body: {
-            invite: inviteToken,
-            email: formData.email,
-            password: formData.password,
-            metadata: {
-              name: formData.fullName,
-              company: formData.companyName,
-              industry: formData.industry,
-            },
-          },
-        });
+      // Use the unified signUp for both invite and regular signups
+      const result = await signUp(formData.email, formData.password, {
+        name: formData.fullName,
+        company: formData.companyName,
+        industry: formData.industry,
+      });
 
-        if (createError) {
-          reportError(createError.message, createError);
-          return;
-        }
+      if (result.error) {
+        const msg = (result.error as any)?.response?.data?.error?.message || result.error.message || 'Registration failed';
+        reportError(msg, result.error);
+        return;
+      }
 
-        if (data?.error) {
-          reportError(data.error, data);
-          return;
-        }
-      } else {
-        // For regular signups, use the normal auth flow
-        const result = await signUp(formData.email, formData.password, {
-          name: formData.fullName,
-          company: formData.companyName,
-          industry: formData.industry,
-        });
-
-        if (result.error) {
-          reportError(result.error.message, result.error);
-          return;
-        }
-
-        // Send OTP for email verification
-        try {
-          const { data, error: otpError } = await supabase.functions.invoke('send-otp', {
-            body: { email: formData.email },
-          });
-
-          if (otpError || data?.error) {
-            console.error('Error sending OTP:', otpError || data?.error);
-          }
-        } catch (err) {
-          console.error('Error sending OTP:', err);
-        }
-
-        // Organization is created AFTER email verification succeeds.
-        // Store the intended org name/description so VerifyEmail can create it post-OTP.
+      // For regular signups, store org info so it can be created after email verification
+      if (!inviteToken) {
         try {
           sessionStorage.setItem(
             'openplan_pending_org',
@@ -190,8 +142,9 @@ const Signup = () => {
       }
 
       navigate("/verify-email", { state: { email: formData.email } });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+    } catch (err: any) {
+      const apiMessage = err?.response?.data?.error?.message || err?.response?.data?.message;
+      const errorMessage = apiMessage || (err instanceof Error ? err.message : 'An error occurred');
       reportError(errorMessage, err);
     } finally {
       setIsLoading(false);
@@ -286,18 +239,28 @@ const Signup = () => {
                 </Alert>
               )}
 
-              {inviteError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{inviteError}</AlertDescription>
+              {isInviteSignup && inviteLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Validating invitation...
+                </div>
+              )}
+
+              {isInviteSignup && !inviteLoading && !inviteError && inviteOrgName && (
+                <Alert className="border-primary/40 bg-primary/5">
+                  <Mail className="h-4 w-4 text-primary" />
+                  <AlertDescription>
+                    You've been invited to join <strong>{inviteOrgName}</strong>. Create your account to get started.
+                  </AlertDescription>
                 </Alert>
               )}
 
-              {isInviteSignup && !inviteError && (
-                <Alert>
-                  <Mail className="h-4 w-4" />
+              {inviteError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    You've been invited to join a team. Create your account to get started.
+                    {inviteError}{' '}
+                    <Link to="/login" className="underline">Go to login</Link>
                   </AlertDescription>
                 </Alert>
               )}
@@ -320,7 +283,10 @@ const Signup = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">Work Email</Label>
+                <Label htmlFor="email">
+                  Work Email
+                  {inviteEmail && <span className="ml-2 text-xs text-muted-foreground font-normal">(locked to invited address)</span>}
+                </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -328,19 +294,14 @@ const Signup = () => {
                     type="email"
                     placeholder="you@company.com"
                     value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    className={cn("pl-10", isInviteSignup && "bg-muted cursor-not-allowed")}
+                    onChange={(e) => !inviteEmail && handleChange("email", e.target.value)}
+                    className={cn("pl-10", inviteEmail && "bg-muted cursor-not-allowed")}
                     required
-                    disabled={isLoading || isInviteSignup}
-                    readOnly={isInviteSignup}
+                    readOnly={!!inviteEmail}
+                    disabled={isLoading || !!inviteEmail}
                     autoComplete="email"
                   />
                 </div>
-                {isInviteSignup && (
-                  <p className="text-xs text-muted-foreground">
-                    Email is locked to the invited address.
-                  </p>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -430,7 +391,7 @@ const Signup = () => {
               {!isInviteSignup && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="companyName">Company Name</Label>
+                    <Label htmlFor="companyName">Organization Name</Label>
                     <div className="relative">
                       <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -473,7 +434,7 @@ const Signup = () => {
               )}
             </CardContent>
             <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" className="w-full" disabled={isLoading || authLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || authLoading || inviteLoading || !!inviteError}>
                 {isLoading ? (
                   "Creating account..."
                 ) : (
@@ -490,15 +451,17 @@ const Signup = () => {
                 <span className="text-primary">Privacy Policy</span>
                 {" "}(coming soon)
               </p>
-              <p className="text-sm text-muted-foreground text-center">
-                Already have an account?{" "}
-                <Link
-                  to="/login"
-                  className="text-primary hover:text-primary/80 font-medium transition-colors"
-                >
-                  Sign in
-                </Link>
-              </p>
+              {!isInviteSignup && (
+                <p className="text-sm text-muted-foreground text-center">
+                  Already have an account?{" "}
+                  <Link
+                    to="/login"
+                    className="text-primary hover:text-primary/80 font-medium transition-colors"
+                  >
+                    Sign in
+                  </Link>
+                </p>
+              )}
             </CardFooter>
           </form>
         </Card>

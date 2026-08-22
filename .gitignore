@@ -27,3 +27,8 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Diagnostic / debug artefacts — never commit these
+diagnostic_output.json
+trigger_message.mjs
+*.diagnostic.json

@@ -1,15 +1,17 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { Flag, AlertCircle, CheckSquare, Users, Calendar, Folder } from 'lucide-react';
+import { Flag, AlertCircle, CheckSquare, Users, Calendar, Folder, Video } from 'lucide-react';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { CalendarEvent } from '../utils/calendarUtils';
+import { resolveFileUrl } from '@/utils/fileUrl';
 
 interface CalendarEventPreviewProps {
   event: CalendarEvent;
   children: React.ReactNode;
+  side?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 const typeLabels: Record<string, { label: string; icon: React.ReactNode; className: string }> = {
@@ -28,6 +30,11 @@ const typeLabels: Record<string, { label: string; icon: React.ReactNode; classNa
     icon: <AlertCircle className="h-3 w-3" />,
     className: 'bg-destructive/10 text-destructive',
   },
+  meeting: {
+    label: 'Meeting',
+    icon: <Video className="h-3 w-3" />,
+    className: 'bg-blue-500/10 text-blue-600',
+  },
 };
 
 const statusLabels: Record<string, { label: string; className: string }> = {
@@ -40,14 +47,22 @@ const statusLabels: Record<string, { label: string; className: string }> = {
 
 const priorityLabels: Record<string, { label: string; className: string }> = {
   'critical': { label: 'Critical', className: 'bg-destructive/10 text-destructive' },
-  'high': { label: 'High', className: 'bg-orange-500/10 text-orange-600' },
-  'medium': { label: 'Medium', className: 'bg-yellow-500/10 text-yellow-600' },
-  'low': { label: 'Low', className: 'bg-muted text-muted-foreground' },
+  'major': { label: 'Major', className: 'bg-orange-500/10 text-orange-600' },
+  'minor': { label: 'Minor', className: 'bg-yellow-500/10 text-yellow-600' },
+  'trivial': { label: 'Trivial', className: 'bg-muted text-muted-foreground' },
+};
+
+const issueStatusLabels: Record<string, { label: string; className: string }> = {
+  'open': { label: 'Open', className: 'bg-destructive/10 text-destructive' },
+  'in-progress': { label: 'In Progress', className: 'bg-blue-500/10 text-blue-600' },
+  'resolved': { label: 'Resolved', className: 'bg-green-500/10 text-green-600' },
+  'wont-fix': { label: "Won't Fix", className: 'bg-muted text-muted-foreground' },
 };
 
 export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
   event,
   children,
+  side = 'right',
 }) => {
   const typeInfo = typeLabels[event.type];
   const statusInfo = event.status ? statusLabels[event.status] : null;
@@ -56,7 +71,7 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
   return (
     <HoverCard openDelay={300} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent className="w-80 p-4" side="right" align="start">
+      <HoverCardContent className="w-80 p-4" side={side} align="start" collisionPadding={12}>
         <div className="space-y-3">
           {/* Type badge */}
           <div className="flex items-center gap-2">
@@ -67,6 +82,11 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
             {event.type === 'milestone' && event.completed && (
               <Badge variant="secondary" className="bg-green-500/10 text-green-600">
                 Completed
+              </Badge>
+            )}
+            {event.type === 'issue' && event.issueStatus && issueStatusLabels[event.issueStatus] && (
+              <Badge variant="secondary" className={issueStatusLabels[event.issueStatus].className}>
+                {issueStatusLabels[event.issueStatus].label}
               </Badge>
             )}
           </div>
@@ -100,7 +120,7 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
                 event.severity === 'major' && 'bg-orange-500/10 text-orange-600'
               )}
             >
-              {event.severity.charAt(0).toUpperCase() + event.severity.slice(1)} Severity
+              {event.severity.charAt(0).toUpperCase() + event.severity.slice(1)} Priority
             </Badge>
           )}
 
@@ -114,19 +134,40 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
           {/* Meta info */}
           <div className="flex flex-col gap-1.5 pt-2 border-t border-border">
             {/* Project */}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Folder className="h-3 w-3" />
-              <span>{event.projectName}</span>
-            </div>
+            {event.type !== 'meeting' && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Folder className="h-3 w-3" />
+                <span>{event.projectName}</span>
+              </div>
+            )}
 
             {/* Date */}
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Calendar className="h-3 w-3" />
               <span>
-                {event.type === 'milestone' ? 'Target: ' : 'Due: '}
-                {format(event.date, 'MMM d, yyyy')}
+                {event.type === 'meeting' ? (
+                  <>
+                    {format(event.date, 'MMM d, yyyy · h:mm a')}
+                    {event.endDate && ` – ${format(event.endDate, 'h:mm a')}`}
+                  </>
+                ) : (
+                  <>
+                    {event.type === 'milestone' ? 'Target: ' : 'Due: '}
+                    {format(event.date, 'MMM d, yyyy')}
+                  </>
+                )}
               </span>
             </div>
+
+            {/* Meeting attendees */}
+            {event.type === 'meeting' && event.attendeeEmails && event.attendeeEmails.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Users className="h-3 w-3" />
+                <span className="truncate">
+                  {event.attendeeEmails.length} invited
+                </span>
+              </div>
+            )}
 
             {/* Assignees */}
             {event.assignees && event.assignees.length > 0 && (
@@ -135,6 +176,7 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
                 <div className="flex items-center gap-1">
                   {event.assignees.map((assignee) => (
                     <Avatar key={assignee.id} className="h-5 w-5">
+                      <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
                       <AvatarFallback className="text-[10px] bg-muted">
                         {assignee.initials}
                       </AvatarFallback>

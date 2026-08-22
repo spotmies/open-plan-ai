@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     Dialog,
     DialogContent,
@@ -47,28 +48,45 @@ import {
     Target,
     Pencil,
     Trash2,
+    Check,
     Globe,
     ChevronDown,
     ChevronUp,
-    Palette
+    Palette,
+    Eye,
+    EyeOff,
+    GripVertical,
+    LayoutGrid,
+    Image as ImageIcon
 } from "lucide-react";
-import { format, isBefore, startOfMonth, startOfToday } from "date-fns";
-import { cn } from "@/lib/utils";
+import { format, isBefore, startOfMonth } from "date-fns";
+import { cn, isValidPhoneNumber } from "@/lib/utils";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { toast } from "sonner";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useProjectDetail } from "@/hooks/useProjectDetail";
-import { useUpdateProject, useProject, useDeleteProject } from "@/hooks/useProjects";
-import { useOrganizationMembers } from "@/hooks/useProjectTeam";
-import { useProjectAttachments, useCreateAttachment, useDeleteAttachment } from "@/hooks/useProjectAttachments";
-import { useProjectLinks, useCreateProjectLink, useDeleteProjectLink } from "@/hooks/useProjectLinks";
+import { useProjectModules } from "@/hooks/useProjectDetail";
+import { useProjectMilestones } from "@/hooks/useMilestones";
+import { useUpdateProject, useUpdateProjectStage, useProject, useDeleteProject } from "@/hooks/useProjects";
+import { useOrganizationMembers, useProjectMembers } from "@/hooks/useProjectTeam";
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
+import { useProjectAttachments, useDeleteAttachment } from "@/hooks/useProjectAttachments";
+import { useProjectLinks, useCreateProjectLink, useUpdateProjectLink, useDeleteProjectLink } from "@/hooks/useProjectLinks";
 import { projectStorageService } from "@/services/projectStorage.service";
+import { projectsService } from "@/services/projects.service";
+import { resolveFileUrl } from "@/utils/fileUrl";
+import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { modulesService } from "@/services/modules.service";
 import { milestonesService } from "@/services/milestones.service";
 import { projectMembersService } from "@/services/projectMembers.service";
 import { chatService } from "@/services/chat.service";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryClient";
+import { logger } from '@/services/monitoring/logger';
+import type { ProjectRole, ProjectTabConfig } from "@/types";
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
+import { Switch } from "@/components/ui/switch";
+import { DEFAULT_PROJECT_TAB_CONFIG, PROJECT_TAB_DEFINITIONS, resolveProjectTabConfig } from "./projectTabsConfig";
 
 const projectTypes = [
     "Hardware Development",
@@ -103,13 +121,15 @@ const departmentsList = [
 
 interface ProjectLink {
     id: string;
-    name: string;
+    title: string;
+    /** @deprecated use title */
+    name?: string;
     url: string;
 }
 
 interface TeamMemberAssignment {
     memberId: string;
-    role: string;
+    role: ProjectRole;
     name?: string;
     avatar?: string;
 }
@@ -146,25 +166,48 @@ const projectEmojis = [
     "✨", "🌟", "⭐", "💎", "🏆", "🎖️", "🥇", "🎁", "📦", "🗃️"
 ];
 
+/** Normalizes a loosely-typed TeamMember.role (or missing role) to a ProjectRole. */
+const toProjectRole = (role: string | undefined | null): ProjectRole => {
+    const normalized = (role || "").toLowerCase();
+    if (normalized === "admin" || normalized === "maintainer") return normalized;
+    return "member";
+};
+
 const EditProject = () => {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    const location = useLocation();
     const { id } = useParams();
+    // Entered from the project details page? Cancel/Save return there rather
+    // than dropping the user into the workspace they weren't looking at.
+    const returnTo = (location.state as { from?: string } | null)?.from === 'details'
+        ? `/projects/${id}/details`
+        : `/projects/${id}`;
     const { user } = useAuth();
     const { currentOrganization } = useOrganization();
     const updateProjectMutation = useUpdateProject();
+    const updateProjectStageMutation = useUpdateProjectStage();
     const deleteProjectMutation = useDeleteProject();
     const { data: orgMembers = [] } = useOrganizationMembers(currentOrganization?.id);
+    const { data: projectMembers = [] } = useProjectMembers(id);
+    const {
+        canManageMembers,
+        canManageProjectSettings,
+        isProjectMaintainerPlus,
+    } = useProjectPermissions(id);
 
     // Fetch project data
     const { data: project, isLoading, error } = useProject(id);
+    // Modules and milestones are not included in the project payload — they live behind their own endpoints.
+    const { data: projectModulesData = [] } = useProjectModules(id);
+    const { data: projectMilestonesData = [] } = useProjectMilestones(id || '');
     const { data: projectAttachments = [] } = useProjectAttachments(id);
     const { data: projectLinks = [] } = useProjectLinks(id);
 
     // Mutations
-    const createAttachmentMutation = useCreateAttachment();
     const deleteAttachmentMutation = useDeleteAttachment();
     const createLinkMutation = useCreateProjectLink();
+    const updateLinkMutation = useUpdateProjectLink();
     const deleteLinkMutation = useDeleteProjectLink();
 
     // Form state
@@ -174,6 +217,9 @@ const EditProject = () => {
     const [projectStage, setProjectStage] = useState("");
     const [projectEmoji, setProjectEmoji] = useState("📁");
     const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+    const [logoUrl, setLogoUrl] = useState<string | null>(null);
+    const [logoLoading, setLogoLoading] = useState(false);
+    const logoInputRef = useRef<HTMLInputElement>(null);
     const [startDate, setStartDate] = useState<Date>();
     const [targetDate, setTargetDate] = useState<Date>();
     const [isStartDateOpen, setIsStartDateOpen] = useState(false);
@@ -186,10 +232,14 @@ const EditProject = () => {
     const [clientOrganization, setClientOrganization] = useState("");
     const [clientContact, setClientContact] = useState("");
     const [notes, setNotes] = useState("");
+    const [clientContactError, setClientContactError] = useState("");
+    const [clientOrgError, setClientOrgError] = useState("");
 
     // Team Members
     const [assignedMembers, setAssignedMembers] = useState<TeamMemberAssignment[]>([]);
     const [selectedMember, setSelectedMember] = useState("");
+    const [selectedMemberRole, setSelectedMemberRole] = useState<ProjectRole>("member");
+    const [memberRoleUpdatingId, setMemberRoleUpdatingId] = useState<string | null>(null);
 
     // Departments
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
@@ -197,17 +247,20 @@ const EditProject = () => {
     const [newDeptName, setNewDeptName] = useState("");
     const [isAddDeptOpen, setIsAddDeptOpen] = useState(false);
 
+    // Tabs: per-project order + visibility of the project detail page's section tabs
+    const [tabConfig, setTabConfig] = useState<ProjectTabConfig[]>(DEFAULT_PROJECT_TAB_CONFIG);
+
     // Modules
     const [modules, setModules] = useState<ProjectModule[]>([]);
     const [newModuleName, setNewModuleName] = useState("");
     const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
+    const [editingModuleName, setEditingModuleName] = useState("");
 
     // Milestones
     const [milestones, setMilestones] = useState<ProjectMilestone[]>([]);
     const [newMilestoneName, setNewMilestoneName] = useState("");
     const [newMilestoneStart, setNewMilestoneStart] = useState<Date>();
     const [newMilestoneEnd, setNewMilestoneEnd] = useState<Date>();
-    const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
     const [isMilestoneStartOpen, setIsMilestoneStartOpen] = useState(false);
     const [isMilestoneEndOpen, setIsMilestoneEndOpen] = useState(false);
     const [milestoneStartCalendarMonth, setMilestoneStartCalendarMonth] = useState<Date>(() =>
@@ -233,9 +286,42 @@ const EditProject = () => {
         }
     }, [isMilestoneEndOpen, newMilestoneEnd, newMilestoneStart, startDate]);
 
+    // Inline milestone editing (edit-in-place on the list item)
+    const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
+    const [editingMilestoneName, setEditingMilestoneName] = useState("");
+    const [editingMilestoneStart, setEditingMilestoneStart] = useState<Date>();
+    const [editingMilestoneEnd, setEditingMilestoneEnd] = useState<Date>();
+    const [isEditMilestoneStartOpen, setIsEditMilestoneStartOpen] = useState(false);
+    const [isEditMilestoneEndOpen, setIsEditMilestoneEndOpen] = useState(false);
+    const [editMilestoneStartCalendarMonth, setEditMilestoneStartCalendarMonth] = useState<Date>(() =>
+        startOfMonth(new Date())
+    );
+    const [editMilestoneEndCalendarMonth, setEditMilestoneEndCalendarMonth] = useState<Date>(() =>
+        startOfMonth(new Date())
+    );
+
+    useLayoutEffect(() => {
+        if (isEditMilestoneStartOpen) {
+            setEditMilestoneStartCalendarMonth(
+                startOfMonth(editingMilestoneStart ?? startDate ?? new Date())
+            );
+        }
+    }, [isEditMilestoneStartOpen, editingMilestoneStart, startDate]);
+
+    useLayoutEffect(() => {
+        if (isEditMilestoneEndOpen) {
+            setEditMilestoneEndCalendarMonth(
+                startOfMonth(editingMilestoneEnd ?? editingMilestoneStart ?? startDate ?? new Date())
+            );
+        }
+    }, [isEditMilestoneEndOpen, editingMilestoneEnd, editingMilestoneStart, startDate]);
+
     // Links state
     const [newLinkName, setNewLinkName] = useState("");
     const [newLinkUrl, setNewLinkUrl] = useState("");
+    const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+    const [editingLinkName, setEditingLinkName] = useState("");
+    const [editingLinkUrl, setEditingLinkUrl] = useState("");
 
     // Deletion Confirmation State
     const [deleteConfirmation, setDeleteConfirmation] = useState<{
@@ -279,7 +365,7 @@ const EditProject = () => {
             setModules(modules.filter(m => m.id !== id));
             if (editingModuleId === id) {
                 setEditingModuleId(null);
-                setNewModuleName("");
+                setEditingModuleName("");
             }
         } else if (type === 'milestone') {
             const exists = milestones.some(m => m.id === id);
@@ -291,9 +377,9 @@ const EditProject = () => {
             setMilestones(milestones.filter(m => m.id !== id));
             if (editingMilestoneId === id) {
                 setEditingMilestoneId(null);
-                setNewMilestoneName("");
-                setNewMilestoneStart(undefined);
-                setNewMilestoneEnd(undefined);
+                setEditingMilestoneName("");
+                setEditingMilestoneStart(undefined);
+                setEditingMilestoneEnd(undefined);
             }
         } else if (type === 'attachment') {
             try {
@@ -327,39 +413,48 @@ const EditProject = () => {
     const [isUploading, setIsUploading] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [previewFile, setPreviewFile] = useState<any>(null);
 
-    const canManageProjectMembers = useMemo(() => {
-        if (!project || !user?.id) return false;
-        if (project.createdBy === user.id) return true;
-        const myMembership = (project.team || []).find((member) => member.id === user.id);
-        return (myMembership?.role || '').toLowerCase() === 'admin';
-    }, [project?.createdBy, project?.team, user?.id]);
+    // Member management (add/remove/change role) is Admin-only.
+    const canManageProjectMembers = canManageMembers;
 
     const isProjectOwner = useMemo(() => {
         if (!project?.createdBy || !user?.id) return false;
         return project.createdBy === user.id;
     }, [project?.createdBy, user?.id]);
 
-    const selectedOrgMember = useMemo(
-        () => orgMembers.find((member: any) => member.id === selectedMember),
-        [orgMembers, selectedMember]
-    );
+    // This page conflates "rename/settings" and "stage" edits into a single
+    // form gated by one early-return (see the `!canEditProject` guard below).
+    // Splitting them would require restructuring the page into two
+    // independently-gated sections; instead we gate page access with the
+    // broader isProjectMaintainerPlus (Maintainers can change stage/status)
+    // and disable the Admin-only fields (name, type, departments, members,
+    // dates, optional details) individually via canManageProjectSettings.
+    const canEditProject = isProjectMaintainerPlus;
 
     const handleAddModule = () => {
         if (newModuleName.trim()) {
-            if (editingModuleId) {
-                setModules(modules.map(m => m.id === editingModuleId ? { ...m, name: newModuleName.trim() } : m));
-                setEditingModuleId(null);
-            } else {
-                setModules([...modules, { id: Math.random().toString(36).substr(2, 9), name: newModuleName.trim() }]);
-            }
+            setModules([...modules, { id: Math.random().toString(36).substr(2, 9), name: newModuleName.trim() }]);
             setNewModuleName("");
         }
     };
 
     const handleEditModule = (module: ProjectModule) => {
-        setNewModuleName(module.name);
         setEditingModuleId(module.id);
+        setEditingModuleName(module.name);
+    };
+
+    const handleSaveModuleEdit = () => {
+        if (editingModuleName.trim() && editingModuleId) {
+            setModules(modules.map(m => m.id === editingModuleId ? { ...m, name: editingModuleName.trim() } : m));
+        }
+        setEditingModuleId(null);
+        setEditingModuleName("");
+    };
+
+    const handleCancelModuleEdit = () => {
+        setEditingModuleId(null);
+        setEditingModuleName("");
     };
 
     const handleRemoveModule = (id: string) => {
@@ -367,34 +462,16 @@ const EditProject = () => {
     };
 
     const handleAddMilestone = () => {
-        if (startDate && newMilestoneStart && isBefore(newMilestoneStart, startDate)) {
-            toast.error("Milestone start date cannot be earlier than project start date");
-            return;
-        }
-        if (targetDate && newMilestoneEnd && isBefore(targetDate, newMilestoneEnd)) {
-            toast.error("Milestone end date cannot be later than project target date");
-            return;
-        }
         if (newMilestoneName.trim() && newMilestoneStart && newMilestoneEnd) {
-            if (editingMilestoneId) {
-                setMilestones(milestones.map(m => m.id === editingMilestoneId ? {
-                    ...m,
+            setMilestones([
+                ...milestones,
+                {
+                    id: Math.random().toString(36).substr(2, 9),
                     name: newMilestoneName.trim(),
                     startDate: newMilestoneStart,
                     endDate: newMilestoneEnd
-                } : m));
-                setEditingMilestoneId(null);
-            } else {
-                setMilestones([
-                    ...milestones,
-                    {
-                        id: Math.random().toString(36).substr(2, 9),
-                        name: newMilestoneName.trim(),
-                        startDate: newMilestoneStart,
-                        endDate: newMilestoneEnd
-                    }
-                ]);
-            }
+                }
+            ]);
             setNewMilestoneName("");
             setNewMilestoneStart(undefined);
             setNewMilestoneEnd(undefined);
@@ -402,10 +479,33 @@ const EditProject = () => {
     };
 
     const handleEditMilestone = (milestone: ProjectMilestone) => {
-        setNewMilestoneName(milestone.name);
-        setNewMilestoneStart(milestone.startDate);
-        setNewMilestoneEnd(milestone.endDate);
         setEditingMilestoneId(milestone.id);
+        setEditingMilestoneName(milestone.name);
+        setEditingMilestoneStart(milestone.startDate);
+        setEditingMilestoneEnd(milestone.endDate);
+    };
+
+    const handleSaveMilestoneEdit = () => {
+        if (!editingMilestoneId) return;
+        if (editingMilestoneName.trim() && editingMilestoneStart && editingMilestoneEnd) {
+            setMilestones(milestones.map(m => m.id === editingMilestoneId ? {
+                ...m,
+                name: editingMilestoneName.trim(),
+                startDate: editingMilestoneStart,
+                endDate: editingMilestoneEnd
+            } : m));
+            setEditingMilestoneId(null);
+            setEditingMilestoneName("");
+            setEditingMilestoneStart(undefined);
+            setEditingMilestoneEnd(undefined);
+        }
+    };
+
+    const handleCancelMilestoneEdit = () => {
+        setEditingMilestoneId(null);
+        setEditingMilestoneName("");
+        setEditingMilestoneStart(undefined);
+        setEditingMilestoneEnd(undefined);
     };
 
     const handleRemoveMilestone = (id: string) => {
@@ -414,7 +514,7 @@ const EditProject = () => {
 
     const handleAddTeamMember = () => {
         if (!canManageProjectMembers) {
-            toast.error('Only the project creator or an Admin can add or remove members');
+            toast.error('Only a project Admin can add or remove members');
             return;
         }
 
@@ -422,23 +522,47 @@ const EditProject = () => {
             const exists = assignedMembers.find(m => m.memberId === selectedMember);
             if (!exists) {
                 const memberObj = orgMembers.find(m => m.id === selectedMember);
-                const inheritedRole = memberObj?.role || "member";
                 setAssignedMembers([...assignedMembers, {
                     memberId: selectedMember,
-                    role: inheritedRole,
+                    role: selectedMemberRole,
                     name: memberObj?.name,
                     avatar: memberObj?.avatar
                 }]);
                 setSelectedMember("");
+                setSelectedMemberRole("member");
             } else {
                 toast.error("Member already assigned");
             }
         }
     };
 
+    const handleUpdateAssignedMemberRole = async (memberId: string, role: ProjectRole) => {
+        if (!canManageProjectMembers) return;
+
+        // For members already persisted in the DB, call the update-role endpoint
+        // directly and invalidate the project-members query. For members only
+        // staged locally (not yet saved via handleSave), just update local state.
+        const isPersisted = projectMembers.some((m) => m.id === memberId);
+        setAssignedMembers((prev) => prev.map((m) => (m.memberId === memberId ? { ...m, role } : m)));
+
+        if (isPersisted && id) {
+            setMemberRoleUpdatingId(memberId);
+            try {
+                await projectMembersService.updateRole(id, memberId, role);
+                await queryClient.invalidateQueries({ queryKey: ['project-members', id] });
+                toast.success('Member role updated');
+            } catch (err) {
+                logger.error('[handleUpdateAssignedMemberRole] Failed to update role', { projectId: id, memberId, error: err });
+                toast.error('Failed to update member role');
+            } finally {
+                setMemberRoleUpdatingId(null);
+            }
+        }
+    };
+
     const handleRemoveTeamMember = (memberId: string) => {
         if (!canManageProjectMembers) {
-            toast.error('Only the project creator or an Admin can add or remove members');
+            toast.error('Only a project Admin can add or remove members');
             return;
         }
 
@@ -451,6 +575,20 @@ const EditProject = () => {
                 ? prev.filter(d => d !== departmentId)
                 : [...prev, departmentId]
         );
+    };
+
+    const handleTabVisibilityToggle = (tabId: ProjectTabConfig['id']) => {
+        setTabConfig(prev =>
+            prev.map(t => t.id === tabId ? { ...t, visible: !t.visible } : t)
+        );
+    };
+
+    const handleTabDragEnd = (result: DropResult) => {
+        if (!result.destination) return;
+        const reordered = Array.from(tabConfig);
+        const [moved] = reordered.splice(result.source.index, 1);
+        reordered.splice(result.destination.index, 0, moved);
+        setTabConfig(reordered.map((t, index) => ({ ...t, order: index })));
     };
 
     const handleAddCustomDepartment = () => {
@@ -469,6 +607,55 @@ const EditProject = () => {
         }
     };
 
+    const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (e.target) e.target.value = '';
+        if (!file || !id) return;
+
+        if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+            toast.error('Only JPG, PNG, WebP, or GIF images are allowed');
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error('Logo file size must be less than 5MB');
+            return;
+        }
+
+        const localPreview = URL.createObjectURL(file);
+        setLogoUrl(localPreview);
+        setLogoLoading(true);
+        try {
+            const uploadedUrl = await projectsService.uploadLogo(id, file);
+            URL.revokeObjectURL(localPreview);
+            setLogoUrl(uploadedUrl);
+            await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(id) });
+            toast.success('Project logo updated');
+        } catch (error) {
+            URL.revokeObjectURL(localPreview);
+            setLogoUrl(project?.logoUrl ? (resolveFileUrl(project.logoUrl) ?? project.logoUrl) : null);
+            logger.error('Error uploading project logo:', error);
+            toast.error('Failed to upload logo');
+        } finally {
+            setLogoLoading(false);
+        }
+    };
+
+    const handleRemoveLogo = async () => {
+        if (!id) return;
+        setLogoLoading(true);
+        try {
+            await projectsService.deleteLogo(id);
+            setLogoUrl(null);
+            await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(id) });
+            toast.success('Project logo removed');
+        } catch (error) {
+            logger.error('Error removing project logo:', error);
+            toast.error('Failed to remove logo');
+        } finally {
+            setLogoLoading(false);
+        }
+    };
+
     // Initialize form with project data
     useEffect(() => {
         if (project) {
@@ -477,6 +664,7 @@ const EditProject = () => {
             setProjectType(project.type || "");
             setProjectStage(project.stage || "concept");
             setProjectEmoji(project.icon || "📁");
+            setLogoUrl(project.logoUrl ? (resolveFileUrl(project.logoUrl) ?? project.logoUrl) : null);
             if (project.startDate) {
                 setStartDate(new Date(project.startDate));
             }
@@ -504,44 +692,41 @@ const EditProject = () => {
                 }
             }
 
-            // Populating team members
-            if (project.team) {
-                setAssignedMembers(project.team.map(m => ({
-                    memberId: m.id,
-                    role: m.role,
-                    name: m.name,
-                    avatar: m.avatar
-                })));
-            }
+            // Populating tab order/visibility
+            setTabConfig(resolveProjectTabConfig(project.tabConfig));
 
-            // Populating modules
-            if (project.projectModules) {
-                // First-class modules initialization
-                const projectModules = project.projectModules || [];
-                setModules(projectModules.map(m => ({
-                    id: m.id,
-                    name: m.name,
-                    type: m.type
-                })));
-            } else if (project.modules) {
-                // Fallback for legacy modules
-                setModules(project.modules.map(m => ({
-                    id: Math.random().toString(36).substr(2, 9),
-                    name: m.name
-                })));
-            }
-
-            // Populating milestones
-            if (project.milestones) {
-                setMilestones(project.milestones.map(m => ({
-                    id: m.id,
-                    name: m.title,
-                    startDate: undefined, // Milestone model doesn't have startDate yet? 
-                    endDate: m.date ? new Date(m.date) : undefined
-                })));
-            }
         }
     }, [project]);
+
+    // Populate modules from the dedicated project-modules endpoint (the project payload doesn't include them)
+    useEffect(() => {
+        setModules(projectModulesData.map(m => ({
+            id: m.id,
+            name: m.name,
+        })));
+    }, [projectModulesData]);
+
+    // Populate milestones from the dedicated project-milestones endpoint (the project payload doesn't include them)
+    useEffect(() => {
+        setMilestones(projectMilestonesData.map(m => ({
+            id: m.id,
+            name: m.name,
+            startDate: undefined,
+            endDate: m.due_date ? new Date(m.due_date) : undefined,
+        })));
+    }, [projectMilestonesData]);
+
+    // Populate team members from the dedicated project members endpoint
+    useEffect(() => {
+        if (projectMembers.length > 0) {
+            setAssignedMembers(projectMembers.map(m => ({
+                memberId: m.id,
+                role: toProjectRole(m.role),
+                name: m.name,
+                avatar: m.avatar,
+            })));
+        }
+    }, [projectMembers]);
 
     const formatFileSize = (bytes: number): string => {
         if (bytes === 0) return '0 Bytes';
@@ -550,6 +735,17 @@ const EditProject = () => {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
+
+    const getAttachmentMimeType = (attachment: any): string => {
+        const mime = attachment?.mimeType || attachment?.mime_type;
+        if (mime) return mime;
+        const name: string = attachment?.file_name || attachment?.fileName || '';
+        const ext = name.split('.').pop()?.toLowerCase();
+        if (ext === 'pdf') return 'application/pdf';
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return `image/${ext}`;
+        return '';
+    };
+    const isImageAttachment = (attachment: any) => getAttachmentMimeType(attachment).startsWith('image/');
 
     const handleFileUpload = useCallback(async (files: FileList | null) => {
         if (!files || files.length === 0 || !id) return;
@@ -565,20 +761,13 @@ const EditProject = () => {
                 }
 
                 try {
-                    const uploadResult = await projectStorageService.uploadFile(file, id);
-                    await createAttachmentMutation.mutateAsync({
-                        entity_id: id,
-                        entity_type: 'project',
-                        file_name: uploadResult.name,
-                        file_path: uploadResult.path,
-                        file_size: file.size,
-                        mime_type: file.type,
-                        project_id: id,
-                    });
+                    await projectStorageService.upload(id, file);
                 } catch (err) {
                     errors.push(`${file.name}: Upload failed`);
                 }
             }
+
+            queryClient.invalidateQueries({ queryKey: ['project-attachments', id] });
 
             if (errors.length > 0) {
                 toast.error('Some files failed to upload', { description: errors.join('\n') });
@@ -588,7 +777,7 @@ const EditProject = () => {
         } finally {
             setIsUploading(false);
         }
-    }, [id, createAttachmentMutation]);
+    }, [id, queryClient]);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -612,7 +801,7 @@ const EditProject = () => {
         try {
             await createLinkMutation.mutateAsync({
                 project_id: id,
-                name: newLinkName,
+                title: newLinkName,
                 url: newLinkUrl,
             });
             setNewLinkName("");
@@ -620,6 +809,33 @@ const EditProject = () => {
             toast.success('Link added successfully');
         } catch (err) {
             toast.error('Failed to add link');
+        }
+    };
+
+    const handleEditLink = (link: any) => {
+        setEditingLinkId(link.id);
+        setEditingLinkName(link.title || link.name || "");
+        setEditingLinkUrl(link.url || "");
+    };
+
+    const handleCancelLinkEdit = () => {
+        setEditingLinkId(null);
+        setEditingLinkName("");
+        setEditingLinkUrl("");
+    };
+
+    const handleSaveLinkEdit = async () => {
+        if (!editingLinkName || !editingLinkUrl || !editingLinkId || !id) return;
+
+        try {
+            await updateLinkMutation.mutateAsync({
+                linkId: editingLinkId,
+                projectId: id,
+                input: { title: editingLinkName, url: editingLinkUrl },
+            });
+            handleCancelLinkEdit();
+        } catch (err) {
+            toast.error('Failed to update link');
         }
     };
 
@@ -649,7 +865,7 @@ const EditProject = () => {
             setDeleteProjectConfirmText("");
             navigate("/projects");
         } catch (error) {
-            console.error("Error deleting project:", error);
+            logger.error("Error deleting project:", error);
             const errorMessage = error instanceof Error ? error.message : "";
             if (errorMessage.toLowerCase().includes("access denied")) {
                 toast.error("Only the project owner can delete this project.");
@@ -662,25 +878,54 @@ const EditProject = () => {
     const executeSave = async (removeFromChatToo: boolean) => {
         if (!id || !project) return;
 
+        if (newMilestoneName.trim() || newMilestoneStart || newMilestoneEnd) {
+            toast.error("You have an unsaved milestone. Please click 'Add Milestone' or clear the inputs.");
+            return;
+        }
+        if (editingMilestoneId) {
+            toast.error("You have an unsaved milestone edit. Please save or cancel it first.");
+            return;
+        }
+        if (newModuleName.trim()) {
+            toast.error("You have an unsaved module. Please click 'Add Module' or clear the input.");
+            return;
+        }
+        if (editingModuleId) {
+            toast.error("You have an unsaved module edit. Please save or cancel it first.");
+            return;
+        }
+        if (newLinkName.trim() || newLinkUrl.trim()) {
+            toast.error("You have an unsaved project link. Please click 'Add Link' or clear the inputs.");
+            return;
+        }
+
         setIsSaving(true);
         try {
-            await updateProjectMutation.mutateAsync({
-                id,
-                updates: {
-                    name: projectName,
-                    description: projectDescription,
-                    type: projectType,
-                    stage: projectStage as any,
-                    icon: projectEmoji,
-                    startDate: startDate ? format(startDate, 'yyyy-MM-dd') : undefined,
-                    targetDate: targetDate ? format(targetDate, 'yyyy-MM-dd') : undefined,
-                    clientName: clientName || undefined,
-                    clientOrganization: clientOrganization || undefined,
-                    clientContact: clientContact || undefined,
-                    notes: notes || undefined,
-                    departments: selectedDepartments,
-                },
-            });
+            // A Maintainer (not Admin) can only change Stage on this page — the
+            // general update endpoint is Admin-only, so route stage-only saves
+            // through the dedicated Maintainer-accessible stage endpoint instead.
+            if (!canManageProjectSettings && isProjectMaintainerPlus) {
+                await updateProjectStageMutation.mutateAsync({ id, stage: projectStage });
+            } else {
+                await updateProjectMutation.mutateAsync({
+                    id,
+                    updates: {
+                        name: projectName,
+                        description: projectDescription,
+                        type: projectType,
+                        stage: projectStage as any,
+                        icon: projectEmoji,
+                        startDate: startDate ? format(startDate, 'yyyy-MM-dd') : undefined,
+                        targetDate: targetDate ? format(targetDate, 'yyyy-MM-dd') : undefined,
+                        clientName: clientName || undefined,
+                        clientOrganization: clientOrganization || undefined,
+                        clientContact: clientContact || undefined,
+                        notes: notes || undefined,
+                        departments: selectedDepartments,
+                        tabConfig,
+                    },
+                });
+            }
 
             // Sync team members (authorization must be enforced server-side)
             const isValidUuidLike = (value: unknown): value is string => {
@@ -697,7 +942,7 @@ const EditProject = () => {
                 return;
             }
 
-            const currentInDbIds = (project.team?.map((m: any) => m.id) ?? []).filter(isValidUuidLike);
+            const currentInDbIds = projectMembers.map((m) => m.id).filter(isValidUuidLike);
             const assignedIds = assignedMembers.map((m) => m.memberId).filter(isValidUuidLike);
 
             // Members to add
@@ -715,7 +960,7 @@ const EditProject = () => {
                     }));
                     await projectMembersService.addMembers(project.id, memberData);
                 } catch (memberError) {
-                    console.error('[executeSave] Error adding team members', {
+                    logger.error('[executeSave] Error adding team members', {
                         projectId: id,
                         userIds: newMembers.map(m => m.memberId),
                         error: memberError,
@@ -737,7 +982,7 @@ const EditProject = () => {
                         try {
                             await chatService.forceRemoveProjectChatMembers(project.id, removedMemberIds);
                         } catch (chatError) {
-                            console.error('[executeSave] Chat member removal failed', {
+                            logger.error('[executeSave] Chat member removal failed', {
                                 projectId: id,
                                 userIds: removedMemberIds,
                                 error: chatError,
@@ -750,7 +995,7 @@ const EditProject = () => {
                         }
                     }
                 } catch (memberError) {
-                    console.error('[executeSave] Error removing team members', {
+                    logger.error('[executeSave] Error removing team members', {
                         projectId: id,
                         userIds: removedMemberIds,
                         error: memberError,
@@ -762,7 +1007,7 @@ const EditProject = () => {
 
             // Sync Modules
             try {
-                const initialModules = project.projectModules || [];
+                const initialModules = projectModulesData || [];
                 const initialModuleIds = initialModules.map(m => m.id);
                 const currentModuleIds = modules.map(m => m.id);
 
@@ -798,13 +1043,13 @@ const EditProject = () => {
                     await modulesService.deleteMany(moduleIdsToRemove);
                 }
             } catch (moduleError) {
-                console.error('Error syncing modules:', moduleError);
+                logger.error('Error syncing modules:', moduleError);
                 toast.warning('Project updated but module changes failed to sync');
             }
 
             // Sync Milestones
             try {
-                const initialMilestones = project.milestones || [];
+                const initialMilestones = projectMilestonesData || [];
                 const initialMilestoneIds = initialMilestones.map(m => m.id);
                 const currentMilestoneIds = milestones.map(m => m.id);
 
@@ -816,9 +1061,9 @@ const EditProject = () => {
                 const milestonesToUpdate = milestones.filter(m => {
                     const initial = initialMilestones.find(im => im.id === m.id);
                     if (!initial) return false;
-                    const initialDate = initial.date ? format(new Date(initial.date), 'yyyy-MM-dd') : null;
+                    const initialDate = initial.due_date ? format(new Date(initial.due_date), 'yyyy-MM-dd') : null;
                     const currentDate = m.endDate ? format(m.endDate, 'yyyy-MM-dd') : null;
-                    return initial.title !== m.name || initialDate !== currentDate;
+                    return initial.name !== m.name || initialDate !== currentDate;
                 });
 
                 if (milestonesToAdd.length > 0) {
@@ -841,19 +1086,19 @@ const EditProject = () => {
                     await milestonesService.deleteMany(milestoneIdsToRemove);
                 }
             } catch (milestoneError) {
-                console.error('Error syncing milestones:', milestoneError);
+                logger.error('Error syncing milestones:', milestoneError);
                 toast.warning('Project updated but milestone changes failed to sync');
             }
 
             // Invalidate queries to ensure project detail page reflects all changes
             await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(id) });
             await queryClient.invalidateQueries({ queryKey: queryKeys.modules.list(id) });
-            await queryClient.invalidateQueries({ queryKey: queryKeys.milestones.list(id) });
+            await queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
 
             toast.success('Project updated successfully!');
-            navigate(`/projects/${id}`);
+            navigate(returnTo);
         } catch (error) {
-            console.error('Error updating project:', error);
+            logger.error('Error updating project:', error);
             toast.error('Failed to update project');
         } finally {
             setIsSaving(false);
@@ -878,7 +1123,19 @@ const EditProject = () => {
             return;
         }
 
-        const currentInDbIds = project.team?.map((m: any) => m.id) || [];
+        if (clientContact && !isValidPhoneNumber(clientContact)) {
+            toast.error('Please enter a valid phone number');
+            setShowOptionalDetails(true);
+            return;
+        }
+
+        if (clientOrganization && /[^a-zA-Z\s\-'.]/.test(clientOrganization)) {
+            toast.error('Organisation name must contain only letters and spaces');
+            setShowOptionalDetails(true);
+            return;
+        }
+
+        const currentInDbIds = projectMembers.map((m) => m.id);
         const assignedIds = assignedMembers.map(m => m.memberId);
         const removedMemberIds = currentInDbIds.filter(memberId => !assignedIds.includes(memberId));
 
@@ -896,7 +1153,7 @@ const EditProject = () => {
     if (isLoading) {
         return (
             <>
-                <div className="max-w-4xl mx-auto space-y-6">
+                <div className="w-full min-w-0 space-y-6">
                     <div className="flex items-center gap-4">
                         <Skeleton className="h-10 w-10" />
                         <Skeleton className="h-8 w-48" />
@@ -936,16 +1193,33 @@ const EditProject = () => {
         );
     }
 
+    if (!canEditProject) {
+        return (
+            <>
+                <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+                    <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+                    <h2 className="text-xl font-medium">Access Denied</h2>
+                    <p className="text-muted-foreground text-center max-w-sm">
+                        You don't have permission to edit this project. Only a project Admin or Maintainer can make changes.
+                    </p>
+                    <Button onClick={() => navigate(`/projects/${id}`)}>
+                        Back to Project
+                    </Button>
+                </div>
+            </>
+        );
+    }
+
     return (
         <>
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="w-full min-w-0 space-y-6">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4 min-w-0 w-full sm:w-auto">
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => navigate(`/projects/${id}`)}
+                            onClick={() => navigate(returnTo)}
                             className="shrink-0"
                         >
                             <ArrowLeft className="h-5 w-5" />
@@ -956,10 +1230,10 @@ const EditProject = () => {
                         </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                        <Button variant="outline" onClick={() => navigate(`/projects/${id}`)}>
+                        <Button variant="outline" onClick={() => navigate(returnTo)}>
                             Cancel
                         </Button>
-                        <Button onClick={handleSave} disabled={isSaving}>
+                        <Button onClick={handleSave} disabled={isSaving || selectedDepartments.length === 0}>
                             {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                             Save Changes
                         </Button>
@@ -985,17 +1259,74 @@ const EditProject = () => {
                                             <Button
                                                 variant="outline"
                                                 size="icon"
-                                                className="h-10 w-10 shrink-0 text-xl"
-                                                title="Select project icon"
+                                                className="h-10 w-10 shrink-0 text-xl overflow-hidden"
+                                                title="Select project icon or logo"
+                                                disabled={!canManageProjectSettings}
                                             >
-                                                {projectEmoji}
+                                                {logoLoading ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : logoUrl ? (
+                                                    <img src={logoUrl} alt="Project logo" className="h-full w-full object-contain" />
+                                                ) : (
+                                                    projectEmoji
+                                                )}
                                             </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-72 p-3" align="start">
                                             <div className="space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                                                        <span className="text-sm font-medium">Project Logo</span>
+                                                    </div>
+                                                    {logoUrl && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                                                            onClick={handleRemoveLogo}
+                                                            disabled={logoLoading || !canManageProjectSettings}
+                                                        >
+                                                            Remove
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-12 w-12 rounded-lg border border-dashed border-border flex items-center justify-center bg-muted/30 overflow-hidden shrink-0">
+                                                        {logoUrl ? (
+                                                            <img src={logoUrl} alt="Project logo" className="h-full w-full object-contain" />
+                                                        ) : (
+                                                            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                                        )}
+                                                    </div>
+                                                    <input
+                                                        type="file"
+                                                        ref={logoInputRef}
+                                                        className="hidden"
+                                                        accept="image/png,image/jpeg,image/webp,image/gif"
+                                                        onChange={handleLogoFileChange}
+                                                    />
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => logoInputRef.current?.click()}
+                                                        disabled={logoLoading || !canManageProjectSettings}
+                                                    >
+                                                        <Upload className="h-3.5 w-3.5 mr-1.5" />
+                                                        {logoUrl ? 'Change' : 'Upload'}
+                                                    </Button>
+                                                </div>
+                                                <p className="text-[11px] text-muted-foreground">
+                                                    JPG, PNG, WebP or GIF. Max 5MB. Square images look best.
+                                                </p>
+
+                                                <Separator />
+
                                                 <div className="flex items-center gap-2">
                                                     <Smile className="h-4 w-4 text-muted-foreground" />
-                                                    <span className="text-sm font-medium">Select Project Icon</span>
+                                                    <span className="text-sm font-medium">Or Pick an Emoji Icon</span>
                                                 </div>
                                                 <div className="grid grid-cols-8 gap-1">
                                                     {projectEmojis.map((emoji) => (
@@ -1026,6 +1357,7 @@ const EditProject = () => {
                                         maxLength={100}
                                         onChange={(e) => setProjectName(e.target.value)}
                                         className="flex-1"
+                                        disabled={!canManageProjectSettings}
                                     />
                                 </div>
                             </div>
@@ -1034,7 +1366,7 @@ const EditProject = () => {
                         <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
                                 <Label htmlFor="projectType">Project Type <span className="text-destructive">*</span></Label>
-                                <Select value={projectType} onValueChange={setProjectType}>
+                                <Select value={projectType} onValueChange={setProjectType} disabled={!canManageProjectSettings}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Select type" />
                                     </SelectTrigger>
@@ -1049,6 +1381,7 @@ const EditProject = () => {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="projectStage">Project Stage <span className="text-destructive">*</span></Label>
+                                {/* Stage is editable by Maintainer+ (not settings-gated) — page access itself is already gated by isProjectMaintainerPlus */}
                                 <Select value={projectStage} onValueChange={setProjectStage}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Select stage" />
@@ -1074,6 +1407,7 @@ const EditProject = () => {
                                     maxLength={1000}
                                     onChange={(e) => setProjectDescription(e.target.value)}
                                     rows={4}
+                                    disabled={!canManageProjectSettings}
                                 />
                                 <div className="flex justify-end">
                                     <span className={cn(
@@ -1097,6 +1431,7 @@ const EditProject = () => {
                                                 "w-full justify-start text-left font-normal",
                                                 !startDate && "text-muted-foreground"
                                             )}
+                                            disabled={!canManageProjectSettings}
                                         >
                                             <CalendarIcon className="mr-2 h-4 w-4" />
                                             {startDate ? format(startDate, "PPP") : "Select start date"}
@@ -1110,7 +1445,6 @@ const EditProject = () => {
                                                 setStartDate(date);
                                                 setIsStartDateOpen(false);
                                             }}
-                                            disabled={{ before: startOfToday() }}
                                             initialFocus
                                         />
                                     </PopoverContent>
@@ -1126,6 +1460,7 @@ const EditProject = () => {
                                                 "w-full justify-start text-left font-normal",
                                                 !targetDate && "text-muted-foreground"
                                             )}
+                                            disabled={!canManageProjectSettings}
                                         >
                                             <CalendarIcon className="mr-2 h-4 w-4" />
                                             {targetDate ? format(targetDate, "PPP") : "Select target date"}
@@ -1139,7 +1474,7 @@ const EditProject = () => {
                                                 setTargetDate(date);
                                                 setIsTargetDateOpen(false);
                                             }}
-                                            disabled={(date) => isBefore(date, startOfToday()) || (startDate ? isBefore(date, startDate) : false)}
+                                            disabled={(date) => (startDate ? isBefore(date, startDate) : false)}
                                             initialFocus
                                         />
                                     </PopoverContent>
@@ -1190,7 +1525,7 @@ const EditProject = () => {
                                         placeholder="e.g. John Doe"
                                         value={clientName}
                                         maxLength={100}
-                                        onChange={(e) => setClientName(e.target.value)}
+                                        onChange={(e) => setClientName(e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -1200,22 +1535,25 @@ const EditProject = () => {
                                         placeholder="e.g. Acme Corp"
                                         value={clientOrganization}
                                         maxLength={100}
-                                        onChange={(e) => setClientOrganization(e.target.value)}
+                                        onChange={(e) => {
+                                            const filtered = e.target.value.replace(/[^a-zA-Z\s\-'.]/g, "");
+                                            setClientOrganization(filtered);
+                                            setClientOrgError(filtered !== e.target.value ? "Only letters and spaces are allowed" : "");
+                                        }}
                                     />
+                                    {clientOrgError && <p className="text-xs text-destructive">{clientOrgError}</p>}
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="clientContact">Contact Number (10 digits)</Label>
-                                <Input
-                                    id="clientContact"
-                                    placeholder="e.g. 1234567890"
+                                <Label>Contact Number</Label>
+                                <PhoneInput
                                     value={clientContact}
-                                    maxLength={10}
-                                    onChange={(e) => {
-                                        const val = e.target.value.replace(/\D/g, "");
-                                        setClientContact(val);
+                                    onChange={(fullValue, error) => {
+                                        setClientContact(fullValue);
+                                        setClientContactError(error);
                                     }}
                                 />
+                                {clientContactError && <p className="text-xs text-destructive">{clientContactError}</p>}
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="notes">Internal Project Notes</Label>
@@ -1247,7 +1585,7 @@ const EditProject = () => {
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Users className="h-5 w-5 text-primary" />
-                            Project Departments
+                            Project Departments <span className="text-destructive">*</span>
                         </CardTitle>
                         <CardDescription>Select which departments are involved in this project</CardDescription>
                     </CardHeader>
@@ -1341,6 +1679,79 @@ const EditProject = () => {
                     </CardContent>
                 </Card>
 
+                {/* Project Tabs Section */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <LayoutGrid className="h-5 w-5 text-primary" />
+                            Project Tabs
+                        </CardTitle>
+                        <CardDescription>
+                            Drag to reorder the tabs shown on this project, or hide the ones this project doesn't need
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <DragDropContext onDragEnd={handleTabDragEnd}>
+                            <Droppable droppableId="project-tabs">
+                                {(provided) => (
+                                    <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
+                                        {tabConfig.map((tab, index) => {
+                                            const def = PROJECT_TAB_DEFINITIONS[tab.id];
+                                            const Icon = def.icon;
+                                            return (
+                                                <Draggable
+                                                    key={tab.id}
+                                                    draggableId={tab.id}
+                                                    index={index}
+                                                    isDragDisabled={!canManageProjectSettings}
+                                                >
+                                                    {(dragProvided, snapshot) => (
+                                                        <div
+                                                            ref={dragProvided.innerRef}
+                                                            {...dragProvided.draggableProps}
+                                                            className={cn(
+                                                                "flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 transition-colors",
+                                                                snapshot.isDragging && "shadow-md border-primary/50",
+                                                                !tab.visible && "opacity-60"
+                                                            )}
+                                                        >
+                                                            <span
+                                                                {...dragProvided.dragHandleProps}
+                                                                className={cn(
+                                                                    "text-muted-foreground shrink-0",
+                                                                    canManageProjectSettings ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed opacity-50"
+                                                                )}
+                                                            >
+                                                                <GripVertical className="h-4 w-4" />
+                                                            </span>
+                                                            <Icon className="h-4 w-4 text-primary shrink-0" />
+                                                            <span className="flex-1 text-sm font-medium">{def.label}</span>
+                                                            {tab.visible ? (
+                                                                <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                            ) : (
+                                                                <EyeOff className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                            )}
+                                                            <Switch
+                                                                checked={tab.visible}
+                                                                onCheckedChange={() => handleTabVisibilityToggle(tab.id)}
+                                                                disabled={!canManageProjectSettings}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </Draggable>
+                                            );
+                                        })}
+                                        {provided.placeholder}
+                                    </div>
+                                )}
+                            </Droppable>
+                        </DragDropContext>
+                        {tabConfig.every(t => !t.visible) && (
+                            <p className="text-xs text-destructive mt-2">At least one tab should stay visible.</p>
+                        )}
+                    </CardContent>
+                </Card>
+
                 {/* Team Members Section */}
                 <Card>
                     <CardHeader>
@@ -1350,49 +1761,56 @@ const EditProject = () => {
                         </CardTitle>
                         <CardDescription>
                             {canManageProjectMembers
-                                ? 'Assign team members to this project (organization role is inherited automatically)'
-                                : 'Only the project creator or an Admin can manage team members'}
+                                ? 'Assign team members to this project and set their project role'
+                                : 'Only a project Admin can manage team members and roles'}
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <div className="flex flex-col md:flex-row gap-3">
-                            <div className="flex-1 space-y-2">
-                                <Label>Member</Label>
-                                <Select value={selectedMember} onValueChange={setSelectedMember} disabled={!canManageProjectMembers}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select member" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {orgMembers.map((member: any) => (
-                                            <SelectItem key={member.id} value={member.id}>
-                                                <div className="flex items-center gap-2">
-                                                    <Avatar className="h-6 w-6">
-                                                        <AvatarImage src={member.avatar} />
-                                                        <AvatarFallback>{member.name?.charAt(0)}</AvatarFallback>
-                                                    </Avatar>
-                                                    {member.name}
-                                                </div>
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                        {canManageProjectMembers && (
+                            <div className="flex flex-col md:flex-row gap-3">
+                                <div className="flex-1 space-y-2">
+                                    <Label>Member</Label>
+                                    <Select value={selectedMember} onValueChange={setSelectedMember}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select member" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {orgMembers.map((member: any) => (
+                                                <SelectItem key={member.id} value={member.id}>
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar className="h-6 w-6">
+                                                            <AvatarImage src={member.avatar} />
+                                                            <AvatarFallback>{member.name?.charAt(0)}</AvatarFallback>
+                                                        </Avatar>
+                                                        {member.name}
+                                                    </div>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="w-full md:w-40 space-y-2">
+                                    <Label>Project Role</Label>
+                                    <Select value={selectedMemberRole} onValueChange={(v) => setSelectedMemberRole(v as ProjectRole)}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select role" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="admin">Admin</SelectItem>
+                                            <SelectItem value="maintainer">Maintainer</SelectItem>
+                                            <SelectItem value="member">Member</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <Button
+                                    className="md:mt-8"
+                                    onClick={handleAddTeamMember}
+                                    disabled={!selectedMember}
+                                >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add
+                                </Button>
                             </div>
-                            <Button
-                                className="md:mt-8"
-                                onClick={handleAddTeamMember}
-                                disabled={!canManageProjectMembers || !selectedMember}
-                            >
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add
-                            </Button>
-                        </div>
-                        {selectedOrgMember && (
-                            <p className="text-[11px] text-muted-foreground">
-                                Role will be inherited automatically from organization:{" "}
-                                <span className="font-medium text-foreground capitalize">
-                                    {selectedOrgMember.role || 'member'}
-                                </span>
-                            </p>
                         )}
 
                         {assignedMembers.length > 0 && (
@@ -1412,22 +1830,41 @@ const EditProject = () => {
                                                     </Avatar>
                                                     <div>
                                                         <p className="text-sm font-medium">{displayName}</p>
-                                                        {assignment.role && (
-                                                            <Badge variant="secondary" className="text-[10px] h-4">
-                                                                {assignment.role}
-                                                            </Badge>
-                                                        )}
                                                     </div>
                                                 </div>
-                                                {canManageProjectMembers && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        onClick={() => handleRemoveTeamMember(assignment.memberId)}
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                    </Button>
-                                                )}
+                                                <div className="flex items-center gap-2">
+                                                    {canManageProjectMembers ? (
+                                                        <Select
+                                                            value={assignment.role}
+                                                            onValueChange={(v) => handleUpdateAssignedMemberRole(assignment.memberId, v as ProjectRole)}
+                                                            disabled={memberRoleUpdatingId === assignment.memberId}
+                                                        >
+                                                            <SelectTrigger className="h-7 w-[110px] text-[11px]">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="admin">Admin</SelectItem>
+                                                                <SelectItem value="maintainer">Maintainer</SelectItem>
+                                                                <SelectItem value="member">Member</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    ) : (
+                                                        assignment.role && (
+                                                            <Badge variant="secondary" className="text-[10px] h-4 capitalize">
+                                                                {assignment.role}
+                                                            </Badge>
+                                                        )
+                                                    )}
+                                                    {canManageProjectMembers && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            onClick={() => handleRemoveTeamMember(assignment.memberId)}
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })}
@@ -1454,44 +1891,64 @@ const EditProject = () => {
                                 onChange={(e) => setNewModuleName(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleAddModule()}
                             />
-                            {editingModuleId && (
-                                <Button 
-                                    variant="outline" 
-                                    onClick={() => {
-                                        setEditingModuleId(null);
-                                        setNewModuleName("");
-                                    }}
-                                >
-                                    <X className="h-4 w-4 mr-0" />
-                                </Button>
-                            )}
                             <Button onClick={handleAddModule} disabled={!newModuleName.trim()}>
-                                {editingModuleId ? <Settings className="h-4 w-4 mr-1" /> : <Plus className="h-4 w-4 mr-1" />}
-                                {editingModuleId ? "Update" : "Add"}
+                                <Plus className="h-4 w-4 mr-1" />
+                                Add
                             </Button>
                         </div>
 
                         {modules.length > 0 && (
+                            <ScrollArea className={modules.length > 5 ? "h-[280px] pr-2" : ""}>
                             <div className="grid gap-2 pt-2">
-                                {modules.map((module) => (
-                                    <div key={module.id} className="flex items-center justify-between p-3 rounded-md border group">
-                                        <div className="flex items-center gap-3">
-                                            <Badge variant="outline" className="h-6 w-6 rounded-full flex items-center justify-center p-0">
-                                                {modules.indexOf(module) + 1}
-                                            </Badge>
-                                            <span className="text-sm font-medium">{module.name}</span>
+                                {modules.map((module) => {
+                                    const isEditing = editingModuleId === module.id;
+                                    return (
+                                        <div key={module.id} className="flex items-center justify-between p-3 rounded-md border group">
+                                            <div className="flex items-center gap-3 flex-1">
+                                                <Badge variant="outline" className="h-6 w-6 rounded-full flex items-center justify-center p-0 shrink-0">
+                                                    {modules.indexOf(module) + 1}
+                                                </Badge>
+                                                {isEditing ? (
+                                                    <Input
+                                                        autoFocus
+                                                        value={editingModuleName}
+                                                        onChange={(e) => setEditingModuleName(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveModuleEdit();
+                                                            if (e.key === 'Escape') handleCancelModuleEdit();
+                                                        }}
+                                                        className="h-8"
+                                                    />
+                                                ) : (
+                                                    <span className="text-sm font-medium">{module.name}</span>
+                                                )}
+                                            </div>
+                                            <div className={`flex gap-1 ${isEditing ? '' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
+                                                {isEditing ? (
+                                                    <>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSaveModuleEdit} disabled={!editingModuleName.trim()}>
+                                                            <Check className="h-3 w-3" />
+                                                        </Button>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCancelModuleEdit}>
+                                                            <X className="h-3 w-3" />
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditModule(module)}>
+                                                            <Pencil className="h-3 w-3" />
+                                                        </Button>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveModule(module.id)}>
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </Button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditModule(module)}>
-                                                <Pencil className="h-3 w-3" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveModule(module.id)}>
-                                                <Trash2 className="h-3 w-3" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
+                            </ScrollArea>
                         )}
                     </CardContent>
                 </Card>
@@ -1531,11 +1988,6 @@ const EditProject = () => {
                                                     setNewMilestoneStart(date);
                                                     setIsMilestoneStartOpen(false);
                                                 }}
-                                                disabled={(date) =>
-                                                    isBefore(date, startOfToday()) ||
-                                                    (startDate ? isBefore(date, startDate) : false) ||
-                                                    (targetDate ? isBefore(targetDate, date) : false)
-                                                }
                                             />
                                         )}
                                     </PopoverContent>
@@ -1559,55 +2011,111 @@ const EditProject = () => {
                                                     setIsMilestoneEndOpen(false);
                                                 }}
                                                 disabled={(date) =>
-                                                    isBefore(date, startOfToday()) ||
-                                                    (newMilestoneStart ? isBefore(date, newMilestoneStart) : false) ||
-                                                    (startDate ? isBefore(date, startDate) : false) ||
-                                                    (targetDate ? isBefore(targetDate, date) : false)
+                                                    newMilestoneStart ? isBefore(date, newMilestoneStart) : false
                                                 }
                                             />
                                         )}
                                     </PopoverContent>
                                 </Popover>
                             </div>
-                            <div className="flex gap-2">
-                                {editingMilestoneId && (
-                                    <Button 
-                                        variant="outline" 
-                                        className="w-1/3"
-                                        onClick={() => {
-                                            setEditingMilestoneId(null);
-                                            setNewMilestoneName("");
-                                            setNewMilestoneStart(undefined);
-                                            setNewMilestoneEnd(undefined);
-                                        }}
-                                    >
-                                        <X className="h-4 w-4 mr-1" />
-                                        Cancel
-                                    </Button>
-                                )}
-                                <Button className="flex-1" variant="secondary" onClick={handleAddMilestone} disabled={!newMilestoneName.trim() || !newMilestoneStart || !newMilestoneEnd}>
-                                    {editingMilestoneId ? "Update Milestone" : "Add Milestone"}
-                                </Button>
-                            </div>
+                            <Button className="w-full" variant="secondary" onClick={handleAddMilestone} disabled={!newMilestoneName.trim() || !newMilestoneStart || !newMilestoneEnd}>
+                                Add Milestone
+                            </Button>
                         </div>
 
                         {milestones.length > 0 && (
                             <div className="grid gap-3 pt-2">
-                                {milestones.map((ms) => (
-                                    <div key={ms.id} className="flex items-center justify-between p-3 rounded-md border-l-4 border-l-primary bg-muted/30">
-                                        <div className="space-y-1">
-                                            <p className="text-sm font-semibold">{ms.name}</p>
-                                            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                                                <div className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {ms.startDate ? format(ms.startDate, "PP") : ""}</div>
-                                                <div className="flex items-center gap-1"><Target className="h-3 w-3" /> {ms.endDate ? format(ms.endDate, "PP") : ""}</div>
+                                {milestones.map((ms) => {
+                                    const isEditing = editingMilestoneId === ms.id;
+                                    if (isEditing) {
+                                        return (
+                                            <div key={ms.id} className="space-y-2 p-3 rounded-md border-l-4 border-l-primary bg-muted/30">
+                                                <Input
+                                                    autoFocus
+                                                    value={editingMilestoneName}
+                                                    onChange={(e) => setEditingMilestoneName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') handleSaveMilestoneEdit();
+                                                        if (e.key === 'Escape') handleCancelMilestoneEdit();
+                                                    }}
+                                                    className="h-8"
+                                                />
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <Popover open={isEditMilestoneStartOpen} onOpenChange={setIsEditMilestoneStartOpen}>
+                                                        <PopoverTrigger asChild>
+                                                            <Button variant="outline" className={cn("w-full justify-start text-left font-normal text-xs", !editingMilestoneStart && "text-muted-foreground")}>
+                                                                <CalendarIcon className="mr-2 h-3 w-3" />
+                                                                {editingMilestoneStart ? format(editingMilestoneStart, "PP") : "Start"}
+                                                            </Button>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-auto p-0">
+                                                            {isEditMilestoneStartOpen && (
+                                                                <Calendar
+                                                                    mode="single"
+                                                                    month={editMilestoneStartCalendarMonth}
+                                                                    onMonthChange={setEditMilestoneStartCalendarMonth}
+                                                                    selected={editingMilestoneStart}
+                                                                    onSelect={(date) => {
+                                                                        setEditingMilestoneStart(date);
+                                                                        setIsEditMilestoneStartOpen(false);
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                    <Popover open={isEditMilestoneEndOpen} onOpenChange={setIsEditMilestoneEndOpen}>
+                                                        <PopoverTrigger asChild>
+                                                            <Button variant="outline" className={cn("w-full justify-start text-left font-normal text-xs", !editingMilestoneEnd && "text-muted-foreground")}>
+                                                                <CalendarIcon className="mr-2 h-3 w-3" />
+                                                                {editingMilestoneEnd ? format(editingMilestoneEnd, "PP") : "End"}
+                                                            </Button>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-auto p-0">
+                                                            {isEditMilestoneEndOpen && (
+                                                                <Calendar
+                                                                    mode="single"
+                                                                    month={editMilestoneEndCalendarMonth}
+                                                                    onMonthChange={setEditMilestoneEndCalendarMonth}
+                                                                    selected={editingMilestoneEnd}
+                                                                    onSelect={(date) => {
+                                                                        setEditingMilestoneEnd(date);
+                                                                        setIsEditMilestoneEndOpen(false);
+                                                                    }}
+                                                                    disabled={(date) =>
+                                                                        editingMilestoneStart ? isBefore(date, editingMilestoneStart) : false
+                                                                    }
+                                                                />
+                                                            )}
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                </div>
+                                                <div className="flex justify-end gap-1">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSaveMilestoneEdit} disabled={!editingMilestoneName.trim() || !editingMilestoneStart || !editingMilestoneEnd}>
+                                                        <Check className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCancelMilestoneEdit}>
+                                                        <X className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div key={ms.id} className="flex items-center justify-between p-3 rounded-md border-l-4 border-l-primary bg-muted/30">
+                                            <div className="space-y-1">
+                                                <p className="text-sm font-semibold">{ms.name}</p>
+                                                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                                                    <div className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {ms.startDate ? format(ms.startDate, "PP") : ""}</div>
+                                                    <div className="flex items-center gap-1"><Target className="h-3 w-3" /> {ms.endDate ? format(ms.endDate, "PP") : ""}</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditMilestone(ms)}><Pencil className="h-3 w-3" /></Button>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveMilestone(ms.id)}><Trash2 className="h-3 w-3" /></Button>
                                             </div>
                                         </div>
-                                        <div className="flex gap-1">
-                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditMilestone(ms)}><Pencil className="h-3 w-3" /></Button>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveMilestone(ms.id)}><Trash2 className="h-3 w-3" /></Button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </CardContent>
@@ -1670,40 +2178,56 @@ const EditProject = () => {
                             <div className="space-y-2">
                                 <Label>Current Attachments</Label>
                                 <div className="space-y-2">
-                                    {visibleProjectAttachments.map((attachment: any) => (
+                                    {visibleProjectAttachments.map((attachment: any) => {
+                                        const previewUrl = resolveFileUrl(attachment.url || attachment.fileUrl) ?? (attachment.url || attachment.fileUrl);
+                                        return (
                                         <div
                                             key={attachment.id}
                                             className="flex items-center justify-between p-3 rounded-md bg-muted/50"
                                         >
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                                                {attachment.url ? (
-                                                    <a
-                                                        href={attachment.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-sm truncate hover:underline text-foreground"
-                                                        title="Click to view file"
-                                                    >
-                                                        {attachment.file_name || attachment.name}
-                                                    </a>
+                                            <div
+                                                className="flex items-center gap-2 min-w-0 cursor-pointer"
+                                                onClick={() => previewUrl && setPreviewFile(attachment)}
+                                            >
+                                                {previewUrl && isImageAttachment(attachment) ? (
+                                                    <img
+                                                        src={previewUrl}
+                                                        alt={attachment.file_name || attachment.fileName}
+                                                        className="h-8 w-8 rounded object-cover shrink-0"
+                                                    />
                                                 ) : (
-                                                    <span className="text-sm truncate">{attachment.file_name || attachment.name}</span>
+                                                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                                                 )}
-                                                <span className="text-xs text-muted-foreground">
-                                                    ({formatFileSize(attachment.file_size || 0)})
+                                                <span className="text-sm truncate hover:underline text-foreground" title={previewUrl ? "Click to preview" : undefined}>
+                                                    {attachment.file_name || attachment.fileName}
+                                                </span>
+                                                <span className="text-xs text-muted-foreground shrink-0">
+                                                    ({formatFileSize(attachment.file_size ?? attachment.fileSize ?? 0)})
                                                 </span>
                                             </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 shrink-0"
-                                                onClick={() => handleDeleteAttachment(attachment.id)}
-                                            >
-                                                <X className="h-4 w-4" />
-                                            </Button>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                {previewUrl && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8"
+                                                        onClick={() => setPreviewFile(attachment)}
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => handleDeleteAttachment(attachment.id)}
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </Button>
+                                            </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
@@ -1742,115 +2266,117 @@ const EditProject = () => {
                         {/* Existing Links */}
                         {projectLinks.length > 0 && (
                             <div className="space-y-2">
-                                {projectLinks.map((link: any) => (
-                                    <div
-                                        key={link.id}
-                                        className="flex items-center justify-between p-3 rounded-md bg-muted/50"
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <LinkIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                                            <span className="text-sm font-medium">{link.name || link.title}</span>
-                                            <a
-                                                href={link.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-xs text-primary hover:underline truncate max-w-[200px]"
-                                            >
-                                                {link.url}
-                                            </a>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 shrink-0"
-                                            onClick={() => handleDeleteLink(link.id)}
+                                {projectLinks.map((link: any) => {
+                                    const isEditingLink = editingLinkId === link.id;
+                                    return (
+                                        <div
+                                            key={link.id}
+                                            className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/50"
                                         >
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                ))}
+                                            {isEditingLink ? (
+                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                    <LinkIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                    <Input
+                                                        autoFocus
+                                                        value={editingLinkName}
+                                                        onChange={(e) => setEditingLinkName(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveLinkEdit();
+                                                            if (e.key === 'Escape') handleCancelLinkEdit();
+                                                        }}
+                                                        className="h-8 flex-1"
+                                                        placeholder="Link name"
+                                                    />
+                                                    <Input
+                                                        value={editingLinkUrl}
+                                                        onChange={(e) => setEditingLinkUrl(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveLinkEdit();
+                                                            if (e.key === 'Escape') handleCancelLinkEdit();
+                                                        }}
+                                                        className="h-8 flex-1"
+                                                        placeholder="URL"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <LinkIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                    <span className="text-sm font-medium">{link.title || link.name}</span>
+                                                    <a
+                                                        href={link.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-xs text-primary hover:underline truncate max-w-[200px]"
+                                                    >
+                                                        {link.url}
+                                                    </a>
+                                                </div>
+                                            )}
+                                            <div className="flex gap-1 shrink-0">
+                                                {isEditingLink ? (
+                                                    <>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={handleSaveLinkEdit}
+                                                            disabled={!editingLinkName.trim() || !editingLinkUrl.trim()}
+                                                        >
+                                                            <Check className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={handleCancelLinkEdit}
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={() => handleEditLink(link)}
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={() => handleDeleteLink(link.id)}
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </Button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </CardContent>
                 </Card>
 
-                {isProjectOwner && (
-                    <Card className="border-destructive/40 bg-destructive/5">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-destructive">
-                                <AlertTriangle className="h-5 w-5" />
-                                Danger Zone
-                            </CardTitle>
-                            <CardDescription>
-                                Deleting this project permanently removes project data for everyone in the workspace.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm text-muted-foreground">
-                                This action cannot be undone.
-                            </p>
-                            <Dialog
-                                open={deleteProjectDialogOpen}
-                                onOpenChange={(open) => {
-                                    setDeleteProjectDialogOpen(open);
-                                    if (!open) setDeleteProjectConfirmText("");
-                                }}
-                            >
-                                <DialogTrigger asChild>
-                                    <Button variant="destructive">
-                                        Delete Project
-                                    </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                    <DialogHeader>
-                                        <DialogTitle>Delete Project</DialogTitle>
-                                        <DialogDescription>
-                                            To confirm deletion, type <strong>{project.name}</strong> below. This permanently deletes the project and all associated data.
-                                        </DialogDescription>
-                                    </DialogHeader>
-                                    <div className="space-y-2 py-2">
-                                        <Label htmlFor="delete-project-confirmation">Project Name</Label>
-                                        <Input
-                                            id="delete-project-confirmation"
-                                            value={deleteProjectConfirmText}
-                                            onChange={(e) => setDeleteProjectConfirmText(e.target.value)}
-                                            placeholder={project.name}
-                                            autoComplete="off"
-                                        />
-                                    </div>
-                                    <DialogFooter>
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => {
-                                                setDeleteProjectDialogOpen(false);
-                                                setDeleteProjectConfirmText("");
-                                            }}
-                                        >
-                                            Cancel
-                                        </Button>
-                                        <Button
-                                            variant="destructive"
-                                            onClick={handleDeleteProject}
-                                            disabled={
-                                                deleteProjectMutation.isPending ||
-                                                deleteProjectConfirmText.trim() !== project.name
-                                            }
-                                        >
-                                            {deleteProjectMutation.isPending ? (
-                                                <>
-                                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                                    Deleting...
-                                                </>
-                                            ) : (
-                                                "Delete Permanently"
-                                            )}
-                                        </Button>
-                                    </DialogFooter>
-                                </DialogContent>
-                            </Dialog>
-                        </CardContent>
-                    </Card>
-                )}
+                {/* File Preview Dialog */}
+                {previewFile && (() => {
+                    const rawUrl = previewFile.url || previewFile.fileUrl;
+                    const url = resolveFileUrl(rawUrl) ?? rawUrl;
+                    return (
+                        <FilePreviewDialog
+                            file={{
+                                url,
+                                fileName: previewFile.file_name || previewFile.fileName || 'Untitled file',
+                                mimeType: getAttachmentMimeType(previewFile) || undefined,
+                            }}
+                            onClose={() => setPreviewFile(null)}
+                        />
+                    );
+                })()}
 
                 {/* Delete Confirmation Dialog */}
                 <Dialog open={deleteConfirmation.isOpen} onOpenChange={(open) => {

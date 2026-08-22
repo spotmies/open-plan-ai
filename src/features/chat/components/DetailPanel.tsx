@@ -1,24 +1,26 @@
 import { useState, useEffect } from 'react';
-import { X, Bell, LogOut, FileText, UserPlus, Download, Image, Pencil, Check, Loader2, Camera, Trash2, Shield, ShieldOff } from 'lucide-react';
+import { X, Bell, LogOut, FileText, UserPlus, Download, Image, Pencil, Check, Loader2, Camera, Trash2, Shield, ShieldOff, ChevronLeft, ChevronRight, Pin, Bookmark } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OnlineStatus } from './OnlineStatus';
-import { Conversation, ReachableUser } from '../types';
+import { Conversation, ConversationMember, ReachableUser } from '../types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChatStore } from '../stores/useChatStore';
 import { chatService } from '@/services/chat.service';
+import { resolveFileUrl } from '@/utils/fileUrl';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
+import { FilePreviewDialog, FilePreviewTarget } from '@/components/FilePreviewDialog';
+import { logger } from '@/services/monitoring/logger';
 
 interface SharedFile {
   fileName: string;
@@ -27,13 +29,21 @@ interface SharedFile {
   storagePath?: string;
   url?: string;
   createdAt: string;
+  senderName?: string;
 }
 
 interface DetailPanelProps {
   conversation: Conversation;
   onRefetch?: () => void;
   className?: string;
+  pinnedCount?: number;
+  favouriteCount?: number;
+  onShowPinned?: () => void;
+  onShowFavourites?: () => void;
 }
+
+const MEMBER_PREVIEW_COUNT = 5;
+const FILE_PREVIEW_COUNT = 4;
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -41,13 +51,25 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-export function DetailPanel({ conversation, onRefetch, className }: DetailPanelProps) {
+function formatShortDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+}
+
+export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 0, favouriteCount = 0, onShowPinned, onShowFavourites }: DetailPanelProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const currentUserId = user?.id;
   const setDetailPanelOpen = useChatStore((s) => s.setDetailPanelOpen);
   const onlineUserIds = useChatStore((s) => s.onlineUserIds);
   const isGroup = conversation.type === 'group';
+  const [view, setView] = useState<'details' | 'people' | 'files'>('details');
+
+  useEffect(() => {
+    setView('details');
+  }, [conversation.id]);
 
   const currentMember = conversation.members.find((m) => m.id === currentUserId);
   const isOwner = currentMember?.role === 'owner';
@@ -61,6 +83,10 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<FilePreviewTarget | null>(null);
+  const previewableFiles: FilePreviewTarget[] = sharedFiles
+    .filter((f) => !!f.url)
+    .map((f) => ({ url: f.url as string, fileName: f.fileName, mimeType: f.mimeType }));
 
   // Add member dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -82,6 +108,34 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
   // Confirmation state
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+
+  // Per-conversation notifications toggle
+  const [notificationsEnabled, setNotificationsEnabled] = useState(currentMember?.notificationsEnabled ?? true);
+  const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
+
+  useEffect(() => {
+    setNotificationsEnabled(currentMember?.notificationsEnabled ?? true);
+  }, [conversation.id, currentMember?.notificationsEnabled]);
+
+  const handleToggleNotifications = async (checked: boolean) => {
+    const previous = notificationsEnabled;
+    setNotificationsEnabled(checked);
+    setIsTogglingNotifications(true);
+    try {
+      await chatService.updateNotificationSettings(conversation.id, checked);
+    } catch (err) {
+      setNotificationsEnabled(previous);
+      logger.warn('[DetailPanel] Failed to update notification settings', {
+        conversationId: conversation.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      toast.error('Failed to update notification settings');
+    } finally {
+      setIsTogglingNotifications(false);
+    }
+  };
 
   useEffect(() => {
     setEditName(conversation.name);
@@ -92,7 +146,7 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
     chatService.getSharedFiles(conversation.id)
       .then(setSharedFiles)
       .catch((err) => {
-        console.warn('[DetailPanel] Failed to load shared files', {
+        logger.warn('[DetailPanel] Failed to load shared files', {
           conversationId: conversation.id,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -152,7 +206,7 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
       setIsEditing(false);
       onRefetch?.();
     } catch (err: any) {
-      console.error('Full Update Error:', err);
+      logger.error('Full Update Error:', err);
       const errorMessage = err.message || err.details || (typeof err === 'object' ? JSON.stringify(err) : String(err));
 
       if (errorMessage.includes('column "avatar_url" of relation "conversations" does not exist')) {
@@ -200,7 +254,7 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
       toast.success('Group photo updated');
       onRefetch?.();
     } catch (err: any) {
-      console.error(err);
+      logger.error(err);
       toast.error('Failed to update group photo: ' + (err.message || 'Unknown error'));
     } finally {
       setIsUploading(false);
@@ -214,7 +268,7 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
       setAddDialogOpen(false);
       onRefetch?.();
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       toast.error('Failed to add member');
     }
   };
@@ -244,7 +298,7 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
       setSelectedUserIds([]);
       onRefetch?.();
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       toast.error('Failed to add members');
     } finally {
       setIsBulkAdding(false);
@@ -265,7 +319,7 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
       toast.success('Member removed');
       onRefetch?.();
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       toast.error('Failed to remove member');
     }
   };
@@ -285,11 +339,19 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
       });
       toast.success(`Downloading ${file.fileName}`);
     } catch (error) {
-      console.error('Failed to download shared file:', error);
+      logger.error('Failed to download shared file:', error);
       toast.error('Failed to download file');
     } finally {
       setDownloadingFile(null);
     }
+  };
+
+  const handlePreviewSharedFile = (file: SharedFile) => {
+    if (!file.url) {
+      handleDownloadSharedFile(file);
+      return;
+    }
+    setPreviewFile({ url: file.url, fileName: file.fileName, mimeType: file.mimeType });
   };
 
   const handleMakeAdmin = async (userId: string) => {
@@ -321,8 +383,23 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
       onRefetch?.();
       navigate('/chat');
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       toast.error('Failed to leave group');
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    setIsDeletingGroup(true);
+    try {
+      await chatService.deleteConversation(conversation.id);
+      toast.success('Group deleted');
+      onRefetch?.();
+      navigate('/chat');
+    } catch (err) {
+      logger.error(err);
+      toast.error('Failed to delete group');
+    } finally {
+      setIsDeletingGroup(false);
     }
   };
 
@@ -341,15 +418,184 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
     }
   };
 
+  const handleOpenMemberDM = async (member: ConversationMember) => {
+    if (member.id === currentUserId) return;
+    try {
+      const conversationId = await chatService.getOrCreateDM(member.id);
+      setDetailPanelOpen(false);
+      navigate(`/chat/${conversationId}`);
+    } catch (err) {
+      logger.warn('[DetailPanel] Failed to open DM with member', {
+        memberId: member.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      toast.error('Failed to open conversation');
+    }
+  };
+
+  const renderMemberRow = (member: ConversationMember) => (
+    <div key={member.id} className="flex items-center gap-2.5 group">
+      <div
+        className={cn('flex items-center gap-2.5 flex-1 min-w-0', member.id !== currentUserId && 'cursor-pointer')}
+        onClick={() => handleOpenMemberDM(member)}
+      >
+        <div className="relative shrink-0">
+          <Avatar className="h-8 w-8">
+            {member.avatarUrl && (
+              <AvatarImage src={member.avatarUrl} alt={member.name} className="object-cover" />
+            )}
+            <AvatarFallback className="text-[10px]">{member.initials}</AvatarFallback>
+          </Avatar>
+          <OnlineStatus isOnline={onlineUserIds.has(member.id)} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm truncate block">
+            {member.id === currentUserId ? 'You' : member.name}
+          </span>
+        </div>
+      </div>
+      {isGroup && member.role?.toLowerCase() === 'owner' && (
+        <span className="text-[11px] text-muted-foreground shrink-0">owner</span>
+      )}
+      {isGroup && member.role?.toLowerCase() === 'admin' && (
+        <span className="text-[11px] text-muted-foreground shrink-0">admin</span>
+      )}
+      {isGroup && canManageMembers && member.id !== currentUserId && member.role !== 'owner' && (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          {isOwner && member.role !== 'admin' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
+              onClick={() => handleMakeAdmin(member.id)}
+              title="Make Admin"
+            >
+              <Shield className="h-4 w-4" />
+            </Button>
+          )}
+          {isOwner && member.role === 'admin' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted"
+              onClick={() => handleDismissAdmin(member.id)}
+              title="Dismiss Admin"
+            >
+              <ShieldOff className="h-4 w-4" />
+            </Button>
+          )}
+          {!(isAdmin && member.role === 'admin') && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setConfirmRemoveId(member.id)}
+              title="Remove member"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderSharedFileRow = (file: SharedFile, key: string) => {
+    const isImage = file.mimeType?.startsWith('image/');
+    const fileKey = `${file.fileName}-${file.createdAt}`;
+    const isDownloading = downloadingFile === fileKey;
+    return (
+      <div
+        key={key}
+        className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors"
+      >
+        <button
+          type="button"
+          onClick={() => handlePreviewSharedFile(file)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+          title={`Preview ${file.fileName}`}
+        >
+          {isImage ? (
+            <Image className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium truncate">{file.fileName}</p>
+            <p className="text-[10px] text-muted-foreground truncate">
+              {[file.senderName, formatShortDate(file.createdAt), formatFileSize(file.fileSize)]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDownloadSharedFile(file);
+          }}
+          disabled={isDownloading}
+          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background disabled:opacity-70"
+          title={`Download ${file.fileName}`}
+        >
+          {isDownloading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className={cn("flex flex-col h-full border-l border-border w-[280px] shrink-0", className)}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h3 className="text-sm font-semibold">Details</h3>
+        {view === 'people' || view === 'files' ? (
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7 -ml-1.5" onClick={() => setView('details')}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h3 className="text-sm font-semibold">
+              {view === 'people' ? `People (${conversation.members.length})` : `Shared Files (${sharedFiles.length})`}
+            </h3>
+          </div>
+        ) : (
+          <h3 className="text-sm font-semibold">Details</h3>
+        )}
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailPanelOpen(false)}>
           <X className="h-4 w-4" />
         </Button>
       </div>
 
+      {view === 'people' ? (
+        <ScrollArea className="flex-1">
+          <div className="p-4">
+            {isGroup && canManageMembers && (
+              <button
+                type="button"
+                onClick={openAddDialog}
+                className="w-full flex items-center gap-2.5 p-2 -mx-2 mb-3 rounded-md hover:bg-muted transition-colors text-left"
+              >
+                <div className="h-8 w-8 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center shrink-0">
+                  <UserPlus className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <span className="text-sm font-medium">Add people</span>
+              </button>
+            )}
+            <div className="space-y-3">
+              {conversation.members.map(renderMemberRow)}
+            </div>
+          </div>
+        </ScrollArea>
+      ) : view === 'files' ? (
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-1.5">
+            {sharedFiles.map((file, i) => renderSharedFileRow(file, `${file.fileName}-${file.createdAt}-${i}`))}
+          </div>
+        </ScrollArea>
+      ) : (
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Info */}
@@ -375,7 +621,7 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
                     <Avatar className="h-24 w-24 mx-auto border-4 border-primary/10 shadow-sm">
                       {editAvatarUrl && !isEmoji(editAvatarUrl) && !avatarError ? (
                         <AvatarImage
-                          src={editAvatarUrl}
+                          src={resolveFileUrl(editAvatarUrl) ?? editAvatarUrl}
                           onError={() => setAvatarError(true)}
                         />
                       ) : null}
@@ -454,21 +700,34 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
               </div>
             ) : (
               <>
-                <Avatar className="h-16 w-16 mx-auto">
-                  {conversation.avatarUrl && !isEmoji(conversation.avatarUrl) ? (
-                    <AvatarImage src={conversation.avatarUrl} />
-                  ) : null}
-                  <AvatarFallback className={cn('text-lg font-semibold', isGroup && 'bg-primary/10 text-primary')}>
-                    {conversation.avatarUrl && isEmoji(conversation.avatarUrl) ? (
-                      conversation.avatarUrl
-                    ) : isGroup ? (
-                      conversation.name.split(' ').map((w) => w[0]).join('').slice(0, 2)
-                    ) : (
-                      conversation.members.find((m) => m.id !== currentUserId)?.initials || '??'
-                    )}
-                  </AvatarFallback>
-                </Avatar>
-                <h4 className="font-semibold mt-2">{conversation.name}</h4>
+                {(() => {
+                  const isSelfChat = !isGroup && conversation.members.every((m) => m.id === currentUserId);
+                  const otherMember = !isGroup
+                    ? conversation.members.find((m) => m.id !== currentUserId) ?? (isSelfChat ? conversation.members[0] : undefined)
+                    : null;
+                  const topAvatarUrl = isGroup ? conversation.avatarUrl : otherMember?.avatarUrl;
+                  const topInitials = isGroup
+                    ? conversation.name.split(' ').map((w) => w[0]).join('').slice(0, 2)
+                    : otherMember?.initials || '??';
+                  const topName = isGroup
+                    ? conversation.name
+                    : isSelfChat
+                      ? `${otherMember?.name || 'You'} (You)`
+                      : otherMember?.name || conversation.name;
+                  return (
+                    <>
+                      <Avatar key={otherMember?.id ?? conversation.id} className="h-16 w-16 mx-auto">
+                        {topAvatarUrl && !isEmoji(topAvatarUrl) ? (
+                          <AvatarImage src={resolveFileUrl(topAvatarUrl) ?? topAvatarUrl} className="object-cover" />
+                        ) : null}
+                        <AvatarFallback className={cn('text-lg font-semibold', isGroup && 'bg-primary/10 text-primary')}>
+                          {topAvatarUrl && isEmoji(topAvatarUrl) ? topAvatarUrl : topInitials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <h4 className="font-semibold mt-2">{topName}</h4>
+                    </>
+                  );
+                })()}
                 {conversation.description && (
                   <p className="text-xs text-muted-foreground mt-1">{conversation.description}</p>
                 )}
@@ -479,84 +738,83 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
           <Separator />
 
           {/* Members */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h5 className="text-xs font-medium text-muted-foreground">
-                Members ({conversation.members.length})
-              </h5>
-              {isGroup && canManageMembers && (
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={openAddDialog} title="Add member">
-                  <UserPlus className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-            <div className="space-y-2">
-              {conversation.members.map((member) => (
-                <div key={member.id} className="flex items-center gap-2 group">
-                  <div className="relative">
-                    <Avatar className="h-7 w-7">
-                      <AvatarFallback className="text-[10px]">{member.initials}</AvatarFallback>
-                    </Avatar>
-                    <OnlineStatus isOnline={onlineUserIds.has(member.id)} className="absolute -bottom-0.5 -right-0.5" size="sm" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm truncate block">
-                      {member.id === currentUserId ? 'You' : member.name}
-                    </span>
-                  </div>
-                  {isGroup && member.role?.toLowerCase() === 'owner' && (
-                    <Badge variant="secondary" className="text-[10px] h-5 bg-primary/10 text-primary border-none">owner</Badge>
-                  )}
-                  {isGroup && member.role?.toLowerCase() === 'admin' && (
-                    <Badge variant="secondary" className="text-[10px] h-5 bg-blue-500/10 text-blue-600 border-none">admin</Badge>
-                  )}
-                  {isGroup && canManageMembers && member.id !== currentUserId && member.role !== 'owner' && (
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {isOwner && member.role !== 'admin' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
-                          onClick={() => handleMakeAdmin(member.id)}
-                          title="Make Admin"
-                        >
-                          <Shield className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {isOwner && member.role === 'admin' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted"
-                          onClick={() => handleDismissAdmin(member.id)}
-                          title="Dismiss Admin"
-                        >
-                          <ShieldOff className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {!(isAdmin && member.role === 'admin') && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => setConfirmRemoveId(member.id)}
-                          title="Remove member"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
+          {isGroup && (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    type="button"
+                    className="flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setView('people')}
+                  >
+                    Members ({conversation.members.length})
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                  {canManageMembers && (
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={openAddDialog} title="Add member">
+                      <UserPlus className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                 </div>
-              ))}
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setView('people')}
+                  className="flex items-center flex-wrap gap-2"
+                >
+                  {conversation.members.slice(0, MEMBER_PREVIEW_COUNT).map((member) => (
+                    <div key={member.id} className="relative">
+                      <Avatar className="h-9 w-9">
+                        {member.avatarUrl && (
+                          <AvatarImage src={member.avatarUrl} alt={member.name} className="object-cover" />
+                        )}
+                        <AvatarFallback className="text-[11px]">{member.initials}</AvatarFallback>
+                      </Avatar>
+                      <OnlineStatus isOnline={onlineUserIds.has(member.id)} className="absolute -bottom-0.5 -right-0.5" size="sm" />
+                    </div>
+                  ))}
+                  {conversation.members.length > MEMBER_PREVIEW_COUNT && (
+                    <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium text-muted-foreground shrink-0">
+                      +{conversation.members.length - MEMBER_PREVIEW_COUNT}
+                    </div>
+                  )}
+                </button>
+              </div>
+
+              <Separator />
+            </>
+          )}
+
+          {/* Pinned & Saved messages */}
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={onShowPinned}
+              className="w-full flex items-center gap-2.5 p-2 -mx-2 rounded-md hover:bg-muted transition-colors text-left"
+            >
+              <Pin className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm flex-1">Pinned Messages</span>
+              <span className="text-xs text-muted-foreground">{pinnedCount}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={onShowFavourites}
+              className="w-full flex items-center gap-2.5 p-2 -mx-2 rounded-md hover:bg-muted transition-colors text-left"
+            >
+              <Bookmark className="h-4 w-4 text-amber-500 shrink-0" />
+              <span className="text-sm flex-1">Saved Messages</span>
+              <span className="text-xs text-muted-foreground">{favouriteCount}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
           </div>
 
           <Separator />
 
           {/* Shared Files */}
           <div>
-            <h5 className="text-xs font-medium text-muted-foreground mb-2">Shared Files</h5>
+            <div className="flex items-center justify-between mb-2">
+              <h5 className="text-xs font-medium text-muted-foreground">Shared Files</h5>
+            </div>
             {filesLoading ? (
               <p className="text-xs text-muted-foreground text-center py-4">Loading...</p>
             ) : sharedFiles.length === 0 ? (
@@ -565,37 +823,22 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
                 <p className="text-xs text-muted-foreground">No shared files yet</p>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {sharedFiles.map((file, i) => {
-                  const isImage = file.mimeType?.startsWith('image/');
-                  const fileKey = `${file.fileName}-${file.createdAt}`;
-                  const isDownloading = downloadingFile === fileKey;
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => handleDownloadSharedFile(file)}
-                      disabled={isDownloading}
-                      className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors text-left disabled:opacity-70"
-                    >
-                      {isImage ? (
-                        <Image className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium break-all whitespace-normal">{file.fileName}</p>
-                        <p className="text-[10px] text-muted-foreground">{formatFileSize(file.fileSize)}</p>
-                      </div>
-                      {isDownloading ? (
-                        <Loader2 className="h-3 w-3 text-muted-foreground shrink-0 animate-spin" />
-                      ) : (
-                        <Download className="h-3 w-3 text-muted-foreground shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  {sharedFiles
+                    .slice(0, FILE_PREVIEW_COUNT)
+                    .map((file, i) => renderSharedFileRow(file, `${file.fileName}-${file.createdAt}-${i}`))}
+                </div>
+                {sharedFiles.length > FILE_PREVIEW_COUNT && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary font-medium mt-2 pl-2 hover:underline"
+                    onClick={() => setView('files')}
+                  >
+                    Show more ({sharedFiles.length - FILE_PREVIEW_COUNT} more)
+                  </button>
+                )}
+              </>
             )}
           </div>
 
@@ -607,7 +850,11 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
               <Bell className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm">Notifications</span>
             </div>
-            <Switch defaultChecked />
+            <Switch
+              checked={notificationsEnabled}
+              disabled={isTogglingNotifications}
+              onCheckedChange={handleToggleNotifications}
+            />
           </div>
 
           {isGroup && (
@@ -621,10 +868,21 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
                 <LogOut className="h-4 w-4 mr-2" />
                 Leave Group
               </Button>
+              {isOwner && (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-destructive hover:text-destructive"
+                  onClick={() => setConfirmDeleteOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Group
+                </Button>
+              )}
             </>
           )}
         </div>
       </ScrollArea>
+      )}
 
       {/* Add Member Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
@@ -740,6 +998,21 @@ export function DetailPanel({ conversation, onRefetch, className }: DetailPanelP
         variant="destructive"
       />
 
+      <ConfirmationDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        onConfirm={handleDeleteGroup}
+        title="Delete Group"
+        description={`Are you sure you want to delete "${conversation.name}"? This will permanently remove the group and all its messages for every member. This cannot be undone.`}
+        confirmText={isDeletingGroup ? 'Deleting...' : 'Delete'}
+        variant="destructive"
+      />
+
+      <FilePreviewDialog
+        file={previewFile}
+        files={previewableFiles}
+        onClose={() => setPreviewFile(null)}
+      />
 
     </div>
   );

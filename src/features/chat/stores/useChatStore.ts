@@ -16,6 +16,10 @@ interface MessagesCacheEntry {
 interface ChatState {
   // ── UI state ──────────────────────────────────────────────────────────
   activeConversationId: string | null;
+  /** Last non-null activeConversationId, kept across unmount so returning to
+   *  bare /chat can restore it — unlike activeConversationId, which is
+   *  deliberately cleared on unmount so notifications resume for it. */
+  lastActiveConversationId: string | null;
   conversationFilter: ConversationFilter;
   searchQuery: string;
   isDetailPanelOpen: boolean;
@@ -23,6 +27,8 @@ interface ChatState {
   unreadCounts: Record<string, number>;
   isMessageSearchOpen: boolean;
   messageSearchQuery: string;
+  isNewDMDialogOpen: boolean;
+  isNewGroupDialogOpen: boolean;
 
   // ── Data cache ────────────────────────────────────────────────────────
   conversations: Conversation[];
@@ -44,9 +50,12 @@ interface ChatState {
   getDraft: (conversationId: string) => string;
   markAsRead: (conversationId: string) => void;
   incrementUnread: (conversationId: string) => void;
+  hydrateUnreadCounts: (conversations: Conversation[]) => void;
   getTotalUnread: () => number;
   toggleMessageSearch: () => void;
   setMessageSearchQuery: (query: string) => void;
+  setNewDMDialogOpen: (open: boolean) => void;
+  setNewGroupDialogOpen: (open: boolean) => void;
 
   // ── Data actions ──────────────────────────────────────────────────────
   setConversations: (conversations: Conversation[]) => void;
@@ -69,6 +78,7 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       // ── UI state defaults ─────────────────────────────────────────────
       activeConversationId: null,
+      lastActiveConversationId: null,
       conversationFilter: 'all',
       searchQuery: '',
       isDetailPanelOpen: false,
@@ -76,6 +86,8 @@ export const useChatStore = create<ChatState>()(
       unreadCounts: {},
       isMessageSearchOpen: false,
       messageSearchQuery: '',
+      isNewDMDialogOpen: false,
+      isNewGroupDialogOpen: false,
 
       // ── Data cache defaults ───────────────────────────────────────────
       conversations: [],
@@ -89,7 +101,10 @@ export const useChatStore = create<ChatState>()(
 
       // ── UI actions ────────────────────────────────────────────────────
       setActiveConversation: (id) => {
-        set({ activeConversationId: id });
+        set((state) => ({
+          activeConversationId: id,
+          lastActiveConversationId: id ?? state.lastActiveConversationId,
+        }));
         if (id) {
           set((state) => ({
             unreadCounts: { ...state.unreadCounts, [id]: 0 },
@@ -116,6 +131,14 @@ export const useChatStore = create<ChatState>()(
             [conversationId]: (state.unreadCounts[conversationId] || 0) + 1,
           },
         })),
+      hydrateUnreadCounts: (conversations) =>
+        set((state) => {
+          const next = { ...state.unreadCounts };
+          for (const c of conversations) {
+            next[c.id] = c.id === state.activeConversationId ? 0 : (c.unreadCount ?? next[c.id] ?? 0);
+          }
+          return { unreadCounts: next };
+        }),
       getTotalUnread: () => {
         const counts = get().unreadCounts;
         return Object.values(counts).reduce((sum, c) => sum + c, 0);
@@ -125,6 +148,8 @@ export const useChatStore = create<ChatState>()(
         messageSearchQuery: s.isMessageSearchOpen ? '' : s.messageSearchQuery,
       })),
       setMessageSearchQuery: (query) => set({ messageSearchQuery: query }),
+      setNewDMDialogOpen: (open) => set({ isNewDMDialogOpen: open }),
+      setNewGroupDialogOpen: (open) => set({ isNewGroupDialogOpen: open }),
 
       // ── Data actions ──────────────────────────────────────────────────
       setConversations: (conversations) =>

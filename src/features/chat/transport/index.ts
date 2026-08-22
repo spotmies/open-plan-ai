@@ -1,5 +1,4 @@
-import { SupabaseChatTransport } from './SupabaseChatTransport';
+import { SocketIOChatTransport } from './SocketIOChatTransport';
 import type { IChatTransport } from './IChatTransport';
 
-// Change this one line to swap transport providers
-export const chatTransport: IChatTransport = new SupabaseChatTransport();
+export const chatTransport: IChatTransport = new SocketIOChatTransport();

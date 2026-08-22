@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarHeader } from './components/CalendarHeader';
 import { CalendarFilters } from './components/CalendarFilters';
+import { ScheduleMeetDialog } from './components/ScheduleMeetDialog';
 import { CalendarMonthView } from './components/CalendarMonthView';
 import { CalendarWeekView } from './components/CalendarWeekView';
 import { CalendarDayView } from './components/CalendarDayView';
@@ -20,15 +21,37 @@ import {
 } from './utils/calendarUtils';
 import { CalendarFilter, CalendarViewMode, Task, Milestone, Issue } from '@/types';
 import { useProjects } from '@/hooks/useProjects';
-import { useAllTasks, useUpdateTask } from '@/hooks/useTasks';
+import { useAllTasks, useUpdateTask, useBatchUpdateTasks, useCreatePersonalTask } from '@/hooks/useTasks';
 import { useAllIssues, useUpdateIssue } from '@/hooks/useIssues';
 import { useAllMilestones, useUpdateMilestone } from '@/hooks/useMilestones';
-import { useBatchUpdateTasks } from '@/hooks/useProjectMutations';
+import { useAllMeetings, Meeting } from '@/hooks/useMeetings';
 import { useOrganizationMembers } from '@/hooks/useProjectTeam';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { parse, format as formatDate, isValid } from 'date-fns';
 import { toast } from 'sonner';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
+import { logger } from '@/services/monitoring/logger';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { attachmentsService } from '@/services/attachments.service';
+import { commentsService } from '@/services/comments.service';
+import { ChevronDown, ListPlus, Plus, Video } from 'lucide-react';
+
+// Personal (no-project) tasks only accept this fixed status set — mirrors
+// MY_DAY_STANDARD_STATUSES in the backend (tasks.service.ts), since there's
+// no project task_columns to offer a custom status from.
+const PERSONAL_TASK_STATUS_OPTIONS = [
+  { value: 'todo', label: 'To Do', color: 'bg-[#3b82f6]' },
+  { value: 'in-progress', label: 'In Progress', color: 'bg-[#f59e0b]' },
+  { value: 'blocked', label: 'Blocked', color: 'bg-[#ef4444]' },
+  { value: 'done', label: 'Done', color: 'bg-[#10b981]' },
+];
 
 // Convert a DB milestone row to calendar event
 function dbMilestoneToCalendarEvent(m: any, projectName: string): CalendarEvent | null {
@@ -75,6 +98,7 @@ function taskToCalendarEvent(task: Task, projectName: string): CalendarEvent | n
     startDate: task.startDate ? parse(task.startDate, 'yyyy-MM-dd', new Date()) : undefined,
     description: task.description,
     tags: task.tags,
+    createdBy: task.createdBy ? { id: task.createdBy.id, name: task.createdBy.name } : undefined,
   };
 }
 
@@ -98,6 +122,23 @@ function issueToCalendarEvent(issue: Issue, projectName: string): CalendarEvent 
     issueStatus: issue.status,
     description: issue.description,
     tags: issue.tags,
+    createdBy: issue.reportedBy ? { id: issue.reportedBy.id, name: issue.reportedBy.name } : undefined,
+  };
+}
+
+// Convert a persisted meeting to a calendar event
+function meetingToCalendarEvent(meeting: Meeting): CalendarEvent {
+  return {
+    id: meeting.id,
+    title: meeting.title,
+    date: new Date(meeting.startTime),
+    endDate: new Date(meeting.endTime),
+    type: 'meeting',
+    projectId: '',
+    projectName: '',
+    meetingUri: meeting.meetingUri,
+    htmlLink: meeting.htmlLink,
+    attendeeEmails: meeting.attendeeEmails,
   };
 }
 
@@ -117,6 +158,7 @@ function dbMilestoneToFrontend(m: any): Milestone {
 
 const CalendarPage: React.FC = () => {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -125,12 +167,13 @@ const CalendarPage: React.FC = () => {
   const { data: allTasks = [], isLoading: tasksLoading } = useAllTasks();
   const { data: allMilestones = [], isLoading: milestonesLoading } = useAllMilestones();
   const { data: allIssues = [], isLoading: issuesLoading } = useAllIssues();
+  const { data: allMeetings = [] } = useAllMeetings();
   const { data: teamMembers = [] } = useOrganizationMembers(currentOrganization?.id);
 
   // Mutations
   const updateTaskMutation = useUpdateTask();
   const updateMilestoneMutation = useUpdateMilestone();
-  const batchUpdateTasksMutation = useBatchUpdateTasks(''); // projectId will be overridden if needed by service
+  const batchUpdateTasksMutation = useBatchUpdateTasks();
   const updateIssueMutation = useUpdateIssue();
 
   const isLoading = tasksLoading || milestonesLoading || issuesLoading;
@@ -150,7 +193,7 @@ const CalendarPage: React.FC = () => {
       if (!isValid(parsed)) throw new Error('Invalid date');
       return parsed;
     } catch (e) {
-      console.warn('[Calendar] Invalid date param, using today:', dateParam, e);
+      logger.warn('[Calendar] Invalid date param, using today:', dateParam, e);
       return new Date();
     }
   }, [dateParam]);
@@ -177,6 +220,75 @@ const CalendarPage: React.FC = () => {
   // Filter state remains local as it's complex and might be too long for URL
   const [filters, setFilters] = React.useState<CalendarFilter>({});
 
+  // Whether the pills row below the header has anything to show. Derived here
+  // rather than left to `empty:hidden`, so an empty row occupies no height at
+  // all instead of depending on the CSS `:empty` selector matching.
+  const hasActiveFilters = Boolean(
+    filters.projectIds?.length ||
+    filters.entityType?.length ||
+    filters.priority?.length ||
+    filters.isBlocked !== undefined ||
+    filters.assignedBy?.length
+  );
+
+  // "Schedule a meet" dialog state
+  const [scheduleMeetOpen, setScheduleMeetOpen] = React.useState(false);
+  const [scheduleMeetDate, setScheduleMeetDate] = React.useState<Date | undefined>(undefined);
+
+  const handleScheduleMeeting = (date?: Date) => {
+    setScheduleMeetDate(date);
+    setScheduleMeetOpen(true);
+  };
+
+  // "Add task" — creates a personal (no-project) task, same as My Tasks does.
+  const [isAddTaskOpen, setIsAddTaskOpen] = React.useState(false);
+  const createPersonalTaskMutation = useCreatePersonalTask();
+
+  // A personal task is private to its creator, who is always the sole assignee
+  // (enforced server-side), so the picker only ever offers the current user.
+  const selfAsAssignableMember = useMemo(() => {
+    if (!user) return [];
+    return [{
+      id: user.id,
+      name: user.name || user.email,
+      email: user.email,
+      role: 'member',
+      initials: user.initials || (user.name || user.email || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+      avatar: user.avatarUrl || '',
+    }];
+  }, [user]);
+
+  const handleTaskCreate = async (newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, pendingFiles?: File[]) => {
+    if (!currentOrganization) return;
+    try {
+      const created = await createPersonalTaskMutation.mutateAsync({ organizationId: currentOrganization.id, task: newTask });
+      if (pendingFiles && pendingFiles.length > 0 && created?.id) {
+        try {
+          await Promise.all(
+            pendingFiles.map(file => attachmentsService.upload({ entityId: created.id, entityType: 'task', file }))
+          );
+        } catch {
+          toast.warning('Task created but some attachments failed to upload');
+        }
+      }
+      if (newTask.comments && newTask.comments.length > 0 && created?.id) {
+        try {
+          await Promise.all(
+            newTask.comments.map(comment =>
+              commentsService.create({ content: comment.content, entity_id: created.id, entity_type: 'task' })
+            )
+          );
+        } catch {
+          toast.warning('Task created but some comments failed to save');
+        }
+      }
+      toast.success('Task created');
+    } catch (error) {
+      logger.error('Failed to create task:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create task');
+    }
+  };
+
   // Build project map for lookups
   const projectMap = useMemo(
     () => new Map(projects.map(p => [p.id, p.name])),
@@ -187,29 +299,39 @@ const CalendarPage: React.FC = () => {
   const allEvents = useMemo(() => {
     const events: CalendarEvent[] = [];
 
-    // Tasks
-    allTasks.forEach(task => {
-      const projectName = projectMap.get(task.projectId || '') || 'Unknown Project';
-      const event = taskToCalendarEvent(task, projectName);
-      if (event) events.push(event);
-    });
+    // Tasks assigned to the current user only
+    allTasks
+      .filter(task => task.assignees?.some(a => a.id === user?.id))
+      .forEach(task => {
+        const projectName = task.projectId ? projectMap.get(task.projectId) || 'Unknown Project' : 'Personal';
+        const event = taskToCalendarEvent(task, projectName);
+        if (event) events.push(event);
+      });
 
-    // Milestones (DB shape)
+    // Milestones (DB shape) — project-level, not assigned to individuals
     allMilestones.forEach((m: any) => {
       const projectName = projectMap.get(m.project_id) || 'Unknown Project';
       const event = dbMilestoneToCalendarEvent(m, projectName);
       if (event) events.push(event);
     });
 
-    // Issues
-    allIssues.forEach(issue => {
-      const projectName = projectMap.get(issue.projectId) || 'Unknown Project';
-      const event = issueToCalendarEvent(issue, projectName);
-      if (event) events.push(event);
+    // Issues assigned to the current user only
+    allIssues
+      .filter(issue => issue.assignees?.some(a => a.id === user?.id))
+      .forEach(issue => {
+        const projectName = projectMap.get(issue.projectId) || 'Unknown Project';
+        const event = issueToCalendarEvent(issue, projectName);
+        if (event) events.push(event);
+      });
+
+    // Meetings — organized by or inviting the current user (already scoped
+    // server-side); no project association.
+    allMeetings.forEach((meeting) => {
+      events.push(meetingToCalendarEvent(meeting));
     });
 
     return events;
-  }, [allTasks, allMilestones, allIssues, projectMap]);
+  }, [allTasks, allMilestones, allIssues, allMeetings, projectMap, user?.id]);
 
   // Apply filters
   const filteredEvents = useMemo(() => {
@@ -223,15 +345,6 @@ const CalendarPage: React.FC = () => {
     }
     return getWeekDays(currentDate);
   }, [currentDate, viewMode]);
-
-  // Get all available tags for filter
-  const availableTags = useMemo(() => {
-    const tagSet = new Set<string>();
-    allEvents.forEach(event => {
-      event.tags?.forEach(tag => tagSet.add(tag));
-    });
-    return Array.from(tagSet).sort();
-  }, [allEvents]);
 
   // Navigation handlers – safely update query params (handles null/undefined)
   const updateUrlParams = (updates: Record<string, string | null | undefined>, replace = false) => {
@@ -280,6 +393,8 @@ const CalendarPage: React.FC = () => {
       updateUrlParams({ milestone: event.id });
     } else if (event.type === 'issue') {
       updateUrlParams({ issue: event.id });
+    } else if (event.type === 'meeting') {
+      window.open(event.htmlLink || event.meetingUri, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -335,15 +450,22 @@ const CalendarPage: React.FC = () => {
                 toast.error('Missing project ID or task ID');
               }
             } catch (error) {
-              console.error('Failed to update task:', error);
-              toast.error('Failed to update task');
+              logger.error('Failed to update task:', error);
+              toast.error(error instanceof Error ? error.message : 'Failed to update task');
             }
           }}
           onBatchUpdate={async (updates) => {
             try {
-              await batchUpdateTasksMutation.mutateAsync(updates);
+              if (!selectedTask.projectId) {
+                toast.error('Missing project ID');
+                return;
+              }
+              await batchUpdateTasksMutation.mutateAsync({
+                projectId: selectedTask.projectId,
+                updates,
+              });
             } catch (error) {
-              console.error('Failed to batch update tasks:', error);
+              logger.error('Failed to batch update tasks:', error);
               toast.error('Failed to update dependent tasks');
             }
           }}
@@ -369,7 +491,7 @@ const CalendarPage: React.FC = () => {
               });
               toast.success('Milestone updated successfully');
             } catch (error) {
-              console.error('Failed to update milestone:', error);
+              logger.error('Failed to update milestone:', error);
               toast.error('Failed to update milestone');
             }
           }}
@@ -397,11 +519,29 @@ const CalendarPage: React.FC = () => {
                 toast.error('Missing project ID or issue ID');
               }
             } catch (error) {
-              console.error('Failed to update issue:', error);
+              logger.error('Failed to update issue:', error);
               toast.error('Failed to update issue');
             }
           }}
           tasks={getProjectTasks(selectedIssue.projectId)}
+        />
+      )}
+
+      {isAddTaskOpen && (
+        <TaskDetailModal
+          task={null}
+          allTasks={[]}
+          isOpen={isAddTaskOpen}
+          onClose={() => setIsAddTaskOpen(false)}
+          onUpdate={() => { }}
+          mode="create"
+          onCreate={handleTaskCreate}
+          modules={[]}
+          milestones={[]}
+          assignableMembers={selfAsAssignableMember}
+          defaultAssignees={selfAsAssignableMember}
+          statusOptions={PERSONAL_TASK_STATUS_OPTIONS}
+          projectName="Personal"
         />
       )}
     </>
@@ -425,17 +565,17 @@ const CalendarPage: React.FC = () => {
   // ── Desktop layout ─────────────────────────────────────────────────────────
   return (
     <>
-      <div className="flex flex-col h-full gap-6 animate-fade-in">
+      <div className="h-full flex flex-col gap-3 animate-fade-in px-6 pt-3 pb-6">
         {/* Page Header */}
-        <div>
+        {/* <div className="shrink-0">
           <h1 className="text-2xl font-semibold tracking-tight">Calendar</h1>
           <p className="text-muted-foreground text-sm mt-1">
             View and manage project timelines, milestones, and tasks.
           </p>
-        </div>
+        </div> */}
 
         {/* Controls Layout */}
-        <div className="flex flex-col">
+        <div className="flex flex-col shrink-0">
           {/* Header */}
           <CalendarHeader
             currentDate={currentDate}
@@ -445,28 +585,49 @@ const CalendarPage: React.FC = () => {
             onNavigateNext={handleNavigateNext}
             onNavigateToday={handleNavigateToday}
             actions={
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2 h-9 rounded-lg">
+                      <Plus className="h-4 w-4" />
+                      <span className="hidden sm:inline">Create</span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[180px]">
+                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleScheduleMeeting()}>
+                      <Video className="h-4 w-4 mr-2" />
+                      Schedule a meet
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer" onClick={() => setIsAddTaskOpen(true)}>
+                      <ListPlus className="h-4 w-4 mr-2" />
+                      Add task
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <CalendarFilters
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                  projects={projectsForFilter as any}
+                  teamMembers={teamMembers}
+                  hideActiveFilters
+                />
+              </>
+            }
+          />
+
+          {/* Active Filters */}
+          {hasActiveFilters && (
+            <div className="pt-2">
               <CalendarFilters
                 filters={filters}
                 onFiltersChange={setFilters}
                 projects={projectsForFilter as any}
                 teamMembers={teamMembers}
-                availableTags={availableTags}
-                hideActiveFilters
+                hideTrigger
               />
-            }
-          />
-
-          {/* Active Filters */}
-          <div className="py-2 empty:hidden">
-            <CalendarFilters
-              filters={filters}
-              onFiltersChange={setFilters}
-              projects={projectsForFilter as any}
-              teamMembers={teamMembers}
-              availableTags={availableTags}
-              hideTrigger
-            />
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Calendar View */}
@@ -493,6 +654,7 @@ const CalendarPage: React.FC = () => {
                 date={currentDate}
                 events={filteredEvents}
                 onEventClick={handleEventClick}
+                onScheduleMeeting={handleScheduleMeeting}
               />
             )}
           </>
@@ -500,6 +662,12 @@ const CalendarPage: React.FC = () => {
       </div>
 
       {sharedModals}
+      <ScheduleMeetDialog
+        open={scheduleMeetOpen}
+        onOpenChange={setScheduleMeetOpen}
+        teamMembers={teamMembers}
+        initialDate={scheduleMeetDate}
+      />
     </>
   );
 };

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,34 +7,71 @@ import { MessageArea } from './components/MessageArea';
 import { MessageInput } from './components/MessageInput';
 import { ChatHeader } from './components/ChatHeader';
 import { DetailPanel } from './components/DetailPanel';
+import { AddMemberDialog } from './components/AddMemberDialog';
+import { ForwardMessageDialog } from './components/ForwardMessageDialog';
 import { EmptyState } from './components/EmptyState';
 import { TypingIndicator } from './components/TypingIndicator';
 import { MessageAreaSkeleton } from './components/MessageAreaSkeleton';
-import { MessageSearchBar } from './components/MessageSearchBar';
+import { PinnedBanner } from './components/PinnedBanner';
+import { SavedMessagesView } from './components/SavedMessagesView';
+import { QuickViewPanel } from './components/QuickViewPanel';
+import type { QuickView } from './components/QuickViews';
 import { useChatStore } from './stores/useChatStore';
-import { useConversations, useMessages, useReactions } from './hooks/useChatData';
+import { useConversations, useMessages, useReactions, usePinnedMessages, useFavouriteMessages, useGlobalFavourites } from './hooks/useChatData';
 import { useTypingIndicator } from './hooks/useTypingIndicator';
 import { useReachableUsers } from './hooks/useReachableUsers';
 import { useReadReceipts } from './hooks/useReadReceipts';
 import { chatService } from '@/services/chat.service';
-import { useEffect } from 'react';
 import { toast } from 'sonner';
-import { ChatMessage } from './types';
+import { ChatMessage, FavouriteMessage } from './types';
+import { logger } from '@/services/monitoring/logger';
+
 
 export default function Chat() {
+  useEffect(() => {
+    document.title = 'Chat | Open Plan AI';
+    return () => { document.title = 'Open Plan AI'; };
+  }, []);
+
+  // Clear the "currently viewing" conversation on unmount so the app-wide chat
+  // listener (ChatNotificationsProvider) correctly treats every conversation as
+  // inactive — and therefore notifiable — once the user navigates away from Chat.
+  useEffect(() => {
+    return () => { useChatStore.getState().setActiveConversation(null); };
+  }, []);
+
   const { conversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { user } = useAuth();
-  const { activeConversationId, setActiveConversation, isDetailPanelOpen, isMessageSearchOpen } = useChatStore();
+  const { activeConversationId, lastActiveConversationId, setActiveConversation, isDetailPanelOpen, isMessageSearchOpen } = useChatStore();
 
-  const { conversations, loading: convsLoading, refetch } = useConversations();
+  const {
+    conversations, loading: convsLoading, refetch,
+    toggleConversationFavourite, hideConversation, toggleMute, markConversationRead,
+  } = useConversations();
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [forwardMessages, setForwardMessages] = useState<ChatMessage[] | null>(null);
   const activeId = conversationId || (isMobile ? null : activeConversationId);
-  const { messages, loading: msgsLoading, hasMore, loadMore, refetchMessages, sendMessage, readOnly, readOnlyNotice } = useMessages(activeId ?? null);
-  const { reactionMap, handleToggleReaction } = useReactions(messages, user?.id);
+  const { messages, loading: msgsLoading, error: msgsError, hasMore, loadMore, refetchMessages, sendMessage, readOnly, readOnlyNotice } = useMessages(activeId ?? null);
+  const { reactionMap, handleToggleReaction } = useReactions(messages, user?.id, activeId ?? null);
   const { data: reachableUsers = [] } = useReachableUsers();
   const onlineUserIds = useChatStore((s) => s.onlineUserIds);
+  const [messageFilter, setMessageFilter] = useState<'pinned' | 'favourites' | null>(null);
+  const pendingFilterRef = useRef<'pinned' | 'favourites' | null>(null);
+  const { pinnedMessages, pinnedMessageIds, pinMessage, unpinMessage } = usePinnedMessages(activeId ?? null);
+  const { favouriteMessages, favouriteIds, toggleFavourite, refetchFavourites } = useFavouriteMessages(activeId ?? null);
+  const [activeQuickView, setActiveQuickView] = useState<QuickView | null>(null);
+  // What the user picked *inside* the quick view panel (a conversation id for
+  // Favorites/Drafts, a message id for Saved). Null means the panel is open but
+  // nothing has been chosen, so the chat pane shows a placeholder instead of
+  // whichever conversation happened to be open before.
+  const [quickViewSelectionId, setQuickViewSelectionId] = useState<string | null>(null);
+  const showSaved = activeQuickView === 'saved';
+  const { draftMessages } = useChatStore();
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const { messages: savedMessages, loading: savedLoading, refetch: refetchSaved, removeFavourite: removeSavedMessage } = useGlobalFavourites();
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
@@ -44,7 +81,7 @@ export default function Chat() {
     user?.id
   );
 
-  const { readReceiptMap } = useReadReceipts(activeId, messages, user?.id);
+  const { readReceiptMap } = useReadReceipts(activeId, messages, user?.id, activeConv?.members);
 
   useEffect(() => {
     if (conversationId && conversationId !== activeConversationId) {
@@ -54,7 +91,18 @@ export default function Chat() {
 
   useEffect(() => {
     setReplyingTo(null);
+    setMessageFilter(pendingFilterRef.current);
+    pendingFilterRef.current = null;
   }, [activeId]);
+
+  // Landing on bare /chat (e.g. via the sidebar nav icon) after previously having
+  // a conversation open should restore it, rather than showing the empty state.
+  useEffect(() => {
+    if (conversationId || isMobile || convsLoading || !lastActiveConversationId) return;
+    if (conversations.some((c) => c.id === lastActiveConversationId)) {
+      navigate(`/chat/${lastActiveConversationId}`, { replace: true });
+    }
+  }, [conversationId, isMobile, convsLoading, lastActiveConversationId, conversations, navigate]);
 
   useEffect(() => {
     if (!conversationId || convsLoading) return;
@@ -95,10 +143,16 @@ export default function Chat() {
     }
   }, [isMobile, conversationId, activeConversationId, setActiveConversation]);
 
-  const handleSelectConversation = useCallback((id: string) => {
+  const navigateToConversation = useCallback((id: string) => {
     setActiveConversation(id);
     navigate(`/chat/${id}`);
   }, [navigate, setActiveConversation]);
+
+  const handleSelectConversation = useCallback((id: string) => {
+    setActiveQuickView(null);
+    setHighlightMessageId(null);
+    navigateToConversation(id);
+  }, [navigateToConversation]);
 
   const handleBack = useCallback(() => {
     setActiveConversation(null);
@@ -110,7 +164,7 @@ export default function Chat() {
       await chatService.editMessage(messageId, newContent);
       await refetchMessages();
     } catch (err) {
-      console.error('Failed to edit message:', err);
+      logger.error('Failed to edit message:', err);
       toast.error('Failed to edit message');
     }
   }, [refetchMessages]);
@@ -120,7 +174,17 @@ export default function Chat() {
       await chatService.deleteMessage(messageId, senderName);
       await refetchMessages();
     } catch (err) {
-      console.error('Failed to delete message:', err);
+      logger.error('Failed to delete message:', err);
+      toast.error('Failed to delete message');
+    }
+  }, [refetchMessages]);
+
+  const handleDeleteMessageForMe = useCallback(async (messageId: string) => {
+    try {
+      await chatService.deleteMessageForMe(messageId);
+      await refetchMessages();
+    } catch (err) {
+      logger.error('Failed to delete message for me:', err);
       toast.error('Failed to delete message');
     }
   }, [refetchMessages]);
@@ -133,9 +197,123 @@ export default function Chat() {
     setReplyingTo(null);
   }, []);
 
+  const handleForwardMessage = useCallback((messages: ChatMessage[]) => {
+    setForwardMessages(messages);
+  }, []);
+
+  const handleForwardSubmit = useCallback(async (targetConversationIds: string[]) => {
+    if (!forwardMessages) return;
+    try {
+      for (const targetId of targetConversationIds) {
+        for (const msg of forwardMessages) {
+          await chatService.forwardMessage(targetId, msg);
+        }
+      }
+      toast.success(
+        forwardMessages.length > 1
+          ? `${forwardMessages.length} items forwarded`
+          : 'Message forwarded'
+      );
+      if (targetConversationIds.includes(activeId ?? '')) await refetchMessages();
+    } catch (err) {
+      logger.error('Failed to forward message:', err);
+      toast.error('Failed to forward message');
+      throw err;
+    }
+  }, [forwardMessages, activeId, refetchMessages]);
+
+  const handleTogglePin = useCallback((messageId: string) => {
+    if (!activeId) return;
+    if (pinnedMessageIds.has(messageId)) {
+      unpinMessage(messageId);
+    } else {
+      pinMessage(messageId);
+    }
+  }, [activeId, pinnedMessageIds, pinMessage, unpinMessage]);
+
+  const handleToggleFavourite = useCallback(async (messageId: string) => {
+    const msg = messages.find((m) => m.id === messageId)
+      ?? pinnedMessages.find((m) => m.id === messageId)
+      ?? favouriteMessages.find((m) => m.id === messageId);
+    if (msg) await toggleFavourite(msg);
+    // Keep the global Saved panel (a separate fetch) in sync with per-message toggles
+    // made anywhere else, so a newly-saved message shows up without a manual refresh.
+    refetchSaved();
+  }, [messages, pinnedMessages, favouriteMessages, toggleFavourite, refetchSaved]);
+
+  const handleShowPinned = useCallback(() => {
+    useChatStore.getState().setDetailPanelOpen(false);
+    setMessageFilter('pinned');
+  }, []);
+
+  const handleShowFavourites = useCallback(() => {
+    useChatStore.getState().setDetailPanelOpen(false);
+    setMessageFilter('favourites');
+  }, []);
+
+  const handleCloseFilter = useCallback(() => {
+    setMessageFilter(null);
+  }, []);
+
+  const handleShowQuickView = useCallback((view: QuickView) => {
+    useChatStore.getState().setDetailPanelOpen(false);
+    setActiveQuickView((prev) => (prev === view ? null : view));
+    setQuickViewSelectionId(null);
+    if (view === 'saved') refetchSaved();
+  }, [refetchSaved]);
+
+  const handleCloseQuickView = useCallback(() => {
+    setActiveQuickView(null);
+    setQuickViewSelectionId(null);
+  }, []);
+
+  const handleRemoveSaved = useCallback(async (messageId: string) => {
+    await removeSavedMessage(messageId);
+    // The removed message might be the currently open conversation's — refresh its
+    // own favourites so the bookmark icon on that bubble updates too.
+    refetchFavourites();
+  }, [removeSavedMessage, refetchFavourites]);
+
+  const handleDeleteChat = useCallback((targetConversationId: string) => {
+    hideConversation(targetConversationId);
+    if (targetConversationId === activeId) handleBack();
+  }, [hideConversation, activeId, handleBack]);
+
+  const handleOpenSavedMessage = useCallback((message: FavouriteMessage) => {
+    // Desktop keeps the Saved panel open as a third column (Teams-style) so another
+    // saved item can be picked next; mobile has no room for three panes, so it closes.
+    if (isMobile) setActiveQuickView(null);
+    setQuickViewSelectionId(message.id);
+    setHighlightMessageId(message.id);
+    if (message.conversationId === activeId) {
+      setMessageFilter(null);
+    } else {
+      pendingFilterRef.current = null;
+      navigateToConversation(message.conversationId);
+    }
+  }, [isMobile, activeId, navigateToConversation]);
+
+  const handleOpenQuickViewConversation = useCallback((id: string) => {
+    if (isMobile) setActiveQuickView(null);
+    setQuickViewSelectionId(id);
+    navigateToConversation(id);
+  }, [isMobile, navigateToConversation]);
+
   const routeHasConversation = Boolean(conversationId);
-  const showConversationList = isMobile ? !routeHasConversation : true;
-  const showMessageArea = isMobile ? routeHasConversation : true;
+  const showQuickViewPane = activeQuickView !== null;
+  // Desktop shows conversation list + (optionally) the quick view panel (Favorites/Drafts/Saved)
+  // + the chat pane all at once — three columns, like Teams' Quick views. Mobile has room for
+  // only one at a time, so panes are shown/hidden in sequence instead (list -> panel -> chat).
+  const showConversationList = isMobile ? !routeHasConversation && !showQuickViewPane : true;
+  const showChatPane = isMobile ? routeHasConversation && !showQuickViewPane : true;
+  // Opening a quick view resets the chat pane to a prompt — leaving the previously
+  // open conversation there makes it look like the panel selected it.
+  const awaitingQuickViewSelection = showQuickViewPane && quickViewSelectionId === null;
+  const quickViewPlaceholder = activeQuickView === 'saved'
+    ? 'no-saved-selection'
+    : activeQuickView === 'drafts'
+      ? 'no-draft-selection'
+      : 'no-favourite-selection';
 
   const typingText = typingNames.length > 0
     ? typingNames.length === 1
@@ -143,9 +321,15 @@ export default function Chat() {
       : `${typingNames.length} people typing...`
     : undefined;
 
+  const displayMessages = messageFilter === 'pinned'
+    ? pinnedMessages
+    : messageFilter === 'favourites'
+      ? favouriteMessages
+      : messages;
+
   return (
     <>
-      <div className="flex h-full overflow-hidden">
+      <div className="flex h-full overflow-hidden relative">
         {showConversationList && (
           <div className="w-full md:w-[280px] shrink-0 overflow-hidden">
             <ConversationList
@@ -154,35 +338,100 @@ export default function Chat() {
               onSelect={handleSelectConversation}
               onConversationCreated={refetch}
               onlineUserIds={onlineUserIds}
+              onShowQuickView={handleShowQuickView}
+              activeQuickView={activeQuickView}
+              onToggleFavourite={toggleConversationFavourite}
+              onToggleMute={user?.id ? (id) => toggleMute(id, user.id) : undefined}
+              onMarkRead={markConversationRead}
+              onDeleteChat={handleDeleteChat}
             />
           </div>
         )}
 
-        {showMessageArea && (
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-            {activeConv ? (
+        {showSaved && (
+          <div className="w-full md:w-[320px] shrink-0 overflow-hidden border-r border-border">
+            <SavedMessagesView
+              messages={savedMessages}
+              conversations={conversations}
+              loading={savedLoading}
+              currentUserId={user?.id}
+              selectedId={quickViewSelectionId}
+              onOpenMessage={handleOpenSavedMessage}
+              onRemove={handleRemoveSaved}
+              onClose={handleCloseQuickView}
+            />
+          </div>
+        )}
+
+        {(activeQuickView === 'favourites' || activeQuickView === 'drafts') && (
+          <div className="w-full md:w-[320px] shrink-0 overflow-hidden border-r border-border">
+            <QuickViewPanel
+              type={activeQuickView}
+              conversations={conversations}
+              draftMessages={draftMessages}
+              loading={convsLoading}
+              currentUserId={user?.id}
+              selectedId={quickViewSelectionId}
+              onlineUserIds={onlineUserIds}
+              onSelect={handleOpenQuickViewConversation}
+              onClose={handleCloseQuickView}
+            />
+          </div>
+        )}
+
+        {showChatPane && (
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            {awaitingQuickViewSelection ? (
+              <EmptyState type={quickViewPlaceholder} />
+            ) : activeConv ? (
               <>
                 <ChatHeader
                   conversation={activeConv}
                   onBack={isMobile ? handleBack : undefined}
                   onlineUserIds={onlineUserIds}
                   typingText={typingText}
+                  onAddMember={() => setAddMemberOpen(true)}
+                  onSendMessage={sendMessage}
+                  pinnedCount={pinnedMessages.length}
+                  favouriteCount={favouriteMessages.length}
+                  filterMode={messageFilter}
+                  onShowPinned={handleShowPinned}
+                  onShowFavourites={handleShowFavourites}
+                  onCloseFilter={handleCloseFilter}
                 />
-                {isMessageSearchOpen && <MessageSearchBar />}
+                {!messageFilter && pinnedMessages.length > 0 && (
+                  <PinnedBanner
+                    pinnedMessages={pinnedMessages}
+                    onUnpin={unpinMessage}
+                    onShowAll={handleShowPinned}
+                  />
+                )}
                 {msgsLoading ? (
                   <MessageAreaSkeleton />
+                ) : !messageFilter && msgsError && messages.length === 0 ? (
+                  <EmptyState type="error" description={msgsError} onRetry={refetchMessages} />
                 ) : (
                   <MessageArea
-                    messages={messages}
+                    messages={displayMessages}
                     conversation={activeConv}
-                    hasMore={hasMore}
-                    onLoadMore={loadMore}
+                    hasMore={!messageFilter && hasMore}
+                    onLoadMore={!messageFilter ? loadMore : undefined}
                     readReceiptMap={readReceiptMap}
                     reactionMap={reactionMap}
                     onEditMessage={handleEditMessage}
                     onDeleteMessage={handleDeleteMessage}
+                    onDeleteMessageForMe={handleDeleteMessageForMe}
                     onToggleReaction={handleToggleReaction}
                     onReplyMessage={handleReplyMessage}
+                    onForwardMessage={handleForwardMessage}
+                    filterMode={messageFilter}
+                    pinnedMessageIds={pinnedMessageIds}
+                    favouriteMessageIds={favouriteIds}
+                    onTogglePin={handleTogglePin}
+                    onToggleFavourite={handleToggleFavourite}
+                    highlightMessageId={highlightMessageId}
+                    onHighlightHandled={() => setHighlightMessageId(null)}
+                    onJumpToMessage={setHighlightMessageId}
                   />
                 )}
                 <TypingIndicator typingNames={typingNames} />
@@ -191,6 +440,7 @@ export default function Chat() {
                   onMessageSent={refetch}
                   onTyping={broadcastTyping}
                   members={activeConv.members}
+                  isGroup={activeConv.type === 'group'}
                   sendMessage={sendMessage}
                   readOnly={readOnly}
                   readOnlyNotice={readOnlyNotice}
@@ -204,6 +454,24 @@ export default function Chat() {
           </div>
         )}
 
+        {activeConv && (
+          <AddMemberDialog
+            conversation={activeConv}
+            open={addMemberOpen}
+            onOpenChange={setAddMemberOpen}
+            onMemberAdded={refetch}
+          />
+        )}
+
+        <ForwardMessageDialog
+          open={forwardMessages !== null}
+          onOpenChange={(open) => { if (!open) setForwardMessages(null); }}
+          conversations={conversations}
+          reachableUsers={reachableUsers}
+          messages={forwardMessages}
+          onForward={handleForwardSubmit}
+        />
+
         {isDetailPanelOpen && activeConv && (
           isMobile ? (
             <div className="absolute inset-0 z-20 bg-background">
@@ -211,10 +479,21 @@ export default function Chat() {
                 conversation={activeConv}
                 onRefetch={refetch}
                 className="w-full border-l-0"
+                pinnedCount={pinnedMessages.length}
+                favouriteCount={favouriteMessages.length}
+                onShowPinned={handleShowPinned}
+                onShowFavourites={handleShowFavourites}
               />
             </div>
           ) : (
-            <DetailPanel conversation={activeConv} onRefetch={refetch} />
+            <DetailPanel
+              conversation={activeConv}
+              onRefetch={refetch}
+              pinnedCount={pinnedMessages.length}
+              favouriteCount={favouriteMessages.length}
+              onShowPinned={handleShowPinned}
+              onShowFavourites={handleShowFavourites}
+            />
           )
         )}
       </div>

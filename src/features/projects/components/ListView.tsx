@@ -1,13 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Task, Milestone, ModuleType, TeamMember } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { ArrowUpDown, AlertTriangle, Link2, Plus, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TaskDetailModal } from './TaskDetailModal';
 import { formatModuleType } from '../utils/projectUtils';
+import { playCompleteSound } from '@/lib/playSound';
+import { resolveFileUrl } from '@/utils/fileUrl';
 
 interface ListViewProps {
   projectId?: string;
@@ -17,10 +27,11 @@ interface ListViewProps {
   modules?: { id: string; name: string; type: ModuleType }[];
   assignableMembers?: TeamMember[];
   onTaskClick?: (task: Task) => void;
-  onTaskCreate?: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onTaskCreate?: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, files?: File[]) => void;
   onTaskUpdate?: (task: Task) => void;
   onBatchTaskUpdate?: (updates: Array<{ id: string; updates: Partial<Task> }>) => void;
   onTaskDelete?: (taskId: string) => void;
+  userProjectRole?: string;
   onAddModule?: () => void;
 }
 
@@ -34,15 +45,17 @@ const statusColors = {
 
 const priorityColors = {
   critical: 'bg-priority-critical/20 text-priority-critical',
-  high: 'bg-priority-high/20 text-priority-high',
-  medium: 'bg-priority-medium/20 text-priority-medium',
-  low: 'bg-priority-low/20 text-priority-low',
+  major: 'bg-priority-high/20 text-priority-high',
+  minor: 'bg-priority-medium/20 text-priority-medium',
+  trivial: 'bg-priority-low/20 text-priority-low',
 };
 
 type SortField = 'title' | 'status' | 'priority' | 'module' | 'dueDate' | 'assignee';
 type SortDirection = 'asc' | 'desc';
 
-export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modules = [], assignableMembers, onTaskClick, onTaskCreate, onTaskUpdate, onBatchTaskUpdate, onTaskDelete, projectId, onAddModule }: ListViewProps) {
+const PAGE_SIZE = 15;
+
+export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modules = [], assignableMembers, onTaskClick, onTaskCreate, onTaskUpdate, onBatchTaskUpdate, onTaskDelete, userProjectRole, projectId, onAddModule }: ListViewProps) {
   // Use allTasks prop if provided, otherwise fallback to tasks
   const allTasksForDependencies = allTasksProp || tasks;
   const [sortField, setSortField] = useState<SortField>('priority');
@@ -96,6 +109,20 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
     return sortDirection === 'asc' ? comparison : -comparison;
   });
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(sortedTasks.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedTasks = useMemo(
+    () => sortedTasks.slice((safeCurrentPage - 1) * PAGE_SIZE, safeCurrentPage * PAGE_SIZE),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks, sortField, sortDirection, safeCurrentPage]
+  );
+
+  // Reset to page 1 whenever the underlying task list or sort order changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [tasks, sortField, sortDirection]);
+
   const getMilestoneName = (milestoneId?: string) => {
     if (!milestoneId) return null;
     const milestone = milestones.find(m => m.id === milestoneId);
@@ -138,7 +165,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
     title: '',
     description: '',
     status: 'todo',
-    priority: 'medium',
+    priority: 'minor',
     module: '' as ModuleType,
     blockedBy: [],
     tags: [],
@@ -155,6 +182,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
   const handleCompleteTask = (e: React.MouseEvent, task: Task) => {
     e.stopPropagation();
     const updatedTask = { ...task, status: 'done' as const };
+    playCompleteSound();
     if (onTaskUpdate) {
       onTaskUpdate(updatedTask);
     }
@@ -171,11 +199,11 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
     }
   };
 
-  const handleTaskCreate = (newTask: Task) => {
+  const handleTaskCreate = (newTask: Task, pendingFiles?: File[]) => {
     if (onTaskCreate) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, createdAt, updatedAt, ...taskWithoutIds } = newTask;
-      onTaskCreate(taskWithoutIds);
+      onTaskCreate(taskWithoutIds, pendingFiles);
     }
     setIsCreateModalOpen(false);
   };
@@ -200,6 +228,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
           mode="create"
           onCreate={handleTaskCreate}
           modules={modules}
+          milestones={milestones}
           projectId={projectId}
           onAddModule={onAddModule}
           assignableMembers={assignableMembers}
@@ -212,8 +241,9 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
     <>
 
       <div className="rounded-lg border">
+        <div className="max-h-[calc(100vh-320px)] min-h-[240px] overflow-y-auto">
         <Table>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-background">
             <TableRow>
               <TableHead className="w-[300px]">
                 <SortableHeader field="title">Task</SortableHeader>
@@ -238,17 +268,17 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedTasks.map((task) => {
+            {paginatedTasks.map((task) => {
               const blockerCount = getBlockerCount(task);
               const milestoneName = getMilestoneName(task.milestoneId);
 
               return (
                 <TableRow
                   key={task.id}
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer hover:bg-muted/50 h-[72px]"
                   onClick={() => handleRowClick(task)}
                 >
-                  <TableCell>
+                  <TableCell className="align-middle">
                     <div className="flex items-start gap-2">
                       {blockerCount > 0 && (
                         <AlertTriangle className="h-4 w-4 text-status-blocked shrink-0 mt-0.5" />
@@ -265,8 +295,15 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
                           <Check className="h-3 w-3 text-foreground opacity-0 hover:opacity-100" />
                         </button>
                       )}
-                      <div>
-                        <p className="font-medium">{task.title}</p>
+                      <div className="min-w-0">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p className="font-medium line-clamp-2 cursor-pointer">{task.title}</p>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            {task.title}
+                          </TooltipContent>
+                        </Tooltip>
                         {task.description && (
                           <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                             {task.description}
@@ -314,6 +351,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
                     {task.assignees && task.assignees.length > 0 ? (
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
+                          <AvatarImage src={resolveFileUrl(task.assignees[0].avatar) ?? task.assignees[0].avatar} alt={task.assignees[0].name} />
                           <AvatarFallback className="text-[10px]">
                             {task.assignees[0].initials}
                           </AvatarFallback>
@@ -351,6 +389,39 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
             })}
           </TableBody>
         </Table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex flex-col items-center gap-2 py-4 border-t">
+            <p className="text-xs text-muted-foreground">
+              Page {safeCurrentPage} of {totalPages} ({sortedTasks.length} items)
+            </p>
+            <Pagination className="mx-0 w-auto">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (safeCurrentPage > 1) setCurrentPage(safeCurrentPage - 1);
+                    }}
+                    className={cn(safeCurrentPage <= 1 && 'pointer-events-none opacity-50')}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (safeCurrentPage < totalPages) setCurrentPage(safeCurrentPage + 1);
+                    }}
+                    className={cn(safeCurrentPage >= totalPages && 'pointer-events-none opacity-50')}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
       </div>
 
       {/* Task Detail Modal */}
@@ -365,7 +436,9 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
         onUpdate={handleTaskUpdate}
         onBatchUpdate={onBatchTaskUpdate}
         onDelete={onTaskDelete}
+        userProjectRole={userProjectRole}
         modules={modules}
+        milestones={milestones}
         projectId={projectId}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}
@@ -382,6 +455,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
         mode="create"
         onCreate={handleTaskCreate}
         modules={modules}
+        milestones={milestones}
         projectId={projectId}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}

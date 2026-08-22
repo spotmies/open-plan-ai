@@ -1,40 +1,26 @@
-import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Layers, Lock, ArrowLeft, Eye, EyeOff, AlertCircle } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { clearRecoveryFlowFlags } from "@/utils/recoveryFlowFlags";
+import { authService } from "@/services/auth.service";
 
 const MIN_PASSWORD_LENGTH = 8;
 
 const ResetPassword = () => {
   const navigate = useNavigate();
-  const { isLoading: authLoading, user, session, updatePassword, signOut } = useAuth();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token");
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [linkExpired, setLinkExpired] = useState(false);
-
-  const hasRecoverySession = !!(user && session);
-
-  useEffect(() => {
-    if (!authLoading && !hasRecoverySession) {
-      clearRecoveryFlowFlags();
-      // Check if there's a recovery_link_expired indicator
-      const url = new URL(window.location.href);
-      const isExpired = url.searchParams.has("link_expired") || url.hash.includes("otp_expired");
-      if (isExpired) {
-        setLinkExpired(true);
-      }
-    }
-  }, [authLoading, hasRecoverySession]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,41 +35,25 @@ const ResetPassword = () => {
       return;
     }
 
-    const emailForMessage = user?.email ?? "";
-
     setIsSubmitting(true);
-    const result = await updatePassword(password);
-    setIsSubmitting(false);
-
-    if (result.error) {
-      setError(result.error.message);
-      return;
+    try {
+      await authService.resetPassword(token!, password);
+      navigate("/login", {
+        replace: true,
+        state: {
+          message: "Password reset! Please sign in.",
+          email: "",
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to reset password";
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    clearRecoveryFlowFlags();
-    await signOut();
-    navigate("/login", {
-      replace: true,
-      state: {
-        message: "Your password was reset. Sign in with your new password.",
-        email: emailForMessage,
-      },
-    });
   };
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md border-0 shadow-xl">
-          <CardContent className="pt-8 pb-8 text-center text-muted-foreground text-sm">
-            Verifying reset link…
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!hasRecoverySession) {
+  if (!token) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md border-0 shadow-xl">
@@ -94,20 +64,14 @@ const ResetPassword = () => {
               </div>
               <span className="text-xl font-bold">OpenPlan AI</span>
             </div>
-            <CardTitle className="text-2xl font-bold">
-              {linkExpired ? "Link Expired" : "Link Invalid"}
-            </CardTitle>
+            <CardTitle className="text-2xl font-bold">Link Invalid or Expired</CardTitle>
             <CardDescription>
-              {linkExpired
-                ? "Your password reset link has expired. Password reset links are valid for 1 hour."
-                : "This password reset link is no longer valid or does not exist."}
+              This password reset link is no longer valid. Please request a new one.
             </CardDescription>
           </CardHeader>
           <CardFooter className="flex flex-col gap-3">
             <Button asChild className="w-full">
-              <Link to="/forgot-password">
-                {linkExpired ? "Request New Reset Link" : "Return to Forgot Password"}
-              </Link>
+              <Link to="/forgot-password">Request New Reset Link</Link>
             </Button>
             <Link
               to="/login"

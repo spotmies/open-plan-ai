@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { resolveFileUrl } from '@/utils/fileUrl';
 import { Separator } from '@/components/ui/separator';
 import {
   Select,
@@ -31,7 +32,6 @@ import {
   Edit2,
   Trash2,
   ExternalLink,
-  Save,
   X,
   Link,
   Plus,
@@ -93,6 +93,9 @@ export function ModuleDetailModal({
   const [isLinkingIssues, setIsLinkingIssues] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Baseline snapshot to diff against so blurring/tabbing without changing a
+  // field's value doesn't fire an unnecessary update.
+  const savedModuleRef = useRef<Module | null>(null);
 
   // Reset transient editing state when dialog closes or when selecting a different module.
   useEffect(() => {
@@ -132,7 +135,7 @@ export function ModuleDetailModal({
   );
   const moduleIssues = useMemo(() =>
     module
-      ? allIssues.filter(i => i.moduleId === module.id && i.status !== 'resolved' && i.status !== 'closed')
+      ? allIssues.filter(i => i.moduleId === module.id && i.status !== 'resolved')
       : [],
     [allIssues, module]
   );
@@ -144,29 +147,56 @@ export function ModuleDetailModal({
   const progress = moduleTasks.length > 0 ? (completedTasks / moduleTasks.length) * 100 : 0;
 
   const handleEdit = () => {
-    setEditedModule({ ...module });
+    const snapshot = { ...module };
+    setEditedModule(snapshot);
+    savedModuleRef.current = snapshot;
     setIsEditing(true);
   };
 
-  const handleSave = async () => {
-    if (!editedModule || !onUpdate) {
-      setIsEditing(false);
-      return;
-    }
-
+  // Persists a field change immediately so there's no separate "Update Module" step.
+  const commitFieldUpdate = async (updated: Module) => {
+    if (!onUpdate) return;
     setIsSaving(true);
     try {
-      const didSave = await onUpdate(editedModule);
-      if (didSave === false) return;
-      setIsLinkingTasks(false);
-      setIsLinkingIssues(false);
-      setIsEditing(false);
+      await onUpdate(updated);
+      savedModuleRef.current = updated;
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleCancel = () => {
+  const handleFieldChange = (patch: Partial<Module>) => {
+    if (!editedModule) return;
+    setEditedModule({ ...editedModule, ...patch });
+  };
+
+  const handleFieldBlur = () => {
+    if (!editedModule) return;
+    const saved = savedModuleRef.current;
+    // Tabbing/clicking away without actually editing shouldn't fire an update.
+    if (saved && saved.name === editedModule.name && saved.description === editedModule.description) {
+      return;
+    }
+    commitFieldUpdate(editedModule);
+  };
+
+  const handleSelectFieldChange = (patch: Partial<Module>) => {
+    if (!editedModule) return;
+    const updated = { ...editedModule, ...patch };
+    setEditedModule(updated);
+    commitFieldUpdate(updated);
+  };
+
+  const handleDone = () => {
+    // Flush any change still pending from the field that just lost focus —
+    // don't rely on the blur handler having already resolved, since Done can
+    // be reached via keyboard/synthetic activation without a prior blur.
+    if (editedModule) {
+      const saved = savedModuleRef.current;
+      if (!saved || saved.name !== editedModule.name || saved.description !== editedModule.description) {
+        commitFieldUpdate(editedModule);
+      }
+    }
     setEditedModule(null);
     setIsLinkingTasks(false);
     setIsLinkingIssues(false);
@@ -182,28 +212,24 @@ export function ModuleDetailModal({
   };
 
   const handleLinkTask = (taskId: string) => {
-    if (!isEditing) return;
     if (onLinkTask) {
       onLinkTask(taskId, module.id);
     }
   };
 
   const handleUnlinkTask = (taskId: string) => {
-    if (!isEditing) return;
     if (onUnlinkTask) {
       onUnlinkTask(taskId, module.id);
     }
   };
 
   const handleLinkIssue = (issueId: string) => {
-    if (!isEditing) return;
     if (onLinkIssue) {
       onLinkIssue(issueId, module.id);
     }
   };
 
   const handleUnlinkIssue = (issueId: string) => {
-    if (!isEditing) return;
     if (onUnlinkIssue) {
       onUnlinkIssue(issueId, module.id);
     }
@@ -244,7 +270,8 @@ export function ModuleDetailModal({
               {isEditing && editedModule ? (
                 <Input
                   value={editedModule.name}
-                  onChange={(e) => setEditedModule({ ...editedModule, name: e.target.value })}
+                  onChange={(e) => handleFieldChange({ name: e.target.value })}
+                  onBlur={handleFieldBlur}
                   className="text-lg font-semibold h-8 min-w-0"
                 />
               ) : (
@@ -253,15 +280,9 @@ export function ModuleDetailModal({
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {isEditing ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={handleCancel} disabled={isSaving}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={handleSave} disabled={isSaving}>
-                    <Save className="h-4 w-4 mr-1" />
-                    {isSaving ? 'Updating...' : 'Update Module'}
-                  </Button>
-                </>
+                <Button variant="outline" size="sm" onClick={handleDone}>
+                  {isSaving ? 'Saving...' : 'Done'}
+                </Button>
               ) : (
                 <>
                   <Button variant="outline" size="sm" onClick={handleEdit}>
@@ -303,12 +324,13 @@ export function ModuleDetailModal({
                     {isEditing && editedModule ? (
                       <Textarea
                         value={editedModule.description || ''}
-                        onChange={(e) => setEditedModule({ ...editedModule, description: e.target.value })}
+                        onChange={(e) => handleFieldChange({ description: e.target.value })}
+                        onBlur={handleFieldBlur}
                         className="mt-1"
                         rows={3}
                       />
                     ) : (
-                      <p className="text-sm mt-1">
+                      <p className="text-sm mt-1 break-words whitespace-pre-wrap">
                         {module.description || <span className="text-muted-foreground">No description</span>}
                       </p>
                     )}
@@ -319,7 +341,7 @@ export function ModuleDetailModal({
                     {isEditing && editedModule ? (
                       <Select
                         value={editedModule.type}
-                        onValueChange={(value) => setEditedModule({ ...editedModule, type: value as ModuleType })}
+                        onValueChange={(value) => handleSelectFieldChange({ type: value as ModuleType })}
                       >
                         <SelectTrigger className="mt-1">
                           <SelectValue />
@@ -348,7 +370,7 @@ export function ModuleDetailModal({
                         value={editedModule.owner?.id || ''}
                         onValueChange={(value) => {
                           const owner = teamMembers.find(m => m.id === value);
-                          setEditedModule({ ...editedModule, owner });
+                          handleSelectFieldChange({ owner });
                         }}
                       >
                         <SelectTrigger className="mt-1">
@@ -359,6 +381,7 @@ export function ModuleDetailModal({
                             <SelectItem key={member.id} value={member.id}>
                               <div className="flex items-center gap-2">
                                 <Avatar className="h-5 w-5">
+                                  <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
                                   <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
                                 </Avatar>
                                 {member.name}
@@ -370,6 +393,7 @@ export function ModuleDetailModal({
                     ) : module.owner ? (
                       <div className="flex items-center gap-2 mt-1">
                         <Avatar className="h-6 w-6">
+                          <AvatarImage src={resolveFileUrl(module.owner.avatar) ?? module.owner.avatar} alt={module.owner.name} />
                           <AvatarFallback className="text-[10px]">{module.owner.initials}</AvatarFallback>
                         </Avatar>
                         <span className="text-sm">{module.owner.name}</span>
@@ -394,6 +418,7 @@ export function ModuleDetailModal({
                       <Label className="text-xs text-muted-foreground">Created By</Label>
                       <div className="flex items-center gap-2 mt-1">
                         <Avatar className="h-5 w-5">
+                          <AvatarImage src={resolveFileUrl(module.createdBy.avatar) ?? module.createdBy.avatar} alt={module.createdBy.name} />
                           <AvatarFallback className="text-[9px]">{module.createdBy.initials}</AvatarFallback>
                         </Avatar>
                         <span className="text-sm">{module.createdBy.name}</span>
@@ -458,7 +483,6 @@ export function ModuleDetailModal({
                         size="sm"
                         onClick={() => setIsLinkingTasks(!isLinkingTasks)}
                         className="h-7"
-                        disabled={!isEditing}
                       >
                         <Link className="h-3.5 w-3.5 mr-1" />
                         {isLinkingTasks ? 'Done' : 'Link'}
@@ -467,7 +491,7 @@ export function ModuleDetailModal({
                   </div>
                 </div>
 
-                {isEditing && isLinkingTasks && availableTasks.length > 0 && (
+                {isLinkingTasks && availableTasks.length > 0 && (
                   <div className="p-3 border rounded-lg bg-muted/30 space-y-2">
                     <Label className="text-xs font-medium">Link Tasks to Module</Label>
                     <Select onValueChange={handleLinkTask}>
@@ -507,14 +531,26 @@ export function ModuleDetailModal({
                           <span className="text-sm truncate">{task.title}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {task.assignees?.[0] && (
-                            <Avatar className="h-5 w-5">
-                              <AvatarFallback className="text-[9px]">
-                                {task.assignees[0].initials}
-                              </AvatarFallback>
-                            </Avatar>
+                          {(task.assignees?.length ?? 0) > 0 && (
+                            <div className="flex -space-x-2">
+                              {task.assignees!.slice(0, 3).map((assignee) => (
+                                <Avatar key={assignee.id} className="h-5 w-5 border-2 border-background">
+                                  <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                  <AvatarFallback className="text-[9px]">
+                                    {assignee.initials}
+                                  </AvatarFallback>
+                                </Avatar>
+                              ))}
+                              {task.assignees!.length > 3 && (
+                                <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center border-2 border-background z-10">
+                                  <span className="text-[8px] text-muted-foreground font-medium">
+                                    +{task.assignees!.length - 3}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
                           )}
-                          {isEditing && onUnlinkTask && (
+                          {onUnlinkTask && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -558,7 +594,6 @@ export function ModuleDetailModal({
                         size="sm"
                         onClick={() => setIsLinkingIssues(!isLinkingIssues)}
                         className="h-7"
-                        disabled={!isEditing}
                       >
                         <Link className="h-3.5 w-3.5 mr-1" />
                         {isLinkingIssues ? 'Done' : 'Link'}
@@ -567,7 +602,7 @@ export function ModuleDetailModal({
                   </div>
                 </div>
 
-                {isEditing && isLinkingIssues && availableIssues.length > 0 && (
+                {isLinkingIssues && availableIssues.length > 0 && (
                   <div className="p-3 border rounded-lg bg-muted/30 space-y-2">
                     <Label className="text-xs font-medium">Link Issues to Module</Label>
                     <Select onValueChange={handleLinkIssue}>
@@ -607,7 +642,7 @@ export function ModuleDetailModal({
                           <span className="text-sm truncate">{issue.title}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {isEditing && onUnlinkIssue && (
+                          {onUnlinkIssue && (
                             <Button
                               variant="ghost"
                               size="sm"

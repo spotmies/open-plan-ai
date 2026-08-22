@@ -1,3 +1,5 @@
+import { captureException } from '@/infrastructure/monitoring/sentry';
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface LogEntry {
@@ -71,28 +73,22 @@ class Logger {
     }
   }
 
-  /**
-   * Sends an error entry to our backend via sendBeacon (survives page unload, non-blocking).
-   */
   private sendToLogSink(entry: LogEntry): void {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-      if (!supabaseUrl || !navigator.sendBeacon) return;
-
-      const payload = JSON.stringify({
-        error_message: `[${entry.level.toUpperCase()}] ${entry.message}`,
+      captureException(new Error(entry.message), {
+        level: entry.level as any,
         context: entry.context ?? {},
         timestamp: entry.timestamp,
         page_url: window.location.pathname,
       });
-
-      // Uses sendBeacon so it is queued even if the page is unloading
-      navigator.sendBeacon(
-        `${supabaseUrl}/functions/v1/log-client-error`,
-        new Blob([payload], { type: 'application/json' })
-      );
     } catch {
-      // Never throw from the logger — it would cause an infinite loop via ErrorBoundary
+      // Sentry unavailable — structured fallback so log aggregators can still parse it.
+      console.error(JSON.stringify({
+        error_message: `[${entry.level.toUpperCase()}] ${entry.message}`,
+        context: entry.context ?? {},
+        timestamp: entry.timestamp,
+        page_url: window.location.pathname,
+      }));
     }
   }
 

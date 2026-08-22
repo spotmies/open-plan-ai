@@ -1,11 +1,12 @@
 import { Module, Task } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatModuleType, getModuleColor } from '../utils/projectUtils';
+import { resolveFileUrl } from '@/utils/fileUrl';
 
 interface ModuleWithStats extends Module {
   taskCount: number;
@@ -58,10 +59,10 @@ export function ModulesListView({ modules, onModuleClick }: ModulesListViewProps
                       className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{ backgroundColor: moduleColor }}
                     />
-                    <div>
-                      <p className="font-medium">{module.name}</p>
+                    <div className="min-w-0 max-w-[160px] sm:max-w-[220px] md:max-w-xs">
+                      <p className="font-medium truncate">{module.name}</p>
                       {module.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
                           {module.description}
                         </p>
                       )}
@@ -77,6 +78,7 @@ export function ModulesListView({ modules, onModuleClick }: ModulesListViewProps
                   {module.owner ? (
                     <div className="flex items-center gap-2">
                       <Avatar className="h-6 w-6">
+                        <AvatarImage src={resolveFileUrl(module.owner.avatar) ?? module.owner.avatar} alt={module.owner.name} />
                         <AvatarFallback className="text-[10px]">
                           {module.owner.initials}
                         </AvatarFallback>

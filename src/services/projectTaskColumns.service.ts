@@ -1,4 +1,5 @@
-import { supabase } from '@/integrations/supabase/client';
+import { apiClient } from '@/services/api/client';
+import { ENDPOINTS } from '@/services/api/endpoints';
 
 export interface ProjectTaskColumn {
   id: string;
@@ -8,62 +9,75 @@ export interface ProjectTaskColumn {
   isSpecial?: boolean;
 }
 
-interface ProjectTaskColumnRow {
-  column_id: string;
-  status: string;
+export interface CreateTaskColumnInput {
   label: string;
   color: string;
-  is_special: boolean;
-  position: number;
 }
 
-const mapRowToColumn = (row: ProjectTaskColumnRow): ProjectTaskColumn => ({
-  id: row.column_id,
-  status: row.status,
-  label: row.label,
-  color: row.color,
-  isSpecial: row.is_special,
-});
+export interface UpdateTaskColumnInput {
+  label?: string;
+  color?: string;
+}
+
+// Client-side fallback used before the backend-persisted columns load (or
+// when there's no projectId yet, e.g. mock/demo mode). Mirrors the columns
+// the backend seeds for every new project — see DEFAULT_TASK_COLUMNS in
+// open-plan-ai-backend/src/modules/task-columns/task-columns.service.ts.
+export const DEFAULT_COLUMNS: ProjectTaskColumn[] = [
+  { id: 'blocked', status: 'blocked', label: 'Dependencies', color: '#ef4444', isSpecial: true },
+  { id: 'backlog', status: 'backlog', label: 'Backlog', color: '#6b7280' },
+  { id: 'todo', status: 'todo', label: 'To Do', color: '#3b82f6' },
+  { id: 'in-progress', status: 'in-progress', label: 'In Progress', color: '#f59e0b' },
+  { id: 'review', status: 'review', label: 'In Review', color: '#8b5cf6' },
+  { id: 'done', status: 'done', label: 'Done', color: '#10b981', isSpecial: true },
+];
+
+interface ApiTaskColumn {
+  id: string;
+  projectId: string;
+  key: string;
+  label: string;
+  color: string;
+  position: number;
+  isSpecial: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function fromApi(raw: ApiTaskColumn): ProjectTaskColumn {
+  return {
+    id: raw.id,
+    status: raw.key,
+    label: raw.label,
+    color: raw.color,
+    isSpecial: raw.isSpecial,
+  };
+}
 
 export const projectTaskColumnsService = {
   async getByProjectId(projectId: string): Promise<ProjectTaskColumn[]> {
-    const { data, error } = await supabase
-      .from('project_task_columns')
-      .select('column_id, status, label, color, is_special, position')
-      .eq('project_id', projectId)
-      .order('position', { ascending: true });
-
-    if (error) throw error;
-    return (data || []).map(mapRowToColumn);
+    const data = await apiClient.get<ApiTaskColumn[]>(ENDPOINTS.TASK_COLUMNS.LIST(projectId));
+    return (data || []).map(fromApi);
   },
 
-  async replaceForProject(projectId: string, columns: ProjectTaskColumn[]): Promise<ProjectTaskColumn[]> {
-    const { error: deleteError } = await supabase
-      .from('project_task_columns')
-      .delete()
-      .eq('project_id', projectId);
+  async create(projectId: string, input: CreateTaskColumnInput): Promise<ProjectTaskColumn> {
+    const data = await apiClient.post<ApiTaskColumn>(ENDPOINTS.TASK_COLUMNS.CREATE(projectId), input);
+    return fromApi(data);
+  },
 
-    if (deleteError) throw deleteError;
+  async update(columnId: string, input: UpdateTaskColumnInput): Promise<ProjectTaskColumn> {
+    const data = await apiClient.patch<ApiTaskColumn>(ENDPOINTS.TASK_COLUMNS.BY_ID(columnId), input);
+    return fromApi(data);
+  },
 
-    if (columns.length === 0) return [];
+  async remove(columnId: string): Promise<void> {
+    return apiClient.delete<void>(ENDPOINTS.TASK_COLUMNS.BY_ID(columnId));
+  },
 
-    const payload = columns.map((column, index) => ({
-      project_id: projectId,
-      column_id: column.id,
-      status: column.status,
-      label: column.label,
-      color: column.color,
-      is_special: column.isSpecial ?? false,
-      position: index,
-    }));
-
-    const { data, error } = await supabase
-      .from('project_task_columns')
-      .insert(payload)
-      .select('column_id, status, label, color, is_special, position')
-      .order('position', { ascending: true });
-
-    if (error) throw error;
-    return (data || []).map(mapRowToColumn);
+  async reorder(projectId: string, columnIds: string[]): Promise<ProjectTaskColumn[]> {
+    const data = await apiClient.patch<ApiTaskColumn[]>(ENDPOINTS.TASK_COLUMNS.REORDER(projectId), {
+      columnIds,
+    });
+    return (data || []).map(fromApi);
   },
 };

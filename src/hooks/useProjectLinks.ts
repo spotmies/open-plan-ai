@@ -21,8 +21,8 @@ export function useCreateProjectLink() {
 
   return useMutation({
     mutationFn: (input: CreateProjectLinkInput) => projectLinksService.create(input),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['project-links', data.project_id] });
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['project-links', variables.project_id] });
     },
     onError: (error) => {
       toast.error('Failed to create project link', {
@@ -59,10 +59,10 @@ export function useUpdateProjectLink() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ linkId, input }: { linkId: string; input: UpdateProjectLinkInput }) =>
+    mutationFn: ({ linkId, input }: { linkId: string; projectId: string; input: UpdateProjectLinkInput }) =>
       projectLinksService.update(linkId, input),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['project-links', data.project_id] });
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['project-links', variables.projectId] });
       toast.success('Link updated');
     },
     onError: (error) => {
