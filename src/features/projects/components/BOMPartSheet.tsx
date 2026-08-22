@@ -534,7 +534,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
     setChangeNotes('');
     setErrors({});
     setActiveTab('details');
-  }, [open, node?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, node?.id, JSON.stringify(node?.customFields)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Map the node's owner to a project member once members are loaded
   useEffect(() => {

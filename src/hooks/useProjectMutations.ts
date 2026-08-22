@@ -7,6 +7,7 @@ import { queryKeys } from '@/lib/queryClient';
 import { Task, Issue, Milestone } from '@/types';
 import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
+import { apiErrorMessage } from '@/services/api/errors';
 
 // ==================== Task Mutations ====================
 
@@ -397,8 +398,11 @@ export function useDeleteModule(projectId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.modules.list(projectId) });
       toast.success('Module deleted');
     },
-    onError: () => {
-      toast.error('Failed to delete module');
+    onError: (error) => {
+      logger.error('Error deleting module', { error });
+      // The API refuses the delete for a reason the user can act on (linked
+      // tasks) — show that instead of burying it behind a generic failure.
+      toast.error(apiErrorMessage(error, 'Failed to delete module'));
     },
   });
 }

@@ -20,8 +20,10 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useProjects } from '@/hooks/useProjects';
 import { bomService } from '@/services/bom.service';
 import { inventoryService, fromApiBuildBomLine } from '@/services/inventory.service';
+import { attachmentsService } from '@/services/attachments.service';
 import { queryKeys } from '@/lib/queryClient';
 import { useOrgParts } from '@/hooks/useParts';
+import { useOrganizationMembers } from '@/hooks/useProjectTeam';
 import {
   useInventoryStock, useInventoryOrders, useInventoryTransactions, useInventoryBuilds,
   useReceiveStock, useAdjustStock, useReleaseQuarantine, usePlaceOrder, useCreateInventoryBuild,
@@ -171,6 +173,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   const { data: orders = [] } = useInventoryOrders(orgId);
   const { data: transactions = [] } = useInventoryTransactions(orgId);
   const { data: builds = [] } = useInventoryBuilds(orgId);
+  const { data: members = [] } = useOrganizationMembers(orgId);
 
   const receiveStockMutation = useReceiveStock(orgId);
   const adjustStockMutation = useAdjustStock(orgId);
@@ -228,6 +231,11 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       supplierRef: input.supplierRef,
       unitCost: input.unitCost,
       location: input.location,
+      note: input.note,
+      description: input.description,
+      purpose: input.purpose,
+      lotNumber: input.lotNumber,
+      serialNumber: input.serialNumber,
     }, {
       onSuccess: () => toast.success(`Order placed for ${input.quantity} × ${input.pn}`),
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to place order'),
@@ -249,12 +257,20 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       quantity: input.quantity,
       reasonCode: input.reasonCode,
       note: input.note,
+      description: input.description,
       lotNumber: input.lotNumber,
       serialNumber: input.serialNumber,
     };
     console.table(Object.entries(dto).map(([field, value]) => ({ field, value: JSON.stringify(value), type: typeof value })));
     adjustStockMutation.mutate(dto, {
-      onSuccess: () => toast.success('Adjustment posted'),
+      onSuccess: (result) => {
+        toast.success('Adjustment posted');
+        if (input.image && result.transactionId) {
+          attachmentsService
+            .upload({ entityId: result.transactionId, entityType: 'inventory_transaction', file: input.image })
+            .catch(() => toast.error('Adjustment saved, but the image failed to upload'));
+        }
+      },
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to post adjustment'),
     });
   };
@@ -943,6 +959,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       <PlaceOrderDialog
         isOpen={orderOpen}
         onClose={() => setOrderOpen(false)}
+        orgId={orgId}
         parts={stockedParts}
         onPlaceOrder={handlePlaceOrder}
         initialPartId={dialogPartId}
@@ -953,6 +970,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         status={selectedRecord ? coverageOf(selectedRecord) : 'ready'}
         part={selectedPart}
         transactions={transactions}
+        members={members}
         orders={orders}
         whereUsed={whereUsed}
         onClose={() => setDetailOpen(false)}

@@ -1244,6 +1244,9 @@ export function BOMView({
         initialPrice:        payload.price > 0 ? payload.price : undefined,
         initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
         initialSuppliers:    payload.suppliers?.length ? payload.suppliers : undefined,
+        // Additional Fields from the form — dropped here until now, so anything
+        // typed into that section vanished the moment the part was created.
+        customFields:        payload.customFields?.length ? payload.customFields : undefined,
       });
       const node = await createNode.mutateAsync({
         partId:   part.id,
@@ -1284,6 +1287,9 @@ export function BOMView({
         initialPrice:        payload.price > 0 ? payload.price : undefined,
         initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
         initialSuppliers:    payload.suppliers?.length ? payload.suppliers : undefined,
+        // Additional Fields from the form — dropped here until now, so anything
+        // typed into that section vanished the moment the part was created.
+        customFields:        payload.customFields?.length ? payload.customFields : undefined,
       });
       const node = await createNode.mutateAsync({
         partId:   part.id,

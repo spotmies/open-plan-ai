@@ -307,6 +307,11 @@ export const ENDPOINTS = {
     ALLOCATE_BUILD:     (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/allocate`,
     KIT_BUILD:          (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/kit`,
   },
+  // Locations (org-wide registry of stock locations — backs the inventory Location picker)
+  LOCATIONS: {
+    LIST:   (orgId: string) => `/organizations/${orgId}/locations`,
+    CREATE: (orgId: string) => `/organizations/${orgId}/locations`,
+  },
   // Act (phase 2) proposals
   AI_PROPOSALS: {
     CONFIRM: (proposalId: string) => `/ai/proposals/${proposalId}/confirm`,

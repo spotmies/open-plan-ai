@@ -25,6 +25,8 @@ export interface CreatePartDto {
   initialPrice?: number;
   initialLeadTimeDays?: number;
   initialSuppliers?: SupplierEntry[];
+  /** "Additional Fields" — accepted on create, not only on update. */
+  customFields?: CustomFieldEntry[] | null;
 }
 
 export interface CustomFieldEntry {
@@ -32,9 +34,7 @@ export interface CustomFieldEntry {
   value: string;
 }
 
-export type UpdatePartDto = Partial<Omit<CreatePartDto, 'partNumber'>> & {
-  customFields?: CustomFieldEntry[] | null;
-};
+export type UpdatePartDto = Partial<Omit<CreatePartDto, 'partNumber'>>;
 
 export interface CreateRevisionDto {
   rev: string;

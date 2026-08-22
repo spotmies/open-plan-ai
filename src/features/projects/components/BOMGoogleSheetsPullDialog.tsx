@@ -61,6 +61,9 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set());
   const [deleteChecked, setDeleteChecked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<ImportCommitResult | null>(null);
+  // Collapsed by default: nothing in here blocks the import, so it must not
+  // push the sections that do block it below the fold.
+  const [verifyOpen, setVerifyOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -71,6 +74,7 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
       setSkippedRows(new Set());
       setDeleteChecked(new Set());
       setResult(null);
+      setVerifyOpen(false);
       preview.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,6 +114,36 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
 
   const allResolved = (data?.rows ?? []).every(isRowFullyResolved);
 
+  // A needs-input row whose every flagged field already carries an AI
+  // suggestion needs no typing — it only needs a look. Splitting on the
+  // server payload (never on the live edits) keeps a row in one section for
+  // the life of the dialog: typing into it, or skipping it, must not make it
+  // hop between the red and the verify list under the user's cursor.
+  const isAiCovered = (row: ImportRowPreview): boolean =>
+    row.missingRequiredFields.length > 0 &&
+    !row.leadTimeRequired &&
+    row.missingRequiredFields.every(
+      (f) => (row.aiSuggestions[f as keyof ImportRowPreview['aiSuggestions']] ?? '').trim() !== '',
+    );
+
+  const partNameOf = (row: ImportRowPreview): string =>
+    (row.values['Part Name'] ?? '').trim() || (row.aiSuggestions['Part Name'] ?? '').trim();
+
+  const hasAiSuggestion = (row: ImportRowPreview, field: string): boolean =>
+    (row.aiSuggestions[field as keyof ImportRowPreview['aiSuggestions']] ?? '').trim() !== '';
+
+  // Both lists key off the server payload rather than the live edits, so an
+  // input never unmounts from under the caret the moment its first character
+  // lands.
+  const fieldsToType = (row: ImportRowPreview): string[] =>
+    row.missingRequiredFields.filter((f) => !hasAiSuggestion(row, f));
+  const fieldsToVerify = (row: ImportRowPreview): string[] =>
+    row.missingRequiredFields.filter((f) => hasAiSuggestion(row, f));
+
+  const needsInputRows = rowsByStatus['needs-input'];
+  const blockingInputRows = needsInputRows.filter((r) => !isAiCovered(r));
+  const aiFilledRows = needsInputRows.filter(isAiCovered);
+
   const handleFieldChange = (rowIndex: number, field: string, value: string) => {
     setFieldEdits((prev) => ({ ...prev, [rowIndex]: { ...prev[rowIndex], [field]: value } }));
   };
@@ -140,8 +174,7 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
   };
 
   const handleConfirm = async () => {
-    const resolutions: ImportRowResolution[] = (data?.rows ?? [])
-      .filter((r) => r.status !== 'matched-unchanged' && !skippedRows.has(r.rowIndex))
+    const resolutions: ImportRowResolution[] = rowsToImport
       .map((row) => {
         const resolution: ImportRowResolution = { rowIndex: row.rowIndex };
         if (row.status === 'needs-input') {
@@ -161,8 +194,14 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
         return resolution;
       });
 
-    const res = await commit.mutateAsync({ rows: resolutions, deleteNodeIds: [...deleteChecked] });
-    setResult(res);
+    try {
+      const res = await commit.mutateAsync({ rows: resolutions, deleteNodeIds: [...deleteChecked] });
+      setResult(res);
+    } catch {
+      // useGoogleSheetsImportCommit's onError already surfaces the toast.
+      // Swallowing here keeps the dialog open (so the user can retry) instead
+      // of leaving an unhandled rejection from this onClick handler.
+    }
   };
 
   const handleClose = () => {
@@ -170,20 +209,129 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
     onClose();
   };
 
-  const hasAnyWork = data
-    ? data.rows.some((r) => r.status !== 'matched-unchanged' && !skippedRows.has(r.rowIndex)) ||
-      deleteChecked.size > 0
-    : false;
+  // The exact set of rows Confirm sends — reused by handleConfirm, the
+  // "anything to do?" check, and the in-progress label, so the number the user
+  // is told is importing can't drift from the number actually sent.
+  const rowsToImport = (data?.rows ?? []).filter(
+    (r) => r.status !== 'matched-unchanged' && !skippedRows.has(r.rowIndex),
+  );
+  const rowsToImportCount = rowsToImport.length;
 
-  const needsInputCount = rowsByStatus['needs-input'].length;
+  const hasAnyWork = data ? rowsToImportCount > 0 || deleteChecked.size > 0 : false;
+
+  const needsInputCount = blockingInputRows.length;
+  const aiFilledCount = aiFilledRows.length;
   const ambiguousUnitCount = rowsByStatus['ambiguous-unit'].length;
   const unmatchedColsCount = (data?.unmatchedColumns.length ?? 0) + (data?.ambiguousColumns.length ?? 0);
   const newPartsCount = rowsByStatus['new-part'].length;
+  // Sub-component rows the sheet gave their parent's Part Number, which are
+  // therefore keyed by MPN instead — worth calling out, since the number the
+  // user typed into the sheet is not the number the part lands under.
+  const mpnKeyedCount = (data?.rows ?? []).filter((r) => r.partNumberSource === 'mpn').length;
   const changedPartsCount = rowsByStatus['matched-changed'].length;
   const unchangedPartsCount = rowsByStatus['matched-unchanged'].length;
 
+  // Shared by the blocking section and the verify section — the two differ
+  // only in which of the row's flagged fields they surface, so the card
+  // itself stays one implementation.
+  const renderNeedsInputCard = (row: ImportRowPreview, verifyOnly: boolean) => {
+    const skipped = skippedRows.has(row.rowIndex);
+    const order = (fields: string[]) =>
+      REQUIRED_FIELD_ORDER.filter((f) => fields.includes(f)) as string[];
+    const shown = verifyOnly
+      ? order(fieldsToVerify(row))
+      : [...order(fieldsToType(row)), ...order(fieldsToVerify(row))];
+
+    return (
+      <div
+        key={row.rowIndex}
+        className={`rounded-xl border p-4 space-y-3 transition-colors ${
+          skipped ? 'border-border/60 bg-muted/30 opacity-70' : 'border-border/80 bg-background/50'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-medium">
+            <span className="text-primary font-mono font-semibold">
+              {row.partNumber || `Row ${row.rowIndex + 1}`}
+            </span>
+            {partNameOf(row) && (
+              <span className="text-muted-foreground"> — {partNameOf(row)}</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => toggleSkipRow(row.rowIndex)}
+            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            {skipped ? 'Undo skip' : 'Skip this part'}
+          </button>
+        </div>
+
+        {skipped ? (
+          <p className="text-xs text-muted-foreground italic">Won't be imported.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {shown.map((field) => {
+              const aiFilled = hasAiSuggestion(row, field);
+              return (
+                <div key={field} className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <Label className="text-xs font-medium text-foreground">{field}</Label>
+                  </div>
+                  <Input
+                    className={`h-9 text-xs sm:text-sm rounded-lg ${PLACEHOLDER_INPUT}`}
+                    value={resolvedFieldValue(row, field)}
+                    placeholder={aiFilled ? undefined : 'Required'}
+                    onChange={(e) => handleFieldChange(row.rowIndex, field, e.target.value)}
+                  />
+                </div>
+              );
+            })}
+
+            {!verifyOnly && row.leadTimeRequired && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <Label className="text-xs font-medium text-foreground">Lead Time</Label>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    className={`h-9 text-xs sm:text-sm flex-1 rounded-lg ${PLACEHOLDER_INPUT}`}
+                    type="text"
+                    inputMode="numeric"
+                    value={leadTimeValueEdits[row.rowIndex] ?? ''}
+                    placeholder="e.g. 4"
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9]/g, '');
+                      setLeadTimeValueEdits((prev) => ({ ...prev, [row.rowIndex]: v }));
+                    }}
+                  />
+                  <Select
+                    value={unitEdits[row.rowIndex] ?? ''}
+                    onValueChange={(v) =>
+                      setUnitEdits((prev) => ({ ...prev, [row.rowIndex]: v as LeadTimeUnit }))
+                    }
+                  >
+                    <SelectTrigger className={`h-9 w-28 text-xs rounded-lg ${PLACEHOLDER_SELECT}`}>
+                      <SelectValue placeholder="Unit?" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="days">days</SelectItem>
+                      <SelectItem value="weeks">weeks</SelectItem>
+                      <SelectItem value="months">months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && handleClose()}>
+    <Dialog open={open} onOpenChange={(next) => !next && !commit.isPending && handleClose()}>
       <DialogContent
         hideClose
         className="!flex flex-col w-[98vw] max-w-[98vw] sm:max-w-[98vw] md:max-w-[98vw] lg:max-w-[98vw] xl:max-w-[98vw] h-[96vh] max-h-[96vh] p-5 sm:p-7 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl gap-0"
@@ -205,10 +353,16 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {!allResolved && !result && (
+            {commit.isPending ? (
               <span className="text-xs text-muted-foreground hidden md:inline-block font-medium">
-                Resolve flagged items to continue
+                Importing {rowsToImportCount} part(s) — this can take a minute. Don&apos;t close or refresh.
               </span>
+            ) : (
+              !allResolved && !result && (
+                <span className="text-xs text-muted-foreground hidden md:inline-block font-medium">
+                  Resolve flagged items to continue
+                </span>
+              )
             )}
             {result ? (
               <Button onClick={handleClose} className="h-9 px-5 rounded-xl font-medium">
@@ -221,6 +375,7 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                   variant="outline"
                   size="sm"
                   onClick={handleClose}
+                  disabled={commit.isPending}
                   className="h-9 px-4 rounded-xl text-xs sm:text-sm font-medium"
                 >
                   Cancel
@@ -266,6 +421,7 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
             <ul className="text-sm text-muted-foreground space-y-1.5">
               <li>• {result.createdCount} part(s) created</li>
               <li>• {result.updatedCount} part(s) updated</li>
+              {result.movedCount > 0 && <li>• {result.movedCount} part(s) moved into their sub-assembly</li>}
               {result.deletedCount > 0 && <li>• {result.deletedCount} part(s) removed</li>}
               {result.failedCount > 0 && <li className="text-destructive">• {result.failedCount} row(s) failed</li>}
               {result.deleteResults.some((d) => d.outcome === 'failed') && (
@@ -318,6 +474,23 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                     {needsInputCount}
                   </span>
                   <AlertCircle className="w-3.5 h-3.5 text-red-500 ml-0.5" />
+                </button>
+              )}
+
+              {aiFilledCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVerifyOpen(true);
+                    document.getElementById('section-ai-filled')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100/70 dark:hover:bg-amber-900/40 transition-colors cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  AI filled these in
+                  <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-[10.5px] font-bold">
+                    {aiFilledCount}
+                  </span>
                 </button>
               )}
 
@@ -416,15 +589,47 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                 </div>
               )}
 
+              {/* ── Sub-assembly structure read from the sheet ── */}
+              {data.hierarchySignal !== 'none' && (
+                <div className="rounded-2xl border border-border/80 bg-muted/20 p-4 space-y-1.5">
+                  <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-violet-500" />
+                    Sub-assembly structure detected
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {data.hierarchySignal === 'outline-path' && (
+                      <>Read from the <span className="font-medium text-foreground">{data.hierarchyColumn}</span> column&apos;s
+                      item numbers (9, 9.1, 9.2…).</>
+                    )}
+                    {data.hierarchySignal === 'depth-number' && (
+                      <>Read from the <span className="font-medium text-foreground">{data.hierarchyColumn}</span> column&apos;s
+                      indent levels.</>
+                    )}
+                    {data.hierarchySignal === 'indent-prefix' && (
+                      <>Read from the indentation in the <span className="font-medium text-foreground">{data.hierarchyColumn}</span> column.</>
+                    )}{' '}
+                    Parts will be nested {data.maxDepth + 1} level(s) deep instead of imported as one flat list.
+                    That column is read as structure, so it isn&apos;t stored as an Additional Field.
+                  </p>
+                  {mpnKeyedCount > 0 && (
+                    <p className="text-xs text-muted-foreground leading-relaxed pt-1">
+                      <span className="font-medium text-foreground">{mpnKeyedCount} sub-component(s)</span> repeat their
+                      parent&apos;s Part Number in the sheet, so they&apos;ll be identified by their MPN instead — a part
+                      number can only belong to one part.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* ── Section 1: Missing required fields ── */}
-              {rowsByStatus['needs-input'].length > 0 && (
+              {blockingInputRows.length > 0 && (
                 <div id="section-needs-input" className="rounded-2xl border border-red-200/90 dark:border-red-900/60 bg-card p-5 space-y-4 shadow-2xs">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-red-500" />
                       <span className="text-sm font-semibold text-foreground">Missing required fields</span>
                       <span className="px-2 py-0.5 rounded-full bg-muted text-foreground text-xs font-bold">
-                        {rowsByStatus['needs-input'].length}
+                        {blockingInputRows.length}
                       </span>
                       <span className="text-xs font-medium text-red-500 flex items-center gap-1">
                         <AlertCircle className="w-3.5 h-3.5" />
@@ -432,119 +637,48 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      These parts are missing a field the BOM requires. AI has suggested a value where it could — check it,
-                      or type your own. Every field here needs a value before you can import.
+                      These parts are missing a field the BOM requires and AI couldn't fill it in. Type a value for every
+                      field below, or skip the part — you can't import until each one is settled.
                     </p>
                   </div>
 
                   <div className="space-y-3">
-                    {rowsByStatus['needs-input'].map((row) => {
-                      const skipped = skippedRows.has(row.rowIndex);
-                      return (
-                        <div
-                          key={row.rowIndex}
-                          className={`rounded-xl border p-4 space-y-3 transition-colors ${
-                            skipped
-                              ? 'border-border/60 bg-muted/30 opacity-70'
-                              : 'border-border/80 bg-background/50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs font-medium">
-                              <span className="text-primary font-mono font-semibold">
-                                {row.partNumber || `Row ${row.rowIndex + 1}`}
-                              </span>
-                              {row.partName && (
-                                <span className="text-muted-foreground"> — {row.partName}</span>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => toggleSkipRow(row.rowIndex)}
-                              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              {skipped ? 'Undo skip' : 'Skip this part'}
-                            </button>
-                          </div>
-
-                          {skipped ? (
-                            <p className="text-xs text-muted-foreground italic">Won't be imported.</p>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                              {REQUIRED_FIELD_ORDER.filter((f) =>
-                                row.missingRequiredFields.includes(f)
-                              ).map((field) => {
-                                const hasAiSuggestion = field in row.aiSuggestions;
-                                return (
-                                  <div key={field} className="space-y-1.5">
-                                    <div className="flex items-center justify-between text-xs">
-                                      <Label className="text-xs font-medium text-foreground">
-                                        {field}
-                                      </Label>
-                                    </div>
-                                    <Input
-                                      className={`h-9 text-xs sm:text-sm rounded-lg ${PLACEHOLDER_INPUT}`}
-                                      value={resolvedFieldValue(row, field)}
-                                      placeholder={hasAiSuggestion ? undefined : 'Required'}
-                                      onChange={(e) =>
-                                        handleFieldChange(row.rowIndex, field, e.target.value)
-                                      }
-                                    />
-                                  </div>
-                                );
-                              })}
-
-                              {row.leadTimeRequired && (
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center justify-between text-xs">
-                                    <Label className="text-xs font-medium text-foreground">
-                                      Lead Time
-                                    </Label>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <Input
-                                      className={`h-9 text-xs sm:text-sm flex-1 rounded-lg ${PLACEHOLDER_INPUT}`}
-                                      type="text"
-                                      inputMode="numeric"
-                                      value={leadTimeValueEdits[row.rowIndex] ?? ''}
-                                      placeholder="e.g. 4"
-                                      onChange={(e) => {
-                                        const v = e.target.value.replace(/[^0-9]/g, '');
-                                        setLeadTimeValueEdits((prev) => ({
-                                          ...prev,
-                                          [row.rowIndex]: v,
-                                        }));
-                                      }}
-                                    />
-                                    <Select
-                                      value={unitEdits[row.rowIndex] ?? ''}
-                                      onValueChange={(v) =>
-                                        setUnitEdits((prev) => ({
-                                          ...prev,
-                                          [row.rowIndex]: v as LeadTimeUnit,
-                                        }))
-                                      }
-                                    >
-                                      <SelectTrigger className={`h-9 w-28 text-xs rounded-lg ${PLACEHOLDER_SELECT}`}>
-                                        <SelectValue placeholder="Unit?" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="days">days</SelectItem>
-                                        <SelectItem value="weeks">weeks</SelectItem>
-                                        <SelectItem value="months">months</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {blockingInputRows.map((row) => renderNeedsInputCard(row, false))}
                   </div>
                 </div>
+              )}
+
+              {/* ── Section 1b: AI-filled values, verify only (never blocks import) ── */}
+              {aiFilledRows.length > 0 && (
+                <Collapsible open={verifyOpen} onOpenChange={setVerifyOpen}>
+                  <div id="section-ai-filled" className="rounded-2xl border border-amber-200/90 dark:border-amber-900/60 bg-card p-5 space-y-4 shadow-2xs">
+                    <CollapsibleTrigger className="w-full text-left cursor-pointer">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                          <span className="text-sm font-semibold text-foreground">AI filled these in — worth a look</span>
+                          <span className="px-2 py-0.5 rounded-full bg-muted text-foreground text-xs font-bold">
+                            {aiFilledRows.length}
+                          </span>
+                          <span className="text-xs font-medium text-muted-foreground">optional — won't block import</span>
+                          <ChevronDown
+                            className={`w-4 h-4 text-muted-foreground ml-auto transition-transform ${verifyOpen ? 'rotate-180' : ''}`}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          Your sheet had no column for these fields, so AI supplied a value from the rest of the row. They're
+                          ready to import as-is — open this if you'd rather check or edit them first.
+                        </p>
+                      </div>
+                    </CollapsibleTrigger>
+
+                    <CollapsibleContent>
+                      <div className="space-y-3 pt-1">
+                        {aiFilledRows.map((row) => renderNeedsInputCard(row, true))}
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
               )}
 
               {/* ── Section 2: Lead time needs a unit ── */}
@@ -645,12 +779,14 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                     {data.unmatchedColumns.length > 0 && (
                       <p>
                         • {data.unmatchedColumns.length} column(s) didn't match a standard BOM field and will be
-                        imported as custom fields: <strong className="text-foreground">{data.unmatchedColumns.join(', ')}</strong>
+                        imported into each part's <strong className="text-foreground">Additional Fields</strong>:{' '}
+                        <strong className="text-foreground">{data.unmatchedColumns.join(', ')}</strong>
                       </p>
                     )}
                     {data.ambiguousColumns.length > 0 && (
                       <p>
-                        • {data.ambiguousColumns.length} column(s) were ambiguous and weren't imported:{' '}
+                        • {data.ambiguousColumns.length} column(s) could match more than one BOM field, so none was
+                        picked — they go to <strong className="text-foreground">Additional Fields</strong> instead:{' '}
                         <strong className="text-foreground">{data.ambiguousColumns.join(', ')}</strong>
                       </p>
                     )}
@@ -668,11 +804,27 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                       {rowsByStatus['new-part'].length}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  {/* Indented by depth so the sub-assembly structure is visible
+                      before committing, rather than after. */}
+                  <div className="space-y-1">
                     {rowsByStatus['new-part'].map((row) => (
-                      <Badge key={row.rowIndex} variant="secondary" className="text-xs px-2.5 py-1 font-mono rounded-lg">
-                        {row.partNumber || `Row ${row.rowIndex + 1}`}
-                      </Badge>
+                      <div
+                        key={row.rowIndex}
+                        className="flex items-center gap-2 text-xs"
+                        style={{ paddingLeft: `${row.depth * 18}px` }}
+                      >
+                        {row.depth > 0 && <span className="text-muted-foreground/60 font-mono">└</span>}
+                        <span className="text-muted-foreground font-mono w-12 shrink-0">{row.levelPath}</span>
+                        <Badge variant="secondary" className="text-xs px-2.5 py-1 font-mono rounded-lg">
+                          {row.partNumber || `Row ${row.rowIndex + 1}`}
+                        </Badge>
+                        {row.partNumberSource === 'mpn' && (
+                          <span className="text-[11px] text-muted-foreground">
+                            keyed by MPN — the sheet repeats {row.sheetPartNumber}
+                          </span>
+                        )}
+                        <span className="text-muted-foreground truncate">{partNameOf(row)}</span>
+                      </div>
                     ))}
                   </div>
                 </div>

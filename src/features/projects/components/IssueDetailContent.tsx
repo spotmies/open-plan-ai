@@ -93,6 +93,7 @@ import {
     VideoLink,
 } from '@/types';
 import { SlashBlockEditor, EditorBlock } from '@/components/ui/SlashBlockEditor';
+import { blocksToPlainText, hasBlockContent, plainTextToBlocks } from '@/lib/descriptionBlocks';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { ISSUE_SEVERITY_DISPLAY, ISSUE_SEVERITY_OPTIONS } from './issueSeverity';
@@ -355,15 +356,56 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
 
     if (!editedIssue) return null;
 
-    const handleFieldChange = <K extends keyof Issue>(field: K, value: Issue[K]) => {
+    const handleFieldsChange = (patch: Partial<Issue>) => {
         setEditedIssue(prev => {
             if (!prev) return prev;
-            const updated = { ...prev, [field]: value };
+            const updated = { ...prev, ...patch };
             if (isDraft) {
                 onUpdate(updated);
             }
             return updated;
         });
+    };
+
+    const handleFieldChange = <K extends keyof Issue>(field: K, value: Issue[K]) => {
+        handleFieldsChange({ [field]: value } as Partial<Issue>);
+    };
+
+    // Advanced blocks are the source of truth while the toggle is on, but the
+    // plain `description` is what every card, list and preview renders — so
+    // mirror the flattened text across on every block edit. Without it an
+    // advanced-only edit saved fine yet showed up nowhere, which reads as
+    // "the update didn't happen".
+    const handleDescriptionBlocksChange = (blocks: EditorBlock[]) => {
+        handleFieldsChange({
+            descriptionBlocks: blocks,
+            description: blocksToPlainText(blocks),
+        });
+    };
+
+    const handleAdvancedDescriptionToggle = (enabled: boolean) => {
+        if (enabled) {
+            // Carry whatever is in the plain box into the editor instead of
+            // dropping the user in front of an empty one.
+            if (!hasBlockContent(editedIssue.descriptionBlocks as EditorBlock[] | undefined)) {
+                const seeded = plainTextToBlocks(editedIssue.description);
+                if (seeded.length > 0) {
+                    handleFieldsChange({
+                        descriptionBlocks: seeded,
+                        description: blocksToPlainText(seeded),
+                    });
+                }
+            }
+        } else {
+            // Going back to simple mode: keep the text, drop the blocks — a
+            // record that still has blocks reopens in advanced mode.
+            const flattened = blocksToPlainText(editedIssue.descriptionBlocks as EditorBlock[] | undefined);
+            handleFieldsChange({
+                description: flattened || editedIssue.description || '',
+                descriptionBlocks: [],
+            });
+        }
+        setIsAdvancedDescription(enabled);
     };
 
     const checklist = editedIssue.checklist || [];
@@ -1463,7 +1505,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                                 <Switch
                                     id="advanced-mode"
                                     checked={isAdvancedDescription}
-                                    onCheckedChange={setIsAdvancedDescription}
+                                    onCheckedChange={handleAdvancedDescriptionToggle}
                                     disabled={!canEditIssueFields}
                                     className={cn(isMobileLayout && 'disabled:opacity-100 disabled:cursor-pointer', isMobileLayout && !canEditIssue && 'opacity-60')}
                                 />
@@ -1479,7 +1521,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                                     key={editedIssue.id}
                                     readOnly={!canEditIssueFields}
                                     initialBlocks={editedIssue.descriptionBlocks}
-                                    onChange={(blocks) => handleFieldChange('descriptionBlocks', blocks)}
+                                    onChange={handleDescriptionBlocksChange}
                                 />
                             </div>
                         ) : (

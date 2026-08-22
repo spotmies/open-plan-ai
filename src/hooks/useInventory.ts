@@ -63,6 +63,9 @@ function invalidateInventory(queryClient: ReturnType<typeof useQueryClient>, org
   queryClient.invalidateQueries({ queryKey: queryKeys.inventory.stock(orgId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.inventory.orders(orgId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.inventory.transactions(orgId) });
+  // Receive/adjust/order mutations may have registered a new custom location
+  // server-side (see backend's ensureLocation) — refetch so the picker offers it.
+  queryClient.invalidateQueries({ queryKey: queryKeys.locations.list(orgId) });
 }
 
 export function useReceiveStock(orgId: string) {

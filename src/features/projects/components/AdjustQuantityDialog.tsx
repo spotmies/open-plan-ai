@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useForm, type FieldErrors } from 'react-hook-form';
+import { useForm, useFieldArray, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
@@ -16,13 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Popover,
@@ -47,11 +40,12 @@ import {
 } from '@/components/ui/form';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
-import { Boxes, Check, ChevronsUpDown, Minus, Pencil, Plus, ShoppingCart, X } from 'lucide-react';
+import { Boxes, Camera, Check, ChevronsUpDown, Minus, Pencil, Plus, ShoppingCart, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useCreatePart } from '@/hooks/useParts';
+import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
+import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory, getCategoryMeta } from './bomData';
-import { REASON_CODES, LocationCombobox, CategoryCombobox, type StockLocation, type StockRecord } from './inventoryData';
+import { LocationCombobox, CategoryCombobox, type StockLocation, type StockRecord } from './inventoryData';
 import type { PlaceOrderInput } from './PlaceOrderDialog';
 
 interface PickerPart {
@@ -67,20 +61,29 @@ interface PickerPart {
 const adjustSchema = z.object({
   partId: z.string().min(1, 'Select a part'),
   location: z.string().min(1, 'Select a location'),
+  category: z.string().min(1, 'Select a category'),
   stockStatus: z.enum(['in_stock', 'place_order']),
   direction: z.enum(['add', 'remove']),
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
   reasonCode: z.string().optional(),
   expectedDate: z.string().optional(),
   note: z.string().max(300, 'Note must be less than 300 characters').optional(),
+  description: z.string().max(500, 'Description must be less than 500 characters').optional(),
+  orderNote: z.string().max(500, 'Notes must be less than 500 characters').optional(),
+  purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
+  trackBy: z.enum(['lot', 'serial']),
   lotNumber: z.string().max(60, 'Lot number must be less than 60 characters').optional(),
-  serialNumber: z.string().max(60, 'Serial number must be less than 60 characters').optional(),
+  serialNumbers: z.array(z.string().max(60, 'Serial number must be less than 60 characters')).optional(),
 }).superRefine((data, ctx) => {
-  if (data.stockStatus === 'in_stock' && !data.reasonCode) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Reason code is required', path: ['reasonCode'] });
-  }
   if (data.stockStatus === 'place_order' && !data.expectedDate) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Expected date is required', path: ['expectedDate'] });
+  }
+  if (data.trackBy === 'serial') {
+    (data.serialNumbers ?? []).forEach((sn, index) => {
+      if (!sn.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a serial number for every unit', path: ['serialNumbers', index] });
+      }
+    });
   }
 });
 
@@ -96,8 +99,10 @@ export interface AdjustQuantityInput {
   quantity: number;
   reasonCode: string;
   note?: string;
+  description?: string;
   lotNumber?: string;
   serialNumber?: string;
+  image?: File;
 }
 
 interface AdjustQuantityDialogProps {
@@ -125,8 +130,12 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   const [showAddPart, setShowAddPart] = useState(false);
   const [newPart, setNewPart] = useState(emptyNewPart);
   const [createdPart, setCreatedPart] = useState<{ id: string; partNumber: string; name: string; category: BOMCategory } | null>(null);
+  const [image, setImage] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   const createPart = useCreatePart(orgId);
+  const updatePart = useUpdatePart();
+  const { data: knownLocations = [] } = useLocations(orgId);
 
   // Include every part, not just parts that already have a stock row — a part only referenced
   // from a BOM (never received) still needs to be selectable when starting a new transaction.
@@ -144,18 +153,43 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     defaultValues: {
       partId: '',
       location: '',
+      category: '',
       stockStatus: 'in_stock',
       direction: 'add',
       quantity: 1,
       reasonCode: '',
       expectedDate: '',
       note: '',
+      description: '',
+      orderNote: '',
+      purpose: '',
+      trackBy: 'lot',
       lotNumber: '',
-      serialNumber: '',
+      serialNumbers: [''],
     },
   });
 
+  const { fields: serialFields, append: appendSerials, remove: removeSerials } = useFieldArray({
+    control: form.control,
+    name: 'serialNumbers',
+  });
+
   const stockStatus = form.watch('stockStatus');
+  const trackBy = form.watch('trackBy');
+  const quantity = form.watch('quantity');
+
+  // Keep one serial-number input per unit — grows/shrinks as quantity changes while serial tracking is active.
+  useEffect(() => {
+    if (trackBy !== 'serial') return;
+    const targetLength = Math.min(Math.max(Math.trunc(Number(quantity)) || 1, 1), 200);
+    const diff = targetLength - serialFields.length;
+    if (diff > 0) {
+      appendSerials(Array.from({ length: diff }, () => ''));
+    } else if (diff < 0) {
+      removeSerials(Array.from({ length: -diff }, (_, i) => serialFields.length - 1 - i));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackBy, quantity]);
 
   useEffect(() => {
     if (isOpen && initialPartId) {
@@ -164,12 +198,39 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         setSelectedRecord(match);
         form.setValue('partId', match.partId, { shouldValidate: true });
         form.setValue('location', match.location, { shouldValidate: true });
+        form.setValue('category', match.cat ?? '', { shouldValidate: true });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialPartId]);
 
-  const isFormDirty = form.formState.isDirty || showAddPart;
+  const isFormDirty = form.formState.isDirty || showAddPart || !!image;
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImage(file);
+    setImagePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const handleRemoveImage = () => {
+    setImage(null);
+    setImagePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetAndClose = () => {
     form.reset();
@@ -177,6 +238,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     setShowAddPart(false);
     setNewPart(emptyNewPart);
     setCreatedPart(null);
+    handleRemoveImage();
     onClose();
   };
 
@@ -206,6 +268,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       setSelectedRecord(null);
       setCreatedPart({ id: created.id, partNumber: created.partNumber, name: created.name, category: created.category });
       form.setValue('partId', created.id, { shouldDirty: true, shouldValidate: true });
+      form.setValue('category', created.category, { shouldDirty: true, shouldValidate: true });
       setShowAddPart(false);
       setNewPart(emptyNewPart);
       toast.success(`Part ${created.partNumber} created`);
@@ -214,7 +277,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     }
   };
 
-  const handleSubmit = (data: AdjustFormData) => {
+  const handleSubmit = async (data: AdjustFormData) => {
     const part = selectedRecord
       ? { partId: selectedRecord.partId, pn: selectedRecord.pn, name: selectedRecord.name, cat: selectedRecord.cat }
       : createdPart
@@ -226,28 +289,64 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       return;
     }
 
+    // Category defaults from the selected part but is editable here — if the user changed it,
+    // that's a recategorization of the part itself (there's no per-transaction category column).
+    if (selectedRecord && data.category && data.category !== part.cat) {
+      try {
+        await updatePart.mutateAsync({ partId: part.partId, dto: { category: data.category as BOMCategory } });
+      } catch {
+        toast.error("Transaction saved, but couldn't update the part's category");
+      }
+    }
+    const cat = (data.category || part.cat) as BOMCategory | undefined;
+
     if (data.stockStatus === 'place_order') {
       onPlaceOrder({
         partId: part.partId,
         pn: part.pn,
         name: part.name,
-        cat: part.cat,
+        cat,
         quantity: data.quantity,
         expectedDate: data.expectedDate as string,
         location: data.location,
         supplierRef: data.note?.trim() || undefined,
+        note: data.orderNote?.trim() || undefined,
+        description: data.description?.trim() || undefined,
+        purpose: data.purpose?.trim() || undefined,
+        lotNumber: data.trackBy === 'lot' ? (data.lotNumber?.trim() || undefined) : undefined,
+        serialNumber: data.trackBy === 'serial'
+          ? (data.serialNumbers ?? []).map(s => s.trim()).filter(Boolean).join(', ') || undefined
+          : undefined,
       });
+    } else if (data.trackBy === 'serial') {
+      // Backend transaction rows hold one serial number each, so a serialized quantity fans out
+      // into one ledger entry per unit instead of a single entry carrying the whole quantity.
+      for (const serialNumber of data.serialNumbers ?? []) {
+        onAdjust({
+          partId: part.partId,
+          ...(selectedRecord ? {} : { pn: part.pn, name: part.name, cat }),
+          location: data.location as StockLocation,
+          direction: data.direction,
+          quantity: 1,
+          reasonCode: data.reasonCode as string,
+          note: data.note?.trim() || undefined,
+          description: data.description?.trim() || undefined,
+          serialNumber: serialNumber.trim(),
+          image: image ?? undefined,
+        });
+      }
     } else {
       onAdjust({
         partId: part.partId,
-        ...(selectedRecord ? {} : { pn: part.pn, name: part.name, cat: part.cat }),
+        ...(selectedRecord ? {} : { pn: part.pn, name: part.name, cat }),
         location: data.location as StockLocation,
         direction: data.direction,
         quantity: data.quantity,
         reasonCode: data.reasonCode as string,
         note: data.note?.trim() || undefined,
+        description: data.description?.trim() || undefined,
         lotNumber: data.lotNumber?.trim() || undefined,
-        serialNumber: data.serialNumber?.trim() || undefined,
+        image: image ?? undefined,
       });
     }
     resetAndClose();
@@ -349,6 +448,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                                         setCreatedPart(null);
                                         form.setValue('partId', r.partId, { shouldDirty: true, shouldValidate: true });
                                         form.setValue('location', r.location, { shouldDirty: true, shouldValidate: true });
+                                        form.setValue('category', r.cat ?? '', { shouldDirty: true, shouldValidate: true });
                                         setPartPickerOpen(false);
                                       }}
                                     >
@@ -466,6 +566,25 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   )}
                 />
 
+                {!showAddPart && (
+                  <FormField
+                    control={form.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Category <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                        <FormControl>
+                          <CategoryCombobox value={field.value} onChange={field.onChange} placeholder="Select a part first..." />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">
+                          Defaults to the part&apos;s category — change it here to recategorize the part.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
                 <FormField
                   control={form.control}
                   name="location"
@@ -473,44 +592,12 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     <FormItem>
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                       <FormControl>
-                        <LocationCombobox value={field.value} onChange={field.onChange} />
+                        <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="lotNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lot number <span className="normal-case font-normal">optional</span></FormLabel>
-                        <FormControl>
-                          <Input placeholder="LOT-…" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="serialNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Serial number <span className="normal-case font-normal">optional</span></FormLabel>
-                        <FormControl>
-                          <Input placeholder="SN-…" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground -mt-3">
-                  Both fields are available on every part while the hardware team decides which applies where.
-                </p>
 
                 <FormField
                   control={form.control}
@@ -552,41 +639,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                 />
 
                 {stockStatus === 'in_stock' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="direction"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Direction</FormLabel>
-                          <FormControl>
-                            <ToggleGroup
-                              type="single"
-                              value={field.value}
-                              onValueChange={(v) => v && field.onChange(v)}
-                              className="justify-start gap-2"
-                            >
-                              <ToggleGroupItem
-                                value="add"
-                                variant="outline"
-                                className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
-                              >
-                                <Plus className="h-3.5 w-3.5" /> Add
-                              </ToggleGroupItem>
-                              <ToggleGroupItem
-                                value="remove"
-                                variant="outline"
-                                className="gap-1.5 flex-1 border-input data-[state=on]:bg-destructive data-[state=on]:text-destructive-foreground data-[state=on]:border-destructive"
-                              >
-                                <Minus className="h-3.5 w-3.5" /> Remove
-                              </ToggleGroupItem>
-                            </ToggleGroup>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
+                  <div className="grid grid-cols-1 gap-4">
                     <FormField
                       control={form.control}
                       name="quantity"
@@ -633,29 +686,85 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   </div>
                 )}
 
-                {stockStatus === 'in_stock' && <FormField
-                  control={form.control}
-                  name="reasonCode"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reason code <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                {/* Lot/serial tracking — shared between "Have stock" and "Need to order" */}
+                <div className="grid grid-cols-1 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="trackBy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Track by</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select reason..." />
-                          </SelectTrigger>
+                          <ToggleGroup
+                            type="single"
+                            value={field.value}
+                            onValueChange={(v) => v && field.onChange(v)}
+                            className="justify-start gap-2"
+                          >
+                            <ToggleGroupItem
+                              value="lot"
+                              variant="outline"
+                              className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                            >
+                              Lot number
+                            </ToggleGroupItem>
+                            <ToggleGroupItem
+                              value="serial"
+                              variant="outline"
+                              className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                            >
+                              Serial number
+                            </ToggleGroupItem>
+                          </ToggleGroup>
                         </FormControl>
-                        <SelectContent>
-                          {REASON_CODES.map((r) => (
-                            <SelectItem key={r} value={r}>{r}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Required — adjustments are audited.</p>
-                      <FormMessage />
-                    </FormItem>
+                        <p className="text-xs text-muted-foreground">
+                          {field.value === 'serial'
+                            ? 'One serial number is required per unit — the inputs below track the quantity above.'
+                            : 'One lot number covers the entire quantity.'}
+                        </p>
+                      </FormItem>
+                    )}
+                  />
+
+                  {trackBy === 'lot' ? (
+                    <FormField
+                      control={form.control}
+                      name="lotNumber"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lot number <span className="normal-case font-normal">optional</span></FormLabel>
+                          <FormControl>
+                            <Input placeholder="LOT-…" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Serial numbers <span className="text-destructive" aria-hidden="true">*</span>
+                      </FormLabel>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {serialFields.map((serialField, index) => (
+                          <FormField
+                            key={serialField.id}
+                            control={form.control}
+                            name={`serialNumbers.${index}` as const}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input placeholder={`SN-… (unit ${index + 1})`} {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   )}
-                />}
+                </div>
 
                 <FormField
                   control={form.control}
@@ -676,6 +785,106 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     </FormItem>
                   )}
                 />
+
+                {stockStatus === 'place_order' && (
+                  <FormField
+                    control={form.control}
+                    name="purpose"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Purpose <span className="normal-case font-normal">optional</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Why is this being ordered?"
+                            className="min-h-[70px] resize-none"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {stockStatus === 'place_order' && (
+                  <FormField
+                    control={form.control}
+                    name="orderNote"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Notes <span className="normal-case font-normal">optional</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Optional notes..."
+                            className="min-h-[70px] resize-none"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Description <span className="normal-case font-normal">optional</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Optional description..."
+                          className="min-h-[70px] resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Image <span className="normal-case font-normal">optional</span>
+                  </Label>
+                  {imagePreviewUrl ? (
+                    <div className="relative w-fit">
+                      <img
+                        src={imagePreviewUrl}
+                        alt="Attached"
+                        className="h-24 w-24 rounded-md object-cover border"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="icon"
+                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow"
+                        onClick={handleRemoveImage}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-2 w-fit px-3 py-2 rounded-md border border-dashed cursor-pointer text-sm text-muted-foreground hover:bg-muted/40 transition-colors">
+                      <Camera className="h-4 w-4" />
+                      Add photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleImageSelect}
+                      />
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
 

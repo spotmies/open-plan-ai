@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import {
   Plus,
@@ -70,14 +70,29 @@ const BLOCK_TYPES: { type: BlockType; label: string; icon: LucideIcon }[] = [
   { type: 'audio', label: 'Audio', icon: FileAudio },
 ];
 
+const withFallbackBlock = (blocks?: EditorBlock[]): EditorBlock[] =>
+  blocks && blocks.length > 0
+    ? blocks
+    : [{ id: 'block-' + Date.now(), type: 'text', content: '' }];
+
 export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: SlashBlockEditorProps) {
-  const [blocks, setBlocks] = useState<EditorBlock[]>(
-    initialBlocks && initialBlocks.length > 0 ? initialBlocks : [
-      { id: 'block-' + Date.now(), type: 'text', content: '' }
-    ]);
+  const [blocks, setBlocks] = useState<EditorBlock[]>(() => withFallbackBlock(initialBlocks));
   const [, setFocusedBlockId] = useState<string | null>(null);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [activeBlockIdForMenu, setActiveBlockIdForMenu] = useState<string | null>(null);
+
+  // The editor keeps its own copy of the blocks, so a caller that swaps
+  // `initialBlocks` out from under it (seeding the editor from the plain
+  // description when Advanced Editor is switched on, or reloading the record)
+  // would otherwise be ignored. Adopt any array that isn't the one we last
+  // emitted — comparing by reference, so echoes of our own onChange (the
+  // caller storing the array we just handed it) never clobber what's typed.
+  const lastEmittedRef = useRef<EditorBlock[] | undefined>(initialBlocks);
+  useEffect(() => {
+    if (initialBlocks === lastEmittedRef.current) return;
+    lastEmittedRef.current = initialBlocks;
+    setBlocks(withFallbackBlock(initialBlocks));
+  }, [initialBlocks]);
 
   // Focus a specific block by ID
   const focusBlock = (id: string) => {
@@ -96,6 +111,7 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
   };
 
   const updateBlocks = (newBlocks: EditorBlock[]) => {
+    lastEmittedRef.current = newBlocks;
     setBlocks(newBlocks);
     onChange?.(newBlocks);
   };

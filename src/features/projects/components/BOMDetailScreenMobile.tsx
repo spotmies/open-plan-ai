@@ -251,7 +251,7 @@ function NotesSection({ nodeId, currentUserId }: { nodeId: string; currentUserId
                     <span className="text-xs font-semibold text-foreground">{isOwn ? 'You' : (note.author?.name ?? 'Unknown')}</span>
                     <span className="text-[10.5px] text-muted-foreground/70">{formatRelative(note.createdAt)}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{note.content}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">{note.content}</p>
                 </div>
                 {isOwn && (
                   <button onClick={() => deleteNote.mutate(note.id)}

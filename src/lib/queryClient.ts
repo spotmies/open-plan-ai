@@ -104,6 +104,12 @@ export const queryKeys = {
     list: (projectId: string) => [...queryKeys.tags.all, 'list', projectId] as const,
   },
 
+  // Locations (org-wide registry backing the inventory Location picker)
+  locations: {
+    all: ['locations'] as const,
+    list: (orgId: string) => [...queryKeys.locations.all, 'list', orgId] as const,
+  },
+
   // Team
   team: {
     all: ['team'] as const,

@@ -1,5 +1,7 @@
 // BOM types, API response types, adapters, and tree helpers
 
+import { parseNumericCell } from '@/lib/numericCell';
+
 export interface SupplierEntry {
   distributor: string;
   price: string;
@@ -278,6 +280,25 @@ export interface ApiSummaryResponse {
 
 // ── Adapters: API response → BOMNode / BOMRevision ────────────────
 
+export function parseCustomFields(raw: unknown): CustomFieldEntry[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.filter(
+      (item): item is CustomFieldEntry =>
+        Boolean(item) && typeof item === 'object' && typeof (item as { label?: string }).label === 'string' && typeof (item as { value?: string }).value === 'string'
+    );
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parseCustomFields(parsed);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function fromApiNode(node: ApiNodeResponse, depth = 0): BOMNode {
   const rev = node.part.latestRevision;
   return {
@@ -305,7 +326,7 @@ export function fromApiNode(node: ApiNodeResponse, depth = 0): BOMNode {
     ownerId:      node.owner?.id,
     createdByName: node.creator?.name ?? '',
     createdById:   node.creator?.id,
-    customFields: Array.isArray(node.part.customFields) ? node.part.customFields : [],
+    customFields: parseCustomFields(node.part.customFields),
     revHistory:   [],  // loaded on demand via usePartRevisions
     children:     node.children?.map(c => fromApiNode(c, depth + 1)),
     _partId:      node.part.id,
@@ -334,7 +355,7 @@ export function fromApiRevision(r: ApiRevisionResponse): BOMRevision {
     price:     parseFloat(r.price ?? '0'),
     leadTime:  r.leadTimeDays ?? 0,
     suppliers: r.suppliers?.map(s => ({ ...s, price: String(s.price) })) ?? [],
-    customFields: r.customFields ?? [],
+    customFields: parseCustomFields(r.customFields),
   };
 }
 
@@ -625,8 +646,11 @@ export function parseSubcomponentImportRows(
     if (!unitPriceRaw) {
       errors.push('Missing Unit Price');
     } else {
-      const n = Number(unitPriceRaw);
-      if (Number.isNaN(n)) errors.push('Unit Price must be a number');
+      // parseNumericCell, not Number(): sheets export prices as formatted text
+      // ("₹314.65", "1,234.56"), which Number() reads as NaN and this used to
+      // reject outright.
+      const n = parseNumericCell(unitPriceRaw);
+      if (n === null) errors.push('Unit Price must be a number');
       else unitPrice = n;
     }
 
@@ -643,8 +667,8 @@ export function parseSubcomponentImportRows(
     if (!quantityRaw) {
       errors.push('Missing Quantity');
     } else {
-      const n = Number(quantityRaw);
-      if (Number.isNaN(n) || n <= 0) errors.push('Quantity must be a positive number');
+      const n = parseNumericCell(quantityRaw);
+      if (n === null || n <= 0) errors.push('Quantity must be a positive number');
       else quantity = n;
     }
 

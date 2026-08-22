@@ -18,6 +18,7 @@ export interface ApiStockRecord {
   lotNumber: string | null;
   serialNumber: string | null;
   quarantineQty: number;
+  transactionId?: string;
 }
 
 export interface ApiOrderRecord {
@@ -30,6 +31,11 @@ export interface ApiOrderRecord {
   supplierRef: string | null;
   unitCost: number | null;
   location: string;
+  note: string | null;
+  description: string | null;
+  purpose: string | null;
+  lotNumber: string | null;
+  serialNumber: string | null;
   status: 'open' | 'partially_received' | 'received' | 'cancelled';
   createdAt: string;
   createdBy: string;
@@ -38,13 +44,14 @@ export interface ApiOrderRecord {
 export interface ApiStockTransaction {
   id: string;
   partId: string;
-  type: 'receive' | 'adjust';
+  type: 'receive' | 'adjust' | 'allocate' | 'deallocate';
   direction: 'add' | 'remove' | null;
   qty: number;
   location: string;
   reference: string | null;
   reasonCode: string | null;
   note: string | null;
+  description: string | null;
   quarantine: boolean;
   createdAt: string;
   createdBy: string;
@@ -123,6 +130,11 @@ export function fromApiOrder(r: ApiOrderRecord): OrderRecord {
     supplierRef: r.supplierRef ?? undefined,
     unitCost: r.unitCost ?? undefined,
     location: r.location,
+    note: r.note ?? undefined,
+    description: r.description ?? undefined,
+    purpose: r.purpose ?? undefined,
+    lotNumber: r.lotNumber ?? undefined,
+    serialNumber: r.serialNumber ?? undefined,
     status: r.status,
     createdAt: r.createdAt,
     createdBy: r.createdBy,
@@ -140,6 +152,7 @@ export function fromApiTransaction(r: ApiStockTransaction): StockTransaction {
     reference: r.reference ?? undefined,
     reasonCode: r.reasonCode ?? undefined,
     note: r.note ?? undefined,
+    description: r.description ?? undefined,
     quarantine: r.quarantine,
     createdAt: r.createdAt,
     createdBy: r.createdBy,
@@ -199,6 +212,7 @@ export interface AdjustQuantityDto {
   quantity: number;
   reasonCode: string;
   note?: string;
+  description?: string;
   lotNumber?: string;
   serialNumber?: string;
 }
@@ -210,6 +224,11 @@ export interface PlaceOrderDto {
   supplierRef?: string;
   unitCost?: number;
   location: string;
+  note?: string;
+  description?: string;
+  purpose?: string;
+  lotNumber?: string;
+  serialNumber?: string;
 }
 
 export interface CreateBuildDto {
