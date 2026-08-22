@@ -17,13 +17,17 @@ import {
   buildAskSuggestions,
   buildActSuggestions,
   scopeLabelToBackend,
+  resolveConversationScopeLabel,
   type AssistantCategoryId,
   type AssistantScope,
-  type AssistantFocusEntity,
   type AiMessageAttachment,
 } from '../assistantData';
 import { isMessageTooLargeError, MESSAGE_TOO_LARGE_NOTICE, useAssistantConversation } from '../hooks/useAssistantConversation';
-import { useCreateAssistantConversation } from '../hooks/useAssistantConversations';
+import {
+  useAssistantConversations,
+  useCreateAssistantConversation,
+  useUpdateAssistantConversation,
+} from '../hooks/useAssistantConversations';
 import { EMPTY_ASSISTANT_DRAFT, EMPTY_ASSISTANT_FILES, useAssistantDraftStore } from '../stores/useAssistantDraftStore';
 
 /** "ask" / "ask or act" / "ask, act, or build" — Oxford comma to match how the categories row itself reads left to right. */
@@ -60,11 +64,10 @@ export function AssistantPanel({
   const clearDraft = useAssistantDraftStore((s) => s.clearDraft);
   const clearDraftMessage = useAssistantDraftStore((s) => s.clearDraftMessage);
   const setDraftFiles = useAssistantDraftStore((s) => s.setFiles);
-  const { value, scope, selectedProjectId, focusEntities } = draft;
+  const { value, scope, selectedProjectId } = draft;
   const setValue = (next: string) => setDraft(draftKey, { value: next });
   const setScope = (next: AssistantScope) => setDraft(draftKey, { scope: next });
   const setSelectedProjectId = (next: string | null) => setDraft(draftKey, { selectedProjectId: next });
-  const setFocusEntities = (next: AssistantFocusEntity[]) => setDraft(draftKey, { focusEntities: next });
   const [justSubmitted, setJustSubmitted] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -81,8 +84,10 @@ export function AssistantPanel({
     proposalsByMessageId,
     confirmProposal,
     rejectProposal,
+    reviseProposal,
     confirmingProposalId,
     rejectingProposalId,
+    revisingProposalId,
     sendMessage,
     editMessage,
     selectMessageVersion,
@@ -92,6 +97,48 @@ export function AssistantPanel({
     isSending,
   } = useAssistantConversation(conversationId);
   const createConversation = useCreateAssistantConversation();
+  const updateConversation = useUpdateAssistantConversation();
+  // Once a conversation has actually resolved to a single project — either
+  // picked at creation, or auto-locked by assistantLoop.ts the moment a
+  // message named one — its scope/project is fixed server-side and the
+  // composer should show that real, locked value instead of the still-live
+  // "new chat" draft picker, which would otherwise look interactive despite
+  // being ignored on send (see handleSend below). A conversation still sitting
+  // in all_projects (nothing project-specific asked yet) is deliberately
+  // EXCLUDED here — it keeps the normal interactive picker below, both so the
+  // user can jump straight to a project and so a plain "hi" doesn't
+  // prematurely freeze the control before the assistant has actually scoped
+  // anything. Same cache useAssistantConversations()/AppHeader already keep
+  // warm, so this is free.
+  const { data: allConversations = [] } = useAssistantConversations();
+  const activeConversationSummary = conversationId
+    ? allConversations.find((c) => c.id === conversationId)
+    : undefined;
+  const isActiveConversationLocked =
+    !!activeConversationSummary && activeConversationSummary.scope !== 'all_projects';
+  const lockedScopeLabel = isActiveConversationLocked
+    ? resolveConversationScopeLabel(
+        activeConversationSummary!.scope,
+        projects.find((p) => p.id === activeConversationSummary!.projectId)?.name,
+      )
+    : null;
+  // Picking a project from the popover on an existing, still-unscoped
+  // (all_projects) conversation locks it server-side right away — the
+  // explicit-click counterpart to assistantLoop.ts's automatic lock, which
+  // fires the instant a message names a project instead. Only relevant once
+  // conversationId exists; before that, the popover's pick just feeds the
+  // "new chat" draft that createConversation reads on first send (unchanged
+  // below).
+  const handleProjectChange = (projectId: string) => {
+    if (conversationId) {
+      updateConversation.mutate(
+        { id: conversationId, updates: { projectId } },
+        { onError: () => toast.error("Couldn't lock this conversation to that project — try again.") },
+      );
+      return;
+    }
+    setSelectedProjectId(projectId);
+  };
   // Covers only the very first message of a brand-new conversation: sent
   // before conversationId exists, so useAssistantConversation's own
   // optimistic-message tracking (keyed on an already-active conversation)
@@ -187,7 +234,6 @@ export function AssistantPanel({
         projectId: scope !== 'All projects' ? (selectedProjectId as string) : undefined,
         orgId: scope === 'All projects' ? currentOrganization?.id : undefined,
         message: effectiveMessage,
-        focusEntities: focusEntities.length > 0 ? focusEntities : undefined,
         attachments,
       },
       {
@@ -331,8 +377,10 @@ export function AssistantPanel({
           proposalsByMessageId={proposalsByMessageId}
           onConfirmProposal={confirmProposal}
           onRejectProposal={rejectProposal}
+          onReviseProposal={reviseProposal}
           confirmingProposalId={confirmingProposalId}
           rejectingProposalId={rejectingProposalId}
+          revisingProposalId={revisingProposalId}
         />
       ) : (
         <ScrollArea className="flex-1 min-h-0">
@@ -426,9 +474,8 @@ export function AssistantPanel({
             onScopeChange={setScope}
             projects={projects}
             selectedProjectId={selectedProjectId}
-            onProjectChange={setSelectedProjectId}
-            focusEntities={focusEntities}
-            onFocusEntitiesChange={setFocusEntities}
+            onProjectChange={handleProjectChange}
+            lockedScopeLabel={lockedScopeLabel}
             onSend={handleSend}
             disabled={isComposerInputDisabled}
             isGenerating={canStop}

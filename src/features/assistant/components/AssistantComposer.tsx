@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Loader2, Mic, Paperclip, Square } from 'lucide-react';
+import { ArrowUp, Folder, Globe, Loader2, Mic, Paperclip, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { AssistantScopePopover } from './AssistantScopePopover';
 import { ASSISTANT_MAX_ATTACHMENTS, AssistantAttachmentGrid, type AssistantAttachmentItem } from './AssistantAttachments';
 import { useSarvamDictation } from '../hooks/useSarvamDictation';
-import type { AssistantScope, AssistantFocusEntity } from '../assistantData';
+import type { AssistantScope } from '../assistantData';
 import type { Project } from '@/types';
 
 interface AssistantComposerProps {
@@ -20,8 +20,15 @@ interface AssistantComposerProps {
   projects: Project[];
   selectedProjectId: string | null;
   onProjectChange: (projectId: string) => void;
-  focusEntities: AssistantFocusEntity[];
-  onFocusEntitiesChange: (entities: AssistantFocusEntity[]) => void;
+  /**
+   * Non-null for an existing conversation: its scope/project is fixed
+   * server-side (chosen once, at creation, or auto-detected from the first
+   * message that named a project) and every later message inherits it
+   * regardless of what this composer's picker shows — so once set, render
+   * that real value as a plain label instead of the interactive scope/
+   * project popover, which would otherwise look changeable but be ignored.
+   */
+  lockedScopeLabel?: string | null;
   onSend: () => void;
   placeholder?: string;
   disabled?: boolean;
@@ -41,8 +48,7 @@ export function AssistantComposer({
   projects,
   selectedProjectId,
   onProjectChange,
-  focusEntities,
-  onFocusEntitiesChange,
+  lockedScopeLabel,
   onSend,
   placeholder = "Ask, and you shall receive...",
   disabled,
@@ -161,15 +167,29 @@ export function AssistantComposer({
             </TooltipTrigger>
             <TooltipContent side="top">Attach docs, xlsx, images</TooltipContent>
           </Tooltip>
-          <AssistantScopePopover
-            scope={scope}
-            onScopeChange={onScopeChange}
-            projects={projects}
-            selectedProjectId={selectedProjectId}
-            onProjectChange={onProjectChange}
-            focusEntities={focusEntities}
-            onFocusEntitiesChange={onFocusEntitiesChange}
-          />
+          {lockedScopeLabel ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex h-8 max-w-[220px] items-center gap-1.5 rounded-full border border-transparent px-3 text-xs font-normal text-muted-foreground">
+                  {lockedScopeLabel === 'All projects' ? (
+                    <Globe className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <Folder className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">{lockedScopeLabel}</span>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">This conversation stays scoped here. Start a new chat to change the scope.</TooltipContent>
+            </Tooltip>
+          ) : (
+            <AssistantScopePopover
+              scope={scope}
+              onScopeChange={onScopeChange}
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              onProjectChange={onProjectChange}
+            />
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">

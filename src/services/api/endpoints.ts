@@ -310,6 +310,7 @@ export const ENDPOINTS = {
   // Act (phase 2) proposals
   AI_PROPOSALS: {
     CONFIRM: (proposalId: string) => `/ai/proposals/${proposalId}/confirm`,
+    REVISE: (proposalId: string) => `/ai/proposals/${proposalId}/revise`,
     REJECT: (proposalId: string) => `/ai/proposals/${proposalId}/reject`,
     BY_ID: (proposalId: string) => `/ai/proposals/${proposalId}`,
     BY_CONVERSATION: (conversationId: string) => `/ai/conversations/${conversationId}/proposals`,

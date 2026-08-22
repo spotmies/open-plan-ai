@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ClipboardCheck,
   Flag,
-  GitPullRequest,
   LayoutGrid,
   Layers,
   ListChecks,
@@ -132,22 +131,11 @@ export function backendScopeToLabel(scope: BackendAiScope): AssistantScope {
   return 'This project';
 }
 
-// ─── Focus entities: multi-select bias layered on top of scope ────────────────
-// 'bom' used to be the only entity with its own scope toggle even though the
-// backend already supported querying all of these regardless of scope — see
-// [[assistant-scope-multiselect-paused]]. New conversations always send
-// scope 'project'/'all_projects' plus an optional focusEntities array;
-// `AiConversationFocusEntity` on the backend is the source of truth this list
-// must match (ai-conversations.types.ts).
-export const ASSISTANT_FOCUS_ENTITIES = [
-  { id: 'tasks', label: 'Tasks', icon: ListChecks },
-  { id: 'issues', label: 'Issues', icon: AlertTriangle },
-  { id: 'milestones', label: 'Milestones', icon: Flag },
-  { id: 'hardware_modules', label: 'Modules', icon: LayoutGrid },
-  { id: 'bom_nodes', label: 'BOM', icon: Layers },
-  { id: 'ecos', label: 'ECO', icon: GitPullRequest },
-] as const;
-export type AssistantFocusEntity = (typeof ASSISTANT_FOCUS_ENTITIES)[number]['id'];
+// The composer's "Focus — pick any" multi-select was removed; this type is kept
+// only because AssistantConversationSummary.focusEntities still reads it back
+// from older conversations. Must match the backend's AiConversationFocusEntity
+// (ai-conversations.types.ts).
+export type AssistantFocusEntity = 'tasks' | 'issues' | 'milestones' | 'hardware_modules' | 'bom_nodes' | 'ecos';
 
 /** Same scope labels, but resolves 'project'/'bom' to the actual project name when known — matches AssistantScopePopover's label. */
 export function resolveConversationScopeLabel(scope: BackendAiScope, projectName?: string): string {
@@ -569,6 +557,25 @@ export type AssistantProposalStatus =
   | 'expired'
   | 'superseded';
 
+// Server-owned, edit-friendly resolved fields for the review-before-confirm
+// form — real ids/raw enum values (unlike ProposalPreview's display
+// strings). Matches the backend's ProposalFormState (_shared/preview.ts)
+// exactly. 'single' carries every current field value for the one item;
+// 'bulk-shared' carries only the field(s) set identically across every
+// operation, edited as one shared change.
+export interface ProposalFormSharedField {
+  field: string;
+  label: string;
+  value: unknown;
+}
+
+export interface ProposalFormState {
+  mode: 'single' | 'bulk-shared';
+  fields?: Record<string, unknown>;
+  sharedFields?: ProposalFormSharedField[];
+  required: string[];
+}
+
 export interface AssistantProposal {
   id: string;
   conversationId: string;
@@ -586,6 +593,10 @@ export interface AssistantProposal {
   confirmedBy: string | null;
   confirmedAt: string | null;
   executedAt: string | null;
+  /** Null = the review form hasn't been submitted yet — the card renders that form instead of Confirm/Dismiss. */
+  reviewedAt: string | null;
+  /** Null when there's nothing to prefill a form from (e.g. BOM/ECO proposals, which don't have a review form yet) — the card always renders read-only in that case. */
+  formState: ProposalFormState | null;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;

@@ -30,8 +30,11 @@ import { ReportBugDialog } from '@/features/support/components/ReportBugDialog';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
+import { useProjects } from '@/hooks/useProjects';
 import { useChatStore } from '@/features/chat/stores/useChatStore';
 import { useAssistantStore } from '@/features/assistant/stores/useAssistantStore';
+import { useAssistantConversations } from '@/features/assistant/hooks/useAssistantConversations';
+import { resolveConversationScopeLabel } from '@/features/assistant/assistantData';
 import { ProjectTeamButton } from '@/features/projects/components/ProjectTeamButton';
 import { cn } from '@/lib/utils';
 
@@ -84,6 +87,21 @@ export function AppHeader() {
   const projectId = projectMatch?.params?.id;
   const { data: project } = useProjectDetail(projectId, { enabled: !!projectId });
 
+  // Detect an open assistant conversation to show its title (+ scope pill)
+  // in the header instead of the generic "Assistant" label. Both queries
+  // are already warm from AssistantConversationList/AssistantPanel — this
+  // just reads the shared cache, no extra requests.
+  const assistantConversationMatch = useMatch('/assistant/:conversationId');
+  const activeConversationId = assistantConversationMatch?.params?.conversationId;
+  const { data: assistantConversations = [] } = useAssistantConversations();
+  const { data: allProjects = [] } = useProjects();
+  const activeConversation = activeConversationId
+    ? assistantConversations.find((c) => c.id === activeConversationId)
+    : undefined;
+  const activeConversationProjectName = activeConversation?.projectId
+    ? allProjects.find((p) => p.id === activeConversation.projectId)?.name
+    : undefined;
+
   // Mobile project detail: hide theme/notifications/profile, keep only back + name
   const isMobileProjectDetail = isMobile && !!project;
 
@@ -112,7 +130,24 @@ export function AppHeader() {
   };
 
   return (
-    <header className="h-14 border-b border-border flex items-center justify-between px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 w-full max-w-full min-w-0 overflow-hidden">
+    <header className="relative h-14 border-b border-border flex items-center justify-between px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 w-full max-w-full min-w-0 overflow-hidden">
+      {/* Active assistant conversation: title + scope pill centered in the
+          header regardless of the (asymmetric) width of the side content —
+          positioned relative to the whole header rather than nested in the
+          left flex group, which is what makes it stay centered. */}
+      {activeConversation && (
+        <div className="pointer-events-none absolute inset-x-0 flex justify-center px-4">
+          <div className="pointer-events-auto flex min-w-0 max-w-[calc(100%-220px)] items-center gap-2">
+            <h1 className="min-w-0 truncate text-2xl font-semibold text-foreground leading-none">
+              {activeConversation.title || 'New conversation'}
+            </h1>
+            <Badge variant="secondary" className="h-5 shrink-0 px-2 text-[10px] font-normal">
+              {resolveConversationScopeLabel(activeConversation.scope, activeConversationProjectName)}
+            </Badge>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 min-w-0">
 
         {/* Project detail: Back + Name + Stage */}

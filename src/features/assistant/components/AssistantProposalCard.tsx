@@ -11,12 +11,14 @@ import {
   XCircle,
   Clock,
   Ban,
+  Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { AssistantProposal, ProposalItem } from '../assistantData';
+import { AssistantProposalForm } from './AssistantProposalForm';
 
 // Same deep-link route table AssistantCardMessage.tsx uses — small enough,
 // and feature-local enough, to duplicate rather than import (matches this
@@ -37,8 +39,10 @@ interface AssistantProposalCardProps {
   readOnly?: boolean;
   onConfirm?: (proposalId: string) => void;
   onReject?: (proposalId: string, reason?: string) => void;
+  onRevise?: (proposalId: string, edits: Record<string, unknown>) => Promise<AssistantProposal>;
   isConfirming?: boolean;
   isRejecting?: boolean;
+  isRevising?: boolean;
 }
 
 function actionVerb(actionKind: AssistantProposal['actionKind'], itemCount: number): string {
@@ -105,18 +109,72 @@ const TERMINAL_META: Record<
   superseded: { label: 'Superseded', className: 'text-muted-foreground', Icon: Ban },
 };
 
-export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject, isConfirming, isRejecting }: AssistantProposalCardProps) {
+export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject, onRevise, isConfirming, isRejecting, isRevising }: AssistantProposalCardProps) {
   const [showAll, setShowAll] = useState(false);
+  const [editingOverride, setEditingOverride] = useState<boolean | null>(null);
   const { preview } = proposal;
   const isPending = proposal.status === 'pending';
   const isExecuting = proposal.status === 'executing';
-  const isBusy = isConfirming || isRejecting || isExecuting;
+  const isBusy = isConfirming || isRejecting || isRevising || isExecuting;
   const items = preview.items;
   const visibleItems = showAll ? items : items.slice(0, VISIBLE_ITEMS_COLLAPSED);
   const hiddenCount = items.length - visibleItems.length;
   const headline = `${actionVerb(preview.actionKind, preview.itemCount)} ${entityNoun(preview.entityType, preview.itemCount)}`;
   const expired = isPending && new Date(proposal.expiresAt).getTime() <= Date.now();
   const terminal = TERMINAL_META[proposal.status];
+
+  // Not yet reviewed (fresh proposal) or the user clicked Edit — show the
+  // fill-in/editable form instead of the read-only card. Only ever true for
+  // a still-pending proposal with a form to prefill from; readOnly (share
+  // view) and terminal/formState-less proposals never enter this branch.
+  const isEditing = isPending && !readOnly && !!proposal.formState && (editingOverride ?? !proposal.reviewedAt);
+
+  const handleFormSubmit = async (edits: Record<string, unknown>) => {
+    await onRevise?.(proposal.id, edits);
+    setEditingOverride(false);
+  };
+
+  const handleFormCancel = () => {
+    if (proposal.reviewedAt) {
+      setEditingOverride(false);
+    } else {
+      onReject?.(proposal.id);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex items-start gap-2.5">
+        <div className="h-7 w-7 shrink-0" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <Card className="overflow-hidden border-primary/30">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {proposal.reviewedAt ? 'Editing' : 'Review before confirming'}
+                  </p>
+                  <h4 className="truncate text-base font-semibold text-foreground">{headline}</h4>
+                </div>
+                <Badge variant="outline" className="shrink-0 gap-1 text-xs font-normal">
+                  {preview.destination.projectName}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <AssistantProposalForm
+                entityType={preview.entityType}
+                projectId={proposal.projectId}
+                formState={proposal.formState!}
+                onSubmit={handleFormSubmit}
+                onCancel={handleFormCancel}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-start gap-2.5">
@@ -223,6 +281,18 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
               >
                 Dismiss
               </Button>
+              {proposal.formState && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={isBusy || expired}
+                  onClick={() => setEditingOverride(true)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              )}
               <span className="ml-auto text-[11px] text-muted-foreground">
                 {expired ? 'Expired' : `Expires ${formatDistanceToNow(new Date(proposal.expiresAt), { addSuffix: true })}`}
               </span>

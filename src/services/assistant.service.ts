@@ -34,7 +34,7 @@ export const assistantService = {
   getConversation: (id: string) =>
     apiClient.get<AssistantConversationDetail>(ENDPOINTS.AI_CONVERSATIONS.BY_ID(id)),
 
-  updateConversation: (id: string, input: { title?: string; pinned?: boolean }) =>
+  updateConversation: (id: string, input: { title?: string; pinned?: boolean; projectId?: string }) =>
     apiClient.patch<AssistantConversationSummary>(ENDPOINTS.AI_CONVERSATIONS.BY_ID(id), input),
 
   deleteConversation: (id: string) => apiClient.delete<void>(ENDPOINTS.AI_CONVERSATIONS.BY_ID(id)),
@@ -86,6 +86,11 @@ export const assistantService = {
 
   confirmProposal: async (proposalId: string): Promise<AssistantProposal> => {
     const res = await apiClient.post<{ proposal: AssistantProposal }>(ENDPOINTS.AI_PROPOSALS.CONFIRM(proposalId), {});
+    return res.proposal;
+  },
+
+  reviseProposal: async (proposalId: string, edits: Record<string, unknown>): Promise<AssistantProposal> => {
+    const res = await apiClient.post<{ proposal: AssistantProposal }>(ENDPOINTS.AI_PROPOSALS.REVISE(proposalId), edits);
     return res.proposal;
   },
 

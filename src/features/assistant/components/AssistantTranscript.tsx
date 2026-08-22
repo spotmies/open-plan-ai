@@ -40,8 +40,10 @@ interface AssistantTranscriptProps {
   proposalsByMessageId?: Record<string, AssistantProposal[]>;
   onConfirmProposal?: (proposalId: string) => void;
   onRejectProposal?: (proposalId: string, reason?: string) => void;
+  onReviseProposal?: (proposalId: string, edits: Record<string, unknown>) => Promise<AssistantProposal>;
   confirmingProposalId?: string | null;
   rejectingProposalId?: string | null;
+  revisingProposalId?: string | null;
 }
 
 // Groups a run of messages between `user` rows and moves any present_card
@@ -90,8 +92,10 @@ export function AssistantTranscript({
   proposalsByMessageId,
   onConfirmProposal,
   onRejectProposal,
+  onReviseProposal,
   confirmingProposalId,
   rejectingProposalId,
+  revisingProposalId,
 }: AssistantTranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -244,8 +248,10 @@ export function AssistantTranscript({
                   readOnly={readOnly}
                   onConfirm={onConfirmProposal}
                   onReject={onRejectProposal}
+                  onRevise={onReviseProposal}
                   isConfirming={confirmingProposalId === proposal.id}
                   isRejecting={rejectingProposalId === proposal.id}
+                  isRevising={revisingProposalId === proposal.id}
                 />
               ))}
             </div>

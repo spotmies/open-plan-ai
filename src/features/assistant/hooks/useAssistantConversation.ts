@@ -284,6 +284,32 @@ export function useAssistantConversation(conversationId: string | null) {
     },
   });
 
+  // Same "never enqueues a model turn" shape as confirm/reject — the form's
+  // Submit (first time) or a later Edit resubmit just rewrites the stored
+  // proposal, then a refetch picks up the fresh preview/formState.
+  const reviseProposalMutation = useMutation({
+    mutationFn: ({ proposalId, edits }: { proposalId: string; edits: Record<string, unknown> }) =>
+      assistantService.reviseProposal(proposalId, edits),
+    onSuccess: invalidate,
+    onError: (error) => {
+      const response = (error as { response?: { status?: number; data?: { error?: { message?: string } } } })?.response;
+      if (response?.status === 409) {
+        toast.error('This was already confirmed, rejected, or has expired.');
+        invalidate();
+      } else if (response?.status === 403) {
+        toast.error("You no longer have edit access to this project.");
+        invalidate();
+      } else if (response?.status === 422) {
+        // Validation failure (bad field value, unresolvable reference) — the
+        // proposal itself is untouched, so don't invalidate: that would
+        // refetch the old data and wipe out whatever the user just typed.
+        toast.error(response.data?.error?.message ?? "Some of those fields couldn't be resolved — check them and try again.");
+      } else {
+        toast.error("Couldn't save those changes — try again.");
+      }
+    },
+  });
+
   const rejectProposalMutation = useMutation({
     mutationFn: ({ proposalId, reason }: { proposalId: string; reason?: string }) =>
       assistantService.rejectProposal(proposalId, reason),
@@ -383,6 +409,11 @@ export function useAssistantConversation(conversationId: string | null) {
     ),
     confirmingProposalId: confirmProposalMutation.isPending ? (confirmProposalMutation.variables ?? null) : null,
     rejectingProposalId: rejectProposalMutation.isPending ? (rejectProposalMutation.variables?.proposalId ?? null) : null,
+    reviseProposal: useCallback(
+      (proposalId: string, edits: Record<string, unknown>) => reviseProposalMutation.mutateAsync({ proposalId, edits }),
+      [reviseProposalMutation],
+    ),
+    revisingProposalId: reviseProposalMutation.isPending ? (reviseProposalMutation.variables?.proposalId ?? null) : null,
     sendMessage: useCallback(
       (text: string, attachments?: AiMessageAttachment[]) => sendMessageMutation.mutate({ message: text, attachments }),
       [sendMessageMutation],

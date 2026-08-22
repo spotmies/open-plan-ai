@@ -1,10 +1,9 @@
-import { useState } from 'react';
-import { Check, ChevronDown, Folder, Globe, Layers } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Check, ChevronDown, Folder, Globe, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
-import { ASSISTANT_FOCUS_ENTITIES, type AssistantScope, type AssistantFocusEntity } from '../assistantData';
+import type { AssistantScope } from '../assistantData';
 import type { Project } from '@/types';
 
 interface AssistantScopePopoverProps {
@@ -13,8 +12,6 @@ interface AssistantScopePopoverProps {
   projects: Project[];
   selectedProjectId: string | null;
   onProjectChange: (projectId: string) => void;
-  focusEntities: AssistantFocusEntity[];
-  onFocusEntitiesChange: (entities: AssistantFocusEntity[]) => void;
 }
 
 export function AssistantScopePopover({
@@ -23,33 +20,28 @@ export function AssistantScopePopover({
   projects,
   selectedProjectId,
   onProjectChange,
-  focusEntities,
-  onFocusEntitiesChange,
 }: AssistantScopePopoverProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
-  const Icon = scope === 'All projects' ? Globe : focusEntities.length > 0 ? Layers : Folder;
-  const focusLabels = focusEntities.map((id) => ASSISTANT_FOCUS_ENTITIES.find((e) => e.id === id)?.label ?? id);
-  const focusSuffix =
-    focusLabels.length === 0
-      ? ''
-      : focusLabels.length <= 2
-        ? ` · ${focusLabels.join(', ')}`
-        : ` · ${focusLabels.length} focuses`;
-  const label =
-    scope === 'All projects'
-      ? `All projects${focusSuffix}`
-      : `${selectedProject?.name ?? 'Select a project'}${focusSuffix}`;
+  const filteredProjects = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return projects;
+    return projects.filter((project) => project.name.toLowerCase().includes(query));
+  }, [projects, search]);
 
-  const toggleFocusEntity = (id: AssistantFocusEntity) => {
-    onFocusEntitiesChange(
-      focusEntities.includes(id) ? focusEntities.filter((f) => f !== id) : [...focusEntities, id],
-    );
-  };
+  const Icon = scope === 'All projects' ? Globe : Folder;
+  const label = scope === 'All projects' ? 'Select a project' : selectedProject?.name ?? 'Select a project';
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearch('');
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -79,8 +71,18 @@ export function AssistantScopePopover({
         <p className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           Project
         </p>
+        <div className="relative px-1 pb-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search projects..."
+            className="w-full rounded-md border border-input bg-transparent py-1.5 pl-8 pr-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
         <div className="max-h-40 overflow-y-auto">
-          {projects.map((project) => (
+          {filteredProjects.map((project) => (
             <button
               key={project.id}
               type="button"
@@ -99,31 +101,9 @@ export function AssistantScopePopover({
             </button>
           ))}
           {projects.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No projects yet</p>}
-        </div>
-
-        <Separator className="my-1" />
-        <p className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Focus — pick any
-        </p>
-        <div className="grid grid-cols-2 gap-1 p-1">
-          {ASSISTANT_FOCUS_ENTITIES.map((entity) => {
-            const selected = focusEntities.includes(entity.id);
-            return (
-              <button
-                key={entity.id}
-                type="button"
-                onClick={() => toggleFocusEntity(entity.id)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                  selected ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/50',
-                )}
-              >
-                <entity.icon className="h-3.5 w-3.5 shrink-0" />
-                <span className="flex-1 min-w-0 truncate">{entity.label}</span>
-                {selected && <Check className="h-3 w-3 shrink-0 text-primary" />}
-              </button>
-            );
-          })}
+          {projects.length > 0 && filteredProjects.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">No projects match "{search}"</p>
+          )}
         </div>
       </PopoverContent>
     </Popover>
