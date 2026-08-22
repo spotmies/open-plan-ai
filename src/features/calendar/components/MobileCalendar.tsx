@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type MobileTab = 'agenda' | 'day';
+type MobileTab = 'agenda' | 'month' | 'day';
 
 interface MobileCalendarProps {
   currentDate: Date;
@@ -429,6 +429,128 @@ function AgendaView({
   );
 }
 
+// ─── Month View ───────────────────────────────────────────────────────────────
+
+/** Chip fill for the month grid — same colour language as the agenda's left border */
+function eventChipClass(event: CalendarEvent): string {
+  if (event.type === 'milestone') return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
+  if (event.type === 'issue')
+    return isIssueResolved(event)
+      ? 'bg-green-500/15 text-green-700 dark:text-green-400'
+      : 'bg-destructive/15 text-destructive';
+  if (event.type === 'meeting') return 'bg-blue-500/15 text-blue-700 dark:text-blue-400';
+  const statusMap: Record<string, string> = {
+    'in-progress': 'bg-blue-500/15 text-blue-700 dark:text-blue-400',
+    'review': 'bg-violet-500/15 text-violet-700 dark:text-violet-400',
+    'done': 'bg-green-500/15 text-green-700 dark:text-green-400',
+    'blocked': 'bg-destructive/15 text-destructive',
+  };
+  return statusMap[event.status || 'todo'] ?? 'bg-muted text-foreground/80';
+}
+
+const MAX_CHIPS_PER_DAY = 3;
+const WEEKDAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function MonthView({
+  currentDate,
+  events,
+  onSelectDate,
+  onEventClick,
+}: {
+  currentDate: Date;
+  events: CalendarEvent[];
+  onSelectDate: (date: Date) => void;
+  onEventClick: (event: CalendarEvent) => void;
+}) {
+  // Full weeks so the grid always starts on Sunday and ends on Saturday,
+  // padded with the neighbouring months' days like every month calendar.
+  const weeks = useMemo(() => {
+    const days = eachDayOfInterval({
+      start: startOfWeek(startOfMonth(currentDate)),
+      end: endOfWeek(endOfMonth(currentDate)),
+    });
+    const rows: Date[][] = [];
+    for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
+    return rows;
+  }, [currentDate]);
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {weeks.map((week, weekIndex) => (
+        <div key={week[0].toISOString()} className="grid grid-cols-7 border-b border-border/60">
+          {week.map((day, dayIndex) => {
+            const dayEvents = getEventsForDate(events, day);
+            const shown = dayEvents.slice(0, MAX_CHIPS_PER_DAY);
+            const overflow = dayEvents.length - shown.length;
+            const inMonth = isSameMonth(day, currentDate);
+            const todayDay = isToday(day);
+            const isSelected = isSameDay(day, currentDate);
+
+            return (
+              <div
+                key={day.toISOString()}
+                onClick={() => onSelectDate(day)}
+                className={cn(
+                  'flex min-h-[92px] cursor-pointer flex-col gap-0.5 border-r border-border/60 p-1 last:border-r-0 transition-colors',
+                  !inMonth && 'bg-muted/20',
+                  isSelected && !todayDay && 'bg-accent/40',
+                )}
+              >
+                {/* Weekday name — first row only, directly above the date, so
+                    it reads as one column heading with the date (same as the
+                    desktop month view rather than a separate band). */}
+                {weekIndex === 0 && (
+                  <div className="shrink-0 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {WEEKDAY_HEADERS[dayIndex]}
+                  </div>
+                )}
+
+                <span
+                  className={cn(
+                    'mx-auto mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                    todayDay && 'bg-primary text-primary-foreground',
+                    !todayDay && inMonth && 'text-foreground',
+                    !todayDay && !inMonth && 'text-muted-foreground/50',
+                  )}
+                >
+                  {format(day, 'd')}
+                </span>
+
+                {shown.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEventClick(event);
+                    }}
+                    title={event.title}
+                    className={cn(
+                      'w-full truncate rounded px-1 py-0.5 text-left text-[9px] font-medium leading-tight',
+                      eventChipClass(event),
+                      ((event.type === 'task' && event.status === 'done') ||
+                        (event.type === 'milestone' && event.completed) ||
+                        isIssueResolved(event)) && 'line-through opacity-70',
+                    )}
+                  >
+                    {event.title}
+                  </button>
+                ))}
+
+                {overflow > 0 && (
+                  <span className="px-1 text-[9px] font-medium text-muted-foreground">
+                    +{overflow} more
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function MobileCalendar({
@@ -453,56 +575,84 @@ export function MobileCalendar({
           </span>
         </div>
         <div className="flex items-center gap-1">
+          {/* Month view has no week strip to page through, so it carries its
+              own month navigation here. */}
+          {tab === 'month' && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full"
+                aria-label="Previous month"
+                onClick={() => onDateChange(subMonths(currentDate, 1))}
+              >
+                <ChevronLeft className="h-4.5 w-4.5 text-muted-foreground" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full"
+                aria-label="Next month"
+                onClick={() => onDateChange(addMonths(currentDate, 1))}
+              >
+                <ChevronRight className="h-4.5 w-4.5 text-muted-foreground" />
+              </Button>
+            </>
+          )}
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
             <Search className="h-4.5 w-4.5 text-muted-foreground" />
           </Button>
         </div>
       </div>
 
-      {/* ── Tab Bar: Agenda / Day ── */}
+      {/* ── Tab Bar: Agenda / Month / Day ── */}
       <div className="flex items-center gap-2 px-4 pb-2 bg-background border-b border-border">
-        <button
-          onClick={() => setTab('agenda')}
-          className={cn(
-            'px-4 py-1.5 rounded-full text-sm font-medium transition-colors',
-            tab === 'agenda'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          Agenda
-        </button>
-        <button
-          onClick={() => setTab('day')}
-          className={cn(
-            'px-4 py-1.5 rounded-full text-sm font-medium transition-colors',
-            tab === 'day'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          Day
-        </button>
+        {(['agenda', 'month', 'day'] as const).map((value) => (
+          <button
+            key={value}
+            onClick={() => setTab(value)}
+            className={cn(
+              'px-4 py-1.5 rounded-full text-sm font-medium capitalize transition-colors',
+              tab === value
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {value}
+          </button>
+        ))}
       </div>
 
-      {/* ── Week Strip ── */}
-      <WeekStrip
-        selectedDate={currentDate}
-        onSelectDate={(date) => {
-          onDateChange(date);
-          setTab('day');
-        }}
-        expanded={calendarExpanded}
-        onToggle={() => {
-          setCalendarExpanded((prev) => !prev);
-        }}
-      />
+      {/* ── Week Strip (month view shows the full grid instead) ── */}
+      {tab !== 'month' && (
+        <WeekStrip
+          selectedDate={currentDate}
+          onSelectDate={(date) => {
+            onDateChange(date);
+            setTab('day');
+          }}
+          expanded={calendarExpanded}
+          onToggle={() => {
+            setCalendarExpanded((prev) => !prev);
+          }}
+        />
+      )}
 
       {/* ── Content ── */}
       {tab === 'agenda' ? (
         <AgendaView
           currentDate={currentDate}
           events={events}
+          onEventClick={onEventClick}
+        />
+      ) : tab === 'month' ? (
+        <MonthView
+          currentDate={currentDate}
+          events={events}
+          onSelectDate={(date) => {
+            onDateChange(date);
+            setTab('day');
+          }}
           onEventClick={onEventClick}
         />
       ) : (

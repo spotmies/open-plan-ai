@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, Forward, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Bookmark, Eye } from 'lucide-react';
+import { Copy, Pencil, Trash2, FileText, Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Loader2, Reply, Forward, ZoomIn, FileImage, File as FileIcon2, Pin, PinOff, Bookmark, Eye, ImageOff } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { FilePreviewDialog } from '@/components/FilePreviewDialog';
 import { Button } from '@/components/ui/button';
@@ -360,19 +360,25 @@ function FileAttachment({
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  // A file can claim an image mime type and still be undecodable — a truncated
+  // upload, or one edited in a text editor. Hiding the <img> left an empty
+  // bubble with no filename, size or way to download it; fall back to the file
+  // card instead so the message still says what was sent.
+  const [imageFailed, setImageFailed] = useState(false);
   const url = file.url ?? '';
   const fileType = getFileType(file.mimeType ?? '', file.fileName ?? '');
-  const Icon = getFileIcon(fileType);
+  const isBrokenImage = fileType === 'image' && imageFailed;
+  const Icon = isBrokenImage ? ImageOff : getFileIcon(fileType);
   const handleClick = useCallback(() => {
-    if (!url) return;
+    if (!url || isBrokenImage) return;
     if (fileType === 'image') {
       setLightboxOpen(true);
     } else {
       setPreviewOpen(true);
     }
-  }, [url, fileType]);
+  }, [url, fileType, isBrokenImage]);
 
-  if (fileType === 'image') {
+  if (fileType === 'image' && !imageFailed) {
     return (
       <>
         <div
@@ -385,7 +391,7 @@ function FileAttachment({
             src={url}
             alt={file.fileName}
             className="w-full max-h-[220px] object-cover rounded-xl"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            onError={() => setImageFailed(true)}
           />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
             <ZoomIn className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
@@ -408,6 +414,9 @@ function FileAttachment({
   // with a dedicated preview action beside the name (opens the file in a modal
   // instead of triggering a raw browser download).
   const isPreviewable = fileType === 'pdf' || fileType === 'doc';
+  const fileTypeLabel = isBrokenImage
+    ? "Image can't be displayed"
+    : fileType === 'pdf' ? 'PDF' : fileType === 'doc' ? 'Document' : '';
   return (
     <div
       className={cn(
@@ -418,15 +427,17 @@ function FileAttachment({
       <button
         type="button"
         onClick={handleClick}
-        disabled={!url}
+        disabled={!url || isBrokenImage}
         className={cn(
           'flex w-full items-center justify-center h-16 transition-colors',
-          'hover:bg-accent/40 disabled:opacity-50 disabled:cursor-not-allowed',
-          fileType === 'pdf' ? 'bg-red-500/10 text-red-500' :
-            fileType === 'doc' ? 'bg-blue-500/10 text-blue-500' :
-              'bg-muted text-muted-foreground'
+          'hover:bg-accent/40 disabled:cursor-default',
+          !isBrokenImage && 'disabled:opacity-50',
+          isBrokenImage ? 'bg-muted text-muted-foreground hover:bg-muted' :
+            fileType === 'pdf' ? 'bg-red-500/10 text-red-500' :
+              fileType === 'doc' ? 'bg-blue-500/10 text-blue-500' :
+                'bg-muted text-muted-foreground'
         )}
-        title={isPreviewable ? `Open ${fileType.toUpperCase()} preview` : 'Open file'}
+        title={isBrokenImage ? "This image can't be displayed" : isPreviewable ? `Open ${fileType.toUpperCase()} preview` : 'Open file'}
       >
         <Icon className="h-7 w-7" />
       </button>
@@ -440,20 +451,37 @@ function FileAttachment({
           <p className="text-sm font-medium truncate">{file.fileName}</p>
           <p className="text-xs opacity-60 mt-0.5">
             {file.fileSize ? formatFileSize(file.fileSize) : ''}
-            {file.fileSize && fileType !== 'other' ? ' · ' : ''}
-            {fileType === 'pdf' ? 'PDF' : fileType === 'doc' ? 'Document' : ''}
+            {file.fileSize && fileTypeLabel ? ' · ' : ''}
+            {fileTypeLabel}
           </p>
         </div>
         {url && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setPreviewOpen(true); }}
-            title="Preview"
-            className="h-8 px-2.5 shrink-0 rounded-full flex items-center gap-1 opacity-80 hover:opacity-100 hover:bg-accent/70 transition-colors text-xs font-medium"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            Preview
-          </button>
+          isBrokenImage ? (
+            // The bytes are still downloadable even when the browser can't
+            // decode them — let the recipient grab the original and check it.
+            <a
+              href={url}
+              download={file.fileName}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="Download original file"
+              className="h-8 px-2.5 shrink-0 rounded-full flex items-center gap-1 opacity-80 hover:opacity-100 hover:bg-accent/70 transition-colors text-xs font-medium"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setPreviewOpen(true); }}
+              title="Preview"
+              className="h-8 px-2.5 shrink-0 rounded-full flex items-center gap-1 opacity-80 hover:opacity-100 hover:bg-accent/70 transition-colors text-xs font-medium"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Preview
+            </button>
+          )
         )}
       </div>
       {previewOpen && url && (

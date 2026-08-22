@@ -86,7 +86,24 @@ export function ConversationItem({
       </div>
 
       <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
-        <span className={cn('text-sm truncate', unreadCount > 0 ? 'font-semibold text-foreground' : 'font-medium')}>
+        {/*
+          Teams' read/unread contrast, and the only signal that survives when the
+          badge is off-screen mid-scroll: unread is bold at full foreground,
+          already-read drops to regular weight and the muted colour. The active
+          chat keeps full brightness even once read — the row it is sitting on is
+          already highlighted, and dimming the name of the thread you are looking
+          at reads as disabled rather than as read.
+        */}
+        <span
+          className={cn(
+            'text-sm truncate transition-colors',
+            unreadCount > 0
+              ? 'font-bold text-foreground'
+              : isActive
+                ? 'font-medium text-foreground'
+                : 'font-normal text-muted-foreground'
+          )}
+        >
           <HighlightedText text={displayName} query={searchQuery} />
         </span>
         {unreadCount > 0 && (

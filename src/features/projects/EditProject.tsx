@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -176,7 +176,13 @@ const toProjectRole = (role: string | undefined | null): ProjectRole => {
 const EditProject = () => {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    const location = useLocation();
     const { id } = useParams();
+    // Entered from the project details page? Cancel/Save return there rather
+    // than dropping the user into the workspace they weren't looking at.
+    const returnTo = (location.state as { from?: string } | null)?.from === 'details'
+        ? `/projects/${id}/details`
+        : `/projects/${id}`;
     const { user } = useAuth();
     const { currentOrganization } = useOrganization();
     const updateProjectMutation = useUpdateProject();
@@ -1090,7 +1096,7 @@ const EditProject = () => {
             await queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all });
 
             toast.success('Project updated successfully!');
-            navigate(`/projects/${id}`);
+            navigate(returnTo);
         } catch (error) {
             logger.error('Error updating project:', error);
             toast.error('Failed to update project');
@@ -1147,7 +1153,7 @@ const EditProject = () => {
     if (isLoading) {
         return (
             <>
-                <div className="max-w-4xl mx-auto space-y-6">
+                <div className="w-full min-w-0 space-y-6">
                     <div className="flex items-center gap-4">
                         <Skeleton className="h-10 w-10" />
                         <Skeleton className="h-8 w-48" />
@@ -1206,14 +1212,14 @@ const EditProject = () => {
 
     return (
         <>
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="w-full min-w-0 space-y-6">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4 min-w-0 w-full sm:w-auto">
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => navigate(`/projects/${id}`)}
+                            onClick={() => navigate(returnTo)}
                             className="shrink-0"
                         >
                             <ArrowLeft className="h-5 w-5" />
@@ -1224,7 +1230,7 @@ const EditProject = () => {
                         </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                        <Button variant="outline" onClick={() => navigate(`/projects/${id}`)}>
+                        <Button variant="outline" onClick={() => navigate(returnTo)}>
                             Cancel
                         </Button>
                         <Button onClick={handleSave} disabled={isSaving || selectedDepartments.length === 0}>

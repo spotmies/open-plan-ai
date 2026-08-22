@@ -113,7 +113,7 @@ export function AppLayout({ children, noPadding }: AppLayoutProps) {
 
           <main
             className={[
-              noPadding ? 'flex-1 min-h-0 overflow-hidden w-full max-w-full' : `flex-1 min-h-0 overflow-y-auto w-full max-w-full ${isMobile ? 'overflow-x-hidden px-4 pb-4 pt-0' : 'p-6'}`,
+              noPadding ? 'flex-1 min-h-0 overflow-hidden w-full max-w-full' : `flex-1 min-h-0 overflow-y-auto w-full max-w-full ${isMobile ? 'overflow-x-hidden px-4 pb-4 pt-4' : 'p-4'}`,
               showMobileBottomNav ? 'pb-24' : '',
             ].join(' ')}
           >

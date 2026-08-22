@@ -9,6 +9,9 @@ export interface ProjectTag {
   projectId: string;
   name: string;
   color: string;
+  /** Live task/issue usage, from the list endpoint — 0 means the tag is deletable. */
+  taskCount: number;
+  issueCount: number;
 }
 
 export interface CreateTagInput {
@@ -27,6 +30,8 @@ interface ApiTag {
   color: string;
   createdAt: string;
   updatedAt: string;
+  taskCount?: number;
+  issueCount?: number;
 }
 
 function fromApi(raw: ApiTag): ProjectTag {
@@ -35,6 +40,9 @@ function fromApi(raw: ApiTag): ProjectTag {
     projectId: raw.projectId,
     name: raw.name,
     color: raw.color,
+    // Only the list endpoint reports usage; create/update responses omit it.
+    taskCount: raw.taskCount ?? 0,
+    issueCount: raw.issueCount ?? 0,
   };
 }
 

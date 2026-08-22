@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, Forward, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Bookmark } from 'lucide-react';
+import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, Forward, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Bookmark, ImageOff } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -183,6 +183,9 @@ export function MediaGroupBubble({
   const containerAspect = visible.length === 2 ? 'aspect-[2/1]' : 'aspect-square';
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  // Undecodable uploads (truncated or edited files) used to leave a blank tile
+  // in the grid — keep the tile and name the file instead.
+  const [failedImageIds, setFailedImageIds] = useState<Set<string>>(new Set());
   const [isHovered, setIsHovered] = useState(false);
   const [isMoreEmojiOpen, setIsMoreEmojiOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -359,20 +362,28 @@ export function MediaGroupBubble({
           >
             {visible.map((img, i) => {
               const isLastVisibleWithMore = hiddenCount > 0 && i === visible.length - 1;
+              const failed = failedImageIds.has(messages[i].id);
               return (
                 <button
                   key={messages[i].id}
                   type="button"
                   className={cn('relative group w-full h-full overflow-hidden', tileClass(i, visible.length))}
-                  onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); }}
-                  title="Click to view"
+                  onClick={(e) => { e.stopPropagation(); if (!failed) setLightboxIndex(i); }}
+                  title={failed ? "This image can't be displayed" : 'Click to view'}
                 >
-                  <img
-                    src={img.url}
-                    alt={img.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
+                  {failed ? (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted px-2 text-muted-foreground">
+                      <ImageOff className="h-5 w-5 shrink-0" />
+                      <span className="w-full truncate text-center text-[10px]">{img.name}</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={img.url}
+                      alt={img.name}
+                      className="w-full h-full object-cover"
+                      onError={() => setFailedImageIds((prev) => new Set(prev).add(messages[i].id))}
+                    />
+                  )}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                   {isLastVisibleWithMore && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center">

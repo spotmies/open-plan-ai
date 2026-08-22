@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ProjectListProgress } from './components/ProjectListProgress';
-import { Plus, Search, Grid3X3, List, Users, MoreVertical, Eye, Pencil, Calendar, Link as LinkIcon, Paperclip, FileText, Flag, Target, FolderOpen, Package, X, Trash2, AlertTriangle, Loader2, Tag, Layers, Building2, Pin, PinOff } from 'lucide-react';
+import { Plus, Search, Grid3X3, List, Users, MoreVertical, Eye, Pencil, Paperclip, FileText, FolderOpen, X, AlertTriangle, Loader2, Pin, PinOff, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import {
@@ -28,7 +27,6 @@ import {
 import { useProjects, useDeleteProject, useTogglePinProject } from '@/hooks/useProjects';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useProjectAttachments } from '@/hooks/useProjectAttachments';
-import { useProjectLinks } from '@/hooks/useProjectLinks';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -45,64 +43,15 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
+import {
+  formatDisplayDate,
+  getAttachmentMimeType,
+  isImageAttachment,
+  stageColors,
+  stageLabels,
+} from './utils/projectDisplay';
 
-const stageColors = {
-  concept: 'bg-muted text-muted-foreground',
-  design: 'bg-chart-1/10 text-chart-1',
-  development: 'bg-chart-2/10 text-chart-2',
-  testing: 'bg-chart-4/10 text-chart-4',
-  production: 'bg-chart-3/10 text-chart-3',
-};
 
-const stageLabels = {
-  concept: 'Concept',
-  design: 'Design',
-  development: 'Development',
-  testing: 'Testing',
-  production: 'Production',
-};
-
-// Mirrors the department list in NewProject.tsx / EditProject.tsx
-const departmentLabels: Record<string, string> = {
-  design: 'Design',
-  hardware: 'Hardware',
-  software: 'Software',
-  mechanical: 'Mechanical',
-  electrical: 'Electrical',
-  firmware: 'Firmware',
-  testing: 'Testing & QA',
-  manufacturing: 'Manufacturing',
-  documentation: 'Documentation',
-};
-
-const formatDepartmentLabel = (id: string) => {
-  if (departmentLabels[id]) return departmentLabels[id];
-  const cleaned = id.startsWith('custom-') ? id.slice('custom-'.length) : id;
-  return cleaned.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-};
-
-const formatDisplayDate = (value?: string | number | Date | null) => {
-  if (!value) return 'N/A';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'N/A';
-
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-
-  return `${day}-${month}-${year}`;
-};
-
-const getAttachmentMimeType = (attachment: any): string => {
-  const mime = attachment?.mimeType || attachment?.mime_type;
-  if (mime) return mime;
-  const name: string = attachment?.file_name || attachment?.fileName || attachment?.name || '';
-  const ext = name.split('.').pop()?.toLowerCase();
-  if (ext === 'pdf') return 'application/pdf';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return `image/${ext}`;
-  return '';
-};
-const isImageAttachment = (attachment: any) => getAttachmentMimeType(attachment).startsWith('image/');
 
 function ProjectTeamHoverCard({ projectId, memberCount }: { projectId: string; memberCount?: number }) {
   const [open, setOpen] = useState(false);
@@ -176,7 +125,6 @@ export default function Projects() {
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const PROJECTS_PER_PAGE = 9;
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [filesDialogOpen, setFilesDialogOpen] = useState(false);
   const [selectedFilesProjectId, setSelectedFilesProjectId] = useState<string | null>(null);
@@ -184,12 +132,7 @@ export default function Projects() {
   const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
 
   // Fetch full project details when a project is selected for viewing details
-  const { data: selectedProjectDetails, isLoading: isLoadingDetails } = useProjectDetail(selectedProjectId || undefined);
-  // getProjectById doesn't return a populated `team` array — fetch members from the
-  // dedicated endpoint instead (same source the card's team hover-card uses).
-  const { data: selectedProjectTeam = [], isLoading: isLoadingTeam } = useProjectMembers(selectedProjectId || undefined);
-  const { data: projectAttachments = [] } = useProjectAttachments(selectedProjectId || undefined);
-  const { data: projectLinks = [] } = useProjectLinks(selectedProjectId || undefined);
+  const { data: selectedProjectDetails } = useProjectDetail(selectedProjectId || undefined);
   const { data: projectFiles = [], isLoading: isLoadingFiles } = useProjectAttachments(selectedFilesProjectId || undefined);
   const deleteProjectMutation = useDeleteProject();
   const togglePinMutation = useTogglePinProject();
@@ -231,8 +174,16 @@ export default function Projects() {
   const handleViewDetails = (projectId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    navigate(`/projects/${projectId}/details`);
+  };
+
+  // Delete lives on the card menu now that the details dialog it used to sit
+  // inside has been replaced by the full details page.
+  const handleRequestDelete = (projectId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setSelectedProjectId(projectId);
-    setDetailsDialogOpen(true);
+    setDeleteProjectDialogOpen(true);
   };
 
   const handleViewFiles = (projectId: string, e: React.MouseEvent) => {
@@ -257,15 +208,6 @@ export default function Projects() {
     });
   };
 
-  const canEditSelectedProject = (() => {
-    if (!selectedProjectDetails || !user?.id) return false;
-    if (selectedProjectDetails.createdBy === user.id) return true;
-    const role = (selectedProjectDetails.myRole || '').toLowerCase();
-    return role === 'admin';
-  })();
-
-  const isProjectOwner = canEditSelectedProject;
-
   const canEditProject = (project: { createdBy?: string; myRole?: string }) => {
     if (!user?.id) return false;
     if (project.createdBy === user.id) return true;
@@ -283,7 +225,6 @@ export default function Projects() {
       toast.success('Project deleted successfully');
       setDeleteProjectDialogOpen(false);
       setDeleteProjectConfirmText('');
-      setDetailsDialogOpen(false);
       setSelectedProjectId(null);
     } catch (error) {
       logger.error('Error deleting project:', error);
@@ -497,10 +438,20 @@ export default function Projects() {
                               View Files
                             </DropdownMenuItem>
                             {canEditProject(project) && (
-                              <DropdownMenuItem onClick={(e) => handleEdit(project.id, e)}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem onClick={(e) => handleEdit(project.id, e)}>
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={(e) => handleRequestDelete(project.id, e)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -562,322 +513,6 @@ export default function Projects() {
           </div>
         )}
       </div>
-
-      {/* Project Details Dialog */}
-      <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-        <DialogContent className="max-w-2xl h-[85vh] w-[min(95vw,42rem)] overflow-hidden p-0 gap-0 flex flex-col">
-          <DialogHeader className="px-6 py-4 border-b bg-background shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              {selectedProjectDetails?.name || 'Project Details'}
-              {selectedProjectDetails?.stage && (
-                <Badge variant="secondary" className={cn(stageColors[selectedProjectDetails.stage as keyof typeof stageColors] || stageColors.concept)}>
-                  {stageLabels[selectedProjectDetails.stage as keyof typeof stageLabels] || selectedProjectDetails.stage}
-                </Badge>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            {isLoadingDetails ? (
-              <div className="space-y-4">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            ) : selectedProjectDetails ? (
-              <div className="space-y-6">
-                {/* Description */}
-                {selectedProjectDetails.description && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      Description
-                    </h4>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                      {selectedProjectDetails.description}
-                    </p>
-                  </div>
-                )}
-
-                {/* Project Type & Stage */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Tag className="h-4 w-4" />
-                      Project Type
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedProjectDetails.type || 'Not set'}
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Layers className="h-4 w-4" />
-                      Project Stage
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      {stageLabels[selectedProjectDetails.stage as keyof typeof stageLabels] || selectedProjectDetails.stage}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Departments */}
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Building2 className="h-4 w-4" />
-                    Department{(selectedProjectDetails.departments?.length ?? 0) !== 1 ? 's' : ''}
-                  </h4>
-                  {selectedProjectDetails.departments && selectedProjectDetails.departments.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedProjectDetails.departments.map((deptId) => (
-                        <Badge key={deptId} variant="outline" className="text-xs font-normal">
-                          {formatDepartmentLabel(deptId)}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No departments assigned.</p>
-                  )}
-                </div>
-
-                {/* Progress */}
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Target className="h-4 w-4" />
-                    Progress
-                  </h4>
-                  <div className="flex items-center gap-3">
-                    <Progress value={selectedProjectDetails.progress || 0} className="flex-1" />
-                    <span className="text-sm font-medium">{selectedProjectDetails.progress || 0}%</span>
-                  </div>
-                </div>
-
-                {/* Dates */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      Start Date
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedProjectDetails.startDate ? formatDisplayDate(selectedProjectDetails.startDate) : 'Not set'}
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Flag className="h-4 w-4" />
-                      Target Date
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedProjectDetails.targetDate ? formatDisplayDate(selectedProjectDetails.targetDate) : 'Not set'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Team Members */}
-                <div>
-                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Team Members {selectedProjectTeam.length > 0 && `(${selectedProjectTeam.length})`}
-                  </h4>
-                  {isLoadingTeam ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <Skeleton className="h-12 w-full" />
-                      <Skeleton className="h-12 w-full" />
-                    </div>
-                  ) : selectedProjectTeam.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {selectedProjectTeam.map((member) => (
-                        <div key={member.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
-                          <Avatar className="h-8 w-8 shrink-0">
-                            <AvatarImage src={member.avatar || undefined} alt={member.name} referrerPolicy="no-referrer" />
-                            <AvatarFallback className="text-[11px] font-bold text-primary bg-primary/10">
-                              {member.initials}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">{member.name}</p>
-                            {member.role && (
-                              <p className="text-[11px] text-muted-foreground capitalize flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-primary/40" />
-                                {member.role.replace('_', ' ')}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No team members assigned yet.</p>
-                  )}
-                </div>
-
-                {/* Attachments */}
-                {projectAttachments.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Paperclip className="h-4 w-4" />
-                      Attachments ({projectAttachments.length})
-                    </h4>
-                    <div className="space-y-2">
-                      {projectAttachments.map((attachment: any) => {
-                        const attachmentName = attachment.file_name || attachment.fileName || attachment.name || 'Untitled file';
-                        const rawUrl = attachment.url || attachment.fileUrl;
-                        const previewUrl = resolveFileUrl(rawUrl) ?? rawUrl;
-                        return (
-                          <div
-                            key={attachment.id}
-                            className={cn(
-                              "flex items-center gap-2 p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors",
-                              previewUrl ? "cursor-pointer" : "cursor-default"
-                            )}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (previewUrl) setPreviewFile(attachment);
-                            }}
-                          >
-                            {previewUrl && isImageAttachment(attachment) ? (
-                              <img
-                                src={previewUrl}
-                                alt={attachmentName}
-                                className="h-8 w-8 rounded object-cover shrink-0"
-                              />
-                            ) : (
-                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                            )}
-                            <span className="text-sm flex-1 truncate">{attachmentName}</span>
-                            {previewUrl && (
-                              <Eye className="h-4 w-4 text-primary shrink-0" />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Links */}
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <LinkIcon className="h-4 w-4" />
-                    Project Links {projectLinks.length > 0 && `(${projectLinks.length})`}
-                  </h4>
-                  {projectLinks.length > 0 ? (
-                    <div className="space-y-2">
-                      {projectLinks.map((link: any) => (
-                        <div key={link.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
-                          <LinkIcon className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm flex-1">{link.title || link.name}</span>
-                          {link.url && (
-                            <a
-                              href={link.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline truncate max-w-[200px]"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {link.url}
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No links added.</p>
-                  )}
-                </div>
-
-                {/* Modules List */}
-                {selectedProjectDetails.projectModules && selectedProjectDetails.projectModules.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Package className="h-4 w-4" />
-                      Modules ({selectedProjectDetails.projectModules.length})
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedProjectDetails.projectModules.map((module) => (
-                        <Badge key={module.id} variant="outline" className="text-xs font-normal">
-                          <span className="font-semibold">{module.name}</span>
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Milestones count */}
-                {selectedProjectDetails.milestones && selectedProjectDetails.milestones.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Flag className="h-4 w-4" />
-                      Milestones ({selectedProjectDetails.milestones.length})
-                    </h4>
-                    <div className="space-y-1">
-                      {selectedProjectDetails.milestones.slice(0, 3).map((milestone) => (
-                        <div key={milestone.id} className="flex items-center gap-2 text-sm">
-                          <div className={cn(
-                            "w-2 h-2 rounded-full",
-                            milestone.completed ? "bg-green-500" : "bg-muted-foreground"
-                          )} />
-                          <span className={milestone.completed ? "line-through text-muted-foreground" : ""}>
-                            {milestone.title}
-                          </span>
-                        </div>
-                      ))}
-                      {selectedProjectDetails.milestones.length > 3 && (
-                        <p className="text-xs text-muted-foreground">
-                          +{selectedProjectDetails.milestones.length - 3} more
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No project details available.</p>
-            )}
-          </div>
-
-          {selectedProjectDetails && !isLoadingDetails && (
-            <div className="px-6 py-4 border-t bg-background shrink-0 space-y-2">
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setDetailsDialogOpen(false);
-                    navigate(`/projects/${selectedProjectId}`);
-                  }}
-                >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Open Project
-                </Button>
-                {canEditSelectedProject && (
-                  <Button
-                    className="flex-1"
-                    onClick={() => {
-                      setDetailsDialogOpen(false);
-                      navigate(`/projects/${selectedProjectId}/edit`);
-                    }}
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit Project
-                  </Button>
-                )}
-              </div>
-              {isProjectOwner && (
-                <Button
-                  variant="destructive"
-                  className="w-full"
-                  onClick={() => setDeleteProjectDialogOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Project
-                </Button>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Project Confirmation Dialog */}
       <Dialog

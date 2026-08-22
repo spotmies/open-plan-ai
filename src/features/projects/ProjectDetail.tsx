@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag, ChevronDown, ChevronLeft } from 'lucide-react';
+import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag, ChevronDown, ChevronLeft, FolderOpen } from 'lucide-react';
 import { BOMView } from './components/BOMView';
 import RequirementsView from './components/RequirementsView';
 import { ECOView } from './components/ECOView';
@@ -1425,6 +1425,20 @@ export default function ProjectDetail() {
               {/* Right Side: Team + Chat + Add Button */}
               <div className="flex items-center gap-2 shrink-0 justify-end md:w-auto">
                 {!isMobile && <ProjectProgressPopover breakdown={progressBreakdown} />}
+                {/* Project details — the full record (description, dates,
+                    departments, links). Unreachable from inside the project
+                    before this. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 whitespace-nowrap rounded-lg px-2 md:px-3"
+                  onClick={() => navigate(`/projects/${id}/details`)}
+                  title="Project details"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  <span className="hidden md:inline">Project Details</span>
+                </Button>
                 {/* Start Chat */}
                 <Button
                   type="button"

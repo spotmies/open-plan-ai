@@ -100,7 +100,7 @@ import { formatModifiedFields } from './modifiedFields';
 import { attachmentsService } from '@/services/attachments.service';
 import { commentsService } from '@/services/comments.service';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectTags, useCreateTag } from '@/hooks/useProjectTags';
+import { useProjectTags, useCreateTag, useDeleteTag } from '@/hooks/useProjectTags';
 import { getFallbackTagColor } from '@/lib/tagColors';
 import { useIssueColumns } from '@/hooks/useIssueColumns';
 import { DEFAULT_ISSUE_COLUMNS } from '@/services/issueColumns.service';
@@ -240,6 +240,34 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
 
     const { data: projectTags = [] } = useProjectTags(projectId);
     const createTagMutation = useCreateTag(projectId);
+    // A tag leaves the project registry only when nothing references it —
+    // deleting one still attached would strip it from every task and issue
+    // silently, so those are refused with a message naming what holds it.
+    // The backend enforces the same rule.
+    const deleteTagMutation = useDeleteTag(projectId);
+    const [tagPendingDelete, setTagPendingDelete] = useState<{ id: string; name: string } | null>(null);
+
+    const requestTagDelete = (e: React.MouseEvent, tagName: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const registryTag = projectTags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+        if (!registryTag) {
+            toast.error(`"${tagName}" isn't a saved project tag yet`);
+            return;
+        }
+        const { taskCount, issueCount } = registryTag;
+        if (taskCount > 0 || issueCount > 0) {
+            const parts = [
+                taskCount > 0 ? `${taskCount} task${taskCount === 1 ? '' : 's'}` : null,
+                issueCount > 0 ? `${issueCount} issue${issueCount === 1 ? '' : 's'}` : null,
+            ].filter(Boolean);
+            toast.error(`"${registryTag.name}" is still in use`, {
+                description: `Attached to ${parts.join(' and ')}. Remove it there before deleting the tag.`,
+            });
+            return;
+        }
+        setTagPendingDelete({ id: registryTag.id, name: registryTag.name });
+    };
     const tagColorMap = useMemo(() => {
         const map = new Map<string, string>();
         projectTags.forEach((t) => map.set(t.name.toLowerCase(), t.color));
@@ -716,6 +744,26 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                         />
                     </div>
                 </div>
+
+                <ConfirmationDialog
+                    open={!!tagPendingDelete}
+                    onOpenChange={(open) => { if (!open) setTagPendingDelete(null); }}
+                    onConfirm={async () => {
+                        if (!tagPendingDelete) return;
+                        const { id, name } = tagPendingDelete;
+                        setTagPendingDelete(null);
+                        try {
+                            await deleteTagMutation.mutateAsync(id);
+                            toast.success(`Tag "${name}" deleted`);
+                        } catch {
+                            /* useDeleteTag surfaces the server message */
+                        }
+                    }}
+                    title="Delete tag"
+                    description={`"${tagPendingDelete?.name ?? ''}" isn't used by any task or issue. Deleting removes it from this project's tag list.`}
+                    confirmText="Delete"
+                    variant="destructive"
+                />
 
                 <ConfirmationDialog
                     open={showDeleteConfirm}
@@ -1320,10 +1368,19 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                                                                 setIsTagPopoverOpen(false);
                                                                 setTagSearch('');
                                                             }}
-                                                            className="cursor-pointer flex items-center gap-2"
+                                                            className="cursor-pointer flex items-center gap-2 group/tag"
                                                         >
                                                             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                                                            <span>{item.name}</span>
+                                                            <span className="flex-1 truncate">{item.name}</span>
+                                                            <button
+                                                                type="button"
+                                                                aria-label={`Delete tag ${item.name}`}
+                                                                title="Delete tag from this project"
+                                                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover/tag:opacity-100"
+                                                                onClick={(e) => requestTagDelete(e, item.name)}
+                                                            >
+                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                            </button>
                                                         </CommandItem>
                                                     ))}
                                             </CommandList>

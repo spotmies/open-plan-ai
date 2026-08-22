@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { attachmentsService } from '@/services/attachments.service';
-import { format, isBefore, isAfter, parseISO } from 'date-fns';
+import { format, isBefore, isAfter, parseISO, startOfDay } from 'date-fns';
 import {
   Dialog,
   DialogContent,
@@ -112,7 +112,7 @@ import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { FilePreviewDialog, FilePreviewTarget, getVideoThumbnail } from '@/components/FilePreviewDialog';
-import { useProjectTags, useCreateTag, useUpdateTag } from '@/hooks/useProjectTags';
+import { useProjectTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks/useProjectTags';
 import { getFallbackTagColor } from '@/lib/tagColors';
 import { Switch } from '@/components/ui/switch';
 import { SlashBlockEditor } from '@/components/ui/SlashBlockEditor';
@@ -378,6 +378,35 @@ export const TaskDetailModal = ({
     [editedTask.tags, tagSuggestions]
   );
 
+  // A tag can only be removed from the project registry when nothing still
+  // references it — deleting one that's in use would silently strip it from
+  // every task and issue that had it, so those are refused with a message
+  // naming what still holds it. The backend enforces the same rule.
+  const deleteTagMutation = useDeleteTag(effectiveProjectId);
+  const [tagPendingDelete, setTagPendingDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const requestTagDelete = (e: React.MouseEvent, tagName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const registryTag = projectTags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+    if (!registryTag) {
+      toast.error(`"${tagName}" isn't a saved project tag yet`);
+      return;
+    }
+    const { taskCount, issueCount } = registryTag;
+    if (taskCount > 0 || issueCount > 0) {
+      const parts = [
+        taskCount > 0 ? `${taskCount} task${taskCount === 1 ? '' : 's'}` : null,
+        issueCount > 0 ? `${issueCount} issue${issueCount === 1 ? '' : 's'}` : null,
+      ].filter(Boolean);
+      toast.error(`"${registryTag.name}" is still in use`, {
+        description: `Attached to ${parts.join(' and ')}. Remove it there before deleting the tag.`,
+      });
+      return;
+    }
+    setTagPendingDelete({ id: registryTag.id, name: registryTag.name });
+  };
+
   // Always upserts against the shared project tag registry first — this is
   // what makes a tag created here show up (with the same color) when adding
   // tags to an issue, or any other task, in the same project.
@@ -639,6 +668,11 @@ export const TaskDetailModal = ({
 
     if (!editedTask.startDate) {
       toast.error('Start date is required');
+      return;
+    }
+
+    if (isBefore(startOfDay(parseISO(editedTask.startDate)), startOfDay(new Date()))) {
+      toast.error('Start date cannot be in the past');
       return;
     }
 
@@ -1623,7 +1657,12 @@ export const TaskDetailModal = ({
                               handleFieldChange('startDate', toDateOnly(date || undefined));
                               setIsStartDatePopoverOpen(false);
                             }}
+                            fromDate={mode === 'create' ? startOfDay(new Date()) : undefined}
                             disabled={(date) => {
+                              // New tasks can only start today or later
+                              if (mode === 'create' && isBefore(startOfDay(date), startOfDay(new Date()))) {
+                                return true;
+                              }
                               if (editedTask.dueDate) {
                                 return isAfter(date, parseISO(editedTask.dueDate));
                               }
@@ -2148,23 +2187,46 @@ export const TaskDetailModal = ({
                                 </div>
                               </div>
 
-                              {availableTagSuggestions.length > 0 && (
-                                <div className="max-h-[180px] overflow-y-auto p-1">
-                                  {availableTagSuggestions
-                                    .filter(tag => !tagSearch.trim() || tag.toLowerCase().includes(tagSearch.toLowerCase()))
-                                    .map((tag) => (
-                                      <button
-                                        key={tag}
-                                        type="button"
-                                        className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2"
-                                        onClick={() => addTag(tag)}
-                                      >
-                                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getTagColor(tag) }} />
-                                        {tag}
-                                      </button>
-                                    ))}
-                                </div>
-                              )}
+                              {/* cmdk's CommandList owns the scroll here — the plain
+                                  scrolling div this replaced sat inside the modal's
+                                  ScrollArea and lost the wheel to it, so the list
+                                  couldn't be scrolled the way the issue picker can. */}
+                              <Command shouldFilter={false}>
+                                <CommandList className="max-h-[180px] overflow-y-auto">
+                                  {/* Own empty state rather than CommandEmpty: filtering is
+                                      done here (shouldFilter={false}), so cmdk's own
+                                      empty detection never fires. */}
+                                  {availableTagSuggestions.filter(tag => !tagSearch.trim() || tag.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 && (
+                                    <div className="py-3 text-center text-sm text-muted-foreground">
+                                      No matching tags.
+                                    </div>
+                                  )}
+                                  <CommandGroup>
+                                    {availableTagSuggestions
+                                      .filter(tag => !tagSearch.trim() || tag.toLowerCase().includes(tagSearch.toLowerCase()))
+                                      .map((tag) => (
+                                        <CommandItem
+                                          key={tag}
+                                          value={tag}
+                                          onSelect={() => addTag(tag)}
+                                          className="cursor-pointer flex items-center gap-2 group/tag"
+                                        >
+                                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getTagColor(tag) }} />
+                                          <span className="flex-1 truncate">{tag}</span>
+                                          <button
+                                            type="button"
+                                            aria-label={`Delete tag ${tag}`}
+                                            title="Delete tag from this project"
+                                            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover/tag:opacity-100"
+                                            onClick={(e) => requestTagDelete(e, tag)}
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </button>
+                                        </CommandItem>
+                                      ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
 
                               <div className="border-t p-1.5">
                                 <button
@@ -2961,6 +3023,25 @@ export const TaskDetailModal = ({
             </div>
           )}
         </DialogContent>
+        <ConfirmationDialog
+          open={!!tagPendingDelete}
+          onOpenChange={(open) => { if (!open) setTagPendingDelete(null); }}
+          onConfirm={async () => {
+            if (!tagPendingDelete) return;
+            const { id, name } = tagPendingDelete;
+            setTagPendingDelete(null);
+            try {
+              await deleteTagMutation.mutateAsync(id);
+              toast.success(`Tag "${name}" deleted`);
+            } catch {
+              /* useDeleteTag surfaces the server message */
+            }
+          }}
+          title="Delete tag"
+          description={`"${tagPendingDelete?.name ?? ''}" isn't used by any task or issue. Deleting removes it from this project's tag list.`}
+          confirmText="Delete"
+          variant="destructive"
+        />
         <ConfirmationDialog
           open={showDeleteConfirm}
           onOpenChange={setShowDeleteConfirm}

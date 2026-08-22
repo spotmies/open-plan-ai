@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, ExternalLink, MessageCircle, Users } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -33,7 +33,7 @@ export function ProjectChatPanel({ open, onOpenChange, conversationId }: Project
   const navigate = useNavigate();
   const { user } = useAuth();
   const { setActiveConversation } = useChatStore();
-  const { conversations } = useConversations();
+  const { conversations, refetch: refetchConversations } = useConversations();
   const activeConv = conversations.find((c) => c.id === conversationId);
 
   const activeId = open ? conversationId : null;
@@ -47,6 +47,39 @@ export function ProjectChatPanel({ open, onOpenChange, conversationId }: Project
     setActiveConversation(activeId ?? null);
     return () => setActiveConversation(null);
   }, [activeId, setActiveConversation]);
+
+  // The store's conversation list is fetched once on mount, so a project group
+  // that `ensureProjectGroup` just created isn't in it — leaving the panel with
+  // no name, no members and no composer until a full reload. Pull the list once
+  // per unresolved id instead of rendering an empty shell.
+  const refetchRef = useRef(refetchConversations);
+  refetchRef.current = refetchConversations;
+  const requestedIdRef = useRef<string | null>(null);
+  const [resolveFailed, setResolveFailed] = useState(false);
+
+  useEffect(() => {
+    if (!open || !conversationId || activeConv) {
+      if (activeConv) requestedIdRef.current = null;
+      setResolveFailed(false);
+      return;
+    }
+    if (requestedIdRef.current === conversationId) return;
+    requestedIdRef.current = conversationId;
+
+    let cancelled = false;
+    void Promise.resolve(refetchRef.current()).then(() => {
+      if (cancelled) return;
+      // Read the store directly — `conversations` here is the pre-fetch snapshot.
+      const found = useChatStore.getState().conversations.some((c) => c.id === conversationId);
+      setResolveFailed(!found);
+    });
+    return () => { cancelled = true; };
+  }, [open, conversationId, activeConv]);
+
+  const retryResolve = () => {
+    requestedIdRef.current = null;
+    setResolveFailed(false);
+  };
 
   if (!open) return null;
 
@@ -111,7 +144,17 @@ export function ProjectChatPanel({ open, onOpenChange, conversationId }: Project
       </div>
 
       {!activeConv ? (
-        <div className="flex-1" />
+        !conversationId ? (
+          <div className="flex-1" />
+        ) : resolveFailed ? (
+          <EmptyState
+            type="error"
+            description="Couldn't load this project chat. It may still be getting set up."
+            onRetry={retryResolve}
+          />
+        ) : (
+          <MessageAreaSkeleton />
+        )
       ) : loading ? (
         <MessageAreaSkeleton />
       ) : error && messages.length === 0 ? (
