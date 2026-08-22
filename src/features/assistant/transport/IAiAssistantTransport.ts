@@ -1,4 +1,4 @@
-import type { AskUserQuestion, AssistantCard } from '../assistantData';
+import type { AskUserQuestion, AssistantCard, AssistantProposalEvent, AssistantProposalUpdateEvent } from '../assistantData';
 
 export type Unsubscribe = () => void;
 
@@ -19,6 +19,13 @@ export interface IAiAssistantTransport {
   onToolResult(handler: (tool: string, summary: string) => void): Unsubscribe;
   onQuestion(handler: (questions: AskUserQuestion[]) => void): Unsubscribe;
   onCard(handler: (card: AssistantCard) => void): Unsubscribe;
+  // Act (phase 2) — a new pending confirmation card, and any later status
+  // change to one (confirmed/rejected/expired/superseded/executed). Both are
+  // optimizations only: the conversation-detail REST fetch already returns
+  // every proposal (I15), so a handler here just triggers a refetch rather
+  // than being the source of truth for proposal state.
+  onProposal(handler: (proposal: AssistantProposalEvent) => void): Unsubscribe;
+  onProposalUpdate(handler: (update: AssistantProposalUpdateEvent) => void): Unsubscribe;
   onDone(handler: (messageId: string) => void): Unsubscribe;
   onStopped(handler: (messageId: string | null) => void): Unsubscribe;
   onError(handler: (code: string, message: string) => void): Unsubscribe;

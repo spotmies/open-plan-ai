@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ClipboardCheck,
   Flag,
-  GitPullRequest,
   LayoutGrid,
   Layers,
   ListChecks,
@@ -42,7 +41,6 @@ export const ASSISTANT_CATEGORIES: AssistantCategoryMeta[] = [
     title: 'Act',
     icon: Wand2,
     description: 'Create tasks, raise issues, shift gates, import a BOM revision.',
-    hidden: true,
   },
   {
     id: 'build',
@@ -62,12 +60,6 @@ export interface AssistantSuggestion {
 }
 
 export const ASSISTANT_SUGGESTIONS: AssistantSuggestion[] = [
-  // Act
-  { id: 'act-create-task', category: 'act', icon: ClipboardCheck, text: 'Create a task "power tree review" under Power module, assign Sam, due Friday' },
-  { id: 'act-move-gate', category: 'act', icon: Flag, text: 'Move the DVT gate to March 12' },
-  { id: 'act-assign-backlog', category: 'act', icon: UserPlus, text: 'Assign all unassigned firmware tasks to the embedded team' },
-  { id: 'act-acceptance-criteria', category: 'act', icon: ClipboardCheck, text: 'Generate acceptance criteria for SYS-006' },
-  { id: 'act-check-conflicts', category: 'act', icon: Shield, text: 'Check Signal Processing requirements for conflicts' },
   // Build
   { id: 'build-new-project', category: 'build', icon: LayoutGrid, text: 'Create a new project from these documents' },
   { id: 'build-requirements', category: 'build', icon: LayoutGrid, text: 'Create requirements for this project from these notes' },
@@ -94,6 +86,29 @@ export function buildAskSuggestions(projects: Pick<Project, 'name'>[]): Assistan
   ];
 }
 
+/**
+ * Act-category suggestions, generated from the org's real projects the same
+ * way buildAskSuggestions() is — round-robins real project names in rather
+ * than a fixed example (no invented module/person/requirement-id specifics,
+ * since none of that is loaded at the assistant empty-state yet). Every
+ * template names a real project explicitly because a propose_* tool needs an
+ * unambiguous destination project to resolve against; "me" resolves to the
+ * signed-in user server-side (see resolveReferences.ts's SELF_REFERENCES),
+ * so it's real data too, not a placeholder. Returns [] when there are no
+ * projects yet — same empty-state contract as buildAskSuggestions.
+ */
+export function buildActSuggestions(projects: Pick<Project, 'name'>[]): AssistantSuggestion[] {
+  if (projects.length === 0) return [];
+  const nameAt = (i: number) => projects[i % projects.length].name;
+  return [
+    { id: 'act-create-task', category: 'act', icon: ClipboardCheck, text: `Create a task in ${nameAt(0)} and assign it to me, due Friday` },
+    { id: 'act-move-milestone', category: 'act', icon: Flag, text: `Push ${nameAt(1)}'s next milestone out by a week` },
+    { id: 'act-raise-issue', category: 'act', icon: AlertTriangle, text: `Raise an issue in ${nameAt(2)} and assign it to me` },
+    { id: 'act-assign-backlog', category: 'act', icon: UserPlus, text: `Assign all unassigned tasks in ${nameAt(3)} to me` },
+    { id: 'act-bom-approve', category: 'act', icon: Layers, text: `Mark a BOM line in ${nameAt(4)} as approved` },
+  ];
+}
+
 // ─── Real conversation/message types (Phase 1 — Ask, read-only) ───────────────
 // Replaces the earlier mock array below — the assistant now talks to a real
 // backend (src/services/assistant.service.ts).
@@ -116,22 +131,11 @@ export function backendScopeToLabel(scope: BackendAiScope): AssistantScope {
   return 'This project';
 }
 
-// ─── Focus entities: multi-select bias layered on top of scope ────────────────
-// 'bom' used to be the only entity with its own scope toggle even though the
-// backend already supported querying all of these regardless of scope — see
-// [[assistant-scope-multiselect-paused]]. New conversations always send
-// scope 'project'/'all_projects' plus an optional focusEntities array;
-// `AiConversationFocusEntity` on the backend is the source of truth this list
-// must match (ai-conversations.types.ts).
-export const ASSISTANT_FOCUS_ENTITIES = [
-  { id: 'tasks', label: 'Tasks', icon: ListChecks },
-  { id: 'issues', label: 'Issues', icon: AlertTriangle },
-  { id: 'milestones', label: 'Milestones', icon: Flag },
-  { id: 'hardware_modules', label: 'Modules', icon: LayoutGrid },
-  { id: 'bom_nodes', label: 'BOM', icon: Layers },
-  { id: 'ecos', label: 'ECO', icon: GitPullRequest },
-] as const;
-export type AssistantFocusEntity = (typeof ASSISTANT_FOCUS_ENTITIES)[number]['id'];
+// The composer's "Focus — pick any" multi-select was removed; this type is kept
+// only because AssistantConversationSummary.focusEntities still reads it back
+// from older conversations. Must match the backend's AiConversationFocusEntity
+// (ai-conversations.types.ts).
+export type AssistantFocusEntity = 'tasks' | 'issues' | 'milestones' | 'hardware_modules' | 'bom_nodes' | 'ecos';
 
 /** Same scope labels, but resolves 'project'/'bom' to the actual project name when known — matches AssistantScopePopover's label. */
 export function resolveConversationScopeLabel(scope: BackendAiScope, projectName?: string): string {
@@ -140,7 +144,11 @@ export function resolveConversationScopeLabel(scope: BackendAiScope, projectName
   return scope === 'bom' ? `${projectName} · BOM` : projectName;
 }
 
-export type AssistantMessageRole = 'user' | 'assistant' | 'tool';
+// 'event' is Act (phase 2): a system-narrated proposal outcome
+// (confirmed/rejected/expired/superseded) — see AssistantEventLine.tsx.
+export type AssistantMessageRole = 'user' | 'assistant' | 'tool' | 'event';
+
+export type AssistantProposalEventType = 'proposal_confirmed' | 'proposal_rejected' | 'proposal_expired' | 'proposal_superseded';
 
 // Ad-hoc file/image attached to the Ask composer — matches the backend's
 // AiMessageAttachment (ai-conversations.types.ts). No relation to project
@@ -171,6 +179,9 @@ export interface AssistantMessage {
   // since only the ask_user recap below consumes it.
   toolCalls?: unknown;
   createdAt: string;
+  // Act (phase 2), role === 'event' only.
+  eventType?: AssistantProposalEventType | null;
+  proposalId?: string | null;
 }
 
 // ─── present_card (see backend presentCard.tool.ts, the authoritative shape) ──
@@ -464,6 +475,165 @@ export function pairAskUserAnswers(questions: AskUserQuestion[], content: string
   });
 }
 
+// ─── Act (phase 2) proposals — matches _shared/preview.ts (backend) exactly ──
+
+export interface ProposalDeepLink {
+  entityType: string;
+  id: string;
+  projectId: string;
+}
+
+export interface ProposalChange {
+  label: string;
+  from: string;
+  to: string;
+}
+
+export interface ProposalField {
+  label: string;
+  value: string;
+}
+
+export interface ProposalItemUpdate {
+  index: number;
+  kind: 'update';
+  title: string;
+  deepLink: ProposalDeepLink;
+  changes: ProposalChange[];
+}
+
+export interface ProposalItemCreate {
+  index: number;
+  kind: 'create';
+  title: string;
+  fields: ProposalField[];
+}
+
+export type ProposalItem = ProposalItemUpdate | ProposalItemCreate;
+
+export interface ProposalWarning {
+  code: string;
+  message: string;
+  itemIndexes: number[];
+}
+
+export interface ProposalPreview {
+  destination: { projectId: string; projectName: string; inferredFrom: 'explicit' | 'pinned' | 'scope' };
+  entityType: string;
+  actionKind: 'create' | 'update' | 'mixed';
+  itemCount: number;
+  noopCount: number;
+  items: ProposalItem[];
+  warnings: ProposalWarning[];
+  rationale?: string;
+}
+
+export interface ProposalItemResult {
+  index: number;
+  kind: 'create' | 'update';
+  status: 'succeeded' | 'failed';
+  entityType: string;
+  entityId?: string;
+  label: string;
+  deepLink?: ProposalDeepLink;
+  error?: { code: string; message: string };
+}
+
+export interface ProposalExecutionResult {
+  version: number;
+  executedAt: string;
+  succeeded: number;
+  failed: number;
+  items: ProposalItemResult[];
+}
+
+export type AssistantProposalStatus =
+  | 'pending'
+  | 'executing'
+  | 'executed'
+  | 'partially_executed'
+  | 'failed'
+  | 'rejected'
+  | 'expired'
+  | 'superseded';
+
+// Server-owned, edit-friendly resolved fields for the review-before-confirm
+// form — real ids/raw enum values (unlike ProposalPreview's display
+// strings). Matches the backend's ProposalFormState (_shared/preview.ts)
+// exactly. 'single' carries every current field value for the one item;
+// 'bulk-shared' carries only the field(s) set identically across every
+// operation, edited as one shared change.
+export interface ProposalFormSharedField {
+  field: string;
+  label: string;
+  value: unknown;
+}
+
+export interface ProposalFormState {
+  mode: 'single' | 'bulk-shared';
+  fields?: Record<string, unknown>;
+  sharedFields?: ProposalFormSharedField[];
+  required: string[];
+}
+
+export interface AssistantProposal {
+  id: string;
+  conversationId: string;
+  messageId: string;
+  projectId: string;
+  toolName: string;
+  entityType: string;
+  actionKind: 'create' | 'update' | 'mixed';
+  preview: ProposalPreview;
+  summary: string;
+  warnings: string[];
+  status: AssistantProposalStatus;
+  result: ProposalExecutionResult | null;
+  rejectedReason: string | null;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  executedAt: string | null;
+  /** Null = the review form hasn't been submitted yet — the card renders that form instead of Confirm/Dismiss. */
+  reviewedAt: string | null;
+  /** Null when there's nothing to prefill a form from (e.g. BOM/ECO proposals, which don't have a review form yet) — the card always renders read-only in that case. */
+  formState: ProposalFormState | null;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** ai:proposal socket payload — a pending card just created. */
+export interface AssistantProposalEvent {
+  proposalId: string;
+  conversationId: string;
+  messageId: string;
+  status: 'pending';
+  summary: string;
+  preview: ProposalPreview;
+  warnings: string[];
+  expiresAt: string;
+  createdAt: string;
+}
+
+/** ai:proposal-update socket payload — a status transition on an existing card. */
+export interface AssistantProposalUpdateEvent {
+  proposalId: string;
+  conversationId: string;
+  status: AssistantProposalStatus;
+  result?: ProposalExecutionResult | null;
+  rejectedReason?: string | null;
+  updatedAt: string;
+}
+
+export function isTerminalProposalStatus(status: AssistantProposalStatus): boolean {
+  return status !== 'pending' && status !== 'executing';
+}
+
+/** True for a role='event' message — a system-narrated proposal outcome (see AssistantEventLine.tsx). */
+export function isProposalEventMessage(message: AssistantMessage): boolean {
+  return message.role === 'event';
+}
+
 export type AssistantConversationStatus = 'active' | 'awaiting_input';
 
 export interface AssistantConversationSummary {
@@ -477,6 +647,8 @@ export interface AssistantConversationSummary {
   pinnedAt: string | null;
   shareId: string | null;
   sharedAt: string | null;
+  /** Act (phase 2) — e.g. "Assigned 14 tasks · 1 failed", rendered as the sidebar outcome chip. Null until a proposal has ever executed in this conversation. */
+  lastActionSummary?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -484,6 +656,9 @@ export interface AssistantConversationSummary {
 export interface AssistantConversationDetail extends AssistantConversationSummary {
   pendingQuestions: AskUserQuestion[] | null;
   messages: AssistantMessage[];
+  // Act (phase 2), I15 — every proposal for this conversation, joined here
+  // so a page refresh reconstructs every card from REST alone.
+  proposals: AssistantProposal[];
 }
 
 // ─── Share (public read-only link) ─────────────────────────────────────────
@@ -498,4 +673,7 @@ export interface AssistantSharedConversation {
   ownerName: string | null;
   sharedAt: string;
   messages: AssistantMessage[];
+  // Act (phase 2) — frozen at share time, rendered read-only (no
+  // Confirm/Dismiss) since this public route has no authenticated session.
+  proposals: AssistantProposal[];
 }

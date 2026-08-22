@@ -192,6 +192,16 @@ export const queryKeys = {
     detail:   (ecoId: string) => ['ecos', 'detail', ecoId] as const,
     ecn:      (ecoId: string) => ['ecos', 'ecn', ecoId] as const,
   },
+  // Inventory
+  inventory: {
+    all:          ['inventory'] as const,
+    stock:        (orgId: string) => ['inventory', 'stock', orgId] as const,
+    orders:       (orgId: string) => ['inventory', 'orders', orgId] as const,
+    transactions: (orgId: string) => ['inventory', 'transactions', orgId] as const,
+    builds:       (orgId: string) => ['inventory', 'builds', orgId] as const,
+    buildBomLines: (orgId: string, buildId: string) => ['inventory', 'builds', orgId, buildId, 'bom-lines'] as const,
+  },
+
   supportLinks: {
     all:      ['support-links'] as const,
     listRoot: (projectId: string) => ['support-links', 'list', projectId] as const,

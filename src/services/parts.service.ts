@@ -64,7 +64,7 @@ export const partsService = {
     if (params?.limit)    query.set('limit', String(params.limit));
     const qs = query.toString();
     const url = qs ? `${ENDPOINTS.PARTS.LIST(orgId)}?${qs}` : ENDPOINTS.PARTS.LIST(orgId);
-    return apiClient.get<ListPartsResult>(url);
+    return apiClient.raw.get(url).then((r) => ({ data: r.data.data, meta: r.data.meta }));
   },
 
   async create(orgId: string, dto: CreatePartDto): Promise<ApiPartResponse> {

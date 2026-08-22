@@ -39,6 +39,14 @@ interface Props {
   parentNode?: BOMNode | null;
   projectId: string;
   orgId: string;
+  /**
+   * Called once import finishes with the ids of every node that now has
+   * newly-imported children (the dialog's parentNode, plus any intermediate
+   * level-0/1/... rows from a multi-level file). The BOM tree view collapses
+   * nodes by default, so without this the imported sub-components are created
+   * successfully but stay invisible until the user manually expands each row.
+   */
+  onImported?: (expandNodeIds: string[]) => void;
 }
 
 // Some spreadsheet exports (e.g. Altium BOM reports) prepend title/metadata
@@ -153,7 +161,7 @@ async function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projectId, orgId }: Props) {
+export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projectId, orgId, onImported }: Props) {
   const [stage, setStage] = useState<'upload' | 'preview' | 'result'>('upload');
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -327,6 +335,10 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
     // which becomes the parentId for the next node at level N.
     // Index 0 is pre-seeded with the dialog's parentNode so level-0 rows attach correctly.
     const parentIdStack: (string | undefined)[] = [parentNode?.id ?? undefined];
+    // Every node that ends up with at least one imported child — the BOM tree view
+    // collapses nodes by default, so these need to be force-expanded after import
+    // or the newly-created sub-components are invisible until manually expanded.
+    const expandIds = new Set<string>();
 
     for (const row of validRows) {
       try {
@@ -360,6 +372,8 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
           ownerId: user?.id,
         });
 
+        if (resolvedParentId) expandIds.add(resolvedParentId);
+
         // Register this node's id as the parent for the next deeper level.
         // Splice to clear any stale entries from a previously deeper branch.
         parentIdStack[level + 1] = node.id;
@@ -372,6 +386,8 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
       setProgress(p => ({ ...p, done: p.done + 1 }));
       setResults([...acc]);
     }
+
+    if (expandIds.size > 0) onImported?.([...expandIds]);
   };
 
   const importing = stage === 'result' && progress.done < progress.total;

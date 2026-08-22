@@ -1,30 +1,28 @@
 // Keeps the Assistant composer's in-progress state (draft text, staged
-// files, scope/project/focus picks) alive across AssistantPanel unmounts —
-// which happen constantly, since navigating to any other tab and back (or
+// files, scope/project picks) alive across AssistantPanel unmounts — which
+// happen constantly, since navigating to any other tab and back (or
 // closing/reopening the floating widget) unmounts and remounts it. Keyed by
 // conversationId (or 'new' for the blank composer), so each thread keeps its
 // own draft, ChatGPT-style, instead of one shared box.
 //
-// Text/scope/project/focus persist to localStorage (survives a full reload);
+// Text/scope/project persist to localStorage (survives a full reload);
 // staged files are kept in-memory only — File objects aren't JSON-serializable,
 // and losing unsent attachments across a hard reload matches ChatGPT's own
 // behavior too.
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AssistantScope, AssistantFocusEntity } from '../assistantData';
+import type { AssistantScope } from '../assistantData';
 
 export interface AssistantDraft {
   value: string;
   scope: AssistantScope;
   selectedProjectId: string | null;
-  focusEntities: AssistantFocusEntity[];
 }
 
 export const EMPTY_ASSISTANT_DRAFT: AssistantDraft = {
   value: '',
   scope: 'All projects',
   selectedProjectId: null,
-  focusEntities: [],
 };
 
 // Stable reference so components defaulting missing map entries to "no
@@ -38,8 +36,8 @@ interface AssistantDraftState {
   lastActiveConversationId: string | null;
   setDraft: (key: string, patch: Partial<AssistantDraft>) => void;
   clearDraft: (key: string) => void;
-  // Clears only the sent message (text/focus/files) once it's on its way,
-  // leaving scope/selectedProjectId in place — see AssistantPanel.handleSend.
+  // Clears only the sent message (text/files) once it's on its way, leaving
+  // scope/selectedProjectId in place — see AssistantPanel.handleSend.
   clearDraftMessage: (key: string) => void;
   // Scope/project picks are meant to survive within a single Assistant visit
   // (e.g. surviving a send) but not outlive it — called when the Assistant
@@ -79,7 +77,7 @@ export const useAssistantDraftStore = create<AssistantDraftState>()(
           const restFiles = { ...state.files };
           delete restFiles[key];
           return {
-            drafts: { ...state.drafts, [key]: { ...existing, value: '', focusEntities: [] } },
+            drafts: { ...state.drafts, [key]: { ...existing, value: '' } },
             files: restFiles,
           };
         }),

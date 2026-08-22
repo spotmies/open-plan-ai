@@ -1206,6 +1206,17 @@ export function BOMView({
 
   const allNodes = useMemo(() => bomFlatAll(rootNodes), [rootNodes]);
 
+  // Force a set of node ids open — used after a bulk import so newly-created
+  // sub-components aren't hidden behind a collapsed parent row.
+  const expandNodes = (ids: string[]) => {
+    setExpanded(prev => {
+      const next = { ...prev };
+      ids.forEach(id => { next[id] = true; });
+      localStorage.setItem('bom_expanded', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const toggle = (id: string) => {
     setExpanded(prev => {
       const next = { ...prev, [id]: !prev[id] };
@@ -1783,6 +1794,7 @@ export function BOMView({
           onClose={() => { setAddImportOpen(false); onAddClose?.(); }}
           projectId={projectId}
           orgId={orgId}
+          onImported={expandNodes}
         />
       )}
 
@@ -1841,6 +1853,7 @@ export function BOMView({
           parentNode={importSubNode}
           projectId={projectId}
           orgId={orgId}
+          onImported={expandNodes}
         />
       )}
 

@@ -1,13 +1,14 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, Loader2, Share2 } from 'lucide-react';
+import { AlertCircle, Share2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Logo } from '@/components/Logo';
 import { queryKeys } from '@/lib/queryClient';
 import { assistantService } from '@/services/assistant.service';
 import { AssistantTranscript } from './components/AssistantTranscript';
-import { resolveConversationScopeLabel } from './assistantData';
+import { resolveConversationScopeLabel, type AssistantProposal } from './assistantData';
 
 // Standalone public page — deliberately outside GuestRoute/ProtectedRoute/
 // AppLayoutOutlet (see App.tsx), so it builds its own minimal chrome rather
@@ -41,8 +42,14 @@ export default function SharedConversation() {
       </header>
 
       {isLoading && (
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 pt-4 md:px-6">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-16 w-[70%] rounded-2xl" />
+            <Skeleton className="h-10 w-[45%] rounded-2xl" />
+            <Skeleton className="h-20 w-[80%] rounded-2xl" />
+            <Skeleton className="h-12 w-[55%] rounded-2xl" />
+          </div>
         </div>
       )}
 
@@ -77,6 +84,10 @@ export default function SharedConversation() {
             onAnswer={() => {}}
             isAnswering={false}
             readOnly
+            proposalsByMessageId={(data.proposals ?? []).reduce<Record<string, AssistantProposal[]>>((acc, p) => {
+              (acc[p.messageId] ??= []).push(p);
+              return acc;
+            }, {})}
           />
         </>
       )}

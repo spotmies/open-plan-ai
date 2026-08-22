@@ -2,7 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import { config } from '@/config';
 import { logger } from '@/services/monitoring/logger';
 import { refreshAccessToken, AUTH_TOKEN_REFRESHED_EVENT } from '@/services/api/client';
-import type { AskUserQuestion, AssistantCard } from '../assistantData';
+import type { AskUserQuestion, AssistantCard, AssistantProposalEvent, AssistantProposalUpdateEvent } from '../assistantData';
 import type { IAiAssistantTransport, Unsubscribe } from './IAiAssistantTransport';
 
 // A second, independent Socket.IO connection — not a fork of an established
@@ -112,6 +112,16 @@ export class SocketIOAiAssistantTransport implements IAiAssistantTransport {
     const wrapped = (payload: { card: AssistantCard }) => handler(payload.card);
     this.socket.on('ai:card', wrapped);
     return () => this.socket.off('ai:card', wrapped);
+  }
+
+  onProposal(handler: (proposal: AssistantProposalEvent) => void): Unsubscribe {
+    this.socket.on('ai:proposal', handler);
+    return () => this.socket.off('ai:proposal', handler);
+  }
+
+  onProposalUpdate(handler: (update: AssistantProposalUpdateEvent) => void): Unsubscribe {
+    this.socket.on('ai:proposal-update', handler);
+    return () => this.socket.off('ai:proposal-update', handler);
   }
 
   onDone(handler: (messageId: string) => void): Unsubscribe {

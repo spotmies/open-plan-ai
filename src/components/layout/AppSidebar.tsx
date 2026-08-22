@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, Settings, Users, Calendar, BarChart3, ListTodo, ChevronsUpDown, Check, Plus, Building2, Loader2, MessageSquare, Plug, Sparkles } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Settings, Users, Calendar, BarChart3, ListTodo, ChevronsUpDown, Check, Plus, Building2, Loader2, MessageSquare, Plug, Sparkles, Warehouse } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { Logo } from '@/components/Logo';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useOrgPermissions } from '@/hooks/useProjectPermissions';
 import { OrganizationSettings } from '@/services/organizations.service';
@@ -43,6 +44,10 @@ const mainNavItems = [{
   title: 'Reports',
   url: '/reports',
   icon: BarChart3
+}, {
+  title: 'Inventory',
+  url: '/inventory',
+  icon: Warehouse
 }, {
   title: 'Chat',
   url: '/chat',
@@ -190,8 +195,16 @@ export function AppSidebar() {
                 <Separator />
                 <div className="max-h-[240px] overflow-y-auto py-1">
                   {orgLoading ? (
-                    <div className="flex items-center justify-center py-6">
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    <div className="flex flex-col gap-1 py-1">
+                      {Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="flex items-center gap-3 px-3 py-2">
+                          <Skeleton className="h-7 w-7 shrink-0 rounded-md" />
+                          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                            <Skeleton className="h-3.5 w-24" />
+                            <Skeleton className="h-2.5 w-16" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : organizations.length === 0 ? (
                     <div className="px-3 py-4 text-center">

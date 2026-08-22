@@ -101,23 +101,17 @@ export function ImageViewerModal({ src, onClose }: { src: string; onClose: () =>
 const ZOOM_SIZE = 240;
 const ZOOM_GAP = 10;
 
-// Part thumbnail that fetches the part's uploaded photo (if any) and falls
-// back to the plain category-icon `PartThumb` when no photo exists. Pass
-// `hoverZoom` to show an Amazon-style enlarged preview on hover (List view).
-export function PartImageThumb({
-  nodeId, cat, size = 32, radius = 7, big = false, hoverZoom = false,
-}: { nodeId: string; cat: BOMCategory; size?: number; radius?: number; big?: boolean; hoverZoom?: boolean }) {
-  const { data: docs } = useBomDocuments(nodeId);
-  const imageUrl = useMemo(() => {
-    const photo = (docs ?? []).find(isImageAttachment);
-    return photo ? resolveFileUrl(photo.fileUrl) : null;
-  }, [docs]);
-
+// Wraps any thumbnail element with an Amazon-style enlarged preview that
+// appears next to it on hover. Pass `enabled={false}` (or omit `imageUrl`)
+// to render `children` inert, e.g. when there's no photo to zoom into.
+export function HoverZoomImage({
+  imageUrl, enabled = true, children,
+}: { imageUrl?: string | null; enabled?: boolean; children: React.ReactNode }) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const [zoomPos, setZoomPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
 
   const handleEnter = () => {
-    if (!hoverZoom || !imageUrl || !anchorRef.current) return;
+    if (!enabled || !imageUrl || !anchorRef.current) return;
     const r = anchorRef.current.getBoundingClientRect();
     const openRight = r.right + ZOOM_GAP + ZOOM_SIZE <= window.innerWidth;
 
@@ -133,8 +127,8 @@ export function PartImageThumb({
 
   return (
     <div ref={anchorRef} onMouseEnter={handleEnter} onMouseLeave={handleLeave} className="shrink-0">
-      <PartThumb cat={cat} size={size} radius={radius} big={big} imageUrl={imageUrl} />
-      {hoverZoom && zoomPos && imageUrl && createPortal(
+      {children}
+      {enabled && zoomPos && imageUrl && createPortal(
         <div
           style={{
             position: 'fixed',
@@ -154,12 +148,31 @@ export function PartImageThumb({
           <img
             src={imageUrl}
             alt=""
-            style={{ maxWidth: ZOOM_SIZE, maxHeight: ZOOM_SIZE, objectFit: 'contain', borderRadius: 6, display: 'block', background: 'hsl(var(--background))' }}
+            style={{ width: ZOOM_SIZE, height: ZOOM_SIZE, objectFit: 'contain', borderRadius: 6, display: 'block', background: 'hsl(var(--background))' }}
           />
         </div>,
         document.body,
       )}
     </div>
+  );
+}
+
+// Part thumbnail that fetches the part's uploaded photo (if any) and falls
+// back to the plain category-icon `PartThumb` when no photo exists. Pass
+// `hoverZoom` to show an Amazon-style enlarged preview on hover (List view).
+export function PartImageThumb({
+  nodeId, cat, size = 32, radius = 7, big = false, hoverZoom = false,
+}: { nodeId: string; cat: BOMCategory; size?: number; radius?: number; big?: boolean; hoverZoom?: boolean }) {
+  const { data: docs } = useBomDocuments(nodeId);
+  const imageUrl = useMemo(() => {
+    const photo = (docs ?? []).find(isImageAttachment);
+    return photo ? resolveFileUrl(photo.fileUrl) : null;
+  }, [docs]);
+
+  return (
+    <HoverZoomImage imageUrl={imageUrl} enabled={hoverZoom}>
+      <PartThumb cat={cat} size={size} radius={radius} big={big} imageUrl={imageUrl} />
+    </HoverZoomImage>
   );
 }
 

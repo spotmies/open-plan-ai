@@ -23,7 +23,7 @@ export function useCreateAssistantConversation() {
 export function useUpdateAssistantConversation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: { title?: string; pinned?: boolean } }) =>
+    mutationFn: ({ id, updates }: { id: string; updates: { title?: string; pinned?: boolean; projectId?: string } }) =>
       assistantService.updateConversation(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.assistant.conversations() });

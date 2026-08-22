@@ -32,6 +32,7 @@ import {
 
 // 404 — eagerly loaded (tiny, always needed)
 import NotFound from "./pages/NotFound";
+// import DebugDialogs from "./DebugDialogs";
 
 // ── Feature routes — lazy loaded for code splitting ───────────────────────────
 const Dashboard     = lazy(() => import("./features/dashboard"));
@@ -51,6 +52,7 @@ const Reports       = lazy(() => import("./features/reports"));
 const Notifications = lazy(() => import("./features/notifications"));
 const Chat          = lazy(() => import("./features/chat"));
 const Integrations  = lazy(() => import("./features/integrations"));
+const Inventory     = lazy(() => import("./features/inventory"));
 const SharedConversation = lazy(() => import("./features/assistant/SharedConversation"));
 
 // ── ReactQueryDevtools — dev only, lazy so it is never in the production bundle
@@ -100,6 +102,7 @@ function AppShell() {
         <Route path="/reset-password"  element={<ResetPasswordPage />} />
         <Route path="/verify-email"    element={<VerifyEmailPage />} />
         <Route path="/join-org"        element={<JoinOrganizationPage />} />
+        {/* <Route path="/debug-dialogs"   element={<DebugDialogs />} /> */}
         <Route
           path="/share/:shareId"
           element={
@@ -265,6 +268,14 @@ function AppShell() {
               element={
                 <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
                   <Integrations />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/inventory"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
+                  <Inventory />
                 </Suspense>
               }
             />

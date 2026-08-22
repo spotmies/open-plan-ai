@@ -11,6 +11,7 @@ import type {
   AssistantConversationSummary,
   AssistantMessage,
   AiMessageAttachment,
+  AssistantProposal,
 } from '../assistantData';
 
 export interface ToolStatusEntry {
@@ -160,6 +161,16 @@ export function useAssistantConversation(conversationId: string | null) {
         setLiveCard(card);
         invalidate();
       }),
+      // Act (phase 2) — both are optimizations only (I15): the conversation
+      // detail fetch already includes every proposal, so a socket event just
+      // triggers the same invalidate()-and-refetch every other live event
+      // here uses, rather than locally splicing proposal state.
+      aiAssistantTransport.onProposal(() => {
+        invalidate();
+      }),
+      aiAssistantTransport.onProposalUpdate(() => {
+        invalidate();
+      }),
       aiAssistantTransport.onDone(() => {
         setIsStreaming(false);
         setStreamingText('');
@@ -254,6 +265,61 @@ export function useAssistantConversation(conversationId: string | null) {
     onError: () => toast.error("Couldn't submit that answer — try again."),
   });
 
+  // Act (phase 2) — confirm/reject never enqueue a model turn (§9.7): no
+  // isStreaming/streamingText resets here, just refetch the conversation
+  // (and the sidebar list, for lastActionSummary) once the server responds.
+  const confirmProposalMutation = useMutation({
+    mutationFn: (proposalId: string) => assistantService.confirmProposal(proposalId),
+    onSuccess: invalidate,
+    onError: (error) => {
+      const status = (error as { response?: { status?: number; data?: { error?: { message?: string } } } })?.response?.status;
+      if (status === 409) {
+        toast.error('This was already confirmed, rejected, or has expired.');
+      } else if (status === 403) {
+        toast.error("You no longer have edit access to this project.");
+      } else {
+        toast.error("Couldn't confirm that change — try again.");
+      }
+      invalidate();
+    },
+  });
+
+  // Same "never enqueues a model turn" shape as confirm/reject — the form's
+  // Submit (first time) or a later Edit resubmit just rewrites the stored
+  // proposal, then a refetch picks up the fresh preview/formState.
+  const reviseProposalMutation = useMutation({
+    mutationFn: ({ proposalId, edits }: { proposalId: string; edits: Record<string, unknown> }) =>
+      assistantService.reviseProposal(proposalId, edits),
+    onSuccess: invalidate,
+    onError: (error) => {
+      const response = (error as { response?: { status?: number; data?: { error?: { message?: string } } } })?.response;
+      if (response?.status === 409) {
+        toast.error('This was already confirmed, rejected, or has expired.');
+        invalidate();
+      } else if (response?.status === 403) {
+        toast.error("You no longer have edit access to this project.");
+        invalidate();
+      } else if (response?.status === 422) {
+        // Validation failure (bad field value, unresolvable reference) — the
+        // proposal itself is untouched, so don't invalidate: that would
+        // refetch the old data and wipe out whatever the user just typed.
+        toast.error(response.data?.error?.message ?? "Some of those fields couldn't be resolved — check them and try again.");
+      } else {
+        toast.error("Couldn't save those changes — try again.");
+      }
+    },
+  });
+
+  const rejectProposalMutation = useMutation({
+    mutationFn: ({ proposalId, reason }: { proposalId: string; reason?: string }) =>
+      assistantService.rejectProposal(proposalId, reason),
+    onSuccess: invalidate,
+    onError: () => {
+      toast.error("Couldn't dismiss that — try again.");
+      invalidate();
+    },
+  });
+
   const stopTurnMutation = useMutation({
     mutationFn: () => assistantService.stopTurn(conversationId as string),
     onError: () => toast.error("Couldn't stop that — it may finish on its own shortly."),
@@ -280,6 +346,15 @@ export function useAssistantConversation(conversationId: string | null) {
   }, [conversationId, stopTurnMutation]);
 
   const pendingQuestions = liveQuestion ?? query.data?.pendingQuestions ?? null;
+
+  // Act (phase 2) — grouped by owning message so the transcript can render
+  // each message's card(s) right after it; a single tool-call batch can
+  // legally produce more than one proposal on the same assistant message.
+  const proposals = query.data?.proposals ?? [];
+  const proposalsByMessageId = proposals.reduce<Record<string, AssistantProposal[]>>((acc, p) => {
+    (acc[p.messageId] ??= []).push(p);
+    return acc;
+  }, {});
 
   // Reconstructs the single default branch through the full message tree
   // (honoring any manual "< i/n >" navigation in branchOverrides), then
@@ -325,6 +400,20 @@ export function useAssistantConversation(conversationId: string | null) {
     toolStatus,
     pendingQuestions,
     liveCard,
+    proposals,
+    proposalsByMessageId,
+    confirmProposal: useCallback((proposalId: string) => confirmProposalMutation.mutate(proposalId), [confirmProposalMutation]),
+    rejectProposal: useCallback(
+      (proposalId: string, reason?: string) => rejectProposalMutation.mutate({ proposalId, reason }),
+      [rejectProposalMutation],
+    ),
+    confirmingProposalId: confirmProposalMutation.isPending ? (confirmProposalMutation.variables ?? null) : null,
+    rejectingProposalId: rejectProposalMutation.isPending ? (rejectProposalMutation.variables?.proposalId ?? null) : null,
+    reviseProposal: useCallback(
+      (proposalId: string, edits: Record<string, unknown>) => reviseProposalMutation.mutateAsync({ proposalId, edits }),
+      [reviseProposalMutation],
+    ),
+    revisingProposalId: reviseProposalMutation.isPending ? (reviseProposalMutation.variables?.proposalId ?? null) : null,
     sendMessage: useCallback(
       (text: string, attachments?: AiMessageAttachment[]) => sendMessageMutation.mutate({ message: text, attachments }),
       [sendMessageMutation],

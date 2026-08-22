@@ -1,0 +1,330 @@
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
+import { cn } from '@/lib/utils';
+import { Check, ChevronsUpDown, ShoppingCart, X } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { type ApiPartResponse, type BOMCategory } from './bomData';
+import { LocationCombobox } from './inventoryData';
+
+const orderSchema = z.object({
+  partId: z.string().min(1, 'Select a part'),
+  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  expectedDate: z.string().min(1, 'Expected date is required'),
+  supplierRef: z.string().max(60, 'Reference must be less than 60 characters').optional(),
+  unitCost: z.union([z.coerce.number().min(0), z.literal('')]).optional(),
+  location: z.string().min(1, 'Select a destination location'),
+});
+
+type OrderFormData = z.infer<typeof orderSchema>;
+
+export interface PlaceOrderInput {
+  partId: string;
+  pn: string;
+  name: string;
+  cat: BOMCategory;
+  quantity: number;
+  expectedDate: string;
+  supplierRef?: string;
+  unitCost?: number;
+  location: string;
+}
+
+interface PlaceOrderDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  parts: ApiPartResponse[];
+  onPlaceOrder: (input: PlaceOrderInput) => void;
+  /** Preselect a part (e.g. opened from that part's detail sheet) instead of starting on the picker. */
+  initialPartId?: string;
+}
+
+export function PlaceOrderDialog({ isOpen, onClose, parts, onPlaceOrder, initialPartId }: PlaceOrderDialogProps) {
+  const isMobile = useIsMobile();
+  const [selectedPart, setSelectedPart] = useState<ApiPartResponse | null>(null);
+  const [partPickerOpen, setPartPickerOpen] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const form = useForm<OrderFormData>({
+    resolver: zodResolver(orderSchema),
+    defaultValues: {
+      partId: '',
+      quantity: 1,
+      expectedDate: '',
+      supplierRef: '',
+      unitCost: '',
+      location: '',
+    },
+  });
+
+  useEffect(() => {
+    if (isOpen && initialPartId) {
+      const match = parts.find(p => p.id === initialPartId);
+      if (match) {
+        setSelectedPart(match);
+        form.setValue('partId', match.id, { shouldValidate: true });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialPartId]);
+
+  const isFormDirty = form.formState.isDirty;
+
+  const resetAndClose = () => {
+    form.reset();
+    setSelectedPart(null);
+    onClose();
+  };
+
+  const attemptClose = () => {
+    if (isFormDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      resetAndClose();
+    }
+  };
+
+  const handleSubmit = (data: OrderFormData) => {
+    if (!selectedPart) {
+      toast.error('Select a part to order');
+      return;
+    }
+    onPlaceOrder({
+      partId: selectedPart.id,
+      pn: selectedPart.partNumber,
+      name: selectedPart.name,
+      cat: selectedPart.category,
+      quantity: data.quantity,
+      expectedDate: data.expectedDate,
+      supplierRef: data.supplierRef?.trim() || undefined,
+      unitCost: data.unitCost === '' || data.unitCost === undefined ? undefined : Number(data.unitCost),
+      location: data.location,
+    });
+    resetAndClose();
+    toast.success(`Order placed for ${data.quantity} × ${selectedPart.partNumber}`);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && attemptClose()}>
+      <DialogContent
+        hideClose
+        className={cn(
+          'p-0 flex flex-col gap-0',
+          isMobile
+            ? 'inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0 data-[state=open]:!slide-in-from-left-0 data-[state=open]:!slide-in-from-top-0 data-[state=closed]:!slide-out-to-left-0 data-[state=closed]:!slide-out-to-top-0'
+            : 'max-w-lg'
+        )}
+      >
+        <DialogHeader className="px-4 sm:px-6 py-4 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ShoppingCart className="h-4 w-4" />
+          </div>
+          <div className="text-left flex-1 min-w-0">
+            <DialogTitle>Place order</DialogTitle>
+            <DialogDescription>Creates a new open order tracked against this part</DialogDescription>
+          </div>
+          <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="overflow-y-auto flex-1">
+              <div className="p-4 sm:p-6 space-y-5">
+                <FormField
+                  control={form.control}
+                  name="partId"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                      <Popover open={partPickerOpen} onOpenChange={setPartPickerOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              role="combobox"
+                              className={cn(
+                                'w-full justify-between font-normal',
+                                !selectedPart && 'text-muted-foreground'
+                              )}
+                            >
+                              {selectedPart ? `${selectedPart.partNumber} — ${selectedPart.name}` : 'Select a part...'}
+                              <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[420px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search parts, MPN, manufacturer..." />
+                            <CommandList>
+                              <CommandEmpty>No parts found.</CommandEmpty>
+                              <CommandGroup>
+                                {parts.map((p) => (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={`${p.partNumber} ${p.name} ${p.mpn ?? ''} ${p.manufacturer ?? ''}`}
+                                    onSelect={() => {
+                                      setSelectedPart(p);
+                                      form.setValue('partId', p.id, { shouldDirty: true, shouldValidate: true });
+                                      setPartPickerOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mr-2 h-4 w-4',
+                                        selectedPart?.id === p.id ? 'opacity-100' : 'opacity-0'
+                                      )}
+                                    />
+                                    <div className="flex flex-col min-w-0">
+                                      <span className="text-sm truncate">{p.partNumber} — {p.name}</span>
+                                      <span className="text-xs text-muted-foreground truncate">
+                                        {p.manufacturer || '—'}{p.mpn ? ` · ${p.mpn}` : ''}
+                                      </span>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="quantity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                        <FormControl>
+                          <Input type="number" min={1} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="expectedDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="location"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Destination location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                      <FormControl>
+                        <LocationCombobox value={field.value} onChange={field.onChange} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="supplierRef"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Supplier / PO ref <span className="normal-case font-normal">optional</span></FormLabel>
+                        <FormControl>
+                          <Input placeholder="PO-…" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="unitCost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit cost <span className="normal-case font-normal">optional</span></FormLabel>
+                        <FormControl>
+                          <Input type="number" min={0} step="0.01" placeholder="0.00" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-4 border-t shrink-0">
+              <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={!selectedPart}>Place order</Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+
+      <ConfirmationDialog
+        open={showDiscardConfirm}
+        onOpenChange={setShowDiscardConfirm}
+        onConfirm={resetAndClose}
+        title="Discard changes?"
+        description="You have unsaved changes. Are you sure you want to discard them?"
+        confirmText="Discard"
+        cancelText="Keep Editing"
+        variant="destructive"
+      />
+    </Dialog>
+  );
+}

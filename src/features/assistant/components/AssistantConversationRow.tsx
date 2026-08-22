@@ -75,6 +75,10 @@ export function AssistantConversationRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {/* Act (phase 2) — e.g. "Assigned 14 tasks · 1 failed", the reference UI's own outcome-chip wording (ASSISTANT.md §1). */}
+      {conversation.lastActionSummary && (
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversation.lastActionSummary}</p>
+      )}
       <div className="mt-1.5 flex items-center gap-1.5">
         <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal">
           {resolveConversationScopeLabel(conversation.scope, projectName)}
