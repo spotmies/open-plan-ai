@@ -257,9 +257,11 @@ export default function BOMGoogleSheetsPushDialog({ open, onClose, projectId }: 
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {data.newPartRows.map((row) => (
-                        <Badge key={row.partNumber} variant="secondary" className="text-xs px-2.5 py-1 font-mono rounded-lg">
-                          {row.partNumber}
+                      {/* Each entry is a node's full path ("assy-1 > cmp-shared"); the
+                          leaf is the part itself, the rest is where it sits. */}
+                      {data.newPartRows.map((path) => (
+                        <Badge key={path} variant="secondary" className="text-xs px-2.5 py-1 font-mono rounded-lg">
+                          {path.split(' > ').pop()}
                         </Badge>
                       ))}
                     </div>
@@ -301,7 +303,7 @@ export default function BOMGoogleSheetsPushDialog({ open, onClose, projectId }: 
                     <BOMGoogleSheetsChangeList
                       className="pt-1"
                       rows={data.changedRows.map((row) => ({
-                        key: row.partNumber,
+                        key: row.path,
                         partNumber: row.partNumber,
                         changes: row.changes,
                       }))}
@@ -328,7 +330,7 @@ export default function BOMGoogleSheetsPushDialog({ open, onClose, projectId }: 
                     <BOMGoogleSheetsChangeList
                       className="pt-1"
                       rows={data.changedAttachments.map((row) => ({
-                        key: `att-${row.partNumber}`,
+                        key: `att-${row.path}`,
                         partNumber: row.partNumber,
                         changes: row.changes,
                       }))}

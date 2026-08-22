@@ -31,6 +31,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import { serializeBlocksForDirtyCheck } from '@/lib/descriptionBlocks';
 
 interface IssueDetailModalProps {
   issue: Issue | null;
@@ -55,6 +56,7 @@ const serializeIssueForDirtyCheck = (issue: Issue): string => {
   return JSON.stringify({
     title: issue.title || '',
     description: issue.description || '',
+    descriptionBlocks: serializeBlocksForDirtyCheck(issue.descriptionBlocks),
     category: issue.category,
     categoryOther: issue.categoryOther || '',
     severity: issue.severity,

@@ -28,7 +28,7 @@ export interface AttachmentRecord {
 
 export interface UploadAttachmentInput {
   entityId: string;
-  entityType: 'project' | 'task' | 'issue' | 'milestone' | 'module' | 'organization';
+  entityType: 'project' | 'task' | 'issue' | 'milestone' | 'module' | 'organization' | 'inventory_transaction';
   projectId?: string;
   file: File;
 }

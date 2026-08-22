@@ -47,6 +47,11 @@ export interface OrderRecord {
   supplierRef?: string;
   unitCost?: number;
   location: string;
+  note?: string;
+  description?: string;
+  purpose?: string;
+  lotNumber?: string;
+  serialNumber?: string;
   status: 'open' | 'partially_received' | 'received' | 'cancelled';
   createdAt: string;
   createdBy: string;
@@ -55,12 +60,21 @@ export interface OrderRecord {
 const CUSTOM_LOCATION_SENTINEL = '__custom_location__';
 
 /** Location picker: preset dropdown with a "custom" escape hatch — same pattern as
- * BOMCategory's free-text + preset-list combo (bomData.ts). */
-export function LocationCombobox({ value, onChange, placeholder = 'Select a location...' }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
+ * BOMCategory's free-text + preset-list combo (bomData.ts). `knownLocations` (from
+ * useLocations) is merged in alongside the hardcoded presets, so a custom location
+ * saved once (the backend auto-registers it on receive/adjust/order) shows up as a
+ * preset the next time this picker opens instead of only ever living on that one
+ * transaction. */
+export function LocationCombobox({ value, onChange, placeholder = 'Select a location...', knownLocations = [] }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; knownLocations?: string[];
 }) {
+  const options = [
+    ...STOCK_LOCATIONS,
+    ...knownLocations.filter((loc) => !(STOCK_LOCATIONS as readonly string[]).includes(loc)).sort(),
+  ];
+
   const [customMode, setCustomMode] = useState(
-    () => value !== '' && !(STOCK_LOCATIONS as readonly string[]).includes(value)
+    () => value !== '' && !options.includes(value)
   );
 
   useEffect(() => {
@@ -95,7 +109,7 @@ export function LocationCombobox({ value, onChange, placeholder = 'Select a loca
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        {STOCK_LOCATIONS.map((loc) => (
+        {options.map((loc) => (
           <SelectItem key={loc} value={loc}>{loc}</SelectItem>
         ))}
         <SelectItem value={CUSTOM_LOCATION_SENTINEL}>Other (custom)…</SelectItem>
@@ -204,13 +218,14 @@ export function CategoryCombobox({ value, onChange, placeholder = 'Select a cate
 export interface StockTransaction {
   id: string;
   partId: string;
-  type: 'receive' | 'adjust';
+  type: 'receive' | 'adjust' | 'allocate' | 'deallocate';
   direction?: 'add' | 'remove';   // adjust only
   qty: number;
   location: StockLocation;
   reference?: string;              // receive only — PO / expected-receipt reference
   reasonCode?: string;             // adjust only
   note?: string;
+  description?: string;            // adjust only
   quarantine?: boolean;            // receive only
   createdAt: string;
   createdBy: string;

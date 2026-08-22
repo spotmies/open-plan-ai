@@ -58,6 +58,8 @@ export interface ExportFieldChange {
 
 export interface ExportChangedRow {
   partNumber: string;
+  /** Full path of the node — part number alone no longer identifies a row in a multi-level BOM. */
+  path: string;
   changes: ExportFieldChange[];
 }
 
@@ -99,9 +101,26 @@ export type ImportRowStatus = 'needs-input' | 'ambiguous-unit' | 'new-part' | 'm
 
 export interface ImportRowPreview {
   rowIndex: number;
+  /** The number this row will be written under — see partNumberSource. */
   partNumber: string;
+  /** The Part Number cell as it reads in the sheet, before any substitution. */
+  sheetPartNumber: string;
+  /**
+   * 'mpn' means this row repeated an ancestor's Part Number — the column used
+   * as a "belongs to" reference — so it is identified by its MPN instead.
+   */
+  partNumberSource: 'sheet' | 'mpn';
+  depth: number;
+  parentRowIndex: number | null;
+  levelPath: string;
+  pathKey: string;
+  matchedNodeId: string | null;
+  /** This part already exists but sits under a different parent, and will be moved. */
+  willMove: boolean;
   status: ImportRowStatus;
   values: Record<string, string>;
+  /** Sheet columns with no BOM field behind them — imported into Additional Fields. */
+  customFields: Record<string, string>;
   missingRequiredFields: string[];
   aiSuggestions: Partial<Record<'Part Name' | 'Description' | 'Category', string>>;
   leadTimeRaw: string | null;
@@ -121,11 +140,18 @@ export interface ImportDeletedPartPreview {
   name: string;
 }
 
+export type HierarchySignal = 'outline-path' | 'depth-number' | 'indent-prefix' | 'none';
+
 export interface ImportPreview {
   headerRowIndex: number;
   headerRowLowConfidence: boolean;
   unmatchedColumns: string[];
   ambiguousColumns: string[];
+  /** How the sheet's sub-assembly structure was read — 'none' means it's flat. */
+  hierarchySignal: HierarchySignal;
+  /** The column the structure was read from, so the user can confirm it's the right one. */
+  hierarchyColumn: string | null;
+  maxDepth: number;
   rows: ImportRowPreview[];
   deletedParts: ImportDeletedPartPreview[];
 }
@@ -154,6 +180,8 @@ export interface ImportCommitResult {
   results: ImportCommitRowResult[];
   createdCount: number;
   updatedCount: number;
+  /** Existing parts re-parented to match the sheet's structure. */
+  movedCount: number;
   failedCount: number;
   deleteResults: ImportCommitDeleteResult[];
   deletedCount: number;

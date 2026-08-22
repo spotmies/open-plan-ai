@@ -45,10 +45,10 @@ const mainNavItems = [{
   url: '/reports',
   icon: BarChart3
 }, {
-  title: 'Inventory',
-  url: '/inventory',
-  icon: Warehouse
-}, {
+//   title: 'Inventory',
+//   url: '/inventory',
+//   icon: Warehouse
+// }, {
   title: 'Chat',
   url: '/chat',
   icon: MessageSquare

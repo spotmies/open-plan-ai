@@ -115,7 +115,8 @@ import { FilePreviewDialog, FilePreviewTarget, getVideoThumbnail } from '@/compo
 import { useProjectTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks/useProjectTags';
 import { getFallbackTagColor } from '@/lib/tagColors';
 import { Switch } from '@/components/ui/switch';
-import { SlashBlockEditor } from '@/components/ui/SlashBlockEditor';
+import { SlashBlockEditor, EditorBlock } from '@/components/ui/SlashBlockEditor';
+import { blocksToPlainText, hasBlockContent, plainTextToBlocks, serializeBlocksForDirtyCheck } from '@/lib/descriptionBlocks';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { ISSUE_SEVERITY_OPTIONS, ISSUE_SEVERITY_DISPLAY } from './issueSeverity';
 import { formatModifiedFields } from './modifiedFields';
@@ -198,6 +199,7 @@ const serializeTaskForDirtyCheck = (task: Task): string => {
   return JSON.stringify({
     title: task.title || '',
     description: task.description || '',
+    descriptionBlocks: serializeBlocksForDirtyCheck(task.descriptionBlocks),
     status: task.status,
     priority: task.priority,
     module: task.module || null,
@@ -606,12 +608,53 @@ export const TaskDetailModal = ({
     ...blockingToTaskIds,
   ]), [blockingToTaskIds, editedTask.blockedBy, editedTask.id]);
 
-  const handleFieldChange = <K extends keyof Task>(field: K, value: Task[K]) => {
+  const handleFieldsChange = (patch: Partial<Task>) => {
     setEditedTask(prev => ({
       ...prev,
-      [field]: value,
+      ...patch,
       updatedAt: new Date().toISOString()
     }));
+  };
+
+  const handleFieldChange = <K extends keyof Task>(field: K, value: Task[K]) => {
+    handleFieldsChange({ [field]: value } as Partial<Task>);
+  };
+
+  // Advanced blocks are the source of truth while the toggle is on, but the
+  // plain `description` is what every board card, list row and preview renders
+  // — so mirror the flattened text across on every block edit. Without it an
+  // advanced-only edit saved fine yet showed up nowhere, which reads as
+  // "the update didn't happen".
+  const handleDescriptionBlocksChange = (blocks: EditorBlock[]) => {
+    handleFieldsChange({
+      descriptionBlocks: blocks,
+      description: blocksToPlainText(blocks),
+    });
+  };
+
+  const handleAdvancedDescriptionToggle = (enabled: boolean) => {
+    if (enabled) {
+      // Carry whatever is in the plain box into the editor instead of dropping
+      // the user in front of an empty one.
+      if (!hasBlockContent(editedTask.descriptionBlocks as EditorBlock[] | undefined)) {
+        const seeded = plainTextToBlocks(editedTask.description);
+        if (seeded.length > 0) {
+          handleFieldsChange({
+            descriptionBlocks: seeded,
+            description: blocksToPlainText(seeded),
+          });
+        }
+      }
+    } else {
+      // Going back to simple mode: keep the text, drop the blocks — a task that
+      // still has blocks reopens in advanced mode.
+      const flattened = blocksToPlainText(editedTask.descriptionBlocks as EditorBlock[] | undefined);
+      handleFieldsChange({
+        description: flattened || editedTask.description || '',
+        descriptionBlocks: [],
+      });
+    }
+    setIsAdvancedDescription(enabled);
   };
 
   const handleStatusChange = (value: TaskStatus) => {
@@ -2266,7 +2309,7 @@ export const TaskDetailModal = ({
                     <Switch
                       id="task-advanced-mode"
                       checked={isAdvancedDescription}
-                      onCheckedChange={setIsAdvancedDescription}
+                      onCheckedChange={handleAdvancedDescriptionToggle}
                       disabled={!canEditTaskFields}
                       className={cn(showMobileHeader && 'disabled:opacity-100 disabled:cursor-pointer', showMobileHeader && !canEditTask && 'opacity-60')}
                     />
@@ -2284,7 +2327,7 @@ export const TaskDetailModal = ({
                       key={editedTask.id || 'create'}
                       readOnly={!canEditTaskFields}
                       initialBlocks={editedTask.descriptionBlocks}
-                      onChange={(blocks) => handleFieldChange('descriptionBlocks', blocks as any)}
+                      onChange={handleDescriptionBlocksChange}
                     />
                   </div>
                 ) : (

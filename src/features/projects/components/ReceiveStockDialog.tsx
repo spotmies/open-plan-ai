@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -47,11 +46,11 @@ import {
 } from '@/components/ui/form';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
-import { Check, ChevronsUpDown, Download, Plus, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useCreatePart } from '@/hooks/useParts';
+import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
-import { LocationCombobox, CategoryCombobox, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
+import { LocationCombobox, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
 
 const NO_ORDER_SENTINEL = '__no_order__';
 
@@ -95,17 +94,19 @@ interface ReceiveStockDialogProps {
   initialPartId?: string;
 }
 
-const emptyNewPart = { partNumber: '', name: '', description: '', category: '' as BOMCategory | '', manufacturer: '', mpn: '', unit: 'EA' };
-
 export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onReceive, initialPartId }: ReceiveStockDialogProps) {
   const isMobile = useIsMobile();
   const [selectedPart, setSelectedPart] = useState<ApiPartResponse | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
-  const [showAddPart, setShowAddPart] = useState(false);
-  const [newPart, setNewPart] = useState(emptyNewPart);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const { data: knownLocations = [] } = useLocations(orgId);
 
-  const createPart = useCreatePart(orgId);
+  // Receiving is a PO-fulfillment action — only parts with a remaining balance on an open
+  // order are eligible to receive against here.
+  const partsWithOpenOrders = useMemo(() => {
+    const orderedPartIds = new Set(orders.filter(o => o.remainingQty > 0).map(o => o.partId));
+    return parts.filter(p => orderedPartIds.has(p.id));
+  }, [parts, orders]);
 
   const form = useForm<ReceiveFormData>({
     resolver: zodResolver(receiveSchema),
@@ -123,20 +124,43 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
   });
 
   const openOrdersForPart = selectedPart
-    ? orders.filter(o => o.partId === selectedPart.id && o.remainingQty > 0)
+    ? orders
+        .filter(o => o.partId === selectedPart.id && o.remainingQty > 0)
+        .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate))
     : [];
 
+  const watchedOrderId = form.watch('orderId');
+  const watchedQuantity = form.watch('quantity');
+
+  const selectedOrder = watchedOrderId && watchedOrderId !== NO_ORDER_SENTINEL
+    ? openOrdersForPart.find(o => o.id === watchedOrderId)
+    : undefined;
+  const totalOnOrderForPart = openOrdersForPart.reduce((sum, o) => sum + o.remainingQty, 0);
+  const maxQuantity = selectedOrder ? selectedOrder.remainingQty : totalOnOrderForPart || undefined;
+
   useEffect(() => {
-    if (openOrdersForPart.length === 1 && !form.getValues('orderId')) {
-      form.setValue('orderId', openOrdersForPart[0].id);
-      form.setValue('location', openOrdersForPart[0].location ?? form.getValues('location'));
+    // Default to the soonest-due open order (and its location) so a part with a single order
+    // — the common case — needs no extra picking, while multi-order parts still get a sane default.
+    if (openOrdersForPart.length > 0 && !form.getValues('orderId')) {
+      const defaultOrder = openOrdersForPart[0];
+      form.setValue('orderId', defaultOrder.id);
+      form.setValue('location', defaultOrder.location ?? form.getValues('location'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPart, openOrdersForPart.length]);
 
   useEffect(() => {
+    if (maxQuantity != null && watchedQuantity > maxQuantity) {
+      form.setError('quantity', { type: 'max', message: `Cannot exceed the on-order quantity (${maxQuantity})` });
+    } else if (form.formState.errors.quantity?.type === 'max') {
+      form.clearErrors('quantity');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxQuantity, watchedQuantity]);
+
+  useEffect(() => {
     if (isOpen && initialPartId) {
-      const match = parts.find(p => p.id === initialPartId);
+      const match = partsWithOpenOrders.find(p => p.id === initialPartId);
       if (match) {
         setSelectedPart(match);
         form.setValue('partId', match.id, { shouldValidate: true });
@@ -145,13 +169,11 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialPartId]);
 
-  const isFormDirty = form.formState.isDirty || showAddPart;
+  const isFormDirty = form.formState.isDirty;
 
   const resetAndClose = () => {
     form.reset();
     setSelectedPart(null);
-    setShowAddPart(false);
-    setNewPart(emptyNewPart);
     onClose();
   };
 
@@ -163,34 +185,13 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
     }
   };
 
-  const handleCreatePart = async () => {
-    if (!newPart.partNumber.trim() || !newPart.name.trim() || !newPart.category) {
-      toast.error('Part number, name, and category are required');
-      return;
-    }
-    try {
-      const created = await createPart.mutateAsync({
-        partNumber: newPart.partNumber.trim(),
-        name: newPart.name.trim(),
-        description: newPart.description.trim() || newPart.name.trim(),
-        category: newPart.category,
-        manufacturer: newPart.manufacturer.trim() || undefined,
-        mpn: newPart.mpn.trim() || undefined,
-        unit: newPart.unit || 'EA',
-      });
-      setSelectedPart(created);
-      form.setValue('partId', created.id, { shouldDirty: true, shouldValidate: true });
-      setShowAddPart(false);
-      setNewPart(emptyNewPart);
-      toast.success(`Part ${created.partNumber} created`);
-    } catch {
-      toast.error('Failed to create part');
-    }
-  };
-
   const handleSubmit = (data: ReceiveFormData) => {
     if (!selectedPart) {
       toast.error('Select a part to receive');
+      return;
+    }
+    if (maxQuantity != null && data.quantity > maxQuantity) {
+      toast.error(`Quantity cannot exceed the on-order amount (${maxQuantity})`);
       return;
     }
     onReceive({
@@ -244,147 +245,61 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                   name="partId"
                   render={() => (
                     <FormItem>
-                      <div className="flex items-center justify-between">
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                        {!showAddPart && (
-                          <Button
-                            type="button"
-                            variant="link"
-                            size="sm"
-                            className="h-auto p-0 text-xs"
-                            onClick={() => setShowAddPart(true)}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Add new part
-                          </Button>
-                        )}
-                      </div>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
 
-                      {!showAddPart ? (
-                        <Popover open={partPickerOpen} onOpenChange={setPartPickerOpen}>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                role="combobox"
-                                className={cn(
-                                  'w-full justify-between font-normal',
-                                  !selectedPart && 'text-muted-foreground'
-                                )}
-                              >
-                                {selectedPart ? `${selectedPart.partNumber} — ${selectedPart.name}` : 'Select a part...'}
-                                <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[420px] p-0" align="start">
-                            <Command>
-                              <CommandInput placeholder="Search parts, MPN, manufacturer..." />
-                              <CommandList>
-                                <CommandEmpty>No parts found.</CommandEmpty>
-                                <CommandGroup>
-                                  {parts.map((p) => (
-                                    <CommandItem
-                                      key={p.id}
-                                      value={`${p.partNumber} ${p.name} ${p.mpn ?? ''} ${p.manufacturer ?? ''}`}
-                                      onSelect={() => {
-                                        setSelectedPart(p);
-                                        form.setValue('partId', p.id, { shouldDirty: true, shouldValidate: true });
-                                        setPartPickerOpen(false);
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          'mr-2 h-4 w-4',
-                                          selectedPart?.id === p.id ? 'opacity-100' : 'opacity-0'
-                                        )}
-                                      />
-                                      <div className="flex flex-col min-w-0">
-                                        <span className="text-sm truncate">{p.partNumber} — {p.name}</span>
-                                        <span className="text-xs text-muted-foreground truncate">
-                                          {p.manufacturer || '—'}{p.mpn ? ` · ${p.mpn}` : ''}
-                                        </span>
-                                      </div>
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                      ) : (
-                        <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">New part</span>
+                      <Popover open={partPickerOpen} onOpenChange={setPartPickerOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
                             <Button
                               type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => { setShowAddPart(false); setNewPart(emptyNewPart); }}
+                              variant="outline"
+                              role="combobox"
+                              className={cn(
+                                'w-full justify-between font-normal',
+                                !selectedPart && 'text-muted-foreground'
+                              )}
                             >
-                              <X className="h-3.5 w-3.5" />
+                              {selectedPart ? `${selectedPart.partNumber} — ${selectedPart.name}` : 'Select a part...'}
+                              <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
                             </Button>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Part Number *</Label>
-                              <Input
-                                value={newPart.partNumber}
-                                onChange={(e) => setNewPart(prev => ({ ...prev, partNumber: e.target.value }))}
-                                placeholder="e.g. EV-PWR-099"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Name *</Label>
-                              <Input
-                                value={newPart.name}
-                                onChange={(e) => setNewPart(prev => ({ ...prev, name: e.target.value }))}
-                                placeholder="Part name"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Category *</Label>
-                              <CategoryCombobox
-                                value={newPart.category}
-                                onChange={(v) => setNewPart(prev => ({ ...prev, category: v as BOMCategory | '' }))}
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Unit</Label>
-                              <Input
-                                value={newPart.unit}
-                                onChange={(e) => setNewPart(prev => ({ ...prev, unit: e.target.value }))}
-                                placeholder="EA"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Manufacturer</Label>
-                              <Input
-                                value={newPart.manufacturer}
-                                onChange={(e) => setNewPart(prev => ({ ...prev, manufacturer: e.target.value }))}
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">MPN</Label>
-                              <Input
-                                value={newPart.mpn}
-                                onChange={(e) => setNewPart(prev => ({ ...prev, mpn: e.target.value }))}
-                              />
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="w-full"
-                            disabled={createPart.isPending}
-                            onClick={handleCreatePart}
-                          >
-                            {createPart.isPending ? 'Creating...' : 'Create & select part'}
-                          </Button>
-                        </div>
-                      )}
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[420px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search parts, MPN, manufacturer..." />
+                            <CommandList>
+                              <CommandEmpty>No parts on order.</CommandEmpty>
+                              <CommandGroup>
+                                {partsWithOpenOrders.map((p) => (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={`${p.partNumber} ${p.name} ${p.mpn ?? ''} ${p.manufacturer ?? ''}`}
+                                    onSelect={() => {
+                                      setSelectedPart(p);
+                                      form.setValue('partId', p.id, { shouldDirty: true, shouldValidate: true });
+                                      form.setValue('orderId', '');
+                                      setPartPickerOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mr-2 h-4 w-4',
+                                        selectedPart?.id === p.id ? 'opacity-100' : 'opacity-0'
+                                      )}
+                                    />
+                                    <div className="flex flex-col min-w-0">
+                                      <span className="text-sm truncate">{p.partNumber} — {p.name}</span>
+                                      <span className="text-xs text-muted-foreground truncate">
+                                        {p.manufacturer || '—'}{p.mpn ? ` · ${p.mpn}` : ''}
+                                      </span>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -397,7 +312,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                     <FormItem>
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Destination location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                       <FormControl>
-                        <LocationCombobox value={field.value} onChange={field.onChange} />
+                        <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -416,7 +331,10 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                             field.onChange(v);
                             if (v !== NO_ORDER_SENTINEL) {
                               const order = openOrdersForPart.find(o => o.id === v);
-                              if (order) form.setValue('quantity', order.remainingQty, { shouldDirty: true });
+                              if (order) {
+                                form.setValue('quantity', order.remainingQty, { shouldDirty: true });
+                                form.setValue('location', order.location, { shouldDirty: true });
+                              }
                             }
                           }}
                           value={field.value || NO_ORDER_SENTINEL}
@@ -446,9 +364,14 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                   name="quantity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Quantity <span className="text-destructive" aria-hidden="true">*</span>
+                        {maxQuantity != null && (
+                          <span className="normal-case font-normal"> — {maxQuantity} on order</span>
+                        )}
+                      </FormLabel>
                       <FormControl>
-                        <Input type="number" min={1} {...field} />
+                        <Input type="number" min={1} max={maxQuantity} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
