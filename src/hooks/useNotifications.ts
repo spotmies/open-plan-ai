@@ -18,11 +18,11 @@ export interface AppNotification extends Notification {
   initials: string;
 }
 
-export function useNotifications(params: NotificationListParams = {}) {
+export function useNotifications(params: NotificationListParams & { includeStats?: boolean } = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id;
-  const { page = 1, limit = 10, unreadOnly, type } = params;
+  const { page = 1, limit = 10, unreadOnly, type, includeStats = false } = params;
 
   const { data: listResult, isLoading, isFetching, error } = useQuery({
     queryKey: ['notifications', userId, page, limit, unreadOnly, type],
@@ -40,7 +40,7 @@ export function useNotifications(params: NotificationListParams = {}) {
   const { data: stats } = useQuery({
     queryKey: ['notifications-stats', userId],
     queryFn: () => notificationsService.getStats(),
-    enabled: !!userId,
+    enabled: !!userId && includeStats,
   });
 
   // Real-time: invalidate when a new notification arrives via socket

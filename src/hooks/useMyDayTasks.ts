@@ -3,11 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { tasksService } from '@/services/tasks.service';
-import { projectsService } from '@/services/projects.service';
+import { issuesService } from '@/services/issues.service';
 import { queryKeys } from '@/lib/queryClient';
 import { getDueDateStatus, isCompletedToday, isBlockingOthers, hasUnresolvedDependencies } from '@/features/myday/utils/myDayUtils';
 import type { MyDayItem, DueDateStatus } from '@/features/myday/utils/myDayUtils';
-import { useProjects } from './useProjects';
 import type { MyDayFilter } from '@/types';
 
 function matchesFilter(status: DueDateStatus, filter: MyDayFilter): boolean {
@@ -18,11 +17,8 @@ function matchesFilter(status: DueDateStatus, filter: MyDayFilter): boolean {
 
 /**
  * Shared raw fetch of tasks and issues assigned to the current user across all projects.
- * Tasks come from the dedicated /tasks/me/all endpoint (includes projectName).
- * Issues have no equivalent org-wide "assigned to me" endpoint with assignees
- * populated (the org-wide /organizations/:orgId/issues route is a raw, unjoined
- * select used only by Calendar), so they're fanned out per-project instead —
- * same pattern as issuesService.getOpenCount().
+ * Both come from dedicated org-wide "assigned to me" endpoints — /tasks/me/all and
+ * /issues/me/all — each a single request, not a per-project fan-out.
  *
  * Backs both useMyDayTasks and useCompletedTodayCount, so "completed today"
  * counting doesn't force completed items to linger in the displayed lists.
@@ -31,7 +27,6 @@ function useMyDayRawData() {
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const orgId = currentOrganization?.id;
-  const { data: projects = [] } = useProjects();
 
   const { data: rawTasks = [], isLoading: tasksLoading } = useQuery({
     queryKey: [...queryKeys.myDay.all, 'tasks', user?.id, orgId],
@@ -40,22 +35,17 @@ function useMyDayRawData() {
     staleTime: 30 * 1000,
   });
 
-  const projectIds = useMemo(() => projects.map(p => p.id).sort(), [projects]);
-
-  const { data: rawIssues = [], isLoading: issuesLoading } = useQuery({
-    queryKey: [...queryKeys.myDay.issues(user?.id || ''), projectIds],
-    queryFn: async () => {
-      const results = await Promise.all(
-        projects.map(async project => {
-          const issues = await projectsService.getIssues(project.id).catch(() => []);
-          return issues.map(issue => ({ issue, projectName: project.name }));
-        })
-      );
-      return results.flat();
-    },
-    enabled: !!user?.id && projects.length > 0,
+  const { data: rawIssuesList = [], isLoading: issuesLoading } = useQuery({
+    queryKey: [...queryKeys.myDay.issues(user?.id || ''), orgId],
+    queryFn: () => issuesService.getMyIssues(orgId),
+    enabled: !!user?.id && !!orgId,
     staleTime: 30 * 1000,
   });
+
+  const rawIssues = useMemo(
+    () => rawIssuesList.map((issue) => ({ issue, projectName: issue.projectName })),
+    [rawIssuesList],
+  );
 
   return { user, rawTasks, rawIssues, isLoading: tasksLoading || issuesLoading };
 }
@@ -84,11 +74,11 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
     // disappears from the list immediately, unless the user explicitly filters for "Done".
     const taskItems: MyDayItem[] = rawTasks
       .filter(task =>
-        matchesFilter(getDueDateStatus(task.dueDate), filter) &&
+        matchesFilter(getDueDateStatus(task.dueDate, task.startDate), filter) &&
         (task.status !== 'done' || includeDone)
       )
       .map(task => {
-        const dueDateStatus = getDueDateStatus(task.dueDate);
+        const dueDateStatus = getDueDateStatus(task.dueDate, task.startDate);
         return {
           id: task.id,
           itemType: 'task' as const,

@@ -20,6 +20,23 @@ export const issuesService = {
   },
 
   /**
+   * Issues assigned to the current user across every project in an org, in
+   * one request — backs My Day. Replaces the previous per-project fan-out
+   * (see useMyDayTasks.ts), which fired one /projects/:id/issues/all call
+   * per project on every load.
+   */
+  async getMyIssues(organizationId?: string): Promise<Array<Issue & { projectName: string }>> {
+    const url = organizationId
+      ? `${ENDPOINTS.ISSUES.MY_ALL}?organizationId=${encodeURIComponent(organizationId)}`
+      : ENDPOINTS.ISSUES.MY_ALL;
+    const data = await apiClient.get<Array<Record<string, unknown>>>(url);
+    return (data || []).map((raw) => ({
+      ...fromApiIssue(raw),
+      projectName: (raw.projectName as string) ?? '',
+    }));
+  },
+
+  /**
    * Get issue by ID
    */
   async getById(issueId: string): Promise<Issue | null> {

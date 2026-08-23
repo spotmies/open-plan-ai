@@ -7,11 +7,11 @@ import {
 } from '@/services/issueColumns.service';
 import { queryKeys } from '@/lib/queryClient';
 
-export function useIssueColumns(projectId?: string) {
+export function useIssueColumns(projectId?: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: projectId ? queryKeys.issueColumns.list(projectId) : queryKeys.issueColumns.list('none'),
     queryFn: () => issueColumnsService.getByProjectId(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && (options?.enabled ?? true),
   });
 }
 

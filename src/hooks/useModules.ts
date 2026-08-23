@@ -11,20 +11,18 @@ export function useProjectModules(projectId: string) {
   });
 }
 
+/**
+ * Fetch all hardware modules across all org projects — single aggregated
+ * endpoint, replaces the previous O(n) fan-out across individual project
+ * endpoints.
+ */
 export function useAllModules() {
   const { currentOrganization } = useOrganization();
   const orgId = currentOrganization?.id;
 
   return useQuery({
     queryKey: [...queryKeys.modules.all, 'all', orgId],
-    queryFn: async (): Promise<Module[]> => {
-      if (!orgId) return [];
-      const { projectsService } = await import('@/services/projects.service');
-      const projects = await projectsService.getAll(orgId);
-      if (!projects.length) return [];
-      const results = await Promise.all(projects.map(p => modulesService.getByProjectId(p.id).catch(() => [])));
-      return results.flat();
-    },
+    queryFn: (): Promise<Module[]> => (orgId ? modulesService.getAllForOrg(orgId) : Promise.resolve([])),
     enabled: !!orgId,
   });
 }
@@ -74,22 +72,12 @@ export function useDeleteModule() {
   });
 }
 
+/**
+ * Alias — same single-endpoint implementation as useAllModules, kept for
+ * backward compatibility with components that import useOrgAllModules.
+ */
 export function useOrgAllModules() {
-  const { currentOrganization } = useOrganization();
-  const orgId = currentOrganization?.id;
-
-  return useQuery({
-    queryKey: [...queryKeys.modules.all, 'org', orgId],
-    queryFn: async (): Promise<Module[]> => {
-      if (!orgId) return [];
-      const { projectsService } = await import('@/services/projects.service');
-      const projects = await projectsService.getAll(orgId);
-      if (!projects.length) return [];
-      const results = await Promise.all(projects.map(p => modulesService.getByProjectId(p.id).catch(() => [])));
-      return results.flat();
-    },
-    enabled: !!orgId,
-  });
+  return useAllModules();
 }
 
 export type { Module, ModuleInsert, ModuleUpdate };

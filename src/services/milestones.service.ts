@@ -64,6 +64,17 @@ export const milestonesService = {
     return (data || []).map(fromApi);
   },
 
+  /**
+   * Milestones across every project in an org, in one request — backs the
+   * Calendar view. Replaces the previous per-project fan-out (see
+   * useAllMilestones in useMilestones.ts), which fired one
+   * /projects/:id/milestones call per project on every load.
+   */
+  async getAllForOrg(orgId: string): Promise<Milestone[]> {
+    const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ORGANIZATIONS.ALL_MILESTONES(orgId));
+    return (data || []).map(fromApi);
+  },
+
   async getById(id: string): Promise<Milestone | null> {
     const data = await apiClient.get<Record<string, unknown>>(ENDPOINTS.MILESTONES.BY_ID(id));
     return data ? fromApi(data) : null;
