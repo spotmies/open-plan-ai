@@ -72,6 +72,9 @@ export function AssistantPanel({
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const dragCounterRef = useRef(0);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const {
     messages,
@@ -122,6 +125,44 @@ export function AssistantPanel({
         projects.find((p) => p.id === activeConversationSummary!.projectId)?.name,
       )
     : null;
+  // Conversation title + scope, shown inline as a card at the top of the
+  // transcript (page variant only) instead of floating in the global
+  // AppHeader — keeps it scoped to the Assistant page's own content instead
+  // of bleeding into shared chrome.
+  const activeConversationTitle = activeConversationSummary?.title || 'New conversation';
+  const activeConversationScopeLabel = activeConversationSummary
+    ? resolveConversationScopeLabel(
+        activeConversationSummary.scope,
+        projects.find((p) => p.id === activeConversationSummary.projectId)?.name,
+      )
+    : null;
+
+  // Click-to-rename on the title itself (vs. the sidebar's dialog-based
+  // rename) — closes/resets whenever the open conversation changes so a
+  // stale draft can't leak into the next thread.
+  useEffect(() => {
+    setIsEditingTitle(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (isEditingTitle) titleInputRef.current?.select();
+  }, [isEditingTitle]);
+
+  const startEditingTitle = () => {
+    if (!activeConversationSummary) return;
+    setTitleDraft(activeConversationSummary.title || '');
+    setIsEditingTitle(true);
+  };
+
+  const commitTitleEdit = () => {
+    const next = titleDraft.trim();
+    setIsEditingTitle(false);
+    if (!activeConversationSummary || !next || next === activeConversationSummary.title) return;
+    updateConversation.mutate(
+      { id: activeConversationSummary.id, updates: { title: next } },
+      { onError: () => toast.error("Couldn't rename this conversation — try again.") },
+    );
+  };
   // Picking a project from the popover on an existing, still-unscoped
   // (all_projects) conversation locks it server-side right away — the
   // explicit-click counterpart to assistantLoop.ts's automatic lock, which
@@ -360,28 +401,85 @@ export function AssistantPanel({
         </div>
       )}
       {hasActiveConversation ? (
-        <AssistantTranscript
-          key={conversationId ?? 'new'}
-          messages={transcriptMessages}
-          messageVersions={messageVersions}
-          onEditMessage={editMessage}
-          onSelectVersion={selectMessageVersion}
-          streamingText={streamingText}
-          isStreaming={effectivelyStreaming}
-          toolStatus={toolStatus}
-          pendingQuestions={pendingQuestions}
-          onAnswer={answerQuestion}
-          isAnswering={isAnswering}
-          liveCard={liveCard}
-          onSendMessage={sendMessage}
-          proposalsByMessageId={proposalsByMessageId}
-          onConfirmProposal={confirmProposal}
-          onRejectProposal={rejectProposal}
-          onReviseProposal={reviseProposal}
-          confirmingProposalId={confirmingProposalId}
-          rejectingProposalId={rejectingProposalId}
-          revisingProposalId={revisingProposalId}
-        />
+        <div className="relative flex flex-1 min-h-0 flex-col">
+          {/* Overlays the top of the scrollable transcript rather than sitting
+              in normal flow, so messages scrolling past underneath fade out
+              under the gradient instead of getting clipped by a hard edge. */}
+          {!isWidget && activeConversationSummary && (
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 z-10 px-4 pb-8 pt-2 md:px-6"
+              style={{
+                background:
+                  'linear-gradient(to bottom, hsl(var(--background)) 55%, hsl(var(--background) / 0) 100%)',
+              }}
+            >
+              <div className="pointer-events-auto mx-auto flex max-w-3xl items-center gap-2">
+                {isEditingTitle ? (
+                  <input
+                    ref={titleInputRef}
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={commitTitleEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        commitTitleEdit();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setIsEditingTitle(false);
+                      }
+                    }}
+                    size={Math.max(titleDraft.length, 4)}
+                    className="min-w-0 max-w-full rounded-md border border-ring bg-background px-1.5 py-0.5 text-sm font-semibold leading-tight text-foreground outline-none ring-2 ring-ring/30"
+                  />
+                ) : (
+                  <h1
+                    role="button"
+                    tabIndex={0}
+                    onClick={startEditingTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        startEditingTitle();
+                      }
+                    }}
+                    className="min-w-0 max-w-full truncate rounded-md border border-transparent px-1.5 py-0.5 text-sm font-semibold leading-tight text-foreground"
+                  >
+                    {activeConversationTitle}
+                  </h1>
+                )}
+                {activeConversationScopeLabel && (
+                  <span className="shrink-0 truncate rounded-lg border border-border bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+                    {activeConversationScopeLabel}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          <AssistantTranscript
+            key={conversationId ?? 'new'}
+            messages={transcriptMessages}
+            messageVersions={messageVersions}
+            onEditMessage={editMessage}
+            onSelectVersion={selectMessageVersion}
+            streamingText={streamingText}
+            isStreaming={effectivelyStreaming}
+            toolStatus={toolStatus}
+            pendingQuestions={pendingQuestions}
+            onAnswer={answerQuestion}
+            isAnswering={isAnswering}
+            liveCard={liveCard}
+            onSendMessage={sendMessage}
+            proposalsByMessageId={proposalsByMessageId}
+            onConfirmProposal={confirmProposal}
+            onRejectProposal={rejectProposal}
+            onReviseProposal={reviseProposal}
+            confirmingProposalId={confirmingProposalId}
+            rejectingProposalId={rejectingProposalId}
+            revisingProposalId={revisingProposalId}
+            withHeaderOffset={!isWidget && !!activeConversationSummary}
+          />
+        </div>
       ) : (
         <ScrollArea className="flex-1 min-h-0">
           <div className={cn('mx-auto flex flex-col gap-6', isWidget ? 'max-w-full p-4' : 'max-w-3xl p-4 md:p-6')}>

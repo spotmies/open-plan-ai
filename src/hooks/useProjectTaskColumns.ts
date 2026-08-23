@@ -7,11 +7,11 @@ import {
 } from '@/services/projectTaskColumns.service';
 import { queryKeys } from '@/lib/queryClient';
 
-export function useProjectTaskColumns(projectId?: string) {
+export function useProjectTaskColumns(projectId?: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: projectId ? queryKeys.taskColumns.list(projectId) : queryKeys.taskColumns.list('none'),
     queryFn: () => projectTaskColumnsService.getByProjectId(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && (options?.enabled ?? true),
   });
 }
 

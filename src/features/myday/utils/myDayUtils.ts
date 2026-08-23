@@ -64,13 +64,20 @@ export function isCompletedToday(item: any): boolean {
 }
 
 /**
- * Get due date status relative to today
+ * Get due date status relative to today.
+ *
+ * When `startDate` is provided and has already started (startDate <= today),
+ * a task is treated as "today" for the whole start->due window, not just on
+ * its due date — a task due in 2 days that someone is actively working on
+ * today should still surface in My Day. Tasks with no startDate fall back to
+ * due-date-only bucketing (unchanged behavior).
  */
-export function getDueDateStatus(dueDate?: string): DueDateStatus {
+export function getDueDateStatus(dueDate?: string, startDate?: string): DueDateStatus {
   if (!dueDate) return 'none';
 
   // Check cache first
-  const cached = dueDateStatusCache.get(dueDate);
+  const cacheKey = startDate ? `${dueDate}|${startDate}` : dueDate;
+  const cached = dueDateStatusCache.get(cacheKey);
   const now = Date.now();
   if (cached && now - cached.timestamp < CACHE_TTL) {
     return cached.status;
@@ -79,20 +86,25 @@ export function getDueDateStatus(dueDate?: string): DueDateStatus {
   const today = startOfDay(new Date());
   const parsedDueDate = parseDueDateSafe(dueDate);
   if (!parsedDueDate) {
-    dueDateStatusCache.set(dueDate, { status: 'none', timestamp: now });
+    dueDateStatusCache.set(cacheKey, { status: 'none', timestamp: now });
     return 'none';
   }
-  
+
   const due = startOfDay(parsedDueDate);
+  const parsedStartDate = parseDueDateSafe(startDate);
+  const start = parsedStartDate ? startOfDay(parsedStartDate) : null;
   let status: DueDateStatus = 'upcoming';
 
   if (isBefore(due, today)) {
     status = 'overdue';
   } else if (isSameDay(due, today)) {
     status = 'today';
+  } else if (start && !isAfter(start, today)) {
+    // Already started and not yet due: today falls inside the start->due window.
+    status = 'today';
   }
 
-  dueDateStatusCache.set(dueDate, { status, timestamp: now });
+  dueDateStatusCache.set(cacheKey, { status, timestamp: now });
   return status;
 }
 

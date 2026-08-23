@@ -83,6 +83,17 @@ export const modulesService = {
     return (data || []).map(fromApi);
   },
 
+  /**
+   * Hardware modules across every project in an org, in one request — backs
+   * the Reports view. Replaces the previous per-project fan-out (see
+   * useAllModules/useOrgAllModules in useModules.ts), which fired one
+   * /projects/:id/hardware-modules call per project on every load.
+   */
+  async getAllForOrg(orgId: string): Promise<Module[]> {
+    const data = await apiClient.get<Record<string, unknown>[]>(ENDPOINTS.ORGANIZATIONS.ALL_MODULES(orgId));
+    return (data || []).map(fromApi);
+  },
+
   async getById(id: string): Promise<Module | null> {
     const data = await apiClient.get<Record<string, unknown>>(ENDPOINTS.MODULES.BY_ID(id));
     return data ? fromApi(data) : null;

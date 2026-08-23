@@ -492,10 +492,6 @@ export default function ProjectDetail() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { id, tab: tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
-  const { data: boardColumns } = useProjectTaskColumns(id);
-  const filterStatusOptions = useMemo(() => buildTaskStatusOptions(boardColumns), [boardColumns]);
-  const { data: apiIssueColumns } = useIssueColumns(id);
-  const issueColumns = apiIssueColumns && apiIssueColumns.length > 0 ? apiIssueColumns : DEFAULT_ISSUE_COLUMNS;
 
   // The /bom/:partId, /eng-changes/:ecoId, /tasks/:taskId, /modules/:moduleId,
   // /milestones/:milestoneId, and /issues/:issueId routes encode the section as a
@@ -517,6 +513,14 @@ export default function ProjectDetail() {
               : ALL_SECTIONS.includes(tabParam as ProjectSection)
                 ? (tabParam as ProjectSection)
                 : 'bom';
+
+  // Board column definitions are only rendered on their own tab (Tasks status
+  // filter / Issues status filter) — gating avoids fetching them on every tab
+  // load (BOM, Modules, ECO, ...) when nothing on screen uses them yet.
+  const { data: boardColumns } = useProjectTaskColumns(id, { enabled: section === 'tasks' });
+  const filterStatusOptions = useMemo(() => buildTaskStatusOptions(boardColumns), [boardColumns]);
+  const { data: apiIssueColumns } = useIssueColumns(id, { enabled: section === 'issues' });
+  const issueColumns = apiIssueColumns && apiIssueColumns.length > 0 ? apiIssueColumns : DEFAULT_ISSUE_COLUMNS;
 
   const isMobile = useIsMobile();
   const [viewModeStr, setViewModeStr] = useState<TaskViewMode | null>(null);

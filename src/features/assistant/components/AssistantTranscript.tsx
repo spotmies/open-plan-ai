@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 import { AssistantMessageBubble } from './AssistantMessageBubble';
 import { AssistantStatusLine } from './AssistantStatusLine';
 import { AssistantQuestionCard } from './AssistantQuestionCard';
@@ -44,6 +45,8 @@ interface AssistantTranscriptProps {
   confirmingProposalId?: string | null;
   rejectingProposalId?: string | null;
   revisingProposalId?: string | null;
+  /** Adds extra top padding so the first message starts below AssistantPanel's floating title-fade overlay instead of underneath it. */
+  withHeaderOffset?: boolean;
 }
 
 // Groups a run of messages between `user` rows and moves any present_card
@@ -96,6 +99,7 @@ export function AssistantTranscript({
   confirmingProposalId,
   rejectingProposalId,
   revisingProposalId,
+  withHeaderOffset = false,
 }: AssistantTranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageElRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -172,7 +176,12 @@ export function AssistantTranscript({
 
   return (
     <ScrollArea className="flex-1 min-h-0">
-      <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
+      <div
+        className={cn(
+          'mx-auto max-w-3xl space-y-4 px-4 pb-4 md:px-6 md:pb-6',
+          withHeaderOffset ? 'pt-16 md:pt-20' : 'pt-4 md:pt-6',
+        )}
+      >
         {orderedMessages.map((message) => {
           const setMessageRef = (el: HTMLDivElement | null) => {
             if (el) messageElRefs.current.set(message.id, el);

@@ -113,7 +113,7 @@ const Notifications = () => {
         clearReadNotifications,
         unreadCount,
         stats,
-    } = useNotifications({ page, limit: PAGE_SIZE, ...filters });
+    } = useNotifications({ page, limit: PAGE_SIZE, includeStats: true, ...filters });
 
     // Guard against stale placeholder data (from React Query's keepPreviousData)
     // briefly showing the previous tab's items while the unread-filtered query loads.
