@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useForm, useFieldArray, type FieldErrors } from 'react-hook-form';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/form';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
-import { Boxes, Camera, Check, ChevronsUpDown, Minus, Pencil, Plus, ShoppingCart, X } from 'lucide-react';
+import { Boxes, Camera, Check, ChevronsUpDown, ImagePlus, Minus, Pencil, Plus, ShoppingCart, Upload, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useLocations } from '@/hooks/useLocations';
@@ -71,19 +71,9 @@ const adjustSchema = z.object({
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   orderNote: z.string().max(500, 'Notes must be less than 500 characters').optional(),
   purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
-  trackBy: z.enum(['lot', 'serial']),
-  lotNumber: z.string().max(60, 'Lot number must be less than 60 characters').optional(),
-  serialNumbers: z.array(z.string().max(60, 'Serial number must be less than 60 characters')).optional(),
 }).superRefine((data, ctx) => {
   if (data.stockStatus === 'place_order' && !data.expectedDate) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Expected date is required', path: ['expectedDate'] });
-  }
-  if (data.trackBy === 'serial') {
-    (data.serialNumbers ?? []).forEach((sn, index) => {
-      if (!sn.trim()) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a serial number for every unit', path: ['serialNumbers', index] });
-      }
-    });
   }
 });
 
@@ -132,6 +122,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   const [createdPart, setCreatedPart] = useState<{ id: string; partNumber: string; name: string; category: BOMCategory } | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const createPart = useCreatePart(orgId);
   const updatePart = useUpdatePart();
@@ -148,6 +141,13 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     return [...fromStock, ...fromPartsOnly];
   }, [stock, parts, partProjects]);
 
+  // Custom categories already in use (created via "Add new part") — mirrors InventoryView's
+  // allCategories so they're selectable here too, not just filterable on the inventory page.
+  const extraCategories = useMemo(
+    () => Array.from(new Set(parts.map(p => p.category))),
+    [parts]
+  );
+
   const form = useForm<AdjustFormData>({
     resolver: zodResolver(adjustSchema),
     defaultValues: {
@@ -163,33 +163,10 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       description: '',
       orderNote: '',
       purpose: '',
-      trackBy: 'lot',
-      lotNumber: '',
-      serialNumbers: [''],
     },
   });
 
-  const { fields: serialFields, append: appendSerials, remove: removeSerials } = useFieldArray({
-    control: form.control,
-    name: 'serialNumbers',
-  });
-
   const stockStatus = form.watch('stockStatus');
-  const trackBy = form.watch('trackBy');
-  const quantity = form.watch('quantity');
-
-  // Keep one serial-number input per unit — grows/shrinks as quantity changes while serial tracking is active.
-  useEffect(() => {
-    if (trackBy !== 'serial') return;
-    const targetLength = Math.min(Math.max(Math.trunc(Number(quantity)) || 1, 1), 200);
-    const diff = targetLength - serialFields.length;
-    if (diff > 0) {
-      appendSerials(Array.from({ length: diff }, () => ''));
-    } else if (diff < 0) {
-      removeSerials(Array.from({ length: -diff }, (_, i) => serialFields.length - 1 - i));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackBy, quantity]);
 
   useEffect(() => {
     if (isOpen && initialPartId) {
@@ -206,16 +183,82 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
 
   const isFormDirty = form.formState.isDirty || showAddPart || !!image;
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const applyImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
     setImage(file);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
   };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    applyImageFile(file);
+  };
+
+  const handleImageDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingImage(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    applyImageFile(file);
+  };
+
+  const handleCloseCamera = () => {
+    setCameraStream((prev) => {
+      prev?.getTracks().forEach((track) => track.stop());
+      return null;
+    });
+  };
+
+  const handleOpenCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setCameraStream(stream);
+    } catch {
+      toast.error('Camera access was denied or unavailable');
+    }
+  };
+
+  const handleCapturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      applyImageFile(new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      handleCloseCamera();
+    }, 'image/jpeg', 0.92);
+  };
+
+  useEffect(() => {
+    if (cameraStream && videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
+
+  // The camera light must turn off the moment the dialog closes, not just when the user
+  // explicitly cancels the preview — otherwise the stream keeps running in the background.
+  useEffect(() => {
+    if (!isOpen) handleCloseCamera();
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      handleCloseCamera();
+    };
+  }, []);
 
   const handleRemoveImage = () => {
     setImage(null);
@@ -239,6 +282,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     setNewPart(emptyNewPart);
     setCreatedPart(null);
     handleRemoveImage();
+    handleCloseCamera();
     onClose();
   };
 
@@ -313,28 +357,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         note: data.orderNote?.trim() || undefined,
         description: data.description?.trim() || undefined,
         purpose: data.purpose?.trim() || undefined,
-        lotNumber: data.trackBy === 'lot' ? (data.lotNumber?.trim() || undefined) : undefined,
-        serialNumber: data.trackBy === 'serial'
-          ? (data.serialNumbers ?? []).map(s => s.trim()).filter(Boolean).join(', ') || undefined
-          : undefined,
       });
-    } else if (data.trackBy === 'serial') {
-      // Backend transaction rows hold one serial number each, so a serialized quantity fans out
-      // into one ledger entry per unit instead of a single entry carrying the whole quantity.
-      for (const serialNumber of data.serialNumbers ?? []) {
-        onAdjust({
-          partId: part.partId,
-          ...(selectedRecord ? {} : { pn: part.pn, name: part.name, cat }),
-          location: data.location as StockLocation,
-          direction: data.direction,
-          quantity: 1,
-          reasonCode: data.reasonCode as string,
-          note: data.note?.trim() || undefined,
-          description: data.description?.trim() || undefined,
-          serialNumber: serialNumber.trim(),
-          image: image ?? undefined,
-        });
-      }
     } else {
       onAdjust({
         partId: part.partId,
@@ -345,7 +368,6 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         reasonCode: data.reasonCode as string,
         note: data.note?.trim() || undefined,
         description: data.description?.trim() || undefined,
-        lotNumber: data.lotNumber?.trim() || undefined,
         image: image ?? undefined,
       });
     }
@@ -525,6 +547,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                               <CategoryCombobox
                                 value={newPart.category}
                                 onChange={(v) => setNewPart(prev => ({ ...prev, category: v as BOMCategory | '' }))}
+                                extraCategories={extraCategories}
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -574,7 +597,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                       <FormItem>
                         <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Category <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                         <FormControl>
-                          <CategoryCombobox value={field.value} onChange={field.onChange} placeholder="Select a part first..." />
+                          <CategoryCombobox value={field.value} onChange={field.onChange} placeholder="Select a part first..." extraCategories={extraCategories} />
                         </FormControl>
                         <p className="text-xs text-muted-foreground">
                           Defaults to the part&apos;s category — change it here to recategorize the part.
@@ -686,86 +709,6 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   </div>
                 )}
 
-                {/* Lot/serial tracking — shared between "Have stock" and "Need to order" */}
-                <div className="grid grid-cols-1 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="trackBy"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Track by</FormLabel>
-                        <FormControl>
-                          <ToggleGroup
-                            type="single"
-                            value={field.value}
-                            onValueChange={(v) => v && field.onChange(v)}
-                            className="justify-start gap-2"
-                          >
-                            <ToggleGroupItem
-                              value="lot"
-                              variant="outline"
-                              className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
-                            >
-                              Lot number
-                            </ToggleGroupItem>
-                            <ToggleGroupItem
-                              value="serial"
-                              variant="outline"
-                              className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
-                            >
-                              Serial number
-                            </ToggleGroupItem>
-                          </ToggleGroup>
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground">
-                          {field.value === 'serial'
-                            ? 'One serial number is required per unit — the inputs below track the quantity above.'
-                            : 'One lot number covers the entire quantity.'}
-                        </p>
-                      </FormItem>
-                    )}
-                  />
-
-                  {trackBy === 'lot' ? (
-                    <FormField
-                      control={form.control}
-                      name="lotNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lot number <span className="normal-case font-normal">optional</span></FormLabel>
-                          <FormControl>
-                            <Input placeholder="LOT-…" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  ) : (
-                    <div className="space-y-2">
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Serial numbers <span className="text-destructive" aria-hidden="true">*</span>
-                      </FormLabel>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {serialFields.map((serialField, index) => (
-                          <FormField
-                            key={serialField.id}
-                            control={form.control}
-                            name={`serialNumbers.${index}` as const}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormControl>
-                                  <Input placeholder={`SN-… (unit ${index + 1})`} {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 <FormField
                   control={form.control}
                   name="note"
@@ -854,7 +797,26 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Image <span className="normal-case font-normal">optional</span>
                   </Label>
-                  {imagePreviewUrl ? (
+                  {cameraStream ? (
+                    <div className="space-y-2">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full max-w-xs rounded-md border bg-black aspect-video object-cover"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button type="button" size="sm" onClick={handleCapturePhoto}>
+                          <Camera className="h-3.5 w-3.5 mr-1.5" />
+                          Capture
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={handleCloseCamera}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : imagePreviewUrl ? (
                     <div className="relative w-fit">
                       <img
                         src={imagePreviewUrl}
@@ -872,17 +834,38 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                       </Button>
                     </div>
                   ) : (
-                    <label className="flex items-center gap-2 w-fit px-3 py-2 rounded-md border border-dashed cursor-pointer text-sm text-muted-foreground hover:bg-muted/40 transition-colors">
-                      <Camera className="h-4 w-4" />
-                      Add photo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={handleImageSelect}
-                      />
-                    </label>
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setIsDraggingImage(true); }}
+                      onDragLeave={() => setIsDraggingImage(false)}
+                      onDrop={handleImageDrop}
+                      className={cn(
+                        'flex flex-col items-center justify-center gap-2 rounded-md border border-dashed px-4 py-6 text-center transition-colors',
+                        isDraggingImage ? 'border-primary bg-primary/5' : 'border-input'
+                      )}
+                    >
+                      <ImagePlus className="h-5 w-5 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Drag & drop an image here</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors">
+                          <Upload className="h-3.5 w-3.5" />
+                          Browse files
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleImageSelect}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleOpenCamera}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                        >
+                          <Camera className="h-3.5 w-3.5" />
+                          Take photo
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

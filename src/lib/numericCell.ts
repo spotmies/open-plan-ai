@@ -67,3 +67,46 @@ export function parseNumericCell(raw: unknown): number | null {
   if (!Number.isFinite(value)) return null;
   return negative ? -value : value;
 }
+
+/**
+ * Detects which currency a price-like cell was written in, from its ISO code
+ * ("INR 314.65") or symbol ("₹314.65", "US$12.80"). Mirrors the backend's
+ * detectCellCurrency in numericCell.util.ts — keep them in step.
+ *
+ * Returns null when the cell carries no currency signal at all (a plain
+ * number) — that's "unknown", not "USD", and callers must not treat a null
+ * as a mismatch: there is nothing to compare.
+ */
+const CURRENCY_CODE_PATTERN = /\b(USD|EUR|GBP|INR|JPY|CAD|AUD|SGD|CHF|CNY|BRL|MXN|KRW|AED)\b/i;
+
+const CURRENCY_SYMBOLS: Array<[RegExp, string]> = [
+  [/A\$/, 'AUD'],
+  [/C\$/, 'CAD'],
+  [/S\$/, 'SGD'],
+  [/MX\$/, 'MXN'],
+  [/R\$/, 'BRL'],
+  [/US\$/, 'USD'],
+  [/₹/, 'INR'],
+  [/€/, 'EUR'],
+  [/£/, 'GBP'],
+  [/₩/, 'KRW'],
+  [/Fr\b/, 'CHF'],
+  [/د\.إ/, 'AED'],
+  [/¥/, 'CNY'],
+  [/\$/, 'USD'],
+];
+
+export function detectCellCurrency(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (s === '') return null;
+
+  const codeMatch = CURRENCY_CODE_PATTERN.exec(s);
+  if (codeMatch) return codeMatch[1].toUpperCase();
+
+  for (const [pattern, code] of CURRENCY_SYMBOLS) {
+    if (pattern.test(s)) return code;
+  }
+
+  return null;
+}

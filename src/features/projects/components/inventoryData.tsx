@@ -6,7 +6,7 @@
 // buildFromDef), and display components (LocationCombobox, CategoryCombobox, CoveragePill,
 // CoverageBar) that both real and (formerly) mock data flowed through unchanged.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -129,17 +129,25 @@ function formatCategoryOptionLabel(category: string): string {
     .join(' ');
 }
 
-/** Category picker for new-part creation: preset dropdown (the 7 known BOM categories) with
- * a custom escape hatch, so a category typed here shows up as a real filter later instead of
- * being silently limited to the fixed preset list. */
-export function CategoryCombobox({ value, onChange, placeholder = 'Select a category...' }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
+/** Category picker for new-part creation: preset dropdown (the 7 known BOM categories, plus
+ * any custom categories already in use — passed in via `extraCategories`) with a custom escape
+ * hatch, so a category typed here shows up as a real filter later instead of being silently
+ * limited to the fixed preset list. */
+export function CategoryCombobox({ value, onChange, placeholder = 'Select a category...', extraCategories = [] }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; extraCategories?: string[];
 }) {
+  const options = useMemo(() => {
+    const extra = Array.from(new Set(extraCategories)).filter(
+      cat => !(KNOWN_BOM_CATEGORIES as readonly string[]).includes(cat)
+    );
+    return [...KNOWN_BOM_CATEGORIES, ...extra];
+  }, [extraCategories]);
+
   const [customMode, setCustomMode] = useState(
-    () => value !== '' && !(KNOWN_BOM_CATEGORIES as readonly string[]).includes(value)
+    () => value !== '' && !options.includes(value)
   );
   const [customValue, setCustomValue] = useState(
-    () => (value !== '' && !(KNOWN_BOM_CATEGORIES as readonly string[]).includes(value) ? value : '')
+    () => (value !== '' && !options.includes(value) ? value : '')
   );
 
   useEffect(() => {
@@ -149,11 +157,11 @@ export function CategoryCombobox({ value, onChange, placeholder = 'Select a cate
       return;
     }
 
-    if (!(KNOWN_BOM_CATEGORIES as readonly string[]).includes(value)) {
+    if (!options.includes(value)) {
       setCustomMode(true);
       setCustomValue(value);
     }
-  }, [value]);
+  }, [value, options]);
 
   if (customMode) {
     return (
@@ -200,13 +208,13 @@ export function CategoryCombobox({ value, onChange, placeholder = 'Select a cate
           onChange(v);
         }
       }}
-      value={(KNOWN_BOM_CATEGORIES as readonly string[]).includes(value) ? value : ''}
+      value={options.includes(value) ? value : ''}
     >
       <SelectTrigger>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        {KNOWN_BOM_CATEGORIES.map((c) => (
+        {options.map((c) => (
           <SelectItem key={c} value={c}>{formatCategoryOptionLabel(c)}</SelectItem>
         ))}
         <SelectItem value={CUSTOM_CATEGORY_SENTINEL}>Other (custom)…</SelectItem>
