@@ -11,6 +11,9 @@ export const config = {
     analytics: import.meta.env.VITE_ENABLE_ANALYTICS === 'true',
     errorTracking: import.meta.env.VITE_ENABLE_ERROR_TRACKING === 'true',
   },
+  push: {
+    vapidPublicKey: import.meta.env.VITE_VAPID_PUBLIC_KEY || '',
+  },
   support: {
     // Third-party bug-report/ticketing API — called directly from the browser
     // with a bearer key, so only ever put a key here that is safe to expose
