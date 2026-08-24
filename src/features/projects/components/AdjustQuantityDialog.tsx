@@ -412,6 +412,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
           <form onSubmit={form.handleSubmit(handleSubmit, handleInvalid)} className="flex flex-col flex-1 min-h-0">
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
               <div className="p-4 sm:p-6 space-y-5">
+                {!initialPartId && (
                 <FormField
                   control={form.control}
                   name="partId"
@@ -588,8 +589,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     </FormItem>
                   )}
                 />
+                )}
 
-                {!showAddPart && (
+                {!showAddPart && !initialPartId && (
                   <FormField
                     control={form.control}
                     name="category"
@@ -608,6 +610,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   />
                 )}
 
+                {!initialPartId && (
                 <FormField
                   control={form.control}
                   name="location"
@@ -621,7 +624,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     </FormItem>
                   )}
                 />
+                )}
 
+                {!initialPartId && (
                 <FormField
                   control={form.control}
                   name="stockStatus"
@@ -660,6 +665,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     </FormItem>
                   )}
                 />
+                )}
 
                 {stockStatus === 'in_stock' ? (
                   <div className="grid grid-cols-1 gap-4">
@@ -773,6 +779,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   />
                 )}
 
+                {!initialPartId && (
                 <FormField
                   control={form.control}
                   name="description"
@@ -792,6 +799,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     </FormItem>
                   )}
                 />
+                )}
 
                 <div className="space-y-2">
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">

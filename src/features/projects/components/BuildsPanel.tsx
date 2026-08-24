@@ -46,6 +46,9 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
 
   const canKit = !!selectedBuild && selectedBuild.status === 'allocated';
   const isKitted = selectedBuild?.status === 'kitted';
+  // Nothing left to reserve once every line's allocated qty already meets its required qty —
+  // disable the button instead of letting it be clicked as a no-op.
+  const hasOutstandingDemand = !!selectedBuild?.lines.some((l) => l.required - l.allocated > 0);
   const handleAutoAllocate = () => { if (selectedBuild) allocateMutation.mutate(selectedBuild.id); };
   const handleMarkKitted = () => { if (selectedBuild) kitMutation.mutate(selectedBuild.id); };
   const handleGenerateShortage = () => {
@@ -198,7 +201,7 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
               <div className="flex flex-col gap-2">
                 <Button
                   className="h-auto min-w-0 justify-start whitespace-normal py-2.5 text-left"
-                  disabled={isKitted || allocateMutation.isPending}
+                  disabled={isKitted || !hasOutstandingDemand || allocateMutation.isPending}
                   onClick={handleAutoAllocate}
                 >
                   <ClipboardCheck className="h-4 w-4 mr-2 shrink-0" />
@@ -225,8 +228,10 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
 
               <div className="space-y-2">
                 {selectedBuild.lines.map((l) => {
+                  // Same outstanding-vs-total logic as the desktop table — see comment there.
+                  const outstanding = Math.max(0, l.required - l.allocated);
                   const shortfall =
-                    l.required > l.available + l.onOrder ? l.available + l.onOrder - l.required : 0;
+                    outstanding > l.available + l.onOrder ? l.available + l.onOrder - outstanding : 0;
                   const meta = getCategoryMeta(l.cat);
                   const CategoryIcon = CATEGORY_ICON_MAP[meta.iconName] ?? Tag;
                   return (
@@ -250,7 +255,7 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
                       </div>
                       <div className="grid grid-cols-4 gap-2 pt-2 border-t border-border text-center">
                         <div>
-                          <div className="text-sm font-semibold">{l.required}</div>
+                          <div className="text-sm font-semibold">{outstanding}</div>
                           <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Req</div>
                         </div>
                         <div>
@@ -378,7 +383,7 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
         )}
 
         <div className="flex flex-wrap gap-2">
-          <Button disabled={isKitted || allocateMutation.isPending} onClick={handleAutoAllocate}>
+          <Button disabled={isKitted || !hasOutstandingDemand || allocateMutation.isPending} onClick={handleAutoAllocate}>
             <ClipboardCheck className="h-4 w-4 mr-2" />
             {allocateMutation.isPending ? 'Allocating…' : 'Auto-allocate available'}
           </Button>
@@ -407,8 +412,12 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
             </TableHeader>
             <TableBody>
               {selectedBuild.lines.map((l) => {
+                // "Required" shown here is the outstanding amount still to allocate — total
+                // BOM demand minus what's already been reserved for this build — so it counts
+                // down as Auto-allocate reserves stock, instead of staying pinned at the total.
+                const outstanding = Math.max(0, l.required - l.allocated);
                 const shortfall =
-                  l.required > l.available + l.onOrder ? l.available + l.onOrder - l.required : 0;
+                  outstanding > l.available + l.onOrder ? l.available + l.onOrder - outstanding : 0;
                 const meta = getCategoryMeta(l.cat);
                 const CategoryIcon = CATEGORY_ICON_MAP[meta.iconName] ?? Tag;
                 return (
@@ -428,7 +437,7 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
                       </div>
                     </TableCell>
                     <TableCell className="px-3 py-2 text-right">{l.qtyPerUnit} {l.uom}</TableCell>
-                    <TableCell className="px-3 py-2 text-right font-semibold">{l.required}</TableCell>
+                    <TableCell className="px-3 py-2 text-right font-semibold">{outstanding}</TableCell>
                     <TableCell className="px-3 py-2 text-right">{l.available}</TableCell>
                     <TableCell className="px-3 py-2 text-right">{l.allocated}</TableCell>
                     <TableCell className="px-3 py-2 text-right">{l.onOrder || '—'}</TableCell>

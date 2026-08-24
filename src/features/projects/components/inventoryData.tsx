@@ -100,8 +100,16 @@ export function LocationCombobox({ value, onChange, placeholder = 'Select a loca
   return (
     <Select
       onValueChange={(v) => {
-        if (v === CUSTOM_LOCATION_SENTINEL) { setCustomMode(true); onChange(''); }
-        else onChange(v);
+        if (v === CUSTOM_LOCATION_SENTINEL) {
+          // Deferred a tick: swapping to the custom Input unmounts this Select's own DOM
+          // node, which — done synchronously inside its own onValueChange — races Radix's
+          // internal close/focus-restore for that same click and gets silently discarded
+          // (the dropdown just closes with nothing changed). Letting that finish first
+          // before we swap avoids the race.
+          setTimeout(() => { setCustomMode(true); onChange(''); }, 0);
+        } else {
+          onChange(v);
+        }
       }}
       value={value}
     >
@@ -201,9 +209,14 @@ export function CategoryCombobox({ value, onChange, placeholder = 'Select a cate
     <Select
       onValueChange={(v) => {
         if (v === CUSTOM_CATEGORY_SENTINEL) {
-          setCustomMode(true);
-          setCustomValue('');
-          onChange('');
+          // See LocationCombobox's identical deferral above — swapping to the custom
+          // Input unmounts this Select from inside its own onValueChange, which races
+          // Radix's close/focus-restore and silently gets discarded if done synchronously.
+          setTimeout(() => {
+            setCustomMode(true);
+            setCustomValue('');
+            onChange('');
+          }, 0);
         } else {
           onChange(v);
         }
@@ -226,15 +239,16 @@ export function CategoryCombobox({ value, onChange, placeholder = 'Select a cate
 export interface StockTransaction {
   id: string;
   partId: string;
-  type: 'receive' | 'adjust' | 'allocate' | 'deallocate';
-  direction?: 'add' | 'remove';   // adjust only
+  type: 'receive' | 'adjust' | 'allocate' | 'deallocate' | 'issue' | 'transfer';
+  direction?: 'add' | 'remove';   // adjust/issue only
   qty: number;
   location: StockLocation;
-  reference?: string;              // receive only — PO / expected-receipt reference
-  reasonCode?: string;             // adjust only
+  reference?: string;              // receive: PO / expected-receipt reference. transfer: destination location.
+  reasonCode?: string;             // adjust/issue only
   note?: string;
   description?: string;            // adjust only
   quarantine?: boolean;            // receive only
+  buildId?: string;                // allocate/deallocate/issue only
   createdAt: string;
   createdBy: string;
 }

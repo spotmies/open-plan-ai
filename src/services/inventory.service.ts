@@ -44,7 +44,7 @@ export interface ApiOrderRecord {
 export interface ApiStockTransaction {
   id: string;
   partId: string;
-  type: 'receive' | 'adjust' | 'allocate' | 'deallocate';
+  type: 'receive' | 'adjust' | 'allocate' | 'deallocate' | 'issue' | 'transfer';
   direction: 'add' | 'remove' | null;
   qty: number;
   location: string;
@@ -53,6 +53,7 @@ export interface ApiStockTransaction {
   note: string | null;
   description: string | null;
   quarantine: boolean;
+  buildId: string | null;
   createdAt: string;
   createdBy: string;
 }
@@ -154,6 +155,7 @@ export function fromApiTransaction(r: ApiStockTransaction): StockTransaction {
     note: r.note ?? undefined,
     description: r.description ?? undefined,
     quarantine: r.quarantine,
+    buildId: r.buildId ?? undefined,
     createdAt: r.createdAt,
     createdBy: r.createdBy,
   };
@@ -217,6 +219,29 @@ export interface AdjustQuantityDto {
   serialNumber?: string;
 }
 
+export interface IssueStockDto {
+  partId: string;
+  location: string;
+  quantity: number;
+  buildId?: string;
+  reference?: string;
+  reasonCode?: string;
+  note?: string;
+}
+
+export interface TransferStockDto {
+  partId: string;
+  fromLocation: string;
+  toLocation: string;
+  quantity: number;
+  note?: string;
+}
+
+export interface AllocateStockDto {
+  buildId: string;
+  quantity: number;
+}
+
 export interface PlaceOrderDto {
   partId: string;
   quantity: number;
@@ -278,6 +303,18 @@ export const inventoryService = {
 
   async releaseQuarantine(orgId: string, stockId: string, qty: number): Promise<ApiStockRecord> {
     return apiClient.post<ApiStockRecord>(ENDPOINTS.INVENTORY.RELEASE_QUARANTINE(orgId, stockId), { qty });
+  },
+
+  async issueStock(orgId: string, dto: IssueStockDto): Promise<ApiStockRecord> {
+    return apiClient.post<ApiStockRecord>(ENDPOINTS.INVENTORY.ISSUE(orgId), dto);
+  },
+
+  async transferStock(orgId: string, dto: TransferStockDto): Promise<ApiStockRecord> {
+    return apiClient.post<ApiStockRecord>(ENDPOINTS.INVENTORY.TRANSFER(orgId), dto);
+  },
+
+  async allocateStock(orgId: string, stockId: string, dto: AllocateStockDto): Promise<ApiStockRecord> {
+    return apiClient.post<ApiStockRecord>(ENDPOINTS.INVENTORY.ALLOCATE_STOCK(orgId, stockId), dto);
   },
 
   async placeOrder(orgId: string, dto: PlaceOrderDto): Promise<ApiOrderRecord> {

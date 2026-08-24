@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { format } from 'date-fns';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Issue, IssueStatus, IssueSeverity, IssueCategory, Task, TeamMember } from '@/types';
 import { Card } from '@/components/ui/card';
@@ -74,11 +75,14 @@ interface IssuesViewProps {
   assignedByFilter?: string[];
   updatedByFilter?: string[];
   dueDateFilter?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
-  dueDateCustomFilter?: string;
+  dueDateCustomFilter?: string; // start of a custom range (yyyy-MM-dd), inclusive
+  dueDateCustomToFilter?: string; // end of a custom range (yyyy-MM-dd), inclusive
   reportedDateFilter?: 'today' | 'this-week' | 'this-month';
-  reportedDateCustomFilter?: string;
+  reportedDateCustomFilter?: string; // start of a custom range (yyyy-MM-dd), inclusive
+  reportedDateCustomToFilter?: string; // end of a custom range (yyyy-MM-dd), inclusive
   completedDateFilter?: 'today' | 'this-week' | 'this-month';
-  completedDateCustomFilter?: string;
+  completedDateCustomFilter?: string; // start of a custom range (yyyy-MM-dd), inclusive
+  completedDateCustomToFilter?: string; // end of a custom range (yyyy-MM-dd), inclusive
   tagsFilter?: string[];
   isAddDialogOpen?: boolean;
   onAddDialogClose?: () => void;
@@ -152,6 +156,19 @@ const issueSeverityBorder: Record<IssueSeverity, string> = {
 
 const BOARD_CHECKLIST_PREVIEW_COUNT = 2;
 
+/**
+ * Inclusive yyyy-MM-dd comparison for the "Custom..." date filters — `to`
+ * falls back to `from` so a single-day pick (from === to) still works via
+ * this same path. String comparison is safe here since both sides are
+ * always zero-padded ISO date strings, which sort identically to a real
+ * date comparison.
+ */
+function matchesCustomDateRange(date: Date | null, from: string | undefined, to: string | undefined): boolean {
+  if (!date || !from) return false;
+  const day = format(date, 'yyyy-MM-dd');
+  return day >= from && day <= (to || from);
+}
+
 export function IssuesView({
   issues,
   viewMode = 'table',
@@ -165,10 +182,13 @@ export function IssuesView({
   updatedByFilter: externalUpdatedByFilter = [],
   dueDateFilter: externalDueDateFilter,
   dueDateCustomFilter: externalDueDateCustomFilter,
+  dueDateCustomToFilter: externalDueDateCustomToFilter,
   reportedDateFilter: externalReportedDateFilter,
   reportedDateCustomFilter: externalReportedDateCustomFilter,
+  reportedDateCustomToFilter: externalReportedDateCustomToFilter,
   completedDateFilter: externalCompletedDateFilter,
   completedDateCustomFilter: externalCompletedDateCustomFilter,
+  completedDateCustomToFilter: externalCompletedDateCustomToFilter,
   tagsFilter: externalTagsFilter = [],
   isAddDialogOpen: externalIsAddDialogOpen,
   onAddDialogClose,
@@ -224,10 +244,13 @@ export function IssuesView({
   const updatedByFilter = externalUpdatedByFilter;
   const dueDateFilter = externalDueDateFilter;
   const dueDateCustomFilter = externalDueDateCustomFilter;
+  const dueDateCustomToFilter = externalDueDateCustomToFilter;
   const reportedDateFilter = externalReportedDateFilter;
   const reportedDateCustomFilter = externalReportedDateCustomFilter;
+  const reportedDateCustomToFilter = externalReportedDateCustomToFilter;
   const completedDateFilter = externalCompletedDateFilter;
   const completedDateCustomFilter = externalCompletedDateCustomFilter;
+  const completedDateCustomToFilter = externalCompletedDateCustomToFilter;
   const tagsFilter = externalTagsFilter;
 
   useEffect(() => {
@@ -290,7 +313,7 @@ export function IssuesView({
     let matchesDueDate = true;
     if (dueDateCustomFilter) {
       const issueDueDate = issue.dueDate ? new Date(issue.dueDate) : null;
-      matchesDueDate = !!issueDueDate && issueDueDate.toDateString() === new Date(dueDateCustomFilter).toDateString();
+      matchesDueDate = matchesCustomDateRange(issueDueDate, dueDateCustomFilter, dueDateCustomToFilter);
     } else if (dueDateFilter) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -323,7 +346,7 @@ export function IssuesView({
     let matchesReportedDate = true;
     if (reportedDateCustomFilter) {
       const issueReportedDate = issue.reportedAt ? new Date(issue.reportedAt) : null;
-      matchesReportedDate = !!issueReportedDate && issueReportedDate.toDateString() === new Date(reportedDateCustomFilter).toDateString();
+      matchesReportedDate = matchesCustomDateRange(issueReportedDate, reportedDateCustomFilter, reportedDateCustomToFilter);
     } else if (reportedDateFilter) {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
@@ -351,7 +374,7 @@ export function IssuesView({
     let matchesCompletedDate = true;
     if (completedDateCustomFilter) {
       const issueCompletedDate = issue.resolvedAt ? new Date(issue.resolvedAt) : null;
-      matchesCompletedDate = !!issueCompletedDate && issueCompletedDate.toDateString() === new Date(completedDateCustomFilter).toDateString();
+      matchesCompletedDate = matchesCustomDateRange(issueCompletedDate, completedDateCustomFilter, completedDateCustomToFilter);
     } else if (completedDateFilter) {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);

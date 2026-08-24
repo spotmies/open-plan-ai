@@ -78,7 +78,15 @@ export const issuesService = {
     if (issue.checklist && issue.checklist.length > 0) payload.checklist = issue.checklist;
     if (issue.descriptionBlocks && issue.descriptionBlocks.length > 0) payload.descriptionBlocks = issue.descriptionBlocks;
     if (issue.videoLinks && issue.videoLinks.length > 0) payload.videoLinks = issue.videoLinks;
-    return apiClient.post<Issue>(ENDPOINTS.ISSUES.LIST(projectId), payload);
+    // Through fromApiIssue, not returned raw — the backend's create response
+    // carries blockedByTasks/blocksTasks as {id,title,status} objects, and
+    // only the adapter converts those into the blockedBy/blocksTaskIds string
+    // arrays the UI's dependency logic (IssuesView's isDependencyIssue)
+    // actually reads. Without it, useCreateIssue's optimistic cache insert
+    // has no blockedBy at all, so a just-created blocked issue renders in
+    // "Open" for a moment until the next refetch corrects it.
+    const raw = await apiClient.post<Record<string, unknown>>(ENDPOINTS.ISSUES.LIST(projectId), payload);
+    return fromApiIssue(raw);
   },
 
   /**
