@@ -122,7 +122,7 @@ export interface ImportRowPreview {
   /** Sheet columns with no BOM field behind them — imported into Additional Fields. */
   customFields: Record<string, string>;
   missingRequiredFields: string[];
-  aiSuggestions: Partial<Record<'Part Name' | 'Description' | 'Category', string>>;
+  aiSuggestions: Partial<Record<'Description' | 'Category', string>>;
   leadTimeRaw: string | null;
   leadTimeDays: number | null;
   leadTimeAmbiguous: boolean;

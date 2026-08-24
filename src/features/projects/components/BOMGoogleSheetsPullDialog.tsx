@@ -142,8 +142,10 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
       (f) => (row.aiSuggestions[f as keyof ImportRowPreview['aiSuggestions']] ?? '').trim() !== '',
     );
 
-  const partNameOf = (row: ImportRowPreview): string =>
-    (row.values['Part Name'] ?? '').trim() || (row.aiSuggestions['Part Name'] ?? '').trim();
+  // No AI fallback here on purpose — Part Name is never AI-suggested (see
+  // AI_SUGGESTABLE_FIELDS on the backend), so a missing name shows as
+  // genuinely blank until the user types one, not silently backfilled.
+  const partNameOf = (row: ImportRowPreview): string => (row.values['Part Name'] ?? '').trim();
 
   const hasAiSuggestion = (row: ImportRowPreview, field: string): boolean =>
     (row.aiSuggestions[field as keyof ImportRowPreview['aiSuggestions']] ?? '').trim() !== '';
