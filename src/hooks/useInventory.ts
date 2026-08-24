@@ -9,6 +9,9 @@ import {
   fromApiBuildBomLine,
   type ReceiveStockDto,
   type AdjustQuantityDto,
+  type IssueStockDto,
+  type TransferStockDto,
+  type AllocateStockDto,
   type PlaceOrderDto,
   type CreateBuildDto,
 } from '@/services/inventory.service';
@@ -90,6 +93,34 @@ export function useReleaseQuarantine(orgId: string) {
     mutationFn: ({ stockId, qty }: { stockId: string; qty: number }) =>
       inventoryService.releaseQuarantine(orgId, stockId, qty),
     onSuccess: () => invalidateInventory(queryClient, orgId),
+  });
+}
+
+export function useIssueStock(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: IssueStockDto) => inventoryService.issueStock(orgId, dto),
+    onSuccess: () => invalidateInventory(queryClient, orgId),
+  });
+}
+
+export function useTransferStock(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: TransferStockDto) => inventoryService.transferStock(orgId, dto),
+    onSuccess: () => invalidateInventory(queryClient, orgId),
+  });
+}
+
+export function useAllocateStock(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stockId, ...dto }: AllocateStockDto & { stockId: string }) =>
+      inventoryService.allocateStock(orgId, stockId, dto),
+    onSuccess: (_data, { buildId }) => {
+      invalidateInventory(queryClient, orgId);
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.buildBomLines(orgId, buildId) });
+    },
   });
 }
 

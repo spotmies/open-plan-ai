@@ -79,6 +79,8 @@ import { BOMMapView } from './BOMMapView';
 import { BOMPartSheet, BOMPartPayload, DocValue } from './BOMPartSheet';
 import { BOMRejectDialog } from './BOMRejectDialog';
 import { BOMImportSubcomponentsDialog } from './BOMImportSubcomponentsDialog';
+import { NewBuildDialog, type NewBuildInput } from './NewBuildDialog';
+import { useCreateInventoryBuild } from '@/hooks/useInventory';
 import BOMGoogleSheetsLinkDialog from './BOMGoogleSheetsLinkDialog';
 import BOMGoogleSheetsPullDialog from './BOMGoogleSheetsPullDialog';
 import BOMGoogleSheetsPushDialog from './BOMGoogleSheetsPushDialog';
@@ -1116,6 +1118,7 @@ export function BOMView({
     if (saved) { try { return JSON.parse(saved); } catch { /* ignore */ } }
     return {};
   });
+  const [newBuildOpen, setNewBuildOpen] = useState(false);
 
   const { formatCurrency, currencySymbol } = useCurrency();
 
@@ -1129,6 +1132,23 @@ export function BOMView({
   const deleteBomNode = useDeleteBomNode(projectId);
   const addRequirement = useAddRequirement(projectId);
   const { data: pendingApprovalRequests = [] } = useProjectApprovalRequests(projectId, 'pending');
+  const createBuildMutation = useCreateInventoryBuild(orgId);
+
+  const handleAddBuild = (input: NewBuildInput) => {
+    createBuildMutation.mutate({
+      name: input.name,
+      type: input.type,
+      units: input.units,
+      bomRev: input.bomRev,
+      scrapPct: input.scrapPct,
+      milestone: input.milestone,
+      targetDate: input.targetDate,
+      projectId: input.projectId,
+    }, {
+      onSuccess: () => toast.success(`${input.name} created`),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to create build'),
+    });
+  };
 
   const projectRole = (project?.myRole || '').toLowerCase();
   const isAdmin = projectRole === 'admin';
@@ -1513,6 +1533,15 @@ export function BOMView({
             onManage={() => setSheetsLinkOpen(true)}
           />
 
+          {/* Create build — opens the New Build dialog with this project locked in */}
+          <button
+            onClick={() => setNewBuildOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            New Build
+          </button>
+
           {/* Export dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1614,6 +1643,16 @@ export function BOMView({
                 onManage={() => setSheetsLinkOpen(true)}
                 compact
               />
+
+              {/* Create build — opens the New Build dialog with this project locked in */}
+              <button
+                onClick={() => setNewBuildOpen(true)}
+                title="New Build"
+                aria-label="New Build"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-md border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors shrink-0"
+              >
+                <Layers className="w-4 h-4" />
+              </button>
 
               {/* Export */}
               <DropdownMenu>
@@ -1717,6 +1756,15 @@ export function BOMView({
         open={filterOpen} filters={filters} setFilters={setFilters}
         onClose={() => setFilterOpen(false)} facets={facets}
         currencySymbol={currencySymbol}
+      />
+
+      {/* New Build — project is locked to this BOM's project */}
+      <NewBuildDialog
+        isOpen={newBuildOpen}
+        onClose={() => setNewBuildOpen(false)}
+        onAddBuild={handleAddBuild}
+        projects={[{ id: projectId, name: project?.name ?? 'This project' }]}
+        lockedProjectId={projectId}
       />
 
       {/* Add Part — choice dialog */}

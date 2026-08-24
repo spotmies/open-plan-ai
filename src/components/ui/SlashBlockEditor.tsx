@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+import { toast } from 'sonner';
 import {
   Plus,
   GripVertical,
@@ -16,9 +17,12 @@ import {
   Type,
   MoreHorizontal,
   Upload,
+  Loader2,
   LucideIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { assistantService } from '@/services/assistant.service';
+import { resolveFileUrl } from '@/utils/fileUrl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -80,6 +84,10 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
   const [, setFocusedBlockId] = useState<string | null>(null);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [activeBlockIdForMenu, setActiveBlockIdForMenu] = useState<string | null>(null);
+  // Blocks with a file upload in flight — the dropzone shows a spinner
+  // instead of the "Choose File" controls until the real, persisted URL
+  // comes back (see handleFileSelect/handleFileDrop below).
+  const [uploadingBlockIds, setUploadingBlockIds] = useState<Set<string>>(new Set());
 
   // The editor keeps its own copy of the blocks, so a caller that swaps
   // `initialBlocks` out from under it (seeding the editor from the plain
@@ -223,22 +231,54 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
     }
   };
 
+  // Actually uploads the file to server storage and stores the returned
+  // serve: key — never URL.createObjectURL(file), which produces a blob:
+  // URL that only ever resolves inside the tab that created it. That blob
+  // survived in `content` well enough to render for the uploader in the
+  // same session, which is exactly what made it look like it worked; saved
+  // to the record and reopened by anyone else (or the same user later), the
+  // blob: URL is meaningless and the block just shows a broken image.
+  const uploadBlockFile = async (id: string, file: File) => {
+    setUploadingBlockIds((prev) => new Set(prev).add(id));
+    try {
+      const uploaded = await assistantService.uploadAttachment(file);
+      updateBlock(id, { content: uploaded.fileUrl });
+    } catch {
+      toast.error('Failed to upload file');
+    } finally {
+      setUploadingBlockIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   const handleFileSelect = (id: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      updateBlock(id, { content: url });
-    }
+    if (file) void uploadBlockFile(id, file);
   };
 
   const handleFileDrop = (id: string) => (e: React.DragEvent) => {
     e.preventDefault();
     if (readOnly) return;
     const file = e.dataTransfer.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      updateBlock(id, { content: url });
-    }
+    if (file) void uploadBlockFile(id, file);
+  };
+
+  // Recalculates a block textarea's height from its actual content, not just
+  // on the keystroke that grew it. Passed as `ref` (an inline function, so
+  // React re-invokes it on every render) rather than a useEffect, because a
+  // row whose content arrived via initialBlocks on load, a slash-command
+  // insert, or a paste never fires the textarea's own `input` DOM event —
+  // the onInput handlers below only catch live typing. Without this, such a
+  // row stayed stuck at its one-line height while wrapped content overflowed
+  // into the textarea's native scrollbar, whose tiny step buttons show up
+  // right next to the block's icon/checkbox and read as a rendering glitch.
+  const autoResizeTextarea = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
   };
 
   const renderBlockContent = (block: EditorBlock, blockIndex: number) => {
@@ -246,6 +286,7 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
       case 'text':
         return (
           <Textarea
+            ref={autoResizeTextarea}
             id={`editor-block-${block.id}`}
             value={block.content}
             onChange={(e) => handleContentChange(block.id, e.target.value)}
@@ -303,11 +344,12 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
           <div className="flex gap-2 items-start w-full">
             <span className="text-2xl leading-[1.5rem]">•</span>
             <Textarea
+              ref={autoResizeTextarea}
               id={`editor-block-${block.id}`}
               value={block.content}
               onChange={(e) => handleContentChange(block.id, e.target.value)}
               onKeyDown={(e) => handleKeyDown(e, block)}
-              className="min-h-[24px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 p-0 text-base bg-transparent"
+              className="min-h-[24px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 p-0 text-base overflow-hidden bg-transparent"
               placeholder="List item"
               readOnly={readOnly}
               rows={1}
@@ -332,11 +374,12 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
           <div className="flex gap-2 items-start w-full">
             <span className="font-medium mt-0.5">{num}.</span>
             <Textarea
+              ref={autoResizeTextarea}
               id={`editor-block-${block.id}`}
               value={block.content}
               onChange={(e) => handleContentChange(block.id, e.target.value)}
               onKeyDown={(e) => handleKeyDown(e, block)}
-              className="min-h-[24px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 p-0 text-base bg-transparent"
+              className="min-h-[24px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 p-0 text-base overflow-hidden bg-transparent"
               placeholder="Numbered item"
               readOnly={readOnly}
               rows={1}
@@ -362,12 +405,13 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
               {block.checked && <CheckSquare className="w-3 h-3" />}
             </div>
             <Textarea
+              ref={autoResizeTextarea}
               id={`editor-block-${block.id}`}
               value={block.content}
               onChange={(e) => handleContentChange(block.id, e.target.value)}
               onKeyDown={(e) => handleKeyDown(e, block)}
               className={cn(
-                "min-h-[24px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 p-0 text-base bg-transparent transition-all",
+                "min-h-[24px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 p-0 text-base overflow-hidden bg-transparent transition-all",
                 block.checked && "line-through text-muted-foreground"
               )}
               placeholder="To-do item"
@@ -383,7 +427,13 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
         );
       case 'image':
       case 'video':
-      case 'audio':
+      case 'audio': {
+        const isUploading = uploadingBlockIds.has(block.id);
+        // block.content is a serve: key for anything actually uploaded (see
+        // uploadBlockFile) or a plain http(s) URL for the "paste URL"
+        // fallback below — resolveFileUrl handles both, passing http(s)
+        // straight through and only translating the serve: form.
+        const mediaSrc = resolveFileUrl(block.content) ?? block.content;
         return (
           <div
             className={cn(
@@ -399,11 +449,16 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
               e.stopPropagation();
             }}
           >
-            {block.content ? (
+            {isUploading ? (
+              <div className="text-sm text-muted-foreground flex flex-col items-center gap-2 py-4">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                Uploading...
+              </div>
+            ) : block.content ? (
               <div className="w-full relative group/media">
-                {block.type === 'image' && <img src={block.content} alt="Content" className="max-h-[400px] w-auto h-auto rounded mx-auto" />}
-                {block.type === 'video' && <video src={block.content} controls className="max-h-[400px] w-full rounded" />}
-                {block.type === 'audio' && <audio src={block.content} controls className="w-full" />}
+                {block.type === 'image' && <img src={mediaSrc} alt="Content" className="max-h-[400px] w-auto h-auto rounded mx-auto" />}
+                {block.type === 'video' && <video src={mediaSrc} controls className="max-h-[400px] w-full rounded" />}
+                {block.type === 'audio' && <audio src={mediaSrc} controls className="w-full" />}
 
                 {!readOnly && (
                   <Button
@@ -459,6 +514,7 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
             )}
           </div>
         );
+      }
       default:
         return null;
     }
@@ -486,7 +542,17 @@ export function SlashBlockEditor({ initialBlocks, onChange, readOnly = false }: 
                     {...provided.draggableProps}
                     style={provided.draggableProps.style}
                     className={cn(
-                      "relative group pl-8 -ml-8 flex items-start transition-opacity",
+                      // pl-12 (48px) reserves a real gutter (no cancelling
+                      // -ml-8, which used to erase it back to 0 and spill the
+                      // handle over the checkbox and past whatever padding
+                      // the consumer container happened to have) for the
+                      // absolutely-positioned drag handle + options menu
+                      // below. That group is two 20px icon buttons (p-1
+                      // around a 12px icon) plus a 4px gap between them —
+                      // 44px total — so anything less than that (32px was
+                      // tried first) still let the second icon spill onto
+                      // the checkbox even though the first one now fit.
+                      "relative group pl-12 flex items-start transition-opacity",
                       snapshot.isDragging && "opacity-50 z-50"
                     )}
                   >

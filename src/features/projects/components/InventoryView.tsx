@@ -27,6 +27,7 @@ import { useOrganizationMembers } from '@/hooks/useProjectTeam';
 import {
   useInventoryStock, useInventoryOrders, useInventoryTransactions, useInventoryBuilds,
   useReceiveStock, useAdjustStock, useReleaseQuarantine, usePlaceOrder, useCreateInventoryBuild,
+  useIssueStock, useTransferStock, useAllocateStock,
 } from '@/hooks/useInventory';
 import {
   fromApiNode, applyPriceRollup, assignLevelLabels, bomFlatAll, formatLeadTime,
@@ -35,12 +36,15 @@ import {
 import {
   buildFromDef, computeCoverage, availableOf, onOrderOf,
   CoveragePill, CoverageBar,
-  type StockRecord, type CoverageStatus,
+  type StockRecord, type CoverageStatus, type BuildDef,
 } from './inventoryData';
 import { HoverZoomImage, PartThumb } from './BOMShared';
 import { ReceiveStockDialog, type ReceiveStockInput } from './ReceiveStockDialog';
 import { AdjustQuantityDialog, type AdjustQuantityInput } from './AdjustQuantityDialog';
 import { PlaceOrderDialog, type PlaceOrderInput } from './PlaceOrderDialog';
+import { IssueStockDialog, type IssueStockInput } from './IssueStockDialog';
+import { TransferStockDialog, type TransferStockInput } from './TransferStockDialog';
+import { AllocateStockDialog, type AllocateStockInput } from './AllocateStockDialog';
 import { PartDetailSheet, type WhereUsedRow } from './PartDetailSheet';
 import { BuildsPanel } from './BuildsPanel';
 import { AlertsPanel } from './AlertsPanel';
@@ -180,6 +184,9 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   const releaseQuarantineMutation = useReleaseQuarantine(orgId);
   const placeOrderMutation = usePlaceOrder(orgId);
   const createBuildMutation = useCreateInventoryBuild(orgId);
+  const issueStockMutation = useIssueStock(orgId);
+  const transferStockMutation = useTransferStock(orgId);
+  const allocateStockMutation = useAllocateStock(orgId);
 
   // `onOrder` is derived from live order state rather than the static seeded field, so
   // Receive/Order actions are reflected immediately without touching stock rows directly.
@@ -205,6 +212,9 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [allocateOpen, setAllocateOpen] = useState(false);
 
   const handleReceive = (input: ReceiveStockInput) => {
     receiveStockMutation.mutate({
@@ -272,6 +282,27 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         }
       },
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to post adjustment'),
+    });
+  };
+
+  const handleIssue = (input: IssueStockInput) => {
+    issueStockMutation.mutate(input, {
+      onSuccess: () => toast.success(`Issued ${input.quantity} unit(s) from ${input.location}`),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to issue stock'),
+    });
+  };
+
+  const handleTransfer = (input: TransferStockInput) => {
+    transferStockMutation.mutate(input, {
+      onSuccess: () => toast.success(`Transferred ${input.quantity} unit(s) to ${input.toLocation}`),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to transfer stock'),
+    });
+  };
+
+  const handleAllocate = (recordId: string, input: AllocateStockInput) => {
+    allocateStockMutation.mutate({ stockId: recordId, ...input }, {
+      onSuccess: () => toast.success(`Allocated ${input.quantity} unit(s)`),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to allocate stock'),
     });
   };
 
@@ -343,6 +374,28 @@ export function InventoryView({ orgId }: InventoryViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [builds, buildBomLineQueries.map(q => q.dataUpdatedAt).join(',')]
   );
+
+  // Which build(s) actually need a given part (i.e. it's a BOM line on that build's own
+  // project BOM), with that build's own required-vs-allocated for the line — gates the
+  // part-detail modal's Allocate button and scopes its build picker to only the relevant
+  // builds, instead of every build in the org. Deliberately keyed off each build's own
+  // ledger-tracked line.allocated (per buildId), NOT the stock row's pooled `allocated`
+  // (shared across every build using this part) — a part can be fully allocated to one
+  // build while a different build that also needs it still has zero, and the pooled
+  // number alone can't tell those apart.
+  const buildLineEntriesByPartId = useMemo(() => {
+    const map = new Map<string, { build: BuildDef; required: number; allocated: number }[]>();
+    computedBuilds.forEach((cb, i) => {
+      const def = builds[i];
+      if (!def) return;
+      cb.lines.forEach((line) => {
+        const list = map.get(line.partId) ?? [];
+        list.push({ build: def, required: line.required, allocated: line.allocated });
+        map.set(line.partId, list);
+      });
+    });
+    return map;
+  }, [computedBuilds, builds]);
   const [activeTab, setActiveTab] = useState('stock');
   const [openBuildId, setOpenBuildId] = useState<string | null>(null);
   const openBuild = (buildId: string) => { setActiveTab('builds'); setOpenBuildId(buildId); };
@@ -376,6 +429,12 @@ export function InventoryView({ orgId }: InventoryViewProps) {
     [displayStock, selectedPartId]
   );
   const selectedPart = parts.find(p => p.id === selectedPartId);
+  const buildEntriesForSelected = selectedPartId ? (buildLineEntriesByPartId.get(selectedPartId) ?? []) : [];
+  const hasBuildDemandForSelected = buildEntriesForSelected.length > 0;
+  // Only offer builds that still have an outstanding shortfall on this part — a build
+  // already fully covered has nothing left to allocate.
+  const allocatableBuildsForSelected = buildEntriesForSelected.filter((e) => e.allocated < e.required);
+  const isFullyAllocatedForSelected = hasBuildDemandForSelected && allocatableBuildsForSelected.length === 0;
   const whereUsed: WhereUsedRow[] = useMemo(() => {
     if (!selectedPartId) return [];
     return bomFlatAll(rootNodes)
@@ -964,6 +1023,27 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         onPlaceOrder={handlePlaceOrder}
         initialPartId={dialogPartId}
       />
+      <IssueStockDialog
+        isOpen={issueOpen}
+        onClose={() => setIssueOpen(false)}
+        orgId={orgId}
+        record={selectedRecord}
+        onIssue={handleIssue}
+      />
+      <TransferStockDialog
+        isOpen={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        orgId={orgId}
+        record={selectedRecord}
+        onTransfer={handleTransfer}
+      />
+      <AllocateStockDialog
+        isOpen={allocateOpen}
+        onClose={() => setAllocateOpen(false)}
+        record={selectedRecord}
+        builds={allocatableBuildsForSelected}
+        onAllocate={(input) => selectedRecord && handleAllocate(selectedRecord.id, input)}
+      />
       <PartDetailSheet
         isOpen={detailOpen}
         record={selectedRecord}
@@ -973,10 +1053,15 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         members={members}
         orders={orders}
         whereUsed={whereUsed}
+        hasBuildDemand={hasBuildDemandForSelected}
+        isFullyAllocated={isFullyAllocatedForSelected}
         onClose={() => setDetailOpen(false)}
         onReceive={() => openReceiveFor(selectedPartId ?? undefined)}
         onAdjust={() => openAdjustFor(selectedPartId ?? undefined)}
         onOrder={() => openOrderFor(selectedPartId ?? undefined)}
+        onIssue={() => setIssueOpen(true)}
+        onTransfer={() => setTransferOpen(true)}
+        onAllocate={() => setAllocateOpen(true)}
         onReleaseQuarantine={(qty) => selectedRecord && handleReleaseQuarantine(selectedRecord.id, qty)}
       />
     </div>

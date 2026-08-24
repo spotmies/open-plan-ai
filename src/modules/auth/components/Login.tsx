@@ -256,6 +256,7 @@ const Login = () => {
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
+                    name="email"
                     type="email"
                     placeholder="you@company.com"
                     value={email}
@@ -263,6 +264,7 @@ const Login = () => {
                     className="pl-10"
                     required
                     disabled={isLoading}
+                    autoComplete="email"
                   />
                 </div>
               </div>
@@ -280,6 +282,7 @@ const Login = () => {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="password"
+                    name="current-password"
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
                     value={password}
@@ -287,6 +290,7 @@ const Login = () => {
                     className="pl-10 pr-10"
                     required
                     disabled={isLoading}
+                    autoComplete="current-password"
                   />
                   <button
                     type="button"

@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/form';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
-import { Layers, X } from 'lucide-react';
+import { Layers, Lock, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { BuildDef } from './inventoryData';
 
@@ -56,11 +56,14 @@ interface NewBuildDialogProps {
   onClose: () => void;
   onAddBuild: (input: NewBuildInput) => void;
   projects: { id: string; name: string }[];
+  /** When set, the project field is locked to this id instead of being selectable — used when the dialog is opened from within a single project's context (e.g. its BOM page). */
+  lockedProjectId?: string;
 }
 
-export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects }: NewBuildDialogProps) {
+export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedProjectId }: NewBuildDialogProps) {
   const isMobile = useIsMobile();
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const lockedProjectName = projects.find(p => p.id === lockedProjectId)?.name ?? lockedProjectId ?? '';
 
   const form = useForm<BuildFormData>({
     resolver: zodResolver(buildSchema),
@@ -72,7 +75,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects }: NewBui
       scrapPct: 0,
       milestone: '',
       targetDate: '',
-      projectId: projects[0]?.id ?? '',
+      projectId: lockedProjectId ?? projects[0]?.id ?? '',
     },
   });
 
@@ -134,28 +137,38 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects }: NewBui
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
             <div className="overflow-y-auto flex-1">
               <div className="p-4 sm:p-6 space-y-5">
-                <FormField
-                  control={form.control}
-                  name="projectId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Project <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select project..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {projects.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {lockedProjectId ? (
+                  <FormItem>
+                    <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Project</FormLabel>
+                    <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
+                      <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{lockedProjectName}</span>
+                    </div>
+                  </FormItem>
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name="projectId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Project <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select project..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {projects.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 <FormField
                   control={form.control}

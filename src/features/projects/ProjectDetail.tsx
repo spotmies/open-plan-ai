@@ -95,11 +95,14 @@ interface IssueFilter {
   assignedById?: string[];
   updatedById?: string[];
   dueDate?: 'overdue' | 'today' | 'this-week' | 'this-month' | 'no-date';
-  dueDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides dueDate preset
+  dueDateCustom?: string; // start of a custom range (yyyy-MM-dd) picked from the calendar, overrides dueDate preset
+  dueDateCustomTo?: string; // end of the custom range (yyyy-MM-dd), inclusive; same as dueDateCustom for a single-day pick
   reportedDate?: 'today' | 'this-week' | 'this-month';
-  reportedDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides reportedDate preset
+  reportedDateCustom?: string; // start of a custom range (yyyy-MM-dd) picked from the calendar, overrides reportedDate preset
+  reportedDateCustomTo?: string; // end of the custom range (yyyy-MM-dd), inclusive; same as reportedDateCustom for a single-day pick
   completedDate?: 'today' | 'this-week' | 'this-month';
-  completedDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides completedDate preset
+  completedDateCustom?: string; // start of a custom range (yyyy-MM-dd) picked from the calendar, overrides completedDate preset
+  completedDateCustomTo?: string; // end of the custom range (yyyy-MM-dd), inclusive; same as completedDateCustom for a single-day pick
   tags?: string[];
 }
 
@@ -163,21 +166,45 @@ function DateFilterSelect({
   label,
   preset,
   custom,
+  customTo,
   extraOptions = [],
   onChange,
 }: {
   label: string;
   preset?: string;
-  custom?: string;
+  custom?: string; // start of a custom range (yyyy-MM-dd); same as customTo for a single-day pick
+  customTo?: string; // end of a custom range (yyyy-MM-dd), inclusive
   extraOptions?: { value: string; label: string }[];
-  onChange: (value: { preset?: string; custom?: string }) => void;
+  onChange: (value: { preset?: string; custom?: string; customTo?: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'list' | 'calendar'>('list');
+  // Draft range while the calendar is open — only committed to the actual
+  // filter (via onChange) once the user hits Apply, so a single click (which
+  // react-day-picker's range mode reports as from===to) doesn't immediately
+  // close the popover before a second date can be picked.
+  const [draftRange, setDraftRange] = useState<{ from?: Date; to?: Date }>({});
   const allOptions = [...extraOptions, ...BASE_DATE_OPTIONS];
+  const isRange = !!custom && !!customTo && custom !== customTo;
   const displayLabel = custom
-    ? format(new Date(custom), 'PPP')
+    ? (isRange ? `${format(new Date(custom), 'PP')} – ${format(new Date(customTo!), 'PP')}` : format(new Date(custom), 'PPP'))
     : (allOptions.find((o) => o.value === preset)?.label ?? 'Any Date');
+
+  const openCalendar = () => {
+    setDraftRange({
+      from: custom ? new Date(custom) : undefined,
+      to: customTo ? new Date(customTo) : undefined,
+    });
+    setView('calendar');
+  };
+
+  const applyRange = () => {
+    if (!draftRange.from) return;
+    const from = format(draftRange.from, 'yyyy-MM-dd');
+    const to = format(draftRange.to ?? draftRange.from, 'yyyy-MM-dd');
+    onChange({ preset: undefined, custom: from, customTo: to });
+    setOpen(false);
+  };
 
   return (
     <div className="space-y-2">
@@ -208,7 +235,7 @@ function DateFilterSelect({
               <button
                 type="button"
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                onClick={() => { onChange({ preset: undefined, custom: undefined }); setOpen(false); }}
+                onClick={() => { onChange({ preset: undefined, custom: undefined, customTo: undefined }); setOpen(false); }}
               >
                 Any Date
               </button>
@@ -217,7 +244,7 @@ function DateFilterSelect({
                   key={opt.value}
                   type="button"
                   className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                  onClick={() => { onChange({ preset: opt.value, custom: undefined }); setOpen(false); }}
+                  onClick={() => { onChange({ preset: opt.value, custom: undefined, customTo: undefined }); setOpen(false); }}
                 >
                   {opt.label}
                 </button>
@@ -225,7 +252,7 @@ function DateFilterSelect({
               <button
                 type="button"
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                onClick={() => setView('calendar')}
+                onClick={openCalendar}
               >
                 Custom...
               </button>
@@ -241,26 +268,39 @@ function DateFilterSelect({
                 Back
               </button>
               <CalendarPicker
-                mode="single"
-                selected={custom ? new Date(custom) : undefined}
-                onSelect={(date) => {
-                  onChange({ preset: undefined, custom: date ? format(date, 'yyyy-MM-dd') : undefined });
-                  setOpen(false);
-                }}
+                mode="range"
+                selected={draftRange}
+                onSelect={(range) => setDraftRange(range ?? {})}
               />
+              <div className="flex items-center justify-between gap-2 px-3 pb-3">
+                <span className="text-xs text-muted-foreground">
+                  {draftRange.from
+                    ? `${format(draftRange.from, 'PP')}${draftRange.to && draftRange.to.getTime() !== draftRange.from.getTime() ? ` – ${format(draftRange.to, 'PP')}` : ''}`
+                    : 'Pick a start date, then an end date'}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 px-3 text-xs"
+                  disabled={!draftRange.from}
+                  onClick={applyRange}
+                >
+                  Apply
+                </Button>
+              </div>
             </div>
           )}
         </PopoverContent>
       </Popover>
       {custom && (
         <div className="flex items-center justify-between pl-1">
-          <span className="text-xs text-muted-foreground">{format(new Date(custom), 'PPP')}</span>
+          <span className="text-xs text-muted-foreground">{displayLabel}</span>
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="h-5 px-1.5 text-xs"
-            onClick={() => onChange({ preset: undefined, custom: undefined })}
+            onClick={() => onChange({ preset: undefined, custom: undefined, customTo: undefined })}
           >
             Clear
           </Button>
@@ -445,14 +485,16 @@ function IssueViewControls({
               label="Due Date"
               preset={filters.dueDate}
               custom={filters.dueDateCustom}
+              customTo={filters.dueDateCustomTo}
               extraOptions={[
                 { value: 'overdue', label: 'Overdue' },
                 { value: 'no-date', label: 'No Date' },
               ]}
-              onChange={({ preset, custom }) => onFiltersChange({
+              onChange={({ preset, custom, customTo }) => onFiltersChange({
                 ...filters,
                 dueDate: preset as IssueFilter['dueDate'],
                 dueDateCustom: custom,
+                dueDateCustomTo: customTo,
               })}
             />
 
@@ -461,10 +503,12 @@ function IssueViewControls({
               label="Reported Date"
               preset={filters.reportedDate}
               custom={filters.reportedDateCustom}
-              onChange={({ preset, custom }) => onFiltersChange({
+              customTo={filters.reportedDateCustomTo}
+              onChange={({ preset, custom, customTo }) => onFiltersChange({
                 ...filters,
                 reportedDate: preset as IssueFilter['reportedDate'],
                 reportedDateCustom: custom,
+                reportedDateCustomTo: customTo,
               })}
             />
 
@@ -473,10 +517,12 @@ function IssueViewControls({
               label="Completion Date"
               preset={filters.completedDate}
               custom={filters.completedDateCustom}
-              onChange={({ preset, custom }) => onFiltersChange({
+              customTo={filters.completedDateCustomTo}
+              onChange={({ preset, custom, customTo }) => onFiltersChange({
                 ...filters,
                 completedDate: preset as IssueFilter['completedDate'],
                 completedDateCustom: custom,
+                completedDateCustomTo: customTo,
               })}
             />
           </div>
@@ -1800,10 +1846,13 @@ export default function ProjectDetail() {
               updatedByFilter={issueFilters.updatedById}
               dueDateFilter={issueFilters.dueDate}
               dueDateCustomFilter={issueFilters.dueDateCustom}
+              dueDateCustomToFilter={issueFilters.dueDateCustomTo}
               reportedDateFilter={issueFilters.reportedDate}
               reportedDateCustomFilter={issueFilters.reportedDateCustom}
+              reportedDateCustomToFilter={issueFilters.reportedDateCustomTo}
               completedDateFilter={issueFilters.completedDate}
               completedDateCustomFilter={issueFilters.completedDateCustom}
+              completedDateCustomToFilter={issueFilters.completedDateCustomTo}
               tagsFilter={issueFilters.tags}
               isAddDialogOpen={isAddIssueDialogOpen}
               onAddDialogClose={() => setIsAddIssueDialogOpen(false)}

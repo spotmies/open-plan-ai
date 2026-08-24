@@ -332,6 +332,7 @@ const Signup = () => {
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="fullName"
+                    name="name"
                     type="text"
                     placeholder="John Smith"
                     value={formData.fullName}
@@ -339,6 +340,7 @@ const Signup = () => {
                     className="pl-10"
                     required
                     disabled={isLoading}
+                    autoComplete="name"
                   />
                 </div>
               </div>
@@ -352,6 +354,7 @@ const Signup = () => {
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
+                    name="email"
                     type="email"
                     placeholder="you@company.com"
                     value={formData.email}
@@ -372,6 +375,7 @@ const Signup = () => {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="password"
+                      name="new-password"
                       type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
                       value={formData.password}
@@ -422,6 +426,7 @@ const Signup = () => {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="confirmPassword"
+                      name="confirm-password"
                       type={showConfirmPassword ? "text" : "password"}
                       placeholder="••••••••"
                       value={formData.confirmPassword}
@@ -459,6 +464,7 @@ const Signup = () => {
                       <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="companyName"
+                        name="organization"
                         type="text"
                         placeholder="Acme Inc."
                         value={formData.companyName}
@@ -466,6 +472,7 @@ const Signup = () => {
                         className="pl-10"
                         required
                         disabled={isLoading}
+                        autoComplete="organization"
                       />
                     </div>
                   </div>
