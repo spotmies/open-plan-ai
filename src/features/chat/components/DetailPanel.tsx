@@ -10,7 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OnlineStatus } from './OnlineStatus';
-import { Conversation, ConversationMember, ReachableUser } from '../types';
+import { Conversation, ConversationMember } from '../types';
+import { AddMemberDialog } from './AddMemberDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChatStore } from '../stores/useChatStore';
 import { chatService } from '@/services/chat.service';
@@ -90,11 +91,6 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
 
   // Add member dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [reachableUsers, setReachableUsers] = useState<ReachableUser[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [isBulkAdding, setIsBulkAdding] = useState(false);
-  const [showAddConfirm, setShowAddConfirm] = useState(false);
 
   // Edit group info
   const [isEditing, setIsEditing] = useState(false);
@@ -261,57 +257,7 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
     }
   };
 
-  const handleAddMember = async (userId: string) => {
-    try {
-      await chatService.addMemberToGroup(conversation.id, userId);
-      toast.success('Member added');
-      setAddDialogOpen(false);
-      onRefetch?.();
-    } catch (err) {
-      logger.error(err);
-      toast.error('Failed to add member');
-    }
-  };
 
-  const handleBulkAdd = async () => {
-    if (selectedUserIds.length === 0) return;
-    setShowAddConfirm(false); // Close confirm dialog
-    setIsBulkAdding(true);
-    try {
-      await chatService.addMembersToGroup(conversation.id, selectedUserIds);
-
-      // Send system message for all added members
-      const addedNames = reachableUsers
-        .filter(u => selectedUserIds.includes(u.id))
-        .map(u => u.name);
-
-      if (addedNames.length > 0) {
-        const namesStr = addedNames.length === 1 ? addedNames[0] :
-          addedNames.length === 2 ? `${addedNames[0]} and ${addedNames[1]}` :
-            `${addedNames.slice(0, -1).join(', ')}, and ${addedNames[addedNames.length - 1]}`;
-
-        await chatService.sendSystemMessage(conversation.id, `${namesStr} joined the group`);
-      }
-
-      toast.success(`${selectedUserIds.length} members added`);
-      setAddDialogOpen(false);
-      setSelectedUserIds([]);
-      onRefetch?.();
-    } catch (err) {
-      logger.error(err);
-      toast.error('Failed to add members');
-    } finally {
-      setIsBulkAdding(false);
-    }
-  };
-
-  const toggleUserSelection = (userId: string) => {
-    setSelectedUserIds(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
-    );
-  };
 
   const handleRemoveMember = async (userId: string) => {
     try {
@@ -403,20 +349,7 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
     }
   };
 
-  const openAddDialog = async () => {
-    setAddDialogOpen(true);
-    setLoadingUsers(true);
-    setSelectedUserIds([]);
-    try {
-      const users = await chatService.getReachableUsers();
-      const existingIds = new Set(conversation.members.map((m) => m.id));
-      setReachableUsers(users.filter((u) => !existingIds.has(u.id)));
-    } catch {
-      toast.error('Failed to load users');
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
+
 
   const handleOpenMemberDM = async (member: ConversationMember) => {
     if (member.id === currentUserId) return;
@@ -575,7 +508,7 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
             {isGroup && canManageMembers && (
               <button
                 type="button"
-                onClick={openAddDialog}
+                onClick={() => setAddDialogOpen(true)}
                 className="w-full flex items-center gap-2.5 p-2 -mx-2 mb-3 rounded-md hover:bg-muted transition-colors text-left"
               >
                 <div className="h-8 w-8 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center shrink-0">
@@ -751,7 +684,7 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                   {canManageMembers && (
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={openAddDialog} title="Add member">
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddDialogOpen(true)} title="Add member">
                       <UserPlus className="h-3.5 w-3.5" />
                     </Button>
                   )}
@@ -885,96 +818,11 @@ export function DetailPanel({ conversation, onRefetch, className, pinnedCount = 
       )}
 
       {/* Add Member Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>Add Member</DialogTitle>
-            <DialogDescription>
-              Select members from your organization to add to this group.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            {loadingUsers ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Loading users...</p>
-            ) : reachableUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No more users to add</p>
-            ) : (
-              <div className="space-y-1 max-h-[300px] overflow-y-auto pr-2">
-                {reachableUsers.map((u) => (
-                  <div
-                    key={u.id}
-                    className={cn(
-                      "flex items-center gap-3 w-full p-2.5 rounded-lg transition-colors cursor-pointer group hover:bg-muted/50",
-                      selectedUserIds.includes(u.id) && "bg-primary/5"
-                    )}
-                    onClick={() => toggleUserSelection(u.id)}
-                  >
-                    <Checkbox
-                      id={`user-${u.id}`}
-                      checked={selectedUserIds.includes(u.id)}
-                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary pointer-events-none"
-                    />
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={u.avatarUrl} />
-                      <AvatarFallback className="text-[10px] bg-primary/5 text-primary">
-                        {u.initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
-                        {u.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="mt-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs"
-              onClick={() => setAddDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className={cn(
-                "gap-2 px-4 transition-all duration-300",
-                selectedUserIds.length > 0 ? "opacity-100 translate-y-0" : "opacity-50 pointer-events-none"
-              )}
-              onClick={() => setShowAddConfirm(true)}
-              disabled={selectedUserIds.length === 0 || isBulkAdding}
-            >
-              {isBulkAdding ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                <>
-                  Add {selectedUserIds.length > 0 ? `${selectedUserIds.length} ` : ''}Member{selectedUserIds.length > 1 ? 's' : ''}
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Bulk Add Confirmation */}
-      <ConfirmationDialog
-        open={showAddConfirm}
-        onOpenChange={setShowAddConfirm}
-        onConfirm={handleBulkAdd}
-        title="Confirm Adding Members"
-        description={`Are you sure you want to add ${selectedUserIds.length === 1
-          ? reachableUsers.find(u => u.id === selectedUserIds[0])?.name || '1 member'
-          : `${selectedUserIds.length} members`
-          } to "${conversation.name}"?`}
-        confirmText="Add Members"
+      <AddMemberDialog
+        conversation={conversation}
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onMemberAdded={() => onRefetch?.()}
       />
 
       {/* Confirmation Dialogs */}

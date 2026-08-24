@@ -94,11 +94,27 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
     return grouped;
   }, [data]);
 
+  // Independent of `status` — a row can be needs-input (or ambiguous-unit,
+  // new-part, matched-changed...) *and* currency-mismatched at the same
+  // time, e.g. a row still missing Part Name that also prices in the wrong
+  // currency. Bucketing this off `status` the way rowsByStatus does would
+  // hide it inside whichever other section claimed the row first.
+  const currencyMismatchRows = useMemo(
+    () => (data?.rows ?? []).filter((r) => r.currencyMismatch),
+    [data],
+  );
+
   const resolvedFieldValue = (row: ImportRowPreview, field: string): string =>
     fieldEdits[row.rowIndex]?.[field] ?? row.aiSuggestions[field as keyof ImportRowPreview['aiSuggestions']] ?? '';
 
   const isRowFullyResolved = (row: ImportRowPreview): boolean => {
     if (skippedRows.has(row.rowIndex)) return true;
+    // No inline fix: the sheet's price currency and the org's configured
+    // currency have to actually match, so the only way out of this state is
+    // fixing one of them upstream and re-syncing, or skipping the row.
+    // Checked independently of `status` — a row can be needs-input (etc.)
+    // and currency-mismatched at once, and both must clear before it's done.
+    if (row.currencyMismatch) return false;
     if (row.status === 'needs-input') {
       const fieldsOk = row.missingRequiredFields.every((f) => resolvedFieldValue(row, f).trim() !== '');
       const leadTimeOk =
@@ -222,6 +238,7 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
   const needsInputCount = blockingInputRows.length;
   const aiFilledCount = aiFilledRows.length;
   const ambiguousUnitCount = rowsByStatus['ambiguous-unit'].length;
+  const currencyMismatchCount = currencyMismatchRows.length;
   const unmatchedColsCount = (data?.unmatchedColumns.length ?? 0) + (data?.ambiguousColumns.length ?? 0);
   const newPartsCount = rowsByStatus['new-part'].length;
   // Sub-component rows the sheet gave their parent's Part Number, which are
@@ -512,6 +529,24 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                 </button>
               )}
 
+              {currencyMismatchCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('section-currency-mismatch');
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 text-red-700 dark:text-red-300 hover:bg-red-100/70 dark:hover:bg-red-900/40 transition-colors cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  Currency mismatch
+                  <span className="px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-[10.5px] font-bold">
+                    {currencyMismatchCount}
+                  </span>
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500 ml-0.5" />
+                </button>
+              )}
+
               {unmatchedColsCount > 0 && (
                 <button
                   type="button"
@@ -756,6 +791,77 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                                   <SelectItem value="months">months</SelectItem>
                                 </SelectContent>
                               </Select>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Section 2b: Currency mismatch ── */}
+              {currencyMismatchRows.length > 0 && (
+                <div id="section-currency-mismatch" className="rounded-2xl border border-red-200/90 dark:border-red-900/60 bg-card p-5 space-y-4 shadow-2xs">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-red-500" />
+                      <span className="text-sm font-semibold text-foreground">Currency mismatch</span>
+                      <span className="px-2 py-0.5 rounded-full bg-muted text-foreground text-xs font-bold">
+                        {currencyMismatchRows.length}
+                      </span>
+                      <span className="text-xs font-medium text-red-500 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        needs your input before you can continue
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Your organization&apos;s currency is set to{' '}
+                      <strong className="text-foreground">{data.orgCurrencyCode}</strong>, but the Unit Price for these
+                      rows is written in a different currency. To keep prices consistent, only import a row once its
+                      sheet currency and your platform currency actually match — either change the price column in
+                      your Google Sheet to {data.orgCurrencyCode} and re-sync, or change your organization&apos;s
+                      currency in Settings to match the sheet. Otherwise, skip these rows for now. Some of these may
+                      also appear in another section above (e.g. missing a required field) — both issues have to be
+                      cleared before the row can import.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border/80 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_140px_110px_110px_auto] items-center px-4 py-2.5 bg-muted/30 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border/60">
+                      <div>PART</div>
+                      <div>UNIT PRICE IN SHEET</div>
+                      <div>SHEET CURRENCY</div>
+                      <div>PLATFORM CURRENCY</div>
+                      <div className="text-right"></div>
+                    </div>
+                    <div className="divide-y divide-border/50">
+                      {currencyMismatchRows.map((row) => {
+                        const skipped = skippedRows.has(row.rowIndex);
+                        return (
+                          <div
+                            key={row.rowIndex}
+                            className={`grid grid-cols-[1fr_140px_110px_110px_auto] items-center px-4 py-2.5 text-xs bg-card hover:bg-muted/20 transition-colors ${skipped ? 'opacity-60' : ''}`}
+                          >
+                            <div className="font-mono text-primary font-medium truncate pr-2">
+                              {row.partNumber || `Row ${row.rowIndex + 1}`}
+                            </div>
+                            <div className="font-mono text-muted-foreground truncate pr-2">
+                              {row.values['Unit Price'] || '—'}
+                            </div>
+                            <div className="font-mono text-red-600 dark:text-red-400 font-semibold">
+                              {row.detectedCurrency}
+                            </div>
+                            <div className="font-mono text-muted-foreground">{data.orgCurrencyCode}</div>
+                            <div className="text-right">
+                              <button
+                                type="button"
+                                onClick={() => toggleSkipRow(row.rowIndex)}
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                {skipped ? 'Undo skip' : 'Skip'}
+                              </button>
                             </div>
                           </div>
                         );

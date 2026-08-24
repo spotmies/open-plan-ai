@@ -334,15 +334,17 @@ export const chatService = {
 
   async getReachableUsers(orgId?: string): Promise<ReachableUser[]> {
     try {
-      const params = orgId
-        ? `?q=&limit=100&orgId=${encodeURIComponent(orgId)}`
+      const cleanOrgId = orgId && orgId.trim().length > 0 ? orgId.trim() : undefined;
+      const params = cleanOrgId
+        ? `?q=&limit=100&orgId=${encodeURIComponent(cleanOrgId)}`
         : '?q=&limit=100';
       const users: ReachableUser[] = await apiClient.get(`${ENDPOINTS.USERS.SEARCH}${params}`);
-      return users.map((u) => ({
+      return (users || []).map((u) => ({
         ...u,
         avatarUrl: resolveFileUrl(u.avatarUrl) ?? u.avatarUrl,
       }));
-    } catch {
+    } catch (err) {
+      logger.error('Failed to fetch reachable users:', err);
       return [];
     }
   },

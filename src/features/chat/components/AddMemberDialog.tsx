@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { Conversation, ReachableUser } from '../types';
+import { Conversation } from '../types';
 import { chatService } from '@/services/chat.service';
-import { useOrganization } from '@/contexts/OrganizationContext';
+import { useReachableUsers } from '../hooks/useReachableUsers';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
@@ -19,24 +19,25 @@ interface AddMemberDialogProps {
 }
 
 export function AddMemberDialog({ conversation, open, onOpenChange, onMemberAdded }: AddMemberDialogProps) {
-  const { currentOrganization } = useOrganization();
-  const [reachableUsers, setReachableUsers] = useState<ReachableUser[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
+  const { data: allUsers = [], isLoading: loadingUsers } = useReachableUsers();
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [isBulkAdding, setIsBulkAdding] = useState(false);
 
   useEffect(() => {
-    if (!open || !currentOrganization?.id) return;
-    setSelectedUserIds([]);
-    setLoadingUsers(true);
-    chatService.getReachableUsers(currentOrganization.id)
-      .then((users) => {
-        const existingIds = new Set(conversation.members.map((m) => m.id));
-        setReachableUsers(users.filter((u) => !existingIds.has(u.id)));
-      })
-      .catch(() => toast.error('Failed to load users'))
-      .finally(() => setLoadingUsers(false));
-  }, [open, conversation.members, currentOrganization?.id]);
+    if (open) {
+      setSelectedUserIds([]);
+    }
+  }, [open]);
+
+  const existingIds = useMemo(() => {
+    return new Set(
+      (conversation?.members || []).map((m) => m.id || (m as any).userId).filter(Boolean)
+    );
+  }, [conversation?.members]);
+
+  const reachableUsers = useMemo(() => {
+    return allUsers.filter((u) => !existingIds.has(u.id));
+  }, [allUsers, existingIds]);
 
   const toggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
