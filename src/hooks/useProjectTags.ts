@@ -24,6 +24,16 @@ export function useTagColorMap(projectId?: string): Map<string, string> {
   return map;
 }
 
+// No onError toast here on purpose: every caller (TaskDetailModal,
+// IssueDetailContent) wraps mutateAsync in its own try/catch and falls back
+// to applying the typed tag name locally either way, so from the user's
+// point of view the tag always "succeeds" onto the task/issue. A toast fired
+// from here reacted only to the mutation's own outcome, with no visibility
+// into that fallback — so a transient failure (network blip, slow response)
+// surfaced "Failed to create tag" at the exact moment the tag visibly landed
+// in the field, contradicting what the user just saw. If a caller wants to
+// tell a real failure apart from that fallback, it should do so itself in
+// its own catch block, not rely on this hook to guess.
 export function useCreateTag(projectId?: string) {
   const queryClient = useQueryClient();
 
@@ -37,9 +47,6 @@ export function useCreateTag(projectId?: string) {
       queryClient.setQueryData<ProjectTag[]>(queryKeys.tags.list(projectId), (old = []) =>
         old.some((t) => t.id === tag.id) ? old : [...old, tag].sort((a, b) => a.name.localeCompare(b.name)),
       );
-    },
-    onError: () => {
-      toast.error('Failed to create tag');
     },
   });
 }

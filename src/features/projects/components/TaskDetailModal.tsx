@@ -968,7 +968,14 @@ export const TaskDetailModal = ({
     (editedTask.linkedIssueIds?.length || 0) > 0;
   const isBlockedWithoutDependencies = editedTask.status === 'blocked' && !hasDependenciesForBlocked;
   const isTaskDirty = initialTaskSnapshot !== '' && normalizedEditedTaskSnapshot !== initialTaskSnapshot;
-  const isFormDirty = isTaskDirty || hasBlockingToChanges || hasBlockedByChanges || pendingFiles.length > 0;
+  // Comment add/edit/delete is staged locally (see handleDeleteComment etc.)
+  // and only actually persisted inside handleUpdateTask — so without these,
+  // deleting or editing a comment and then hitting Cancel/X skipped the
+  // unsaved-changes confirmation entirely and silently discarded it.
+  const hasPendingCommentChanges =
+    pendingNewCommentIds.size > 0 || pendingEditedComments.size > 0 || pendingDeletedCommentIds.size > 0;
+  const isFormDirty =
+    isTaskDirty || hasBlockingToChanges || hasBlockedByChanges || pendingFiles.length > 0 || hasPendingCommentChanges;
   const canSubmitTask = Boolean(
     editedTask.title &&
     editedTask.startDate &&
