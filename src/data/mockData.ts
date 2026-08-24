@@ -794,6 +794,7 @@ export const defaultUserSettings: UserSettings = {
     comments: true,
     projectUpdates: true,
     milestoneReminders: true,
+    pushEnabled: false,
     emailDigest: 'daily',
   },
 };

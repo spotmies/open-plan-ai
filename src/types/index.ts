@@ -413,6 +413,7 @@ export interface UserSettings {
     comments: boolean;
     projectUpdates: boolean;
     milestoneReminders: boolean;
+    pushEnabled: boolean;
     emailDigest: 'daily' | 'weekly' | 'none';
   };
 }

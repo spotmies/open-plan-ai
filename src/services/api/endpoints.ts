@@ -184,6 +184,11 @@ export const ENDPOINTS = {
     CLEAR_READ: '/notifications/read',
     PREFERENCES: '/notification-preferences',
   },
+  // Web push subscriptions
+  PUSH: {
+    SUBSCRIBE: '/push-subscriptions',
+    UNSUBSCRIBE: '/push-subscriptions',
+  },
   // Comments
   COMMENTS: {
     UPDATE: (id: string) => `/comments/${id}`,

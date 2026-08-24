@@ -13,6 +13,7 @@ import { AppLayoutOutlet } from "@/components/layout/AppLayoutOutlet";
 import { OrganizationProvider } from "@/contexts/OrganizationContext";
 import { useUserStore } from "@/stores/useUserStore";
 import { ChatNotificationsProvider } from "@/features/chat/providers/ChatNotificationsProvider";
+import { PushReconciliationProvider } from "@/features/notifications/providers/PushReconciliationProvider";
 import { AssistantWidget } from "@/features/assistant/components/AssistantWidget";
 import { initializeGA, setUserId } from "@/services/analytics";
 import { usePageTracking } from "@/hooks/usePageTracking";
@@ -91,6 +92,7 @@ function AppShell() {
   return (
     <>
       <ChatNotificationsProvider />
+      <PushReconciliationProvider />
       <AssistantWidget />
       <Routes>
         {/* ── Public (auth) routes ─────────────────────────────── */}

@@ -56,6 +56,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { profileService } from '@/services/profile.service';
 import { notificationPreferencesService, NotificationPreferences } from '@/services/notificationPreferences.service';
+import { subscribeToPush, unsubscribeFromPush, getPermissionState } from '@/services/pushNotifications.service';
 import { organizationsService, OrganizationSettings } from '@/services/organizations.service';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { useAppTheme } from '@/hooks/useAppTheme';
@@ -131,6 +132,9 @@ const Settings = () => {
   useEffect(() => {
     let cancelled = false;
     setNotificationPrefsLoading(true);
+    // Push reconciliation (dead-subscription cleanup / silent re-subscribe)
+    // runs once app-wide in PushReconciliationProvider — by the time this
+    // page mounts it's already settled, so just fetch current state to display.
     notificationPreferencesService
       .getPreferences()
       .then((prefs) => {
@@ -159,6 +163,40 @@ const Settings = () => {
     }
   };
 
+  // Browser push — separate from the generic Save button since toggling it
+  // has an immediate side effect (permission prompt / subscribe-unsubscribe),
+  // not something to defer until the user clicks Save.
+  const [pushToggleLoading, setPushToggleLoading] = useState(false);
+  const pushPermission = getPermissionState();
+  const pushBlocked = pushPermission === 'denied' || pushPermission === 'unsupported';
+
+  const handleTogglePush = async (checked: boolean) => {
+    setPushToggleLoading(true);
+    try {
+      if (checked) {
+        const subscribed = await subscribeToPush();
+        if (!subscribed) {
+          toast.error(
+            getPermissionState() === 'denied'
+              ? 'Notifications are blocked for this site — enable them in your browser settings first'
+              : 'Could not enable browser push notifications',
+          );
+          return;
+        }
+      } else {
+        await unsubscribeFromPush();
+      }
+
+      const saved = await notificationPreferencesService.updatePreferences({ pushEnabled: checked });
+      setNotificationPrefs(saved);
+      toast.success(checked ? 'Browser push notifications enabled' : 'Browser push notifications disabled');
+    } catch (error) {
+      logger.error('Error toggling push notifications:', error);
+      toast.error('Failed to update browser push notifications');
+    } finally {
+      setPushToggleLoading(false);
+    }
+  };
 
   // Profile form state
   const [profileForm, setProfileForm] = useState({
@@ -1095,6 +1133,27 @@ const Settings = () => {
                         }
                       />
                     </div>
+                  </div>
+                </div>
+                <Separator />
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium">Browser Notifications</h4>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Push Notifications</Label>
+                      <p className="text-sm text-muted-foreground">
+                        {pushPermission === 'unsupported'
+                          ? 'Not supported in this browser'
+                          : pushPermission === 'denied'
+                            ? 'Blocked — enable notifications for this site in your browser settings'
+                            : 'Get notified even when this tab is closed'}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={notificationPrefs.pushEnabled}
+                      disabled={notificationPrefsLoading || pushToggleLoading || pushBlocked}
+                      onCheckedChange={handleTogglePush}
+                    />
                   </div>
                 </div>
                 <Separator />
