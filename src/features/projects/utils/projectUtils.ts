@@ -188,6 +188,24 @@ export function sortMilestonesByDate(milestones: Milestone[]): Milestone[] {
 }
 
 /**
+ * Sort tasks/issues so items assigned to `assigneeId` come first — used to
+ * surface a milestone assignee's own work at the top of the Linked
+ * Tasks/Issues lists. A stable sort, so relative order within each group is
+ * unchanged. No-op when there's no assignee to prioritize.
+ */
+export function sortByAssignee<T extends { assignees?: { id: string }[] }>(
+  items: T[],
+  assigneeId?: string | null,
+): T[] {
+  if (!assigneeId) return items;
+  return [...items].sort((a, b) => {
+    const aAssigned = a.assignees?.some(m => m.id === assigneeId) ? 0 : 1;
+    const bAssigned = b.assignees?.some(m => m.id === assigneeId) ? 0 : 1;
+    return aAssigned - bAssigned;
+  });
+}
+
+/**
  * Progress breakdown interface
  */
 export interface ProgressBreakdown {

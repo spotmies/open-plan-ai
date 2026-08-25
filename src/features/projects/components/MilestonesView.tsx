@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { Milestone, Task, Issue, Module } from '@/types';
+import { Milestone, Task, Issue, Module, TeamMember } from '@/types';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,7 @@ interface MilestonesViewProps {
   tasks: Task[];
   issues?: Issue[];
   modules?: Module[];
+  assignableMembers?: TeamMember[];
   viewMode?: 'list' | 'kanban';
   /** Used to open the add-milestone calendar on the project’s start month/year */
   projectStartDate?: Date;
@@ -80,6 +81,7 @@ export function MilestonesView({
   tasks,
   issues = [],
   modules = [],
+  assignableMembers = [],
   viewMode = 'list',
   projectStartDate,
   searchQuery = '',
@@ -598,6 +600,7 @@ export function MilestonesView({
             tasks={tasks}
             issues={issues}
             modules={modules}
+            assignableMembers={assignableMembers}
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
             onUpdate={handleMilestoneUpdateFromModal}
@@ -620,6 +623,7 @@ export function MilestonesView({
             tasks={tasks}
             modules={modules}
             issues={issues}
+            assignableMembers={assignableMembers}
             projectStartDate={projectStartDate}
           />
         )

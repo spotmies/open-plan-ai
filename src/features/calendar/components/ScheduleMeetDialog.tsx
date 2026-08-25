@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -36,10 +36,31 @@ interface ScheduleMeetDialogProps {
 
 export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDate }: ScheduleMeetDialogProps) {
   const { user } = useAuth();
-  // Real (backend-persisted) status for the viewer — same source of truth as
-  // the chat feature's meeting scheduler, not a stale local flag.
-  const { data: meetStatusMap } = useGoogleMeetStatus(user ? [user.id] : []);
+  // Real (backend-persisted) status for the viewer plus every selectable team
+  // member — same source of truth as the chat feature's meeting scheduler,
+  // not a stale local flag. Beyond gating "can I schedule at all", each
+  // member's entry also carries their *connected Google account's* email
+  // (profiles.googleMeetEmail), which is what actually has to go on the
+  // Calendar event's attendee list — see resolveGoogleAttendeeEmail below.
+  const statusLookupIds = useMemo(
+    () => [...new Set([user?.id, ...teamMembers.map((m) => m.id)].filter((id): id is string => !!id))],
+    [user?.id, teamMembers]
+  );
+  const { data: meetStatusMap } = useGoogleMeetStatus(statusLookupIds);
   const isConnected = !!(user && meetStatusMap?.[user.id]?.connected);
+
+  // A team member's platform sign-up email (users.email, what `member.email`
+  // holds) and the Google account they connected in Integrations
+  // (profiles.googleMeetEmail) are frequently different addresses. Only the
+  // latter is guaranteed to be a Google account that will actually show the
+  // event on their calendar — inviting the platform email silently fails to
+  // "show up" for them even though the event was created correctly. Falls
+  // back to the platform email when they haven't connected Google Meet,
+  // since that's still the best guess we have.
+  const resolveGoogleAttendeeEmail = (member: TeamMember): string => {
+    const status = meetStatusMap?.[member.id];
+    return status?.connected && status.email ? status.email : member.email;
+  };
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
   const { mutateAsync: createMeetingRecord } = useCreateMeeting();
   const [loading, setLoading] = useState(false);
@@ -160,15 +181,25 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
       return;
     }
 
-    const memberAttendees = teamMembers
-      .filter((m) => selectedMembers[m.id] && m.email)
-      .map((m) => m.email);
+    const selectedTeamMembers = teamMembers.filter((m) => selectedMembers[m.id] && m.email);
+    // What we persist to our own `meetings` row and use for in-app matching
+    // (getOrgMeetings, notifications) — always the platform account email,
+    // since that's how our own user records are keyed.
+    const memberAttendees = selectedTeamMembers.map((m) => m.email);
     const attendees = Array.from(new Set([...memberAttendees, ...finalGuestEmails]));
 
     if (attendees.length === 0) {
       toast.error('Please select at least one team member or invite an outside guest.');
       return;
     }
+
+    // What actually goes on the Google Calendar event — each member's
+    // connected Google account when they have one, since that's the address
+    // Google needs to auto-add the event to *their* calendar. Guests have no
+    // separate integration email, so their entered address is used as-is.
+    const googleAttendees = Array.from(
+      new Set([...selectedTeamMembers.map(resolveGoogleAttendeeEmail), ...finalGuestEmails])
+    );
 
     setLoading(true);
     try {
@@ -182,7 +213,7 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
         title,
         startTime: startDateTime.toISOString(),
         endTime: endDateTime.toISOString(),
-        attendees,
+        attendees: googleAttendees,
       });
 
       // The Google Calendar event already exists at this point — persist a
@@ -196,6 +227,7 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
           endTime: endDateTime.toISOString(),
           meetingUri: result.meetingUri,
           htmlLink: result.htmlLink,
+          googleEventId: result.eventId,
           attendeeEmails: attendees,
         });
       } catch (persistErr) {

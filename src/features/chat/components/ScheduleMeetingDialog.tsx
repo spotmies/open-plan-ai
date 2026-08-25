@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Dialog, 
   DialogContent, 
@@ -103,8 +103,22 @@ export function ScheduleMeetingDialog({
   // Real (backend-persisted) status for the viewer — same source of truth
   // as ChatHeader/Integrations, not a local sessionStorage flag that only
   // updates lazily on first token fetch.
-  const { data: meetStatusMap } = useGoogleMeetStatus(user ? [user.id] : []);
+  const statusLookupIds = useMemo(
+    () => [...new Set([user?.id, ...conversation.members.map((m) => m.id)].filter((id): id is string => !!id))],
+    [user?.id, conversation.members]
+  );
+  const { data: meetStatusMap } = useGoogleMeetStatus(statusLookupIds);
   const isConnected = !!(user && meetStatusMap?.[user.id]?.connected);
+
+  // A member's platform sign-up email and the Google account they connected
+  // in Integrations (profiles.googleMeetEmail) are frequently different
+  // addresses — only the latter is guaranteed to be the Google account that
+  // will actually show the event on their calendar. Falls back to the
+  // platform email when they haven't connected Google Meet.
+  const resolveGoogleAttendeeEmail = (member: { id: string; email: string }): string => {
+    const status = meetStatusMap?.[member.id];
+    return status?.connected && status.email ? status.email : member.email;
+  };
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
   const { mutateAsync: createMeetingRecord } = useCreateMeeting();
   const [loading, setLoading] = useState(false);
@@ -195,16 +209,19 @@ export function ScheduleMeetingDialog({
         return;
       }
 
-      // Gather attendee emails
-      const attendees = conversation.members
-        .filter((m) => selectedMembers[m.id] && m.email)
-        .map((m) => m.email);
+      // Platform emails — persisted to our own record and used for in-app
+      // matching/notifications (see ScheduleMeetDialog.tsx for the same split).
+      const selectedConvMembers = conversation.members.filter((m) => selectedMembers[m.id] && m.email);
+      const attendees = selectedConvMembers.map((m) => m.email);
+      // What actually goes on the Google Calendar event — each member's
+      // connected Google account when they have one.
+      const googleAttendees = selectedConvMembers.map(resolveGoogleAttendeeEmail);
 
       const result = await googleMeetService.scheduleCalendarMeeting(token, {
         title,
         startTime: startDateTime.toISOString(),
         endTime: endDateTime.toISOString(),
-        attendees,
+        attendees: googleAttendees,
         recurrence: recurrenceRule ? [recurrenceRule] : undefined,
       });
 
@@ -219,6 +236,7 @@ export function ScheduleMeetingDialog({
           endTime: endDateTime.toISOString(),
           meetingUri: result.meetingUri,
           htmlLink: result.htmlLink,
+          googleEventId: result.eventId,
           attendeeEmails: attendees,
         });
       } catch (persistErr) {

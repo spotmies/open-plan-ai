@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ColorSwatchPicker } from '@/components/shared/ColorSwatchPicker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import { playCompleteSound } from '@/lib/playSound';
 import { BUCKET_COLOR_OPTIONS } from '@/lib/bucketColors';
 import { Plus, Check, GripVertical, Link2, Calendar as CalendarIcon, Maximize2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
@@ -124,6 +124,7 @@ interface KanbanViewProps {
   modules?: { id: string; name: string; type: ModuleType }[];
   milestones?: Milestone[];
   projectId?: string;
+  projectCode?: string;
   onAddModule?: () => void;
 }
 
@@ -176,6 +177,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
   modules = [],
   milestones = [],
   projectId,
+  projectCode,
   onAddModule,
 }: KanbanViewProps) {
   const isMobile = useIsMobile();
@@ -748,6 +750,11 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
                                                           </button>
                                                         </div>
                                                       )}
+                                                      {getDisplayId(projectCode, 'T', task.number) && (
+                                                        <span className="font-mono font-semibold text-[10px] text-blue-500 translate-x-6 block">
+                                                          {getDisplayId(projectCode, 'T', task.number)}
+                                                        </span>
+                                                      )}
                                                       <h4
                                                         className="text-sm font-medium leading-tight truncate translate-x-6"
                                                       >
@@ -1126,6 +1133,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
         modules={modules}
         milestones={milestones}
         projectId={projectId}
+        projectCode={projectCode}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}
         statusOptions={taskModalStatusOptions}
@@ -1154,6 +1162,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
         modules={modules}
         milestones={milestones}
         projectId={projectId}
+        projectCode={projectCode}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}
         statusOptions={taskModalStatusOptions}

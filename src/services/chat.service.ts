@@ -228,6 +228,24 @@ export const chatService = {
     return mapChatMessage(data);
   },
 
+  async sendFileMessage(
+    conversationId: string,
+    file: File,
+    caption?: string,
+    replyToMessageId?: string
+  ): Promise<ChatMessage> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (caption) formData.append('caption', caption);
+    if (replyToMessageId) formData.append('replyToMessageId', replyToMessageId);
+    const res = await apiClient.raw.post<{ success: boolean; data: any }>(
+      ENDPOINTS.CONVERSATIONS.FILE_MESSAGE(conversationId),
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return mapChatMessage(res.data.data);
+  },
+
   /**
    * Forwards a message to another conversation. Text messages are re-sent as-is;
    * file/image messages are re-fetched from their stored URL and re-uploaded, since

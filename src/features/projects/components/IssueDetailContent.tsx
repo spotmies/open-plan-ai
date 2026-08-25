@@ -34,7 +34,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { FilePreviewDialog, FilePreviewTarget, getVideoThumbnail } from '@/components/FilePreviewDialog';
 import {
@@ -122,6 +122,8 @@ interface IssueDetailContentProps {
     onPendingFilesChange?: (files: File[]) => void;
     /** Shown as a read-only "Project" field when provided. Only pass this from contexts (like My Day) where the issue's project isn't already implied by the surrounding page. */
     projectName?: string;
+    /** Project's short display-ID prefix — renders a "{projectCode}-I-{number}" pill next to the title when both this and the issue's number are available. */
+    projectCode?: string;
     /**
      * Controls the mobile read-only/edit-mode gate. Omit to leave fields always editable
      * (e.g. the full-page IssuePage route, which has no "Edit" affordance of its own).
@@ -176,6 +178,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
     mode = 'view',
     onPendingFilesChange,
     projectName,
+    projectCode,
     isMobileEditMode,
 }, ref) {
     const { user: profile } = useAuth();
@@ -763,6 +766,11 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                 {isMobileLayout && projectName && (
                     <p className="text-xs text-muted-foreground">
                         {projectName} <span className="mx-1">›</span> Board
+                        {getDisplayId(projectCode, 'I', editedIssue?.number) && (
+                            <span className="ml-2 font-mono font-semibold text-blue-500">
+                                {getDisplayId(projectCode, 'I', editedIssue?.number)}
+                            </span>
+                        )}
                     </p>
                 )}
                 <div className="flex items-start justify-between gap-4">

@@ -36,7 +36,7 @@ export interface ApiOrderRecord {
   purpose: string | null;
   lotNumber: string | null;
   serialNumber: string | null;
-  status: 'open' | 'partially_received' | 'received' | 'cancelled';
+  status: 'planned' | 'open' | 'partially_received' | 'received' | 'cancelled';
   createdAt: string;
   createdBy: string;
 }
@@ -254,6 +254,9 @@ export interface PlaceOrderDto {
   purpose?: string;
   lotNumber?: string;
   serialNumber?: string;
+  /** 'planned' (want to order — not yet submitted to a supplier) or 'open' (already
+   * ordered). Defaults to 'open' server-side when omitted. */
+  status?: 'planned' | 'open';
 }
 
 export interface CreateBuildDto {
@@ -319,6 +322,10 @@ export const inventoryService = {
 
   async placeOrder(orgId: string, dto: PlaceOrderDto): Promise<ApiOrderRecord> {
     return apiClient.post<ApiOrderRecord>(ENDPOINTS.INVENTORY.PLACE_ORDER(orgId), dto);
+  },
+
+  async markOrderOrdered(orgId: string, orderId: string): Promise<ApiOrderRecord> {
+    return apiClient.post<ApiOrderRecord>(ENDPOINTS.INVENTORY.MARK_ORDER_ORDERED(orgId, orderId), {});
   },
 
   async allocateBuild(orgId: string, buildId: string): Promise<ApiAllocateBuildResponse> {

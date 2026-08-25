@@ -141,7 +141,7 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && !isSubmitting && resetAndClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Report a Bug</DialogTitle>
         </DialogHeader>
@@ -182,11 +182,10 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
 
             <div className="space-y-2">
               <FormLabel>Attachments</FormLabel>
-              <div
+              <label
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={() => document.getElementById('bug-report-attachments')?.click()}
                 className={cn(
                   'border-2 border-dashed rounded-lg p-5 text-center transition-colors cursor-pointer flex flex-col items-center justify-center gap-2',
                   isDraggingOver
@@ -195,9 +194,9 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
                 )}
               >
                 <input
-                  id="bug-report-attachments"
                   type="file"
                   multiple
+                  accept="image/*,application/pdf,.doc,.docx,.txt,.log"
                   className="hidden"
                   onChange={(e) => {
                     handleFilesSelected(Array.from(e.target.files ?? []));
@@ -215,7 +214,7 @@ export function ReportBugDialog({ isOpen, onClose }: ReportBugDialogProps) {
                     Up to {MAX_ATTACHMENTS} files (10MB each, 25MB total). You can also paste images (Ctrl/Cmd+V).
                   </p>
                 </div>
-              </div>
+              </label>
 
               {fileError && <p className="text-xs text-destructive">{fileError}</p>}
               {files.length > 0 && (

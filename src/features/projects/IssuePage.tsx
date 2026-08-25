@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { IssueDetailContent } from './components/IssueDetailContent';
 import { Issue } from '@/types';
+import { getDisplayId } from '@/lib/utils';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useIssue, useUpdateIssue, useDeleteIssue } from '@/hooks/useIssues';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
@@ -118,6 +119,11 @@ export default function IssuePage() {
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
           <span className="text-muted-foreground">Issues</span>
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+          {getDisplayId(project.code, 'I', issue.number) && (
+            <span className="font-mono font-semibold text-[12px] text-blue-500 shrink-0">
+              {getDisplayId(project.code, 'I', issue.number)}
+            </span>
+          )}
           <span className="text-foreground truncate max-w-[320px]" title={issue.title}>
             {issue.title}
           </span>

@@ -12,6 +12,7 @@ export interface Meeting {
   endTime: string; // ISO
   meetingUri: string;
   htmlLink: string;
+  googleEventId: string | null;
   attendeeEmails: string[];
   createdAt: string;
 }
@@ -22,7 +23,14 @@ export interface CreateMeetingInput {
   endTime: string; // ISO
   meetingUri: string;
   htmlLink: string;
+  googleEventId?: string | null;
   attendeeEmails: string[];
+}
+
+export interface RescheduleMeetingInput {
+  meetingId: string;
+  startTime: string; // ISO
+  endTime: string; // ISO
 }
 
 /**
@@ -53,6 +61,31 @@ export function useCreateMeeting() {
     mutationFn: (input: CreateMeetingInput): Promise<Meeting> => {
       if (!orgId) throw new Error('No organization selected');
       return apiClient.post<Meeting>(ENDPOINTS.ORGANIZATIONS.ALL_MEETINGS(orgId), input);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.meetings.org(orgId) });
+    },
+  });
+}
+
+/**
+ * Persists a meeting's new time after it's already been rescheduled
+ * client-side against Google's Calendar API (see RescheduleMeetDialog.tsx) —
+ * mirrors useCreateMeeting's split between the Google-side call and this
+ * app's own record.
+ */
+export function useRescheduleMeeting() {
+  const queryClient = useQueryClient();
+  const { currentOrganization } = useOrganization();
+  const orgId = currentOrganization?.id;
+
+  return useMutation({
+    mutationFn: ({ meetingId, startTime, endTime }: RescheduleMeetingInput): Promise<Meeting> => {
+      if (!orgId) throw new Error('No organization selected');
+      return apiClient.patch<Meeting>(ENDPOINTS.ORGANIZATIONS.MEETING(orgId, meetingId), {
+        startTime,
+        endTime,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.meetings.org(orgId) });

@@ -12,7 +12,7 @@ import { OrgReviewNotice } from "./OrgReviewNotice";
 import { parseOrgReviewError, type OrgReviewBlock } from "../orgReview";
 
 const VerifyEmail = () => {
-  const { refreshProfile } = useAuth();
+  const { refreshProfile, setPendingVerificationEmail } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -107,6 +107,7 @@ const VerifyEmail = () => {
       if (review) {
         setOrgReview(review);
         sessionStorage.removeItem('openplan_pending_verify');
+        setPendingVerificationEmail(null);
         setOtp("");
         return;
       }
@@ -138,6 +139,7 @@ const VerifyEmail = () => {
       const review = parseOrgReviewError(err);
       if (review) {
         setOrgReview(review);
+        setPendingVerificationEmail(null);
         return;
       }
       const message = err instanceof Error ? err.message : "Failed to resend code";

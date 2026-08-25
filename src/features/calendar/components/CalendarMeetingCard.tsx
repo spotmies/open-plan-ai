@@ -1,12 +1,15 @@
 import React from 'react';
 import { format, differenceInMinutes } from 'date-fns';
-import { Video, Calendar, Clock, Users, ExternalLink } from 'lucide-react';
+import { Video, Calendar, Clock, Users, ExternalLink, CalendarClock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CalendarEvent } from '../utils/calendarUtils';
 
 interface CalendarMeetingCardProps {
   event: CalendarEvent;
   onClick?: () => void;
+  /** Shows the Reschedule action when the viewer is this meeting's organizer. */
+  canReschedule?: boolean;
+  onReschedule?: () => void;
 }
 
 function formatDuration(start: Date, end?: Date): string | null {
@@ -20,7 +23,12 @@ function formatDuration(start: Date, end?: Date): string | null {
   return `${hours} hr ${mins} min`;
 }
 
-export const CalendarMeetingCard: React.FC<CalendarMeetingCardProps> = ({ event, onClick }) => {
+export const CalendarMeetingCard: React.FC<CalendarMeetingCardProps> = ({
+  event,
+  onClick,
+  canReschedule,
+  onReschedule,
+}) => {
   const duration = formatDuration(event.date, event.endDate);
   const link = event.htmlLink || event.meetingUri;
 
@@ -74,18 +82,33 @@ export const CalendarMeetingCard: React.FC<CalendarMeetingCardProps> = ({ event,
         )}
       </div>
 
-      {link && (
-        <a
-          href={link}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
-        >
-          <ExternalLink className="h-3 w-3" />
-          Join meeting
-        </a>
-      )}
+      <div className="flex items-center gap-2">
+        {link && (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Join meeting
+          </a>
+        )}
+        {canReschedule && onReschedule && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReschedule();
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 px-2.5 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-500/10"
+          >
+            <CalendarClock className="h-3 w-3" />
+            Reschedule
+          </button>
+        )}
+      </div>
     </div>
   );
 };

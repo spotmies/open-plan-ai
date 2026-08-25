@@ -26,7 +26,7 @@ import { useOrgParts } from '@/hooks/useParts';
 import { useOrganizationMembers } from '@/hooks/useProjectTeam';
 import {
   useInventoryStock, useInventoryOrders, useInventoryTransactions, useInventoryBuilds,
-  useReceiveStock, useAdjustStock, useReleaseQuarantine, usePlaceOrder, useCreateInventoryBuild,
+  useReceiveStock, useAdjustStock, useReleaseQuarantine, usePlaceOrder, useMarkOrderOrdered, useCreateInventoryBuild,
   useIssueStock, useTransferStock, useAllocateStock,
 } from '@/hooks/useInventory';
 import {
@@ -183,6 +183,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   const adjustStockMutation = useAdjustStock(orgId);
   const releaseQuarantineMutation = useReleaseQuarantine(orgId);
   const placeOrderMutation = usePlaceOrder(orgId);
+  const markOrderOrderedMutation = useMarkOrderOrdered(orgId);
   const createBuildMutation = useCreateInventoryBuild(orgId);
   const issueStockMutation = useIssueStock(orgId);
   const transferStockMutation = useTransferStock(orgId);
@@ -246,8 +247,13 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       purpose: input.purpose,
       lotNumber: input.lotNumber,
       serialNumber: input.serialNumber,
+      status: input.status,
     }, {
-      onSuccess: () => toast.success(`Order placed for ${input.quantity} × ${input.pn}`),
+      onSuccess: () => toast.success(
+        input.status === 'planned'
+          ? `Flagged ${input.quantity} × ${input.pn} as needed to order`
+          : `Order placed for ${input.quantity} × ${input.pn}`
+      ),
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to place order'),
     });
   };
@@ -256,6 +262,13 @@ export function InventoryView({ orgId }: InventoryViewProps) {
     releaseQuarantineMutation.mutate({ stockId: recordId, qty }, {
       onSuccess: () => toast.success(`Released ${qty} from quarantine`),
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to release quarantine'),
+    });
+  };
+
+  const handleMarkOrdered = (orderId: string) => {
+    markOrderOrderedMutation.mutate(orderId, {
+      onSuccess: () => toast.success('Order marked as ordered'),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark order as ordered'),
     });
   };
 
@@ -1063,6 +1076,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         onTransfer={() => setTransferOpen(true)}
         onAllocate={() => setAllocateOpen(true)}
         onReleaseQuarantine={(qty) => selectedRecord && handleReleaseQuarantine(selectedRecord.id, qty)}
+        onMarkOrdered={handleMarkOrdered}
       />
     </div>
   );

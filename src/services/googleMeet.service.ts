@@ -159,7 +159,7 @@ export const googleMeetService = {
   async scheduleCalendarMeeting(
     accessToken: string,
     params: ScheduleEventParams
-  ): Promise<{ htmlLink: string; meetingUri: string }> {
+  ): Promise<{ htmlLink: string; meetingUri: string; eventId: string }> {
     try {
       const { meetingUri } = await this.createInstantMeeting(accessToken);
 
@@ -197,7 +197,12 @@ export const googleMeetService = {
       };
 
       const response = await fetch(
-        'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+        // sendUpdates=all is required so Google actually emails/notifies the
+        // attendees and auto-adds the event to their calendars. Without it,
+        // sendUpdates defaults to "none" — the event is created with them
+        // listed as attendees, but they're never notified, so it only shows
+        // up under their "Invitations" list instead of on their calendar.
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all',
         {
           method: 'POST',
           headers: {
@@ -217,9 +222,57 @@ export const googleMeetService = {
       return {
         htmlLink: data.htmlLink, // Calendar event link
         meetingUri,             // The Google Meet link — guaranteed OPEN access
+        eventId: data.id,       // Needed later to PATCH this same event on reschedule
       };
     } catch (error) {
       logger.error('Failed to schedule calendar meeting:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reschedules an existing Calendar event in place (same event ID, same
+   * Meet link) rather than creating a new one, so attendees see an "updated"
+   * notification instead of a duplicate invite.
+   * PATCH https://www.googleapis.com/calendar/v3/calendars/primary/events/{eventId}
+   *
+   * sendUpdates=all is required here for the same reason as on create: it's
+   * what makes Google actually email attendees and refresh the event on
+   * their calendars. Without it the time changes only on the organizer's
+   * calendar.
+   */
+  async updateCalendarMeeting(
+    accessToken: string,
+    eventId: string,
+    params: Pick<ScheduleEventParams, 'startTime' | 'endTime'> & { title?: string }
+  ): Promise<{ htmlLink: string }> {
+    try {
+      const body = {
+        ...(params.title ? { summary: params.title } : {}),
+        start: { dateTime: params.startTime },
+        end: { dateTime: params.endTime },
+      };
+
+      const response = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!response.ok) {
+        throw await toGoogleApiError(response);
+      }
+
+      const data = await response.json();
+      return { htmlLink: data.htmlLink };
+    } catch (error) {
+      logger.error('Failed to reschedule calendar meeting:', error);
       throw error;
     }
   },

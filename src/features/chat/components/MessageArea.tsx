@@ -1,14 +1,21 @@
 import { useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { MessageBubble } from './MessageBubble';
-import { MediaGroupBubble } from './MediaGroupBubble';
+import { MediaGroupBubble, hasRealCaption } from './MediaGroupBubble';
 import { MessageDateDivider } from './MessageDateDivider';
 import { SystemMessage } from './SystemMessage';
 import { CallHistoryCard } from './CallHistoryCard';
 import { EmptyState } from './EmptyState';
 import { ChatMessage, Conversation, ReadReceipt, MessageReaction } from '../types';
 import { parseCallCardContent } from '../utils/callCard';
-import { isSameDay, differenceInMinutes } from 'date-fns';
+import { isSameDay, differenceInMinutes, differenceInSeconds } from 'date-fns';
+
+// A captioned image is always the lead file of its own send action (see
+// MessageInput's handleSend), so it can only belong to a run whose members
+// were uploaded within seconds of it. Without this, the loose 2-minute
+// same-sender window lets a later, unrelated album inherit an earlier
+// caption (or vice versa) purely because they landed close together in time.
+const SAME_BATCH_SECONDS = 30;
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '../stores/useChatStore';
 
@@ -90,9 +97,14 @@ export function MessageArea({
       return;
     }
 
-    // Messages were appended (new messages, not history load)
-    // Only auto-scroll if user was already at the bottom
-    if (atBottomRef.current) {
+    // Messages were appended (new messages, not history load). Always jump to
+    // bottom for a message you just sent yourself — you're waiting to see it
+    // land, regardless of where you'd scrolled to reading history — otherwise
+    // only auto-scroll if you were already at the bottom (so someone else's
+    // message doesn't yank you away from what you're reading).
+    const lastMessage = messages[messages.length - 1];
+    const isOwnMessage = lastMessage?.senderId === user?.id;
+    if (atBottomRef.current || isOwnMessage) {
       scrollToBottom('smooth');
     }
 
@@ -224,13 +236,24 @@ export function MessageArea({
             // instead of stacking each as its own full-width bubble.
             if (isImageMsg(msg)) {
               const run: ChatMessage[] = [msg];
+              // A captioned image is always the lead file of its own batch, so it
+              // can only ever be the *first* item of a run — comparing each
+              // candidate only to its immediate predecessor let an uncaptioned
+              // image join within the tight window, after which later messages
+              // could then chain onto *that* one under the loose window, drifting
+              // arbitrarily far from the original caption. Anchor the tight
+              // window to the run's captioned message (if any) instead.
+              const anchorHasCaption = hasRealCaption(msg);
               let j = i + 1;
               while (
                 j < filteredMessages.length &&
                 isImageMsg(filteredMessages[j]) &&
                 filteredMessages[j].senderId === msg.senderId &&
                 isSameDay(new Date(filteredMessages[j].createdAt), msgDate) &&
-                differenceInMinutes(new Date(filteredMessages[j].createdAt), new Date(filteredMessages[j - 1].createdAt)) < 2
+                !hasRealCaption(filteredMessages[j]) &&
+                (anchorHasCaption
+                  ? differenceInSeconds(new Date(filteredMessages[j].createdAt), msgDate) < SAME_BATCH_SECONDS
+                  : differenceInMinutes(new Date(filteredMessages[j].createdAt), new Date(filteredMessages[j - 1].createdAt)) < 2)
               ) {
                 run.push(filteredMessages[j]);
                 j += 1;

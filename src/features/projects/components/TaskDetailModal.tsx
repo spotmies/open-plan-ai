@@ -58,7 +58,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import {
   X,
   Calendar as CalendarIcon,
@@ -150,6 +150,8 @@ interface TaskDetailModalProps {
   statusOptions?: Array<{ value: string; label: string; color?: string }>;
   /** Shown as a read-only "Project" field in the metadata grid when provided. Only pass this from contexts (like My Day) where the task's project isn't already implied by the surrounding page. */
   projectName?: string;
+  /** Project's short display-ID prefix — renders a "{projectCode}-T-{number}" pill next to the title when both this and the task's number are available. */
+  projectCode?: string;
   /** Pre-populates the Assigned To field when creating a new task (mode="create"). Opt-in — leave unset to keep the field empty by default. */
   defaultAssignees?: TeamMember[];
 }
@@ -240,6 +242,7 @@ export const TaskDetailModal = ({
   assignableMembers,
   statusOptions: providedStatusOptions,
   projectName,
+  projectCode,
   defaultAssignees,
 }: TaskDetailModalProps) => {
   const { user: profile } = useAuth();
@@ -1405,7 +1408,14 @@ export const TaskDetailModal = ({
             </div>
           ) : mode !== 'create' && (
             <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
-              <DialogTitle className="text-sm font-medium text-muted-foreground">Task</DialogTitle>
+              <div className="flex items-center gap-2">
+                <DialogTitle className="text-sm font-medium text-muted-foreground">Task</DialogTitle>
+                {getDisplayId(projectCode, 'T', task?.number) && (
+                  <span className="font-mono font-semibold text-[12px] text-blue-500">
+                    {getDisplayId(projectCode, 'T', task?.number)}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <DialogClose asChild>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
@@ -1427,6 +1437,11 @@ export const TaskDetailModal = ({
               {showMobileHeader && projectName && (
                 <p className="text-xs text-muted-foreground -mb-2">
                   {projectName} <span className="mx-1">›</span> Board
+                  {getDisplayId(projectCode, 'T', task?.number) && (
+                    <span className="ml-2 font-mono font-semibold text-blue-500">
+                      {getDisplayId(projectCode, 'T', task?.number)}
+                    </span>
+                  )}
                 </p>
               )}
               <div className="space-y-2">

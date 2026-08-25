@@ -31,6 +31,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -61,8 +69,8 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
-import { Milestone, MilestoneStatus, Task, Issue, Module } from '@/types';
-import { getMilestoneTasks, getMilestoneModules, getMilestoneIssues, getMilestoneStatus, getModuleProgress } from '../utils/projectUtils';
+import { Milestone, MilestoneStatus, Task, Issue, Module, TeamMember } from '@/types';
+import { getMilestoneTasks, getMilestoneModules, getMilestoneIssues, getMilestoneStatus, getModuleProgress, sortByAssignee } from '../utils/projectUtils';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -71,6 +79,7 @@ interface MilestoneDetailModalProps {
   tasks: Task[];
   issues: Issue[];
   modules?: Module[];
+  assignableMembers?: TeamMember[];
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (milestone: Milestone) => void;
@@ -101,6 +110,7 @@ const serializeMilestoneForDirtyCheck = (m: Milestone): string => JSON.stringify
   completed: m.completed,
   linkedTaskIds: [...(m.linkedTaskIds || [])].sort(),
   linkedModuleIds: [...(m.linkedModuleIds || [])].sort(),
+  assigneeId: m.assignee?.id || null,
 });
 
 export function MilestoneDetailModal({
@@ -108,6 +118,7 @@ export function MilestoneDetailModal({
   tasks,
   issues,
   modules = [],
+  assignableMembers = [],
   isOpen,
   onClose,
   onUpdate,
@@ -118,6 +129,7 @@ export function MilestoneDetailModal({
   const [editedMilestone, setEditedMilestone] = useState<Milestone | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isMilestoneDateOpen, setIsMilestoneDateOpen] = useState(false);
+  const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
   const [milestoneDateCalendarMonth, setMilestoneDateCalendarMonth] = useState<Date>(() =>
     startOfMonth(new Date())
   );
@@ -201,8 +213,12 @@ export function MilestoneDetailModal({
   // falling back to the live task/module fields again (via getMilestoneTasks/
   // getMilestoneModules) would make removing a fallback-linked item a no-op,
   // since those live fields don't change until the milestone is saved.
-  const milestoneTasks = tasks.filter(t => editedMilestone.linkedTaskIds?.includes(t.id));
-  const milestoneIssues = getMilestoneIssues(editedMilestone.id, issues);
+  // Milestone assignee's own tasks/issues are surfaced first in every list below.
+  const milestoneTasks = sortByAssignee(
+    tasks.filter(t => editedMilestone.linkedTaskIds?.includes(t.id)),
+    editedMilestone.assignee?.id,
+  );
+  const milestoneIssues = sortByAssignee(getMilestoneIssues(editedMilestone.id, issues), editedMilestone.assignee?.id);
   const status = getMilestoneStatus(editedMilestone, tasks, issues);
   const daysUntil = editedMilestone.date ? Math.ceil((new Date(editedMilestone.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : NaN;
 
@@ -225,11 +241,13 @@ export function MilestoneDetailModal({
     i.status !== 'wont-fix'
   );
 
-  const filteredAvailableTasks = availableTasks.filter(t =>
-    t.title.toLowerCase().includes(taskSearchQuery.trim().toLowerCase())
+  const filteredAvailableTasks = sortByAssignee(
+    availableTasks.filter(t => t.title.toLowerCase().includes(taskSearchQuery.trim().toLowerCase())),
+    editedMilestone.assignee?.id,
   );
-  const filteredAvailableIssues = availableIssues.filter(i =>
-    i.title.toLowerCase().includes(issueSearchQuery.trim().toLowerCase())
+  const filteredAvailableIssues = sortByAssignee(
+    availableIssues.filter(i => i.title.toLowerCase().includes(issueSearchQuery.trim().toLowerCase())),
+    editedMilestone.assignee?.id,
   );
 
   // Handlers for adding/removing linked items
@@ -539,6 +557,76 @@ export function MilestoneDetailModal({
                         </div>
                       )}
                     </div>
+
+                    <div>
+                      <Label className="block text-xs text-muted-foreground uppercase tracking-wider font-medium">Assigned To</Label>
+                      <Popover open={isAssigneePopoverOpen} onOpenChange={(open) => !isMobileFieldsLocked && setIsAssigneePopoverOpen(open)}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={isMobileFieldsLocked}
+                            className="flex items-center gap-2 mt-1.5 disabled:opacity-100 disabled:pointer-events-none"
+                          >
+                            {editedMilestone.assignee ? (
+                              <>
+                                <Avatar className="h-6 w-6">
+                                  <AvatarImage src={resolveFileUrl(editedMilestone.assignee.avatar) ?? editedMilestone.assignee.avatar} alt={editedMilestone.assignee.name} />
+                                  <AvatarFallback className="text-[10px]">{editedMilestone.assignee.initials}</AvatarFallback>
+                                </Avatar>
+                                <span className="text-sm font-bold text-foreground truncate">{editedMilestone.assignee.name}</span>
+                              </>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Unassigned</span>
+                            )}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="p-0 w-[260px]" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search members..." />
+                            <CommandList>
+                              <CommandEmpty>No members found.</CommandEmpty>
+                              <CommandGroup>
+                                {editedMilestone.assignee && (
+                                  <CommandItem
+                                    value="unassign"
+                                    onSelect={() => {
+                                      handleFieldChange('assignee', null);
+                                      setIsAssigneePopoverOpen(false);
+                                    }}
+                                    className="cursor-pointer text-muted-foreground"
+                                  >
+                                    <X className="h-3.5 w-3.5 mr-1" />
+                                    Unassign
+                                  </CommandItem>
+                                )}
+                                {assignableMembers
+                                  .slice()
+                                  .sort((a, b) => a.name.localeCompare(b.name))
+                                  .map(member => (
+                                    <CommandItem
+                                      key={member.id}
+                                      value={`${member.id} ${member.name}`}
+                                      onSelect={() => {
+                                        handleFieldChange('assignee', member);
+                                        setIsAssigneePopoverOpen(false);
+                                      }}
+                                      className="cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Avatar className="h-5 w-5">
+                                          <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                          <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                        </Avatar>
+                                        {member.name}
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                   </div>
                 </div>
 
@@ -729,6 +817,80 @@ export function MilestoneDetailModal({
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Assigned To */}
+                <div className="space-y-1 sm:space-y-2">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <User className="h-3 w-3" />
+                    Assigned To
+                  </Label>
+                  <Popover open={isAssigneePopoverOpen} onOpenChange={setIsAssigneePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full h-10 justify-start px-3 text-sm font-normal bg-muted/30"
+                      >
+                        {editedMilestone.assignee ? (
+                          <span className="flex items-center gap-2">
+                            <Avatar className="h-5 w-5">
+                              <AvatarImage src={resolveFileUrl(editedMilestone.assignee.avatar) ?? editedMilestone.assignee.avatar} alt={editedMilestone.assignee.name} />
+                              <AvatarFallback className="text-[9px]">{editedMilestone.assignee.initials}</AvatarFallback>
+                            </Avatar>
+                            {editedMilestone.assignee.name}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Unassigned</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-[260px]" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search members..." />
+                        <CommandList>
+                          <CommandEmpty>No members found.</CommandEmpty>
+                          <CommandGroup>
+                            {editedMilestone.assignee && (
+                              <CommandItem
+                                value="unassign"
+                                onSelect={() => {
+                                  handleFieldChange('assignee', null);
+                                  setIsAssigneePopoverOpen(false);
+                                }}
+                                className="cursor-pointer text-muted-foreground"
+                              >
+                                <X className="h-3.5 w-3.5 mr-1" />
+                                Unassign
+                              </CommandItem>
+                            )}
+                            {assignableMembers
+                              .slice()
+                              .sort((a, b) => a.name.localeCompare(b.name))
+                              .map(member => (
+                                <CommandItem
+                                  key={member.id}
+                                  value={`${member.id} ${member.name}`}
+                                  onSelect={() => {
+                                    handleFieldChange('assignee', member);
+                                    setIsAssigneePopoverOpen(false);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-5 w-5">
+                                      <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                      <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                    </Avatar>
+                                    {member.name}
+                                  </div>
+                                </CommandItem>
+                              ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* Description */}

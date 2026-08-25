@@ -17,3 +17,18 @@ export function sanitizePhoneInput(value: string): string {
   const digits = value.replace(/\D/g, "");
   return (hasPlus ? "+" : "") + digits;
 }
+
+/**
+ * Human-readable display ID for a task/issue, e.g. "RVC-T-42" / "RVC-I-7".
+ * Returns null when either half is unavailable (e.g. a personal task with no
+ * project, or a project whose code hasn't loaded yet) so callers can skip
+ * rendering rather than show a broken "undefined-T-undefined" label.
+ */
+export function getDisplayId(
+  projectCode: string | null | undefined,
+  kind: "T" | "I",
+  number: number | null | undefined,
+): string | null {
+  if (!projectCode || number == null) return null;
+  return `${projectCode}-${kind}-${number}`;
+}

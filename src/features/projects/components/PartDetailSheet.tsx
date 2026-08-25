@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  Download, ShoppingCart, Pencil, ArrowLeftRight, ClipboardCheck, MapPin, ChevronLeft,
+  Download, ShoppingCart, Pencil, ArrowLeftRight, ClipboardCheck, MapPin, ChevronLeft, Clock,
   Zap, Cpu, Package, Box, Monitor, Shield, Layers, Tag, Unlock, ShieldAlert, type LucideIcon,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -23,7 +23,7 @@ const STAT_TOOLTIPS: Record<string, string> = {
   'On Hand': 'Physical quantity currently in stock, including anything held in quarantine.',
   'Allocated': 'Quantity already reserved against BOM demand for planned builds.',
   'Available': 'On Hand minus Allocated minus Quarantine — what can actually be used right now.',
-  'On Order': 'Quantity remaining on open purchase orders, not yet received.',
+  'On Order': 'Quantity remaining on open purchase orders, not yet received. Want-to-order items aren’t counted until marked ordered — see "planned" below.',
   'Quarantine': 'Held out of Available until released — pending inspection or testing.',
 };
 
@@ -104,9 +104,12 @@ interface PartDetailSheetProps {
   onTransfer: () => void;
   onAllocate: () => void;
   onReleaseQuarantine: (qty: number) => void;
+  /** Transitions a "want to order" order to actually ordered — only meaningful for
+   * `status === 'planned'` rows in the Supply tab. */
+  onMarkOrdered: (orderId: string) => void;
 }
 
-function StatItem({ label, value, color }: { label: string; value: number; color?: string }) {
+function StatItem({ label, value, color, sub }: { label: string; value: number; color?: string; sub?: string }) {
   const tip = STAT_TOOLTIPS[label];
   return (
     <div className="min-w-0">
@@ -121,13 +124,14 @@ function StatItem({ label, value, color }: { label: string; value: number; color
           </Tooltip>
         ) : label}
       </div>
+      {sub && <div className="text-[10px] text-amber-600 truncate">{sub}</div>}
     </div>
   );
 }
 
 export function PartDetailSheet({
   isOpen, record, status, part, transactions, members = [], orders, whereUsed, hasBuildDemand, isFullyAllocated, onClose,
-  onReceive, onAdjust, onOrder, onIssue, onTransfer, onAllocate, onReleaseQuarantine,
+  onReceive, onAdjust, onOrder, onIssue, onTransfer, onAllocate, onReleaseQuarantine, onMarkOrdered,
 }: PartDetailSheetProps) {
   const isMobile = useIsMobile();
   const [releaseQty, setReleaseQty] = useState('');
@@ -161,8 +165,17 @@ export function PartDetailSheet({
 
   const partOrders = useMemo(() => {
     if (!record) return [];
-    return orders.filter(o => o.partId === record.partId && (o.status === 'open' || o.status === 'partially_received'));
+    return orders.filter(o => o.partId === record.partId
+      && (o.status === 'planned' || o.status === 'open' || o.status === 'partially_received'));
   }, [record, orders]);
+
+  // Quantity flagged as "want to order" but not yet actually submitted — kept out of
+  // record.onOrder (see onOrderOf), surfaced separately so the stat row doesn't understate
+  // real procurement need.
+  const plannedQty = useMemo(
+    () => partOrders.filter(o => o.status === 'planned').reduce((sum, o) => sum + o.remainingQty, 0),
+    [partOrders]
+  );
 
   if (!record) return null;
 
@@ -248,7 +261,12 @@ export function PartDetailSheet({
               <StatItem label="On Hand" value={record.onHand} />
               <StatItem label="Allocated" value={record.allocated} />
               <StatItem label="Available" value={availableOf(record)} color={availableOf(record) < 0 ? '#DC2626' : '#16A34A'} />
-              <StatItem label="On Order" value={record.onOrder} color={record.onOrder > 0 ? '#D97706' : undefined} />
+              <StatItem
+                label="On Order"
+                value={record.onOrder}
+                color={record.onOrder > 0 ? '#D97706' : undefined}
+                sub={plannedQty > 0 ? `+${plannedQty} planned` : undefined}
+              />
               <StatItem label="Quarantine" value={record.quarantineQty ?? 0} />
             </div>
 
@@ -350,7 +368,7 @@ export function PartDetailSheet({
                 Where-used <span className="ml-1 text-[11px] opacity-70">{whereUsed.length}</span>
               </TabsTrigger>
               <TabsTrigger value="supply" className={tabTriggerClass}>
-                Supply <span className="ml-1 text-[11px] opacity-70">{record.onOrder > 0 ? 1 : 0}</span>
+                Supply <span className="ml-1 text-[11px] opacity-70">{partOrders.length}</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -459,6 +477,16 @@ export function PartDetailSheet({
               <>
                 {partOrders.map((o) => (
                   <div key={o.id} className="rounded-2xl border bg-background p-3.5 space-y-2 text-sm">
+                    {o.status === 'planned' && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
+                          <Clock className="h-3 w-3" /> Want to order
+                        </span>
+                        <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => onMarkOrdered(o.id)}>
+                          Mark as ordered
+                        </Button>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Remaining</span>
                       <span className="font-semibold">{o.remainingQty} {part?.unit ?? 'EA'}</span>

@@ -9,28 +9,43 @@ import {
   LayoutGrid,
   Link as LinkIcon,
   ListTodo,
+  Loader2,
   Package,
   Paperclip,
   Pencil,
   Tag,
   Target,
+  Trash2,
   Users,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FilePreviewDialog } from '@/components/FilePreviewDialog';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
 import { cn } from '@/lib/utils';
 import { resolveFileUrl } from '@/utils/fileUrl';
+import { logger } from '@/services/monitoring/logger';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { useProjectAttachments } from '@/hooks/useProjectAttachments';
 import { useProjectLinks } from '@/hooks/useProjectLinks';
+import { useDeleteProject } from '@/hooks/useProjects';
 import {
   formatDepartmentLabel,
   formatDisplayDate,
@@ -91,6 +106,9 @@ export default function ProjectDetailsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [previewFile, setPreviewFile] = useState<AttachmentLike | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const deleteProjectMutation = useDeleteProject();
 
   const { data: project, isLoading } = useProjectDetail(id);
   const { data: team = [], isLoading: isLoadingTeam } = useProjectMembers(id);
@@ -120,6 +138,26 @@ export default function ProjectDetailsPage() {
       </div>
     );
   }
+
+  const handleDeleteProject = async () => {
+    if (deleteConfirmText.trim() !== project.name) {
+      toast.error('Project name does not match.');
+      return;
+    }
+    try {
+      await deleteProjectMutation.mutateAsync(project.id);
+      toast.success('Project deleted successfully');
+      navigate('/projects');
+    } catch (error) {
+      logger.error('Error deleting project:', error);
+      const errorMessage = error instanceof Error ? error.message : '';
+      if (errorMessage.toLowerCase().includes('access denied')) {
+        toast.error('Only the project owner can delete this project.');
+      } else {
+        toast.error('Failed to delete project');
+      }
+    }
+  };
 
   const stageKey = project.stage as keyof typeof stageLabels;
   const workspaceStats = [
@@ -155,6 +193,16 @@ export default function ProjectDetailsPage() {
             <Button className="gap-2" onClick={() => navigate(`/projects/${id}/edit`, { state: { from: 'details' } })}>
               <Pencil className="h-4 w-4" />
               Edit Project
+            </Button>
+          )}
+          {canEdit && (
+            <Button
+              variant="outline"
+              className="gap-2 text-destructive hover:text-destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Project
             </Button>
           )}
         </div>
@@ -374,6 +422,62 @@ export default function ProjectDetailsPage() {
           />
         );
       })()}
+
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setDeleteConfirmText('');
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Project
+            </DialogTitle>
+            <DialogDescription>
+              To confirm deletion, type <strong>{project.name}</strong> below. This permanently deletes the project
+              and all associated data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="delete-project-confirmation">Project Name</Label>
+            <Input
+              id="delete-project-confirmation"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={project.name}
+              autoComplete="off"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setDeleteConfirmText('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteProject}
+              disabled={deleteProjectMutation.isPending || deleteConfirmText.trim() !== project.name}
+            >
+              {deleteProjectMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Permanently'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

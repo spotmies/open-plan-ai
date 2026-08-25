@@ -11,7 +11,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { CheckSquare, Bug, Check, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
@@ -300,6 +300,11 @@ export function MyDayListView({
                   {isComplete && <Check className="h-3 w-3 text-white" />}
                 </button>
                 <div className="min-w-0 flex-1">
+                  {getDisplayId(task.projectCode, task.itemType === 'task' ? 'T' : 'I', task.number) && (
+                    <span className="font-mono font-semibold text-[10px] text-blue-500 block">
+                      {getDisplayId(task.projectCode, task.itemType === 'task' ? 'T' : 'I', task.number)}
+                    </span>
+                  )}
                   <p className="font-semibold text-[15px] leading-snug truncate">{task.title}</p>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                     <Badge
@@ -398,6 +403,11 @@ export function MyDayListView({
                     )}
                   </button>
                   <div className="min-w-0">
+                    {getDisplayId(task.projectCode, task.itemType === 'task' ? 'T' : 'I', task.number) && (
+                      <span className="font-mono font-semibold text-[10px] text-blue-500 block">
+                        {getDisplayId(task.projectCode, task.itemType === 'task' ? 'T' : 'I', task.number)}
+                      </span>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <p className="font-medium truncate max-w-[260px] cursor-pointer">{task.title}</p>

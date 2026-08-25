@@ -1222,6 +1222,7 @@ export default function ProjectDetail() {
         due_date: newMilestonePartial.date || null,
         description: newMilestonePartial.description || null,
         status: newMilestonePartial.completed ? 'completed' : 'upcoming',
+        assignee_id: newMilestonePartial.assignee?.id || null,
       });
 
       // Link tasks if any were selected during creation
@@ -1266,6 +1267,7 @@ export default function ProjectDetail() {
         due_date: updatedMilestone.date || null,
         description: updatedMilestone.description || null,
         status: updatedMilestone.completed ? undefined : (updatedMilestone.status || null),
+        assignee_id: updatedMilestone.assignee?.id || null,
       },
     });
 
@@ -1779,6 +1781,7 @@ export default function ProjectDetail() {
               tasks={filteredTasks}
               allTasks={project.tasks || []}
               projectId={project.id}
+              projectCode={project.code}
               milestones={project.milestones || []}
               issues={project.issues || []}
               modules={modules.map(m => ({ id: m.id, name: m.name, type: m.type }))}
@@ -1802,6 +1805,7 @@ export default function ProjectDetail() {
               issues={project.issues || []}
               teamMembers={projectMembers}
               projectId={project.id}
+              projectCode={project.code}
               viewMode={moduleViewMode}
               onViewModeChange={setModuleViewMode}
               searchQuery={moduleSearchQuery}
@@ -1821,6 +1825,7 @@ export default function ProjectDetail() {
               tasks={project.tasks || []}
               issues={project.issues || []}
               modules={modules}
+              assignableMembers={projectMembers}
               viewMode={milestoneViewMode}
               projectStartDate={project.startDate ? new Date(project.startDate) : undefined}
               searchQuery={milestoneSearchQuery}
@@ -1835,6 +1840,7 @@ export default function ProjectDetail() {
           <TabsContent value="issues" className="mt-6">
             <IssuesView
               issues={project.issues || []}
+              projectCode={project.code}
               viewMode={issueViewMode}
               tasks={project.tasks || []}
               teamMembers={projectMembers}
@@ -1918,6 +1924,7 @@ export default function ProjectDetail() {
         modules={modules}
         milestones={project.milestones || []}
         projectId={id}
+        projectCode={project.code}
         onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
         assignableMembers={projectMembers}
         statusOptions={(boardColumns ?? []).map((c) => ({
@@ -1941,6 +1948,7 @@ export default function ProjectDetail() {
           modules={modules}
           milestones={project.milestones || []}
           projectId={id}
+          projectCode={project.code}
           onAddModule={canAddModulesAndMilestones ? handleAddModule : undefined}
           assignableMembers={organizationMembers}
           statusOptions={(boardColumns ?? []).map((c) => ({
@@ -1969,6 +1977,7 @@ export default function ProjectDetail() {
           tasks={project.tasks || []}
           issues={project.issues || []}
           modules={modules}
+          assignableMembers={projectMembers}
           isOpen={!!milestoneId}
           onClose={() => navigate(`/projects/${id}/milestones`)}
           onUpdate={handleMilestoneUpdate}
@@ -1987,6 +1996,7 @@ export default function ProjectDetail() {
           onDelete={handleIssueDelete}
           userProjectRole={project?.myRole}
           mode="view"
+          projectCode={project.code}
         />
       )}
 

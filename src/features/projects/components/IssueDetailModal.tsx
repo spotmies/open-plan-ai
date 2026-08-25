@@ -30,7 +30,7 @@ import { logger } from '@/services/monitoring/logger';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import { serializeBlocksForDirtyCheck } from '@/lib/descriptionBlocks';
 
 interface IssueDetailModalProps {
@@ -46,6 +46,8 @@ interface IssueDetailModalProps {
   onCreate?: (issue: Issue, pendingFiles?: File[]) => void;
   /** Shown as a read-only "Project" field when provided. Only pass this from contexts (like My Day) where the issue's project isn't already implied by the surrounding page. */
   projectName?: string;
+  /** Project's short display-ID prefix — renders a "{projectCode}-I-{number}" pill next to the title when both this and the issue's number are available. */
+  projectCode?: string;
 }
 
 const serializeIssueForDirtyCheck = (issue: Issue): string => {
@@ -93,6 +95,7 @@ export function IssueDetailModal({
   mode = 'view',
   onCreate,
   projectName,
+  projectCode,
 }: IssueDetailModalProps) {
   const navigate = useNavigate();
   const { user: profile } = useAuth();
@@ -250,7 +253,14 @@ export function IssueDetailModal({
         {/* Header - view mode, desktop: label + expand + close */}
         {mode !== 'create' && !isMobile && (
           <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
-            <DialogTitle className="text-sm font-medium text-muted-foreground">Issue</DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle className="text-sm font-medium text-muted-foreground">Issue</DialogTitle>
+              {getDisplayId(projectCode, 'I', editedIssue?.number) && (
+                <span className="font-mono font-semibold text-[12px] text-blue-500">
+                  {getDisplayId(projectCode, 'I', editedIssue?.number)}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -289,6 +299,7 @@ export function IssueDetailModal({
               tasks={tasks}
               teamMembers={teamMembers}
               projectName={projectName}
+              projectCode={projectCode}
               onUpdate={setEditedIssue}
               onDelete={undefined}
               isDraft={true} // Always pretend it's draft to enable auto-callbacks to onUpdate instead of parent

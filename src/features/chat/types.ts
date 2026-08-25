@@ -69,7 +69,7 @@ export interface ChatMessage {
   deletedByName?: string;
   readReceipts?: ReadReceipt[];
   reactions?: MessageReaction[];
-  status?: 'pending' | 'sending' | 'sent' | 'delivered' | 'read';
+  status?: 'pending' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   isOptimistic?: boolean;
   replyToMessageId?: string;
   replyToMessage?: {
@@ -103,7 +103,7 @@ export interface Conversation {
     senderId?: string;
     senderName: string;
     createdAt: string;
-    status?: 'pending' | 'sending' | 'sent' | 'delivered' | 'read';
+    status?: 'pending' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   };
   lastMessageAt: string;
   createdAt: string;

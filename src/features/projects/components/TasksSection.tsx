@@ -17,6 +17,7 @@ import { buildTaskStatusOptions } from '../utils/taskStatusOptions';
 
 interface TasksSectionProps {
   projectId: string;
+  projectCode?: string;
   tasks: Task[];
   allTasks?: Task[];
   milestones: Milestone[];
@@ -105,6 +106,7 @@ export function ViewControls({
 
 export function TasksSection({
   projectId,
+  projectCode,
   tasks,
   allTasks,
   milestones,
@@ -380,6 +382,7 @@ export function TasksSection({
         {isMobile ? (
           <MobileTaskListView
             projectId={projectId}
+            projectCode={projectCode}
             tasks={filteredTasks}
             allTasks={dependencyTasks}
             modules={modules}
@@ -394,6 +397,7 @@ export function TasksSection({
         ) : viewMode === 'kanban' ? (
           <KanbanView
             projectId={projectId}
+            projectCode={projectCode}
             tasks={filteredTasks}
             allTasks={dependencyTasks}
             issues={issues}
@@ -410,6 +414,7 @@ export function TasksSection({
         ) : (
           <ListView
             projectId={projectId}
+            projectCode={projectCode}
             tasks={filteredTasks}
             allTasks={dependencyTasks}
             milestones={milestones}

@@ -12,6 +12,7 @@ import {
   Calendar,
   Sparkles,
   Plug,
+  Warehouse,
   X,
   Check,
   ChevronDown,
@@ -44,6 +45,7 @@ const moreNavItems: NavItem[] = [
   { title: 'Team',      url: '/team',     icon: Users         },
   { title: 'Calendar',  url: '/calendar', icon: Calendar      },
   { title: 'Reports',   url: '/reports',  icon: BarChart3     },
+  { title: 'Inventory', url: '/inventory', icon: Warehouse    },
   { title: 'Integrations', url: '/integrations', icon: Plug   },
   { title: 'Settings',  url: '/settings', icon: Settings      },
 ];

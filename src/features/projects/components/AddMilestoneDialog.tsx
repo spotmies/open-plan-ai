@@ -26,6 +26,15 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
   Form,
   FormControl,
   FormField,
@@ -41,8 +50,12 @@ import {
   Box,
   AlertTriangle,
   Search,
+  User,
+  X,
 } from 'lucide-react';
-import { Milestone, Task, Issue, Module } from '@/types';
+import { Milestone, Task, Issue, Module, TeamMember } from '@/types';
+import { sortByAssignee } from '../utils/projectUtils';
+import { resolveFileUrl } from '@/utils/fileUrl';
 
 const milestoneSchema = z.object({
   title: z.string().min(1, 'Title is required').max(100, 'Title must be less than 100 characters'),
@@ -62,6 +75,7 @@ interface AddMilestoneDialogProps {
   tasks: Task[];
   modules: Module[];
   issues: Issue[];
+  assignableMembers?: TeamMember[];
   /** Aligns the calendar with the project schedule when picking a target date */
   projectStartDate?: Date;
 }
@@ -73,11 +87,14 @@ export function AddMilestoneDialog({
   tasks,
   modules,
   issues,
+  assignableMembers = [],
   projectStartDate,
 }: AddMilestoneDialogProps) {
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
   const [selectedIssues, setSelectedIssues] = useState<string[]>([]);
+  const [assignee, setAssignee] = useState<TeamMember | null>(null);
+  const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
   const [moduleSearch, setModuleSearch] = useState('');
   const [issueSearch, setIssueSearch] = useState('');
@@ -112,6 +129,7 @@ export function AddMilestoneDialog({
       linkedTaskIds: selectedTasks,
       linkedModuleIds: selectedModules,
       linkedIssueIds: selectedIssues,
+      assignee,
     };
 
     onAdd(milestone);
@@ -122,13 +140,15 @@ export function AddMilestoneDialog({
     form.formState.isDirty ||
     selectedTasks.length > 0 ||
     selectedModules.length > 0 ||
-    selectedIssues.length > 0;
+    selectedIssues.length > 0 ||
+    assignee !== null;
 
   const resetAndClose = () => {
     form.reset();
     setSelectedTasks([]);
     setSelectedModules([]);
     setSelectedIssues([]);
+    setAssignee(null);
     setTaskSearch('');
     setModuleSearch('');
     setIssueSearch('');
@@ -178,17 +198,21 @@ export function AddMilestoneDialog({
     i.status !== 'resolved' && i.status !== 'wont-fix'
   );
 
-  // Filtered lists based on search
-  const filteredTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(taskSearch.toLowerCase())
+  // Filtered lists based on search. When a milestone assignee is picked,
+  // their own tasks/issues are surfaced first so the creator can quickly
+  // check off the assignee's work before scrolling to everything else.
+  const filteredTasks = sortByAssignee(
+    tasks.filter(task => task.title.toLowerCase().includes(taskSearch.toLowerCase())),
+    assignee?.id,
   );
 
   const filteredModules = modules.filter(module =>
     module.name.toLowerCase().includes(moduleSearch.toLowerCase())
   );
 
-  const filteredIssues = openIssues.filter(issue =>
-    issue.title.toLowerCase().includes(issueSearch.toLowerCase())
+  const filteredIssues = sortByAssignee(
+    openIssues.filter(issue => issue.title.toLowerCase().includes(issueSearch.toLowerCase())),
+    assignee?.id,
   );
 
   return (
@@ -279,6 +303,80 @@ export function AddMilestoneDialog({
                     </FormItem>
                   )}
                 />
+
+                {/* Assigned To */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Assigned To</Label>
+                  <Popover open={isAssigneePopoverOpen} onOpenChange={setIsAssigneePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal"
+                      >
+                        {assignee ? (
+                          <span className="flex items-center gap-2">
+                            <Avatar className="h-5 w-5">
+                              <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                              <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
+                            </Avatar>
+                            {assignee.name}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2 text-muted-foreground">
+                            <User className="h-4 w-4" />
+                            Unassigned
+                          </span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-[260px]" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search members..." />
+                        <CommandList>
+                          <CommandEmpty>No members found.</CommandEmpty>
+                          <CommandGroup>
+                            {assignee && (
+                              <CommandItem
+                                value="unassign"
+                                onSelect={() => {
+                                  setAssignee(null);
+                                  setIsAssigneePopoverOpen(false);
+                                }}
+                                className="cursor-pointer text-muted-foreground"
+                              >
+                                <X className="h-3.5 w-3.5 mr-1" />
+                                Unassign
+                              </CommandItem>
+                            )}
+                            {assignableMembers
+                              .slice()
+                              .sort((a, b) => a.name.localeCompare(b.name))
+                              .map(member => (
+                                <CommandItem
+                                  key={member.id}
+                                  value={`${member.id} ${member.name}`}
+                                  onSelect={() => {
+                                    setAssignee(member);
+                                    setIsAssigneePopoverOpen(false);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-5 w-5">
+                                      <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                      <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                    </Avatar>
+                                    {member.name}
+                                  </div>
+                                </CommandItem>
+                              ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
 
                 <Separator />
 

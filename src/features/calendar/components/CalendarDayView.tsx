@@ -14,6 +14,8 @@ interface CalendarDayViewProps {
   events: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
   onScheduleMeeting?: (date: Date) => void;
+  onRescheduleMeeting?: (event: CalendarEvent) => void;
+  currentUserId?: string;
 }
 
 export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
@@ -21,6 +23,8 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
   events,
   onEventClick,
   onScheduleMeeting,
+  onRescheduleMeeting,
+  currentUserId,
 }) => {
   const dayEvents = getEventsForDate(events, date);
   const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
@@ -108,7 +112,12 @@ export const CalendarDayView: React.FC<CalendarDayViewProps> = ({
               icon={<Video className="h-4 w-4 text-blue-600" />}
               items={meetings}
               renderItem={(event) => (
-                <CalendarMeetingCard event={event} onClick={() => onEventClick(event)} />
+                <CalendarMeetingCard
+                  event={event}
+                  onClick={() => onEventClick(event)}
+                  canReschedule={!!currentUserId && event.organizerId === currentUserId}
+                  onReschedule={onRescheduleMeeting ? () => onRescheduleMeeting(event) : undefined}
+                />
               )}
             />
             <EventSection

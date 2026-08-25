@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import { playCompleteSound } from '@/lib/playSound';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import {
@@ -65,6 +65,7 @@ import { AttachmentBadges } from '@/components/shared/AttachmentBadges';
 
 interface IssuesViewProps {
   issues: Issue[];
+  projectCode?: string;
   viewMode?: 'table' | 'kanban';
   tasks?: Task[];
   teamMembers?: TeamMember[];
@@ -171,6 +172,7 @@ function matchesCustomDateRange(date: Date | null, from: string | undefined, to:
 
 export function IssuesView({
   issues,
+  projectCode,
   viewMode = 'table',
   tasks = [],
   teamMembers = [],
@@ -862,7 +864,14 @@ export function IssuesView({
                                                       >
                                                         {issue.status === 'resolved' && <Check className="h-2.5 w-2.5 text-status-done" />}
                                                       </button>
-                                                      <p className="text-sm font-medium line-clamp-2">{issue.title}</p>
+                                                      <div className="min-w-0">
+                                                        {getDisplayId(projectCode, 'I', issue.number) && (
+                                                          <span className="font-mono font-semibold text-[10px] text-blue-500 block">
+                                                            {getDisplayId(projectCode, 'I', issue.number)}
+                                                          </span>
+                                                        )}
+                                                        <p className="text-sm font-medium line-clamp-2">{issue.title}</p>
+                                                      </div>
                                                     </div>
                                                     <div className="text-muted-foreground hover:text-foreground mt-0.5">
                                                       <GripVertical className="h-4 w-4" />
@@ -1202,7 +1211,12 @@ export function IssuesView({
                             </Badge>
                           </div>
 
-                          <h4 className="font-semibold text-[15px] leading-snug mt-2.5">{issue.title}</h4>
+                          {getDisplayId(projectCode, 'I', issue.number) && (
+                            <span className="font-mono font-semibold text-[11px] text-blue-500 block mt-2.5">
+                              {getDisplayId(projectCode, 'I', issue.number)}
+                            </span>
+                          )}
+                          <h4 className={cn('font-semibold text-[15px] leading-snug', !getDisplayId(projectCode, 'I', issue.number) && 'mt-2.5')}>{issue.title}</h4>
 
                           {issue.description && (
                             <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{issue.description}</p>
@@ -1291,6 +1305,11 @@ export function IssuesView({
                             </div>
                           )}
                           <div className="min-w-0">
+                            {getDisplayId(projectCode, 'I', issue.number) && (
+                              <span className="font-mono font-semibold text-[11px] text-blue-500 block">
+                                {getDisplayId(projectCode, 'I', issue.number)}
+                              </span>
+                            )}
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <p className="font-medium line-clamp-2 cursor-pointer">{issue.title}</p>
@@ -1442,6 +1461,7 @@ export function IssuesView({
         userProjectRole={userProjectRole}
         mode={modalMode}
         onCreate={handleCreateSubmit}
+        projectCode={projectCode}
       />
     </div>
   );

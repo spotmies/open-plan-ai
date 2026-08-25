@@ -48,6 +48,8 @@ export interface CalendarEvent {
   meetingUri?: string;
   htmlLink?: string;
   attendeeEmails?: string[];
+  organizerId?: string;
+  googleEventId?: string | null;
   // Common
   description?: string;
   tags?: string[];

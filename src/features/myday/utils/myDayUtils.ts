@@ -550,6 +550,39 @@ export function groupTasksByProgress(items: MyDayTask[] | MyDayItem[]): {
   return groups;
 }
 
+// Statuses that map to each of the My Tasks Kanban columns. Anything not
+// listed here (todo, open, investigating, or a custom project-defined
+// status/column) falls into "To Do" by default, unless it's blocked (see
+// `dependency` below, which takes priority over all of these).
+const KANBAN_COMPLETED_STATUSES = new Set(['done', 'resolved', 'closed', 'wont-fix']);
+const KANBAN_IN_PROGRESS_STATUSES = new Set(['in-progress', 'review']);
+
+export type KanbanColumnId = 'dependency' | 'todo' | 'inProgress' | 'completed';
+
+/**
+ * Bucket items into the four My Tasks Kanban columns (Dependency / To Do /
+ * In Progress / Completed). "Dependency" holds anything blocked — status
+ * `blocked` or unresolved dependency links — regardless of its raw status,
+ * taking priority over the other three buckets.
+ */
+export function groupItemsByKanbanStatus(items: MyDayItem[]): Record<KanbanColumnId, MyDayItem[]> {
+  const groups: Record<KanbanColumnId, MyDayItem[]> = { dependency: [], todo: [], inProgress: [], completed: [] };
+
+  for (const item of items) {
+    if (item.status === 'blocked' || item.isBlocked || item.hasUnresolvedDependencies) {
+      groups.dependency.push(item);
+    } else if (KANBAN_COMPLETED_STATUSES.has(item.status)) {
+      groups.completed.push(item);
+    } else if (KANBAN_IN_PROGRESS_STATUSES.has(item.status)) {
+      groups.inProgress.push(item);
+    } else {
+      groups.todo.push(item);
+    }
+  }
+
+  return groups;
+}
+
 /**
  * Group tasks by due date
  */
