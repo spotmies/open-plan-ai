@@ -120,6 +120,7 @@ export interface Milestone {
   linkedModuleIds?: string[]; // Modules linked to this milestone
   linkedIssueIds?: string[]; // Issues linked to this milestone (create-time only; edits go through Issue.blocksMilestoneIds)
   createdBy?: TeamMember;  // Who created this milestone
+  assignee?: TeamMember | null;  // Person this milestone is assigned to
 }
 
 // A single "who changed what, when" entry, sourced from the activity log.
@@ -165,6 +166,7 @@ export interface Task {
   moduleIds?: string[];      // Multiple module links
   linkedIssueIds?: string[]; // Issues affecting this task
   projectId?: string;        // Project this task belongs to (for cross-project views)
+  number?: number | null;    // Per-project sequence number; display ID is `{project.code}-T-{number}`. Null for personal tasks.
 }
 
 // Issue entity (New)
@@ -180,6 +182,7 @@ export interface Issue {
 
   // Relationships
   projectId: string;
+  number: number;              // Per-project sequence number; display ID is `{project.code}-I-{number}`.
   moduleId?: string;           // Which module is affected
   blocksTaskIds?: string[];    // Tasks blocked by this issue
   blocksMilestoneIds?: string[]; // Milestones affected
@@ -223,6 +226,8 @@ export interface MyDayItem {
   dueDate?: string;
   projectId: string;
   projectName: string;
+  projectCode?: string;
+  number?: number | null;
 
   // Flags for categorization
   isOverdue: boolean;
@@ -248,6 +253,7 @@ export interface ModuleSummary {
 export interface Project {
   id: string;
   name: string;
+  code: string; // Short display-ID prefix (e.g. "RVC") used to build task/issue IDs
   description: string;
   stage: ProjectStage;
   progress: number; // 0-100

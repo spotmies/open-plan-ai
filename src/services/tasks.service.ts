@@ -121,7 +121,7 @@ export const tasksService = {
   async getMyTasks(
     organizationId?: string,
     options?: { includeDone?: boolean; doneSince?: string }
-  ): Promise<(Task & { projectName?: string })[]> {
+  ): Promise<(Task & { projectName?: string; projectCode?: string | null })[]> {
     const params = new URLSearchParams({ limit: '100' });
     if (organizationId) params.set('organizationId', organizationId);
     if (options?.includeDone) params.set('includeDone', 'true');
@@ -129,7 +129,11 @@ export const tasksService = {
     const url = `${ENDPOINTS.TASKS.ME_ALL}?${params.toString()}`;
     const data = await apiClient.get<any>(url);
     const rows: any[] = data?.data ?? data ?? [];
-    return rows.map((raw: any) => ({ ...fromApi(raw), projectName: raw.projectName ?? raw.project_name ?? '' }));
+    return rows.map((raw: any) => ({
+      ...fromApi(raw),
+      projectName: raw.projectName ?? raw.project_name ?? '',
+      projectCode: raw.projectCode ?? null,
+    }));
   },
 
   /**

@@ -26,6 +26,9 @@ export interface BOMRevision {
   status: BOMStatus;
   price: number;
   leadTime: number;   // days — mirrors backend leadTimeDays 1:1, no unit conversion
+  ecoId: string | null;
+  description: string | null;  // snapshot of the part's description at revision creation time
+  category: BOMCategory | null; // snapshot of the part's category at revision creation time
   suppliers: SupplierEntry[];
   customFields: CustomFieldEntry[];
 }
@@ -125,6 +128,8 @@ export interface ApiRevisionResponse {
   price: string | null;
   leadTimeDays: number | null;
   ecoId: string | null;
+  description: string | null;
+  category: string | null;
   suppliers: Array<{ distributor: string; price: number; calcFromSubparts: boolean }> | null;
   customFields: ApiCustomFieldEntry[] | null;
   createdAt: string;
@@ -354,6 +359,9 @@ export function fromApiRevision(r: ApiRevisionResponse): BOMRevision {
     status:    r.status,
     price:     parseFloat(r.price ?? '0'),
     leadTime:  r.leadTimeDays ?? 0,
+    ecoId:     r.ecoId ?? null,
+    description: r.description ?? null,
+    category:  r.category ?? null,
     suppliers: r.suppliers?.map(s => ({ ...s, price: String(s.price) })) ?? [],
     customFields: parseCustomFields(r.customFields),
   };

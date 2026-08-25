@@ -516,6 +516,11 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
     ...originalNode,
     rev: activeRev.rev,
     status: originalNode.status,
+    // The latest revision always mirrors the current part master (source of
+    // truth for ongoing edits); older revisions show their own snapshot when
+    // one was captured, falling back to current for pre-snapshot rows.
+    desc: isLatest ? originalNode.desc : ((activeRev as BOMRevision).description ?? originalNode.desc),
+    cat: isLatest ? originalNode.cat : ((activeRev as BOMRevision).category ?? originalNode.cat),
     price: activeRev.price,
     leadTime: activeRev.leadTime,
     // Use the active revision's supplier list when available so the edit form
@@ -569,6 +574,8 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
           status: payload.status,
           price: payload.price,
           leadTimeDays: payload.leadTime,
+          description: payload.desc,
+          category: payload.category,
           suppliers: payload.suppliers?.length ? payload.suppliers.map(s => ({ ...s, price: parseFloat(s.price) || 0 })) : undefined,
         },
       });
@@ -590,6 +597,8 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
             status: payload.status,
             price: payload.price,
             leadTimeDays: payload.leadTime,
+            description: payload.desc,
+            category: payload.category,
             suppliers: payload.suppliers?.length ? payload.suppliers.map(s => ({ ...s, price: parseFloat(s.price) || 0 })) : undefined,
           },
         })] : []),

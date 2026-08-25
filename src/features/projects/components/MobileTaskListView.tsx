@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Check, CheckSquare, Plus } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import { AttachmentBadges } from '@/components/shared/AttachmentBadges';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { getFallbackTagColor } from '@/lib/tagColors';
@@ -25,6 +25,7 @@ import { DEFAULT_COLUMNS, type ProjectTaskColumn } from '@/services/projectTaskC
 
 interface MobileTaskListViewProps {
   projectId?: string;
+  projectCode?: string;
   tasks: Task[];
   allTasks?: Task[];
   modules?: { id: string; name: string; type: ModuleType }[];
@@ -89,6 +90,7 @@ const formatTaskDateRange = (startDate?: string, dueDate?: string): string => {
 
 export function MobileTaskListView({
   projectId,
+  projectCode,
   tasks,
   allTasks,
   modules = [],
@@ -279,6 +281,11 @@ export function MobileTaskListView({
                           {task.status === 'done' && <Check className="h-3 w-3 text-status-done" />}
                         </button>
                         <div className="min-w-0 flex-1 space-y-2">
+                          {getDisplayId(projectCode, 'T', task.number) && (
+                            <span className="font-mono font-semibold text-[11px] text-blue-500 block">
+                              {getDisplayId(projectCode, 'T', task.number)}
+                            </span>
+                          )}
                           <h4 className="font-semibold text-[15px] leading-snug">{task.title}</h4>
 
                           {task.description && (
@@ -393,6 +400,7 @@ export function MobileTaskListView({
         modules={modules}
         milestones={milestones}
         projectId={projectId}
+        projectCode={projectCode}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}
       />

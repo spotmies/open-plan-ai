@@ -28,6 +28,7 @@ interface ModulesSectionProps {
   issues: Issue[];
   teamMembers: TeamMember[];
   projectId?: string;
+  projectCode?: string;
   viewMode?: ModuleViewMode;
   onViewModeChange?: (mode: ModuleViewMode) => void;
   searchQuery?: string;
@@ -86,6 +87,7 @@ export function ModulesSection({
   issues,
   teamMembers,
   projectId,
+  projectCode,
   viewMode: externalViewMode,
   onViewModeChange: externalOnViewModeChange,
   searchQuery = '',
@@ -327,6 +329,7 @@ export function ModulesSection({
           }}
           modules={modules.map(m => ({ id: m.id, name: m.name, type: m.type }))}
           assignableMembers={teamMembers}
+          projectCode={projectCode}
         />
       )}
 
@@ -341,6 +344,7 @@ export function ModulesSection({
             onIssueUpdate?.(updatedIssue);
             setSelectedIssue(updatedIssue);
           }}
+          projectCode={projectCode}
         />
       )}
     </>

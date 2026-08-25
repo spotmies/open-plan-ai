@@ -3,7 +3,7 @@ import { Task, Milestone, ModuleType, TeamMember } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { cn } from '@/lib/utils';
+import { cn, getDisplayId } from '@/lib/utils';
 import { ArrowUpDown, AlertTriangle, Link2, Plus, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +21,7 @@ import { resolveFileUrl } from '@/utils/fileUrl';
 
 interface ListViewProps {
   projectId?: string;
+  projectCode?: string;
   tasks: Task[];
   allTasks?: Task[]; // All tasks for dependency resolution
   milestones?: Milestone[];
@@ -55,7 +56,7 @@ type SortDirection = 'asc' | 'desc';
 
 const PAGE_SIZE = 15;
 
-export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modules = [], assignableMembers, onTaskClick, onTaskCreate, onTaskUpdate, onBatchTaskUpdate, onTaskDelete, userProjectRole, projectId, onAddModule }: ListViewProps) {
+export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modules = [], assignableMembers, onTaskClick, onTaskCreate, onTaskUpdate, onBatchTaskUpdate, onTaskDelete, userProjectRole, projectId, projectCode, onAddModule }: ListViewProps) {
   // Use allTasks prop if provided, otherwise fallback to tasks
   const allTasksForDependencies = allTasksProp || tasks;
   const [sortField, setSortField] = useState<SortField>('priority');
@@ -230,6 +231,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
           modules={modules}
           milestones={milestones}
           projectId={projectId}
+          projectCode={projectCode}
           onAddModule={onAddModule}
           assignableMembers={assignableMembers}
         />
@@ -296,6 +298,11 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
                         </button>
                       )}
                       <div className="min-w-0">
+                        {getDisplayId(projectCode, 'T', task.number) && (
+                          <span className="font-mono font-semibold text-[11px] text-blue-500 block">
+                            {getDisplayId(projectCode, 'T', task.number)}
+                          </span>
+                        )}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <p className="font-medium line-clamp-2 cursor-pointer">{task.title}</p>
@@ -440,6 +447,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
         modules={modules}
         milestones={milestones}
         projectId={projectId}
+        projectCode={projectCode}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}
       />
@@ -457,6 +465,7 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
         modules={modules}
         milestones={milestones}
         projectId={projectId}
+        projectCode={projectCode}
         onAddModule={onAddModule}
         assignableMembers={assignableMembers}
       />

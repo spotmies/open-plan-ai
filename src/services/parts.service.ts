@@ -44,6 +44,8 @@ export interface CreateRevisionDto {
   price?: number;
   leadTimeDays?: number;
   ecoId?: string;
+  description?: string;
+  category?: BOMCategory;
   suppliers?: SupplierEntry[];
 }
 

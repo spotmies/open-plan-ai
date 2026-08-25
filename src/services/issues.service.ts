@@ -28,7 +28,7 @@ export const issuesService = {
   async getMyIssues(
     organizationId?: string,
     options?: { includeResolved?: boolean; resolvedSince?: string }
-  ): Promise<Array<Issue & { projectName: string }>> {
+  ): Promise<Array<Issue & { projectName: string; projectCode: string | null }>> {
     const params = new URLSearchParams();
     if (organizationId) params.set('organizationId', organizationId);
     if (options?.includeResolved) params.set('includeResolved', 'true');
@@ -39,6 +39,7 @@ export const issuesService = {
     return (data || []).map((raw) => ({
       ...fromApiIssue(raw),
       projectName: (raw.projectName as string) ?? '',
+      projectCode: (raw.projectCode as string) ?? null,
     }));
   },
 

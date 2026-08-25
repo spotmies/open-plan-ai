@@ -412,6 +412,7 @@ export default function MyDay() {
           assignableMembers={selectedTask.projectId ? activeProjectMembers : selfAsAssignableMember}
           statusOptions={selectedTask.projectId ? undefined : PERSONAL_TASK_STATUS_OPTIONS}
           projectName={selectedTaskProject?.name ?? (selectedTask.projectId ? undefined : 'Personal')}
+          projectCode={selectedTaskProject?.code}
           onDelete={handleTaskDelete}
           onUpdate={async (updatedTask) => {
             try {
@@ -457,6 +458,7 @@ export default function MyDay() {
           tasks={issueTasks}
           teamMembers={activeProjectMembers}
           projectName={selectedIssueProject?.name}
+          projectCode={selectedIssueProject?.code}
           isOpen={isIssueModalOpen}
           onClose={handleCloseIssueModal}
           onUpdate={handleIssueUpdate}

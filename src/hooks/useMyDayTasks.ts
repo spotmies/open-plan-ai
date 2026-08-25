@@ -55,7 +55,7 @@ function useMyDayRawData(options?: { includeDone?: boolean }) {
   });
 
   const rawIssues = useMemo(
-    () => rawIssuesList.map((issue) => ({ issue, projectName: issue.projectName })),
+    () => rawIssuesList.map((issue) => ({ issue, projectName: issue.projectName, projectCode: issue.projectCode })),
     [rawIssuesList],
   );
 
@@ -107,6 +107,8 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
           projectId: task.projectId || '',
           // A task with no projectId is a personal "My Tasks" item (not tied to a project).
           projectName: (task as any).projectName || (task.projectId ? '' : 'Personal'),
+          projectCode: (task as any).projectCode ?? undefined,
+          number: task.number,
           isOverdue: dueDateStatus === 'overdue',
           isDueToday: dueDateStatus === 'today',
           isBlocked: task.status === 'blocked' || (task.blockedBy?.length ?? 0) > 0,
@@ -127,7 +129,7 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
         return isAssignedToUser &&
           matchesFilter(getDueDateStatus(issue.dueDate), filter);
       })
-      .map(({ issue, projectName }) => {
+      .map(({ issue, projectName, projectCode }) => {
         const dueDateStatus = getDueDateStatus(issue.dueDate);
         return {
           id: issue.id,
@@ -140,6 +142,8 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
           dueDate: issue.dueDate,
           projectId: issue.projectId,
           projectName,
+          projectCode: projectCode ?? undefined,
+          number: issue.number,
           isOverdue: dueDateStatus === 'overdue',
           isDueToday: dueDateStatus === 'today',
           isBlocked: false,
