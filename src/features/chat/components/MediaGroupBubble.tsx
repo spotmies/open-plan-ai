@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, Forward, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Bookmark, ImageOff } from 'lucide-react';
+import { Download, Check, X, CheckCheck, MoreHorizontal, SmilePlus, Clock, Reply, Forward, ChevronLeft, ChevronRight, Trash2, Pin, PinOff, Bookmark, ImageOff, Loader2, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -63,6 +63,15 @@ function getImageUrl(message: ChatMessage): { url: string; name: string } {
     // legacy content wasn't JSON — fall through
   }
   return { url: '', name: message.content };
+}
+
+// content falls back to the filename when a file is sent without a caption
+// (backend: `content: caption || file.originalname`) — a "real" caption is
+// text that isn't just that filename echoed back.
+export function hasRealCaption(message: ChatMessage): boolean {
+  const text = message.content?.trim();
+  if (!text) return false;
+  return text !== getImageUrl(message).name;
 }
 
 // ─── Lightbox with prev/next navigation across the group ────────────────────
@@ -179,6 +188,7 @@ export function MediaGroupBubble({
 
   const images = messages.map((m) => getImageUrl(m));
   const visible = images.slice(0, MAX_VISIBLE_TILES);
+  const captionText = messages.find(hasRealCaption)?.content?.trim();
   const hiddenCount = images.length - MAX_VISIBLE_TILES;
   const containerAspect = visible.length === 2 ? 'aspect-[2/1]' : 'aspect-square';
 
@@ -362,27 +372,35 @@ export function MediaGroupBubble({
           >
             {visible.map((img, i) => {
               const isLastVisibleWithMore = hiddenCount > 0 && i === visible.length - 1;
-              const failed = failedImageIds.has(messages[i].id);
+              const sendFailed = messages[i].status === 'failed';
+              const loadFailed = failedImageIds.has(messages[i].id);
+              const failed = sendFailed || loadFailed;
+              const isSending = messages[i].isOptimistic || messages[i].status === 'sending';
               return (
                 <button
                   key={messages[i].id}
                   type="button"
                   className={cn('relative group w-full h-full overflow-hidden', tileClass(i, visible.length))}
-                  onClick={(e) => { e.stopPropagation(); if (!failed) setLightboxIndex(i); }}
-                  title={failed ? "This image can't be displayed" : 'Click to view'}
+                  onClick={(e) => { e.stopPropagation(); if (!failed && !isSending) setLightboxIndex(i); }}
+                  title={sendFailed ? 'Failed to send' : loadFailed ? "This image can't be displayed" : isSending ? 'Sending…' : 'Click to view'}
                 >
                   {failed ? (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted px-2 text-muted-foreground">
-                      <ImageOff className="h-5 w-5 shrink-0" />
-                      <span className="w-full truncate text-center text-[10px]">{img.name}</span>
+                    <div className={cn('flex h-full w-full flex-col items-center justify-center gap-1 px-2', sendFailed ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
+                      {sendFailed ? <AlertCircle className="h-5 w-5 shrink-0" /> : <ImageOff className="h-5 w-5 shrink-0" />}
+                      <span className="w-full truncate text-center text-[10px]">{sendFailed ? 'Failed to send' : img.name}</span>
                     </div>
                   ) : (
                     <img
                       src={img.url}
                       alt={img.name}
-                      className="w-full h-full object-cover"
+                      className={cn('w-full h-full object-cover', isSending && 'opacity-60')}
                       onError={() => setFailedImageIds((prev) => new Set(prev).add(messages[i].id))}
                     />
+                  )}
+                  {isSending && !failed && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                      <Loader2 className="h-6 w-6 animate-spin text-white drop-shadow" />
+                    </div>
                   )}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                   {isLastVisibleWithMore && (
@@ -405,6 +423,10 @@ export function MediaGroupBubble({
             />
           )}
         </div>
+
+        {captionText && (
+          <p className="text-sm mt-1 px-1 break-words whitespace-pre-wrap">{captionText}</p>
+        )}
 
         {reactions && reactions.length > 0 && (
           <div className={cn('flex flex-wrap gap-1 mt-1 px-1', isOwn ? 'justify-end' : 'justify-start')}>

@@ -132,6 +132,14 @@ export function usePlaceOrder(orgId: string) {
   });
 }
 
+export function useMarkOrderOrdered(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => inventoryService.markOrderOrdered(orgId, orderId),
+    onSuccess: () => invalidateInventory(queryClient, orgId),
+  });
+}
+
 export function useCreateInventoryBuild(orgId: string) {
   const queryClient = useQueryClient();
   return useMutation({

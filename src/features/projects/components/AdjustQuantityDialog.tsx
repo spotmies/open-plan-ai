@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/form';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
-import { Boxes, Camera, Check, ChevronsUpDown, ImagePlus, Minus, Pencil, Plus, ShoppingCart, Upload, X } from 'lucide-react';
+import { Boxes, Camera, Check, ChevronsUpDown, Clock, ImagePlus, Minus, Pencil, Plus, ShoppingCart, Upload, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useLocations } from '@/hooks/useLocations';
@@ -63,6 +63,7 @@ const adjustSchema = z.object({
   location: z.string().min(1, 'Select a location'),
   category: z.string().min(1, 'Select a category'),
   stockStatus: z.enum(['in_stock', 'place_order']),
+  orderStatus: z.enum(['planned', 'open']),
   direction: z.enum(['add', 'remove']),
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
   reasonCode: z.string().optional(),
@@ -155,6 +156,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       location: '',
       category: '',
       stockStatus: 'in_stock',
+      orderStatus: 'open',
       direction: 'add',
       quantity: 1,
       reasonCode: '',
@@ -167,6 +169,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   });
 
   const stockStatus = form.watch('stockStatus');
+  const orderStatus = form.watch('orderStatus');
 
   useEffect(() => {
     if (isOpen && initialPartId) {
@@ -357,6 +360,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         note: data.orderNote?.trim() || undefined,
         description: data.description?.trim() || undefined,
         purpose: data.purpose?.trim() || undefined,
+        status: data.orderStatus,
       });
     } else {
       onAdjust({
@@ -394,12 +398,16 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       >
         <DialogHeader className="px-4 sm:px-6 py-4 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            {stockStatus === 'place_order' ? <ShoppingCart className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+            {stockStatus === 'place_order'
+              ? (orderStatus === 'planned' ? <Clock className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />)
+              : <Pencil className="h-4 w-4" />}
           </div>
           <div className="text-left flex-1 min-w-0">
             <DialogTitle>{initialPartId ? 'Adjust quantity' : 'New transaction'}</DialogTitle>
             <DialogDescription>
-              {stockStatus === 'place_order' ? 'Creates a tracked purchase order' : 'Writes one immutable ledger entry'}
+              {stockStatus === 'place_order'
+                ? (orderStatus === 'planned' ? 'Flags a future purchase need, not yet on order' : 'Creates a tracked purchase order')
+                : 'Writes one immutable ledger entry'}
             </DialogDescription>
           </div>
           <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none">
@@ -667,6 +675,47 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                 />
                 )}
 
+                {!initialPartId && stockStatus === 'place_order' && (
+                <FormField
+                  control={form.control}
+                  name="orderStatus"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Order status</FormLabel>
+                      <FormControl>
+                        <ToggleGroup
+                          type="single"
+                          value={field.value}
+                          onValueChange={(v) => v && field.onChange(v)}
+                          className="justify-start gap-2"
+                        >
+                          <ToggleGroupItem
+                            value="open"
+                            variant="outline"
+                            className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                          >
+                            <ShoppingCart className="h-3.5 w-3.5" /> Already ordered
+                          </ToggleGroupItem>
+                          <ToggleGroupItem
+                            value="planned"
+                            variant="outline"
+                            className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                          >
+                            <Clock className="h-3.5 w-3.5" /> Want to order
+                          </ToggleGroupItem>
+                        </ToggleGroup>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        {orderStatus === 'planned'
+                          ? "Not submitted to a supplier yet — won't count toward on-order totals until marked ordered."
+                          : 'Already submitted to a supplier — counts toward on-order/incoming totals.'}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                )}
+
                 {stockStatus === 'in_stock' ? (
                   <div className="grid grid-cols-1 gap-4">
                     <FormField
@@ -882,7 +931,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
             <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-4 border-t shrink-0">
               <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
               <Button type="submit" className="flex-1" disabled={!selectedRecord && !createdPart}>
-                {stockStatus === 'place_order' ? 'Place order' : 'Save transaction'}
+                {stockStatus === 'place_order'
+                  ? (orderStatus === 'planned' ? 'Flag as needed' : 'Place order')
+                  : 'Save transaction'}
               </Button>
             </DialogFooter>
           </form>

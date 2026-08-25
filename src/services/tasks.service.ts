@@ -118,10 +118,15 @@ export const tasksService = {
   /**
    * Get all tasks assigned to the current user across all projects.
    */
-  async getMyTasks(organizationId?: string): Promise<(Task & { projectName?: string })[]> {
-    const url = organizationId
-      ? `${ENDPOINTS.TASKS.ME_ALL}?limit=100&organizationId=${encodeURIComponent(organizationId)}`
-      : `${ENDPOINTS.TASKS.ME_ALL}?limit=100`;
+  async getMyTasks(
+    organizationId?: string,
+    options?: { includeDone?: boolean; doneSince?: string }
+  ): Promise<(Task & { projectName?: string })[]> {
+    const params = new URLSearchParams({ limit: '100' });
+    if (organizationId) params.set('organizationId', organizationId);
+    if (options?.includeDone) params.set('includeDone', 'true');
+    else if (options?.doneSince) params.set('doneSince', options.doneSince);
+    const url = `${ENDPOINTS.TASKS.ME_ALL}?${params.toString()}`;
     const data = await apiClient.get<any>(url);
     const rows: any[] = data?.data ?? data ?? [];
     return rows.map((raw: any) => ({ ...fromApi(raw), projectName: raw.projectName ?? raw.project_name ?? '' }));

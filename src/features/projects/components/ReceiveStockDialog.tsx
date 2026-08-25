@@ -111,10 +111,11 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const { data: knownLocations = [] } = useLocations(orgId);
 
-  // Receiving is a PO-fulfillment action — only parts with a remaining balance on an open
-  // order are eligible to receive against here.
+  // Receiving is a PO-fulfillment action — only parts with a remaining balance on an
+  // actually-placed order (not a 'planned' want-to-order flag) are eligible to receive
+  // against here.
   const partsWithOpenOrders = useMemo(() => {
-    const orderedPartIds = new Set(orders.filter(o => o.remainingQty > 0).map(o => o.partId));
+    const orderedPartIds = new Set(orders.filter(o => o.remainingQty > 0 && o.status !== 'planned').map(o => o.partId));
     return parts.filter(p => orderedPartIds.has(p.id));
   }, [parts, orders]);
 
@@ -143,7 +144,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
 
   const openOrdersForPart = selectedPart
     ? orders
-        .filter(o => o.partId === selectedPart.id && o.remainingQty > 0)
+        .filter(o => o.partId === selectedPart.id && o.remainingQty > 0 && o.status !== 'planned')
         .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate))
     : [];
 

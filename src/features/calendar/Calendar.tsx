@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { CalendarHeader } from './components/CalendarHeader';
 import { CalendarFilters } from './components/CalendarFilters';
 import { ScheduleMeetDialog } from './components/ScheduleMeetDialog';
+import { RescheduleMeetDialog } from './components/RescheduleMeetDialog';
 import { CalendarMonthView } from './components/CalendarMonthView';
 import { CalendarWeekView } from './components/CalendarWeekView';
 import { CalendarDayView } from './components/CalendarDayView';
@@ -139,6 +140,8 @@ function meetingToCalendarEvent(meeting: Meeting): CalendarEvent {
     meetingUri: meeting.meetingUri,
     htmlLink: meeting.htmlLink,
     attendeeEmails: meeting.attendeeEmails,
+    organizerId: meeting.organizerId,
+    googleEventId: meeting.googleEventId,
   };
 }
 
@@ -234,6 +237,8 @@ const CalendarPage: React.FC = () => {
   // "Schedule a meet" dialog state
   const [scheduleMeetOpen, setScheduleMeetOpen] = React.useState(false);
   const [scheduleMeetDate, setScheduleMeetDate] = React.useState<Date | undefined>(undefined);
+  const [rescheduleMeetOpen, setRescheduleMeetOpen] = React.useState(false);
+  const [meetingToReschedule, setMeetingToReschedule] = React.useState<Meeting | null>(null);
 
   const handleScheduleMeeting = (date?: Date) => {
     setScheduleMeetDate(date);
@@ -396,6 +401,13 @@ const CalendarPage: React.FC = () => {
     } else if (event.type === 'meeting') {
       window.open(event.htmlLink || event.meetingUri, '_blank', 'noopener,noreferrer');
     }
+  };
+
+  const handleRescheduleMeeting = (event: CalendarEvent) => {
+    const meeting = allMeetings.find((m) => m.id === event.id);
+    if (!meeting) return;
+    setMeetingToReschedule(meeting);
+    setRescheduleMeetOpen(true);
   };
 
   type ModalType = 'task' | 'milestone' | 'issue';
@@ -655,6 +667,8 @@ const CalendarPage: React.FC = () => {
                 events={filteredEvents}
                 onEventClick={handleEventClick}
                 onScheduleMeeting={handleScheduleMeeting}
+                onRescheduleMeeting={handleRescheduleMeeting}
+                currentUserId={user?.id}
               />
             )}
           </>
@@ -667,6 +681,11 @@ const CalendarPage: React.FC = () => {
         onOpenChange={setScheduleMeetOpen}
         teamMembers={teamMembers}
         initialDate={scheduleMeetDate}
+      />
+      <RescheduleMeetDialog
+        open={rescheduleMeetOpen}
+        onOpenChange={setRescheduleMeetOpen}
+        meeting={meetingToReschedule}
       />
     </>
   );

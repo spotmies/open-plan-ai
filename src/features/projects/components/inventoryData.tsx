@@ -52,7 +52,7 @@ export interface OrderRecord {
   purpose?: string;
   lotNumber?: string;
   serialNumber?: string;
-  status: 'open' | 'partially_received' | 'received' | 'cancelled';
+  status: 'planned' | 'open' | 'partially_received' | 'received' | 'cancelled';
   createdAt: string;
   createdBy: string;
 }

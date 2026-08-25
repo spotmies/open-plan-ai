@@ -33,6 +33,11 @@ interface MessageInputProps {
   members?: ConversationMember[];
   isGroup?: boolean;
   sendMessage?: (content: string, type?: 'text' | 'file', fileData?: any, replyToMessageId?: string, entityTags?: EntityTagRef[]) => Promise<void>;
+  sendFileMessage?: (file: File, caption?: string, replyToMessageId?: string) => Promise<void>;
+  /** Two-phase upload: placeholder insertion is synchronous so every tile in a
+   *  multi-file batch appears instantly, independent of upload/network order. */
+  createFileMessagePlaceholder?: (file: File, caption?: string, replyToMessageId?: string) => { tempId: string; localUrl: string; optimisticMsg: ChatMessage } | null;
+  uploadFileMessagePlaceholder?: (placeholder: { tempId: string; localUrl: string; optimisticMsg: ChatMessage }, file: File, caption?: string, replyToMessageId?: string) => Promise<void>;
   readOnly?: boolean;
   readOnlyNotice?: string | null;
   replyingTo?: ChatMessage | null;
@@ -192,7 +197,7 @@ function buildFileContent(payload: {
   };
 }
 
-export function MessageInput({ conversationId, onMessageSent, onTyping, members, isGroup = false, sendMessage, readOnly = false, readOnlyNotice = null, replyingTo = null, onCancelReply }: MessageInputProps) {
+export function MessageInput({ conversationId, onMessageSent, onTyping, members, isGroup = false, sendMessage, sendFileMessage: sendFileMessageProp, createFileMessagePlaceholder: createPlaceholderProp, uploadFileMessagePlaceholder: uploadPlaceholderProp, readOnly = false, readOnlyNotice = null, replyingTo = null, onCancelReply }: MessageInputProps) {
   const isMobile = useIsMobile();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionOverlayRef = useRef<HTMLDivElement>(null);
@@ -701,7 +706,10 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     addFiles(e.dataTransfer.files);
   };
 
-  const sendFileMessage = async (file: File, caption?: string) => {
+  // Fallback for contexts where the caller didn't wire up the optimistic
+  // sendFileMessage from useMessages (no instant placeholder in that case —
+  // the message only appears once the socket event / response comes back).
+  const sendFileMessageFallback = async (file: File, caption?: string) => {
     const formData = new FormData();
     formData.append('file', file);
     if (caption) formData.append('caption', caption);
@@ -723,7 +731,13 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
       return;
     }
 
+    // Capture and clear both the text and the attached files together, right
+    // now — otherwise the text (driven by the draft store) disappears
+    // instantly while the image previews linger until every upload finishes,
+    // making one combined send look like it split into two.
+    const filesToSend = pendingFiles;
     setDraft(conversationId, '');
+    setPendingFiles([]);
     setMentionQuery(null);
     cancelSlash();
 
@@ -731,14 +745,15 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     if (!isOnline) {
       try {
         if (trimmed) await enqueueText(conversationId, trimmed);
-        if (pendingFiles.length > 0) {
-          await Promise.all(pendingFiles.map((file) => enqueueFile(conversationId, file)));
+        if (filesToSend.length > 0) {
+          await Promise.all(filesToSend.map((file) => enqueueFile(conversationId, file)));
         }
-        setPendingFiles([]);
         toast.info('📵 Saved offline — will send when you reconnect');
       } catch (err) {
         logger.error('[MessageInput] Offline queue failed:', err);
         toast.error('Failed to save message offline. Please try again.');
+        setDraft(conversationId, trimmed);
+        setPendingFiles(filesToSend);
       }
       return;
     }
@@ -747,15 +762,52 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
     const tagsToSend = pendingEntityTags;
     setIsSending(true);
     try {
-      if (pendingFiles.length > 0) {
-        if (trimmed || tagsToSend.length > 0) {
-          if (sendMessage) await sendMessage(trimmed, 'text', undefined, replyingTo?.id, tagsToSend);
-          else await chatService.sendMessage(conversationId, trimmed, undefined, replyingTo?.id, tagsToSend);
+      if (filesToSend.length > 0) {
+        // Backend messages carry at most one file each, so the typed text rides
+        // as the caption on the first file instead of becoming its own message —
+        // that's what keeps text + image together as a single combined message.
+        const [firstFile, ...restFiles] = filesToSend;
+        if (createPlaceholderProp && uploadPlaceholderProp) {
+          // Insert every tile's placeholder synchronously, back to back, so the
+          // whole grid — and the auto-scroll it triggers — appears instantly,
+          // regardless of how long any individual upload takes.
+          const firstPlaceholder = createPlaceholderProp(firstFile, trimmed || undefined, replyingTo?.id);
+          const restPlaceholders = restFiles.map((file) => createPlaceholderProp(file, undefined, replyingTo?.id));
+
+          // The grouping logic in MessageArea identifies a run's caption by
+          // assuming the captioned (first) file's message always lands with the
+          // earliest createdAt in its batch. Dispatching every upload at once
+          // broke that: a later file could finish first and get an earlier
+          // timestamp, making the run's "anchor" look uncaptioned and falling
+          // back to the loose cross-batch grouping window — merging in a
+          // separate, later send. So the lead file's upload must resolve
+          // before the rest start (its placeholder is still shown instantly).
+          if (firstPlaceholder) {
+            try {
+              await uploadPlaceholderProp(firstPlaceholder, firstFile, trimmed || undefined, replyingTo?.id);
+            } catch { /* already surfaced as a failed tile + toast */ }
+          }
+          await Promise.allSettled(
+            restFiles.map((file, idx) => {
+              const placeholder = restPlaceholders[idx];
+              return placeholder ? uploadPlaceholderProp(placeholder, file, undefined, replyingTo?.id) : Promise.resolve();
+            })
+          );
+        } else if (sendFileMessageProp) {
+          try {
+            await sendFileMessageProp(firstFile, trimmed || undefined, replyingTo?.id);
+          } catch { /* already surfaced as a failed tile + toast */ }
+          await Promise.allSettled(restFiles.map((file) => sendFileMessageProp(file, undefined, replyingTo?.id)));
+        } else {
+          await sendFileMessageFallback(firstFile, trimmed || undefined);
+          for (const file of restFiles) {
+            await sendFileMessageFallback(file);
+          }
         }
-        for (const file of pendingFiles) {
-          await sendFileMessage(file);
+        if (tagsToSend.length > 0) {
+          if (sendMessage) await sendMessage('', 'text', undefined, undefined, tagsToSend);
+          else await chatService.sendMessage(conversationId, '', undefined, undefined, tagsToSend);
         }
-        setPendingFiles([]);
       } else {
         if (sendMessage) await sendMessage(trimmed, 'text', undefined, replyingTo?.id, tagsToSend);
         else await chatService.sendMessage(conversationId, trimmed, undefined, replyingTo?.id, tagsToSend);
@@ -768,6 +820,7 @@ export function MessageInput({ conversationId, onMessageSent, onTyping, members,
       logger.error('Failed to send message:', err);
       toast.error('Failed to send message');
       setDraft(conversationId, trimmed);
+      setPendingFiles(filesToSend);
     } finally {
       setIsSending(false);
     }

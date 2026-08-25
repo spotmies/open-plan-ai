@@ -37,8 +37,9 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
-import { Check, ChevronsUpDown, ShoppingCart, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Clock, ShoppingCart, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
@@ -52,6 +53,7 @@ const orderSchema = z.object({
   unitCost: z.union([z.coerce.number().min(0), z.literal('')]).optional(),
   location: z.string().min(1, 'Select a destination location'),
   purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
+  orderStatus: z.enum(['planned', 'open']),
 });
 
 type OrderFormData = z.infer<typeof orderSchema>;
@@ -71,6 +73,9 @@ export interface PlaceOrderInput {
   purpose?: string;
   lotNumber?: string;
   serialNumber?: string;
+  /** 'planned' (want to order — not yet submitted to a supplier) or 'open' (already
+   * ordered). Defaults to 'open' server-side when omitted. */
+  status?: 'planned' | 'open';
 }
 
 interface PlaceOrderDialogProps {
@@ -100,6 +105,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       unitCost: '',
       location: '',
       purpose: '',
+      orderStatus: 'open',
     },
   });
 
@@ -114,6 +120,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialPartId]);
 
+  const orderStatus = form.watch('orderStatus');
   const isFormDirty = form.formState.isDirty;
 
   const resetAndClose = () => {
@@ -146,9 +153,14 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       unitCost: data.unitCost === '' || data.unitCost === undefined ? undefined : Number(data.unitCost),
       location: data.location,
       purpose: data.purpose?.trim() || undefined,
+      status: data.orderStatus,
     });
     resetAndClose();
-    toast.success(`Order placed for ${data.quantity} × ${selectedPart.partNumber}`);
+    toast.success(
+      data.orderStatus === 'planned'
+        ? `Flagged ${data.quantity} × ${selectedPart.partNumber} as needed to order`
+        : `Order placed for ${data.quantity} × ${selectedPart.partNumber}`
+    );
   };
 
   return (
@@ -238,6 +250,45 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                           </Command>
                         </PopoverContent>
                       </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="orderStatus"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Order status</FormLabel>
+                      <FormControl>
+                        <ToggleGroup
+                          type="single"
+                          value={field.value}
+                          onValueChange={(v) => v && field.onChange(v)}
+                          className="justify-start gap-2"
+                        >
+                          <ToggleGroupItem
+                            value="open"
+                            variant="outline"
+                            className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                          >
+                            <ShoppingCart className="h-3.5 w-3.5" /> Already ordered
+                          </ToggleGroupItem>
+                          <ToggleGroupItem
+                            value="planned"
+                            variant="outline"
+                            className="gap-1.5 flex-1 border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                          >
+                            <Clock className="h-3.5 w-3.5" /> Want to order
+                          </ToggleGroupItem>
+                        </ToggleGroup>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        {field.value === 'planned'
+                          ? "Not submitted to a supplier yet — won't count toward on-order totals until marked ordered."
+                          : 'Already submitted to a supplier — counts toward on-order/incoming totals.'}
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -339,7 +390,9 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
 
             <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-4 border-t shrink-0">
               <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
-              <Button type="submit" className="flex-1" disabled={!selectedPart}>Place order</Button>
+              <Button type="submit" className="flex-1" disabled={!selectedPart}>
+                {orderStatus === 'planned' ? 'Flag as needed' : 'Place order'}
+              </Button>
             </DialogFooter>
           </form>
         </Form>

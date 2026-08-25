@@ -25,10 +25,16 @@ export const issuesService = {
    * (see useMyDayTasks.ts), which fired one /projects/:id/issues/all call
    * per project on every load.
    */
-  async getMyIssues(organizationId?: string): Promise<Array<Issue & { projectName: string }>> {
-    const url = organizationId
-      ? `${ENDPOINTS.ISSUES.MY_ALL}?organizationId=${encodeURIComponent(organizationId)}`
-      : ENDPOINTS.ISSUES.MY_ALL;
+  async getMyIssues(
+    organizationId?: string,
+    options?: { includeResolved?: boolean; resolvedSince?: string }
+  ): Promise<Array<Issue & { projectName: string }>> {
+    const params = new URLSearchParams();
+    if (organizationId) params.set('organizationId', organizationId);
+    if (options?.includeResolved) params.set('includeResolved', 'true');
+    else if (options?.resolvedSince) params.set('resolvedSince', options.resolvedSince);
+    const qs = params.toString();
+    const url = qs ? `${ENDPOINTS.ISSUES.MY_ALL}?${qs}` : ENDPOINTS.ISSUES.MY_ALL;
     const data = await apiClient.get<Array<Record<string, unknown>>>(url);
     return (data || []).map((raw) => ({
       ...fromApiIssue(raw),

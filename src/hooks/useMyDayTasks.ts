@@ -15,29 +15,41 @@ function matchesFilter(status: DueDateStatus, filter: MyDayFilter): boolean {
   return status === 'overdue';
 }
 
+/** Local midnight today, as an ISO string — the cutoff for "done today". */
+function startOfTodayISO(): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 /**
  * Shared raw fetch of tasks and issues assigned to the current user across all projects.
  * Both come from dedicated org-wide "assigned to me" endpoints — /tasks/me/all and
  * /issues/me/all — each a single request, not a per-project fan-out.
  *
- * Backs both useMyDayTasks and useCompletedTodayCount, so "completed today"
- * counting doesn't force completed items to linger in the displayed lists.
+ * Backs both useMyDayTasks and useCompletedTodayCount. By default the backend
+ * excludes done/resolved items except ones completed today (all that either
+ * consumer needs), instead of shipping the account's entire completed
+ * history on every My Day load. Pass `includeDone` only when the user has
+ * explicitly opened the Done/Resolved/Won't Fix column filter — that's a
+ * separate, on-demand query rather than the default page-load fetch.
  */
-function useMyDayRawData() {
+function useMyDayRawData(options?: { includeDone?: boolean }) {
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const orgId = currentOrganization?.id;
+  const includeDone = options?.includeDone ?? false;
 
   const { data: rawTasks = [], isLoading: tasksLoading } = useQuery({
-    queryKey: [...queryKeys.myDay.all, 'tasks', user?.id, orgId],
-    queryFn: () => tasksService.getMyTasks(orgId),
+    queryKey: [...queryKeys.myDay.all, 'tasks', user?.id, orgId, includeDone],
+    queryFn: () => tasksService.getMyTasks(orgId, includeDone ? { includeDone: true } : { doneSince: startOfTodayISO() }),
     enabled: !!user?.id && !!orgId,
     staleTime: 30 * 1000,
   });
 
   const { data: rawIssuesList = [], isLoading: issuesLoading } = useQuery({
-    queryKey: [...queryKeys.myDay.issues(user?.id || ''), orgId],
-    queryFn: () => issuesService.getMyIssues(orgId),
+    queryKey: [...queryKeys.myDay.issues(user?.id || ''), orgId, includeDone],
+    queryFn: () => issuesService.getMyIssues(orgId, includeDone ? { includeResolved: true } : { resolvedSince: startOfTodayISO() }),
     enabled: !!user?.id && !!orgId,
     staleTime: 30 * 1000,
   });
@@ -61,10 +73,14 @@ function useMyDayRawData() {
  * so the filter can actually surface it instead of being silently dead.
  */
 export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string[]) {
-  const { user, rawTasks, rawIssues, isLoading } = useMyDayRawData();
   const includeWontFix = statusFilter?.includes('wont-fix') ?? false;
   const includeResolved = statusFilter?.includes('resolved') ?? false;
   const includeDone = statusFilter?.includes('done') ?? false;
+  // Any of these selected means the full done/resolved/wont-fix history is
+  // actually needed, not just today's — fetch it on demand for this case only.
+  const { user, rawTasks, rawIssues, isLoading } = useMyDayRawData({
+    includeDone: includeDone || includeResolved || includeWontFix,
+  });
 
   const data = useMemo((): MyDayItem[] => {
     if (!user?.id) return [];

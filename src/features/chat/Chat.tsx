@@ -54,7 +54,7 @@ export default function Chat() {
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [forwardMessages, setForwardMessages] = useState<ChatMessage[] | null>(null);
   const activeId = conversationId || (isMobile ? null : activeConversationId);
-  const { messages, loading: msgsLoading, error: msgsError, hasMore, loadMore, refetchMessages, sendMessage, readOnly, readOnlyNotice } = useMessages(activeId ?? null);
+  const { messages, loading: msgsLoading, error: msgsError, hasMore, loadMore, refetchMessages, sendMessage, sendFileMessage, createFileMessagePlaceholder, uploadFileMessagePlaceholder, readOnly, readOnlyNotice } = useMessages(activeId ?? null);
   const { reactionMap, handleToggleReaction } = useReactions(messages, user?.id, activeId ?? null);
   const { data: reachableUsers = [] } = useReachableUsers();
   const onlineUserIds = useChatStore((s) => s.onlineUserIds);
@@ -442,6 +442,9 @@ export default function Chat() {
                   members={activeConv.members}
                   isGroup={activeConv.type === 'group'}
                   sendMessage={sendMessage}
+                  sendFileMessage={sendFileMessage}
+                  createFileMessagePlaceholder={createFileMessagePlaceholder}
+                  uploadFileMessagePlaceholder={uploadFileMessagePlaceholder}
                   readOnly={readOnly}
                   readOnlyNotice={readOnlyNotice}
                   replyingTo={replyingTo}

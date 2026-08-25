@@ -460,6 +460,83 @@ export function useMessages(conversationId: string | null) {
     }
   }, [conversationId, user, profile, storeAddMessage, storeResolveOptimistic, storeUpdateMessage, addPendingMessage, removePendingMessage, updatePreview]);
 
+  // Split into two phases so a multi-file send can show every tile's
+  // placeholder instantly (all inserted synchronously, back to back) while
+  // still controlling upload order separately — MessageInput needs the lead
+  // (captioned) file's request to land before the rest so the batch's real
+  // timestamps stay correctly ordered for grouping, without delaying the
+  // other tiles' on-screen placeholders until that request finishes.
+  const createFileMessagePlaceholder = useCallback((file: File, caption?: string, replyToMessageId?: string) => {
+    if (!conversationId || !user) return null;
+
+    const tempId = `temp-${generateId()}`;
+    const localUrl = URL.createObjectURL(file);
+    const isImage = file.type.startsWith('image/');
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
+      conversationId,
+      senderId: user.id,
+      senderName: profile?.name || 'You',
+      senderInitials: profile?.initials || 'Y',
+      contentType: isImage ? 'image' : 'file',
+      content: caption || '',
+      attachments: [{
+        id: tempId,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: localUrl,
+      }],
+      createdAt: new Date().toISOString(),
+      isEdited: false,
+      isOptimistic: true,
+      status: 'sending',
+      replyToMessageId,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    storeAddMessage(conversationId, optimisticMsg);
+    return { tempId, localUrl, optimisticMsg };
+  }, [conversationId, user, profile, storeAddMessage]);
+
+  const uploadFileMessagePlaceholder = useCallback(async (
+    placeholder: { tempId: string; localUrl: string; optimisticMsg: ChatMessage },
+    file: File,
+    caption?: string,
+    replyToMessageId?: string
+  ) => {
+    if (!conversationId) return;
+    const { tempId, localUrl, optimisticMsg } = placeholder;
+    try {
+      const realMsg = await chatService.sendFileMessage(conversationId, file, caption, replyToMessageId);
+      realMsg.status = 'sent';
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === realMsg.id)) {
+          return prev.filter((m) => m.id !== tempId);
+        }
+        return prev.map((m) => (m.id === tempId ? realMsg : m));
+      });
+      storeResolveOptimistic(conversationId, tempId, realMsg);
+      URL.revokeObjectURL(localUrl);
+    } catch (err) {
+      logger.error('Failed to send file message:', err);
+      const failedMsg = { ...optimisticMsg, status: 'failed' as const };
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? failedMsg : m)));
+      storeUpdateMessage(conversationId, tempId, () => failedMsg);
+      toast.error(`Failed to send ${file.name}`);
+      throw err;
+    }
+  }, [conversationId, storeResolveOptimistic, storeUpdateMessage]);
+
+  // Convenience one-shot wrapper (placeholder + upload) for callers sending a
+  // single file at a time — MessageInput's multi-file batch path uses the two
+  // phases above directly instead.
+  const sendFileMessage = useCallback(async (file: File, caption?: string, replyToMessageId?: string) => {
+    const placeholder = createFileMessagePlaceholder(file, caption, replyToMessageId);
+    if (!placeholder) return;
+    await uploadFileMessagePlaceholder(placeholder, file, caption, replyToMessageId);
+  }, [createFileMessagePlaceholder, uploadFileMessagePlaceholder]);
+
   useEffect(() => {
     if (!conversationId) return;
     const handleOnline = async () => {
@@ -601,7 +678,7 @@ export function useMessages(conversationId: string | null) {
     return result.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [messages, pendingMessages, conversationId]);
 
-  return { messages: combinedMessages, loading, error, hasMore, loadMore, refetchMessages, sendMessage, readOnly, readOnlyNotice };
+  return { messages: combinedMessages, loading, error, hasMore, loadMore, refetchMessages, sendMessage, sendFileMessage, createFileMessagePlaceholder, uploadFileMessagePlaceholder, readOnly, readOnlyNotice };
 }
 
 export function useReactions(messages: ChatMessage[], currentUserId?: string, conversationId?: string | null) {
