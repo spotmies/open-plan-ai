@@ -246,12 +246,13 @@ export const useChatStore = create<ChatState>()(
         set((state) => {
           const entry = state.messagesCache[conversationId];
           if (!entry) return state;
+          const existingIds = new Set(entry.messages.map((m) => m.id));
           return {
             messagesCache: {
               ...state.messagesCache,
               [conversationId]: {
                 ...entry,
-                messages: [...older, ...entry.messages],
+                messages: [...older.filter((m) => !existingIds.has(m.id)), ...entry.messages],
                 hasMore,
               },
             },

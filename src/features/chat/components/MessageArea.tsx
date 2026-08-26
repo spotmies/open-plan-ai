@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useMemo, useCallback, useState } from 'react';
+import { ChevronUp, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { MessageBubble } from './MessageBubble';
 import { MediaGroupBubble, hasRealCaption } from './MediaGroupBubble';
@@ -57,6 +58,9 @@ export function MessageArea({
   const prevMessageCountRef = useRef(0);
   const atBottomRef = useRef(true);
   const highlightedRef = useRef<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const isPrependingRef = useRef(false);
+  const prependAnchorRef = useRef<{ id: string; top: number } | null>(null);
   const isGroup = conversation.type === 'group';
   const searchQuery = useChatStore((s) => s.messageSearchQuery);
 
@@ -84,6 +88,24 @@ export function MessageArea({
     }
   }, [conversation.id, messages.length, scrollToBottom]);
 
+  // Older-history load: keep the reader's viewport anchored on the message
+  // that was topmost before the load, tracked by its own DOM node rather
+  // than the container's scrollHeight — a height-diff approach breaks when
+  // newly prepended content (images, meet/calendar cards) keeps growing
+  // asynchronously after this measurement. Runs before paint so there's no
+  // visible flash.
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current;
+    if (!anchor) return;
+    const container = scrollRef.current;
+    const anchorEl = document.getElementById(anchor.id);
+    if (container && anchorEl) {
+      const newTop = anchorEl.getBoundingClientRect().top;
+      container.scrollTop += newTop - anchor.top;
+    }
+    prependAnchorRef.current = null;
+  }, [messages.length]);
+
   // On new messages in the same conversation: smooth scroll only if already at bottom
   useEffect(() => {
     const isNewConv = prevConvIdRef.current !== conversation.id;
@@ -93,6 +115,16 @@ export function MessageArea({
     const newCount = messages.length;
 
     if (newCount <= prevCount) {
+      isPrependingRef.current = false;
+      prevMessageCountRef.current = newCount;
+      return;
+    }
+
+    // Older messages were prepended by "Load older messages" — the layout
+    // effect above already restored scroll position, so don't also run the
+    // auto-scroll-to-bottom logic below for this growth.
+    if (isPrependingRef.current) {
+      isPrependingRef.current = false;
       prevMessageCountRef.current = newCount;
       return;
     }
@@ -147,6 +179,25 @@ export function MessageArea({
     onHighlightHandled?.();
   }, [highlightMessageId, messageById, hasMore, onLoadMore, onHighlightHandled]);
 
+  const handleLoadMore = useCallback(() => {
+    if (!onLoadMore || isLoadingMore) return;
+    const container = scrollRef.current;
+    // Anchor on the topmost currently-visible message so the layout effect
+    // above can pin the viewport to it after older messages are prepended.
+    const anchorEl = container?.querySelector<HTMLElement>('[id^="msg-"]');
+    if (anchorEl) {
+      isPrependingRef.current = true;
+      prependAnchorRef.current = { id: anchorEl.id, top: anchorEl.getBoundingClientRect().top };
+    }
+    setIsLoadingMore(true);
+    Promise.resolve(onLoadMore()).finally(() => setIsLoadingMore(false));
+  }, [onLoadMore, isLoadingMore]);
+
+  // Reset the spinner if the conversation changes while a load is in flight.
+  useEffect(() => {
+    setIsLoadingMore(false);
+  }, [conversation.id]);
+
   const otherMembersCount = useMemo(
     () => conversation.members.filter((m) => m.id !== user?.id).length,
     [conversation.members, user?.id]
@@ -183,9 +234,25 @@ export function MessageArea({
     >
       <div className="flex flex-col gap-0.5 pt-4 pb-2 w-full min-w-0">
         {hasMore && onLoadMore && (
-          <div className="flex justify-center py-2">
-            <Button variant="ghost" size="sm" onClick={onLoadMore} className="text-xs text-muted-foreground">
-              Load older messages
+          <div className="flex justify-center py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLoadMore}
+              disabled={isLoadingMore}
+              className="h-8 gap-1.5 rounded-full border-border/60 bg-background px-4 text-xs font-medium text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground disabled:opacity-70"
+            >
+              {isLoadingMore ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <ChevronUp className="h-3.5 w-3.5" />
+                  Load older messages
+                </>
+              )}
             </Button>
           </div>
         )}
