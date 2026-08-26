@@ -244,13 +244,14 @@ export const googleMeetService = {
   async updateCalendarMeeting(
     accessToken: string,
     eventId: string,
-    params: Pick<ScheduleEventParams, 'startTime' | 'endTime'> & { title?: string }
+    params: Pick<ScheduleEventParams, 'startTime' | 'endTime'> & { title?: string; attendees?: string[] }
   ): Promise<{ htmlLink: string }> {
     try {
       const body = {
         ...(params.title ? { summary: params.title } : {}),
         start: { dateTime: params.startTime },
         end: { dateTime: params.endTime },
+        ...(params.attendees ? { attendees: params.attendees.map((email) => ({ email })) } : {}),
       };
 
       const response = await fetch(
