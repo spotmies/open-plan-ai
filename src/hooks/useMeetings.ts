@@ -31,6 +31,8 @@ export interface RescheduleMeetingInput {
   meetingId: string;
   startTime: string; // ISO
   endTime: string; // ISO
+  title?: string;
+  attendeeEmails?: string[];
 }
 
 /**
@@ -80,11 +82,13 @@ export function useRescheduleMeeting() {
   const orgId = currentOrganization?.id;
 
   return useMutation({
-    mutationFn: ({ meetingId, startTime, endTime }: RescheduleMeetingInput): Promise<Meeting> => {
+    mutationFn: ({ meetingId, startTime, endTime, title, attendeeEmails }: RescheduleMeetingInput): Promise<Meeting> => {
       if (!orgId) throw new Error('No organization selected');
       return apiClient.patch<Meeting>(ENDPOINTS.ORGANIZATIONS.MEETING(orgId, meetingId), {
         startTime,
         endTime,
+        ...(title !== undefined ? { title } : {}),
+        ...(attendeeEmails !== undefined ? { attendeeEmails } : {}),
       });
     },
     onSuccess: () => {
