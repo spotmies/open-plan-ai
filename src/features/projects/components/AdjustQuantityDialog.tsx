@@ -928,13 +928,18 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
               </div>
             </div>
 
-            <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-4 border-t shrink-0">
-              <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
-              <Button type="submit" className="flex-1" disabled={!selectedRecord && !createdPart}>
-                {stockStatus === 'place_order'
-                  ? (orderStatus === 'planned' ? 'Flag as needed' : 'Place order')
-                  : 'Save transaction'}
-              </Button>
+            <DialogFooter className="flex-col gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-4 border-t shrink-0">
+              {!initialPartId && !selectedRecord && !createdPart && (
+                <p className="text-xs text-destructive text-right">Select a part above before submitting.</p>
+              )}
+              <div className="flex flex-row justify-end gap-2">
+                <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
+                <Button type="submit" className="flex-1" disabled={!selectedRecord && !createdPart}>
+                  {stockStatus === 'place_order'
+                    ? (orderStatus === 'planned' ? 'Flag as needed' : 'Place order')
+                    : 'Save transaction'}
+                </Button>
+              </div>
             </DialogFooter>
           </form>
         </Form>
