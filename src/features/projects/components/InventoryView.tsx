@@ -34,7 +34,7 @@ import {
   KNOWN_BOM_CATEGORIES, getCategoryMeta, type BOMCategory,
 } from './bomData';
 import {
-  buildFromDef, computeCoverage, availableOf,
+  buildFromDef, computeCoverage, availableOf, onOrderOf,
   CoveragePill, CoverageBar,
   type StockRecord, type CoverageStatus, type BuildDef, type OrderRecord,
 } from './inventoryData';
@@ -106,11 +106,6 @@ interface InventoryViewProps {
 }
 
 type QuickFilter = 'all' | 'low-coverage' | 'on-order' | 'lot-serial' | 'quarantine';
-
-// A row rendered in the Stock table: either a real stock batch, or a dedicated placeholder
-// row representing one order (see `orderRows` below) — `_orderStatus` is set only for the
-// latter, and distinguishes "want to order" (planned) from an already-submitted order.
-type DisplayStockRow = StockRecord & { _orderStatus?: OrderRecord['status'] };
 
 const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: 'all', label: 'All parts' },
@@ -200,57 +195,49 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   // writes reservations) — `availableOf`/`computeCoverage` already subtract BOM demand via the
   // `demandByPartId` param, so overriding `allocated` with that same demand would double-count it.
   //
-  // An order (whether just "want to order" or already submitted to a supplier) isn't tied to
-  // any specific physical batch — it's its own separate business event. Rather than trying to
-  // attribute it onto an existing stock row (which either duplicates it across every batch
-  // sharing that part+location, or arbitrarily picks one), every planned/open/partially_received
-  // order gets its own dedicated row here, one row PER ORDER — exactly like a "New transaction"
-  // stock addition already gets its own row. Ordering the same part again a month later shows up
-  // as a second, distinct line instead of merging into the first.
-  const partsById = useMemo(() => new Map(parts.map(p => [p.id, p])), [parts]);
+  // A part that's never been received has no stock row at all — without a synthetic zero-on-hand
+  // row here, placing its first order makes the order vanish from Inventory entirely (nothing to
+  // render it against) until someone happens to receive it. That reads as "the order didn't work."
+  const displayStock = useMemo(() => {
+    const stockPartIds = new Set(stock.map(r => r.partId));
+    const fromStock = stock.map(r => ({ ...r, onOrder: onOrderOf(orders, r.partId) }));
+    const pendingOrdersByPart = new Map<string, OrderRecord[]>();
+    for (const o of orders) {
+      if (stockPartIds.has(o.partId)) continue;
+      if (o.status !== 'planned' && o.status !== 'open' && o.status !== 'partially_received') continue;
+      const list = pendingOrdersByPart.get(o.partId) ?? [];
+      list.push(o);
+      pendingOrdersByPart.set(o.partId, list);
+    }
+    const stubs: StockRecord[] = [];
+    for (const p of parts) {
+      const partOrders = pendingOrdersByPart.get(p.id);
+      if (!partOrders) continue;
+      const latest = partOrders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+      stubs.push({
+        id: `pending-order:${p.id}`,
+        partId: p.id,
+        pn: p.partNumber,
+        name: p.name,
+        cat: p.category,
+        onHand: 0,
+        allocated: 0,
+        onOrder: onOrderOf(orders, p.id),
+        location: latest.location,
+        leadTimeDays: 0,
+      });
+    }
+    return [...fromStock, ...stubs];
+  }, [stock, orders, parts]);
 
-  // Real stock batch rows never carry order info — an order isn't tied to any specific batch,
-  // so it's represented as its own row (below) instead of a shared/duplicated value here.
-  const realStock: DisplayStockRow[] = useMemo(
-    () => stock.map(r => ({ ...r, onOrder: 0 })),
-    [stock]
+  // "Want to order" (planned) orders never move the On Order column — that's intentional, they
+  // aren't submitted to a supplier yet — but that means a planned order against a part that's
+  // *already* stocked produces zero visible change on its row. Surface it as a badge instead so
+  // the transaction is never invisible, whether or not the part already had a stock row.
+  const wantToOrderPartIds = useMemo(
+    () => new Set(orders.filter(o => o.status === 'planned').map(o => o.partId)),
+    [orders]
   );
-
-  // Every planned/open/partially_received order gets its own dedicated row, one row PER ORDER
-  // — exactly like a "New transaction" stock addition already gets its own row — instead of
-  // being attributed onto an existing (and possibly unrelated) stock batch. Ordering the same
-  // part again a month later shows up as a second, distinct line instead of merging into the
-  // first. Kept separate from `realStock` so stats/pickers/alerts that expect genuine physical
-  // batches (AdjustQuantityDialog's part picker, AlertsPanel's shortage calc, the "Total Parts"
-  // /coverage stat cards) aren't polluted by these order-only placeholders.
-  const orderRows: DisplayStockRow[] = useMemo(
-    () =>
-      orders
-        .filter(o => o.status === 'planned' || o.status === 'open' || o.status === 'partially_received')
-        .map(o => {
-          const part = partsById.get(o.partId);
-          return {
-            id: `order:${o.id}`,
-            partId: o.partId,
-            pn: part?.partNumber ?? o.pn,
-            name: part?.name ?? '',
-            cat: (part?.category ?? 'Other') as BOMCategory,
-            onHand: 0,
-            allocated: 0,
-            // "planned" (want-to-order) never moves the On Order column — it isn't submitted to
-            // a supplier yet — but it still gets its own row so the transaction is never invisible.
-            onOrder: o.status === 'planned' ? 0 : o.remainingQty,
-            location: o.location,
-            leadTimeDays: 0,
-            _orderStatus: o.status,
-          };
-        }),
-    [orders, partsById]
-  );
-
-  // The combined list actually rendered in the Stock table — real batches plus one row per
-  // pending/incoming order. Everything else (stats, pickers, alerts) uses `realStock` alone.
-  const displayStock = useMemo(() => [...realStock, ...orderRows], [realStock, orderRows]);
 
   // Receive/Place order only make sense for parts that already have a stock row or a pending
   // order (i.e. appear in `displayStock`, including its synthetic pending-order rows) — a part
@@ -406,7 +393,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   // card grouping for Inventory.
   const cardGroups = useMemo(() => {
     if (categoryFilter !== 'all') return [{ cat: categoryFilter as BOMCategory, items: filteredStock }];
-    const byCat = new Map<BOMCategory, DisplayStockRow[]>();
+    const byCat = new Map<BOMCategory, StockRecord[]>();
     for (const r of filteredStock) {
       if (!byCat.has(r.cat)) byCat.set(r.cat, []);
       byCat.get(r.cat)!.push(r);
@@ -414,18 +401,14 @@ export function InventoryView({ orgId }: InventoryViewProps) {
     return allCategories.filter(cat => byCat.has(cat)).map(cat => ({ cat, items: byCat.get(cat)! }));
   }, [filteredStock, categoryFilter, allCategories]);
 
-  // Coverage/"Total Parts" reflect real physical batches only — the order pseudo-rows in
-  // `displayStock` would otherwise inflate the part count and manufacture bogus "short"/
-  // "conflict" entries for a row that's already correctly represented as an incoming/planned
-  // order, not an actual shortage.
   const coverageCounts = useMemo(() => {
     const counts: Record<CoverageStatus, number> = { ready: 0, 'covered-by-order': 0, short: 0, conflict: 0 };
-    for (const r of realStock) counts[coverageOf(r)]++;
+    for (const r of displayStock) counts[coverageOf(r)]++;
     return counts;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [realStock, demandByPartId]);
+  }, [displayStock, demandByPartId]);
 
-  const totalParts = realStock.length;
+  const totalParts = displayStock.length;
   const belowCoverage = coverageCounts.short + coverageCounts.conflict;
   const incomingCount = displayStock.filter(r => r.onOrder > 0).length;
   const quarantineCount = displayStock.filter(r => (r.quarantineQty ?? 0) > 0).length;
@@ -482,6 +465,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       milestone: input.milestone,
       targetDate: input.targetDate,
       projectId: input.projectId,
+      assigneeId: input.assigneeId,
     }, {
       onSuccess: (created) => {
         openBuild(created.id);
@@ -520,14 +504,23 @@ export function InventoryView({ orgId }: InventoryViewProps) {
 
   // Mobile's Receive/New transaction shortcuts live in the app header (AppHeader), which
   // has no access to this component's local dialog state — it hands off via ?action=.
+  // The BOM toolbar's build picker deep-links the same way via ?tab=builds&buildId=.
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     const action = searchParams.get('action');
     if (action === 'receive') openReceiveFor();
     else if (action === 'adjust') openAdjustFor();
     else if (action === 'order') openOrderFor();
-    if (action) {
-      setSearchParams((prev) => { prev.delete('action'); return prev; }, { replace: true });
+
+    const tab = searchParams.get('tab');
+    const buildId = searchParams.get('buildId');
+    if (tab === 'builds') {
+      if (buildId) openBuild(buildId);
+      else setActiveTab('builds');
+    }
+
+    if (action || tab || buildId) {
+      setSearchParams((prev) => { prev.delete('action'); prev.delete('tab'); prev.delete('buildId'); return prev; }, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -920,13 +913,9 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                               <div className="flex flex-wrap gap-1">
                                 <Badge variant="outline" className="text-[10px] font-normal">{r.location}</Badge>
                                 {r.quarantineQty ? <Badge variant="outline" className="text-[10px] font-normal"><Lock className="h-2.5 w-2.5 mr-1" />QA</Badge> : null}
-                                {r._orderStatus === 'planned' ? (
+                                {wantToOrderPartIds.has(r.partId) ? (
                                   <Badge variant="outline" className="text-[10px] font-normal border-amber-500/30 bg-amber-500/10 text-amber-600">
                                     <Clock className="h-2.5 w-2.5 mr-1" />Want to order
-                                  </Badge>
-                                ) : r._orderStatus ? (
-                                  <Badge variant="outline" className="text-[10px] font-normal border-sky-500/30 bg-sky-500/10 text-sky-600">
-                                    <Truck className="h-2.5 w-2.5 mr-1" />On order
                                   </Badge>
                                 ) : null}
                               </div>
@@ -1015,13 +1004,9 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                                     <div className="flex items-center gap-1 flex-wrap justify-end">
                                       <Badge variant="outline" className="text-[10px] font-normal">{r.location}</Badge>
                                       {r.quarantineQty ? <Badge variant="outline" className="text-[10px] font-normal"><Lock className="h-2.5 w-2.5 mr-1" />QA</Badge> : null}
-                                      {r._orderStatus === 'planned' ? (
+                                      {wantToOrderPartIds.has(r.partId) ? (
                                         <Badge variant="outline" className="text-[10px] font-normal border-amber-500/30 bg-amber-500/10 text-amber-600">
                                           <Clock className="h-2.5 w-2.5 mr-1" />Want to order
-                                        </Badge>
-                                      ) : r._orderStatus ? (
-                                        <Badge variant="outline" className="text-[10px] font-normal border-sky-500/30 bg-sky-500/10 text-sky-600">
-                                          <Truck className="h-2.5 w-2.5 mr-1" />On order
                                         </Badge>
                                       ) : null}
                                     </div>
@@ -1068,7 +1053,6 @@ export function InventoryView({ orgId }: InventoryViewProps) {
             openBuildId={openBuildId}
             onOpenBuildHandled={() => setOpenBuildId(null)}
             onAddBuild={handleAddBuild}
-            onGenerateShortageOrder={openOrderFor}
             projects={projects}
           />
         </TabsContent>
@@ -1076,7 +1060,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         <TabsContent value="alerts" className="mt-4">
           <AlertsPanel
             builds={computedBuilds}
-            stock={realStock}
+            stock={displayStock}
             coverageOf={coverageOf}
             onSelectPart={openDetail}
             onSelectBuild={openBuild}
@@ -1098,7 +1082,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         isOpen={adjustOpen}
         onClose={() => setAdjustOpen(false)}
         orgId={orgId}
-        stock={realStock}
+        stock={displayStock}
         parts={parts}
         partProjects={projectsByPartId}
         onAdjust={handleAdjust}

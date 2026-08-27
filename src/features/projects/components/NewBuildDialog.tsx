@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -21,6 +21,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
   Form,
   FormControl,
   FormField,
@@ -30,8 +44,11 @@ import {
 } from '@/components/ui/form';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
-import { Layers, Lock, X } from 'lucide-react';
+import { Layers, Lock, User, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useProjectMembers } from '@/hooks/useProjectTeam';
+import { resolveFileUrl } from '@/utils/fileUrl';
+import type { TeamMember } from '@/types';
 import type { BuildDef } from './inventoryData';
 
 const BUILD_TYPES = ['EVT', 'DVT', 'PVT', 'Custom'] as const;
@@ -45,11 +62,12 @@ const buildSchema = z.object({
   milestone: z.string().max(60, 'Milestone must be less than 60 characters').optional(),
   targetDate: z.string().optional(),
   projectId: z.string().min(1, 'Select a project'),
+  assigneeId: z.string().min(1, 'Select an assignee'),
 });
 
 type BuildFormData = z.infer<typeof buildSchema>;
 
-export type NewBuildInput = Omit<BuildDef, 'id'> & { projectId: string };
+export type NewBuildInput = Omit<BuildDef, 'id' | 'assignee'> & { projectId: string; assigneeId: string };
 
 interface NewBuildDialogProps {
   isOpen: boolean;
@@ -63,6 +81,8 @@ interface NewBuildDialogProps {
 export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedProjectId }: NewBuildDialogProps) {
   const isMobile = useIsMobile();
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [assignee, setAssignee] = useState<TeamMember | null>(null);
+  const [isAssigneePopoverOpen, setIsAssigneePopoverOpen] = useState(false);
   const lockedProjectName = projects.find(p => p.id === lockedProjectId)?.name ?? lockedProjectId ?? '';
 
   const form = useForm<BuildFormData>({
@@ -76,13 +96,34 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
       milestone: '',
       targetDate: '',
       projectId: lockedProjectId ?? projects[0]?.id ?? '',
+      assigneeId: '',
     },
   });
 
-  const isFormDirty = form.formState.isDirty;
+  // Assignee choices are scoped to whichever project is currently selected in the form —
+  // a build's assignee must be a member of that build's own project.
+  const selectedProjectId = form.watch('projectId') || lockedProjectId;
+  const { data: projectMembers = [] } = useProjectMembers(selectedProjectId);
+
+  const pickAssignee = (member: TeamMember | null) => {
+    setAssignee(member);
+    form.setValue('assigneeId', member?.id ?? '', { shouldValidate: form.formState.isSubmitted });
+  };
+
+  // Clear a previously picked assignee if the project changes and they're no longer a
+  // member of the newly selected project.
+  useEffect(() => {
+    if (assignee && !projectMembers.some(m => m.id === assignee.id)) {
+      pickAssignee(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId, projectMembers]);
+
+  const isFormDirty = form.formState.isDirty || assignee !== null;
 
   const resetAndClose = () => {
     form.reset();
+    setAssignee(null);
     onClose();
   };
 
@@ -104,6 +145,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
       milestone: data.milestone?.trim() || `${data.name.trim()} Complete`,
       targetDate: data.targetDate ? new Date(data.targetDate).toISOString() : undefined,
       projectId: data.projectId,
+      assigneeId: data.assigneeId,
     });
     resetAndClose();
   };
@@ -276,6 +318,75 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
                       <FormControl>
                         <Input placeholder="e.g. MP1 Complete" {...field} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="assigneeId"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Assigned to <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                      <Popover open={isAssigneePopoverOpen} onOpenChange={setIsAssigneePopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal"
+                            >
+                              {assignee ? (
+                                <span className="flex items-center gap-2">
+                                  <Avatar className="h-5 w-5">
+                                    <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                    <AvatarFallback className="text-[10px]">{assignee.initials}</AvatarFallback>
+                                  </Avatar>
+                                  {assignee.name}
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-2 text-muted-foreground">
+                                  <User className="h-4 w-4" />
+                                  Select a member...
+                                </span>
+                              )}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="p-0 w-[260px]" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search members..." />
+                            <CommandList>
+                              <CommandEmpty>No members found.</CommandEmpty>
+                              <CommandGroup>
+                                {projectMembers
+                                  .slice()
+                                  .sort((a, b) => a.name.localeCompare(b.name))
+                                  .map(member => (
+                                    <CommandItem
+                                      key={member.id}
+                                      value={`${member.id} ${member.name}`}
+                                      onSelect={() => {
+                                        pickAssignee(member);
+                                        setIsAssigneePopoverOpen(false);
+                                      }}
+                                      className="cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Avatar className="h-5 w-5">
+                                          <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
+                                          <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
+                                        </Avatar>
+                                        {member.name}
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <FormMessage />
                     </FormItem>
                   )}

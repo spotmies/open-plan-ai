@@ -319,6 +319,7 @@ export const ENDPOINTS = {
     MARK_ORDER_ORDERED: (orgId: string, orderId: string) => `/organizations/${orgId}/inventory/orders/${orderId}/mark-ordered`,
     ALLOCATE_BUILD:     (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/allocate`,
     KIT_BUILD:          (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/kit`,
+    GENERATE_SHORTAGE_ORDERS: (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/generate-shortage-orders`,
   },
   // Locations (org-wide registry of stock locations — backs the inventory Location picker)
   LOCATIONS: {

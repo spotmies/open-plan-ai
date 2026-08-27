@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import {
   CheckCircle, Truck, Flag, ArrowRight, ClipboardCheck, Plus, Search,
   Zap, Cpu, Package, Box, Monitor, Shield, Layers, Tag, ChevronLeft,
@@ -11,10 +12,11 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useAllocateBuild, useKitBuild } from '@/hooks/useInventory';
+import { useAllocateBuild, useKitBuild, useGenerateShortageOrders } from '@/hooks/useInventory';
 import { getCategoryMeta } from './bomData';
 import { CoveragePill, formatShortDate, type Build } from './inventoryData';
 import { NewBuildDialog, type NewBuildInput } from './NewBuildDialog';
+import { GenerateShortageOrdersDialog } from './GenerateShortageOrdersDialog';
 
 // Maps bomData's BOM_CAT_META.iconName strings to the actual icon component.
 const CATEGORY_ICON_MAP: Record<string, React.ElementType> = { Zap, Cpu, Package, Box, Monitor, Shield, Layers, Tag };
@@ -29,20 +31,21 @@ interface BuildsPanelProps {
   openBuildId?: string | null;
   onOpenBuildHandled?: () => void;
   onAddBuild: (input: NewBuildInput) => void;
-  onGenerateShortageOrder: (partId?: string) => void;
   projects: { id: string; name: string }[];
 }
 
-export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBuildHandled, onAddBuild, onGenerateShortageOrder, projects }: BuildsPanelProps) {
+export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBuildHandled, onAddBuild, projects }: BuildsPanelProps) {
   const isMobile = useIsMobile();
   const [selectedBuildId, setSelectedBuildId] = useState(builds[0]?.id);
   const [mobileSearch, setMobileSearch] = useState('');
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [newBuildOpen, setNewBuildOpen] = useState(false);
+  const [shortageDialogOpen, setShortageDialogOpen] = useState(false);
   const selectedBuild = builds.find(b => b.id === selectedBuildId) ?? builds[0];
 
   const allocateMutation = useAllocateBuild(orgId);
   const kitMutation = useKitBuild(orgId);
+  const shortageOrderMutation = useGenerateShortageOrders(orgId);
 
   const canKit = !!selectedBuild && selectedBuild.status === 'allocated';
   const isKitted = selectedBuild?.status === 'kitted';
@@ -51,8 +54,26 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
   const hasOutstandingDemand = !!selectedBuild?.lines.some((l) => l.required - l.allocated > 0);
   const handleAutoAllocate = () => { if (selectedBuild) allocateMutation.mutate(selectedBuild.id); };
   const handleMarkKitted = () => { if (selectedBuild) kitMutation.mutate(selectedBuild.id); };
-  const handleGenerateShortage = () => {
-    onGenerateShortageOrder(selectedBuild?.shortLines[0]?.partId);
+  // Opens the checklist dialog instead of ordering everything blind — the user picks which
+  // shorted part(s) to actually send to procurement right now.
+  const handleGenerateShortage = () => setShortageDialogOpen(true);
+  // A part that already has a pending order gets its quantity topped up instead of a
+  // duplicate order; a part with no pending order gets a new one.
+  const handleConfirmShortageOrders = (partIds: string[]) => {
+    if (!selectedBuild) return;
+    shortageOrderMutation.mutate({ buildId: selectedBuild.id, partIds }, {
+      onSuccess: (result) => {
+        setShortageDialogOpen(false);
+        const created = result.lines.filter((l) => l.action === 'created').length;
+        const updated = result.lines.filter((l) => l.action === 'updated').length;
+        const parts = [
+          created > 0 && `${created} new order${created === 1 ? '' : 's'}`,
+          updated > 0 && `${updated} existing order${updated === 1 ? '' : 's'} topped up`,
+        ].filter(Boolean).join(', ');
+        toast.success(`Ordered ${result.lines.length} shorted part(s) — ${parts}`);
+      },
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to generate shortage orders'),
+    });
   };
 
   // Alerts tab hands off a build to open here — jump to it and, on mobile, pop the detail dialog.
@@ -171,6 +192,11 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
               <p className="text-sm text-muted-foreground">
                 BOM {selectedBuild.bomRev} · {selectedBuild.units} units · scrap {selectedBuild.scrapPct}% · linked to{' '}
                 <span className="font-medium text-foreground">{selectedBuild.linkedMilestone}</span>
+                {selectedBuild.assignee && (
+                  <>
+                    {' '}· Assigned to <span className="font-medium text-foreground">{selectedBuild.assignee.name}</span>
+                  </>
+                )}
               </p>
 
               <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
@@ -281,6 +307,14 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
           </DialogContent>
         </Dialog>
         <NewBuildDialog isOpen={newBuildOpen} onClose={() => setNewBuildOpen(false)} onAddBuild={onAddBuild} projects={projects} />
+        <GenerateShortageOrdersDialog
+          isOpen={shortageDialogOpen}
+          onClose={() => setShortageDialogOpen(false)}
+          buildName={selectedBuild.name}
+          lines={selectedBuild.shortLines}
+          onConfirm={handleConfirmShortageOrders}
+          isSubmitting={shortageOrderMutation.isPending}
+        />
       </div>
     );
   }
@@ -352,6 +386,11 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
         <p className="text-sm text-muted-foreground">
           BOM {selectedBuild.bomRev} · {selectedBuild.units} units · scrap {selectedBuild.scrapPct}% · linked to{' '}
           <span className="font-medium text-foreground">{selectedBuild.linkedMilestone}</span>
+          {selectedBuild.assignee && (
+            <>
+              {' '}· Assigned to <span className="font-medium text-foreground">{selectedBuild.assignee.name}</span>
+            </>
+          )}
         </p>
 
         <div className="flex items-center justify-between gap-4 flex-wrap rounded-lg border p-3">
@@ -453,6 +492,14 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
         </div>
       </div>
       <NewBuildDialog isOpen={newBuildOpen} onClose={() => setNewBuildOpen(false)} onAddBuild={onAddBuild} projects={projects} />
+      <GenerateShortageOrdersDialog
+        isOpen={shortageDialogOpen}
+        onClose={() => setShortageDialogOpen(false)}
+        buildName={selectedBuild.name}
+        lines={selectedBuild.shortLines}
+        onConfirm={handleConfirmShortageOrders}
+        isSubmitting={shortageOrderMutation.isPending}
+      />
     </div>
   );
 }
