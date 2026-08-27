@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { TasksSection, ViewControls } from './components/TasksSection';
+import { ImportTasksDialog } from '../task-import/ImportTasksDialog';
 import { ModulesSection, ModuleViewControls } from './components/ModulesSection';
 import { MilestonesView } from './components/MilestonesView';
 import { IssuesView } from './components/IssuesView';
@@ -629,6 +630,7 @@ export default function ProjectDetail() {
   const [isAddMilestoneDialogOpen, setIsAddMilestoneDialogOpen] = useState(false);
   const [isAddIssueDialogOpen, setIsAddIssueDialogOpen] = useState(false);
   const [isAddTaskDialogOpen, setIsAddTaskDialogOpen] = useState(false);
+  const [isImportTasksDialogOpen, setIsImportTasksDialogOpen] = useState(false);
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
   const [selectedMemberRoleToAdd, setSelectedMemberRoleToAdd] = useState<ProjectRole>('member');
   const [isAddingProjectMember, setIsAddingProjectMember] = useState(false);
@@ -1619,6 +1621,17 @@ export default function ProjectDetail() {
                       viewMode={viewMode}
                       onViewModeChange={setViewMode}
                     />
+                    {!isMobile && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 gap-1.5"
+                        onClick={() => setIsImportTasksDialogOpen(true)}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Import
+                      </Button>
+                    )}
                     <TaskFiltersDropdown
                       milestones={project.milestones || []}
                       modules={modules.map(m => ({ id: m.id, name: m.name, type: m.type }))}
@@ -1911,6 +1924,12 @@ export default function ProjectDetail() {
         onAdd={handleModuleAdd}
         teamMembers={projectMembers}
         existingModuleNames={existingModuleNames}
+      />
+
+      <ImportTasksDialog
+        open={isImportTasksDialogOpen}
+        onClose={() => setIsImportTasksDialogOpen(false)}
+        projectId={project.id}
       />
 
       <TaskDetailModal

@@ -87,6 +87,16 @@ export const ENDPOINTS = {
     /** Personal "My Tasks" item — no project. */
     CREATE_PERSONAL: '/tasks',
   },
+  // Task Import (file upload -> AI structuring -> chat resolve -> bulk create)
+  TASK_IMPORTS: {
+    START: (projectId: string) => `/projects/${projectId}/task-imports`,
+    STATUS: (projectId: string, jobId: string) => `/projects/${projectId}/task-imports/${jobId}`,
+    CONVERSATION: (projectId: string, jobId: string) => `/projects/${projectId}/task-imports/${jobId}/conversation`,
+    MESSAGES: (projectId: string, jobId: string) => `/projects/${projectId}/task-imports/${jobId}/messages`,
+    MESSAGE_ATTACHMENTS: (projectId: string, jobId: string) =>
+      `/projects/${projectId}/task-imports/${jobId}/messages/attachments`,
+    COMMIT: (projectId: string, jobId: string) => `/projects/${projectId}/task-imports/${jobId}/commit`,
+  },
   // Hardware Modules
   MODULES: {
     LIST: (projectId: string) => `/projects/${projectId}/hardware-modules`,

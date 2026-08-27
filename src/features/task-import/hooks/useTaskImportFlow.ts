@@ -1,0 +1,146 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { io, Socket } from 'socket.io-client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { config } from '@/config';
+import { queryKeys } from '@/lib/queryClient';
+import { taskImportService } from '../services/taskImport.service';
+import type { TaskImportJobStatusDto, ImportAskUserQuestion } from '../taskImportData';
+
+interface ConversationDetail {
+  messages: Array<{ id: string; role: string; content: string | null; createdAt: string }>;
+  proposals: Array<{ id: string; status: string; preview: unknown; warnings: unknown; summary: string; result: unknown }>;
+}
+
+const ACTIVE_JOB_POLL_MS = 2500;
+const TERMINAL_STATUSES = new Set(['awaiting_review', 'completed', 'failed']);
+
+/**
+ * Drives the whole import flow after a file has been uploaded: polls job
+ * status until the extraction worker creates the review conversation, then
+ * opens a dedicated Socket.IO connection (its own connection, same idiom as
+ * the AI Assistant's transport — a distinct event vocabulary has nothing to
+ * do with the team-chat socket) and refetches the conversation detail on
+ * every relevant event rather than hand-reconstructing state from raw socket
+ * payloads (mirrors IAiAssistantTransport's documented "optimization only"
+ * pattern for onProposal/onProposalUpdate).
+ */
+export function useTaskImportFlow(projectId: string, jobId: string | null) {
+  const queryClient = useQueryClient();
+  const socketRef = useRef<Socket | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<ImportAskUserQuestion[] | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  const jobQuery = useQuery<TaskImportJobStatusDto>({
+    queryKey: ['task-import-job', projectId, jobId],
+    queryFn: () => taskImportService.getStatus(projectId, jobId!),
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && TERMINAL_STATUSES.has(status) ? false : ACTIVE_JOB_POLL_MS;
+    },
+  });
+
+  const conversationId = jobQuery.data?.conversationId ?? null;
+
+  const conversationQuery = useQuery<ConversationDetail>({
+    queryKey: ['task-import-conversation', conversationId],
+    queryFn: () => taskImportService.getConversation(projectId, jobId!) as Promise<ConversationDetail>,
+    enabled: !!conversationId,
+  });
+
+  const refetchConversation = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['task-import-conversation', conversationId] });
+  }, [queryClient, conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const socket = io(config.api.wsUrl, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+    });
+    socketRef.current = socket;
+
+    socket.on('connect', () => socket.emit('join-ai-conversation', conversationId));
+    socket.on('ai:card', () => refetchConversation());
+    socket.on('ai:proposal', () => refetchConversation());
+    socket.on('ai:proposal-update', () => refetchConversation());
+    socket.on('ai:done', () => {
+      setPendingQuestion(null);
+      refetchConversation();
+    });
+    socket.on('ai:question', (payload: { questions: ImportAskUserQuestion[] }) => {
+      setPendingQuestion(payload.questions);
+      refetchConversation();
+    });
+    socket.on('ai:error', (payload: { message: string }) => {
+      setLiveError(payload.message);
+      queryClient.invalidateQueries({ queryKey: ['task-import-job', projectId, jobId] });
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [conversationId, projectId, jobId, queryClient, refetchConversation]);
+
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!jobId) return;
+      setLiveError(null);
+      await taskImportService.sendMessage(projectId, jobId, content);
+      refetchConversation();
+    },
+    [projectId, jobId, refetchConversation],
+  );
+
+  const uploadAttachment = useCallback(
+    async (file: File) => {
+      if (!jobId) return;
+      setLiveError(null);
+      await taskImportService.uploadMessageAttachment(projectId, jobId, file);
+      refetchConversation();
+    },
+    [projectId, jobId, refetchConversation],
+  );
+
+  const commit = useCallback(
+    async (proposalId: string) => {
+      if (!jobId) throw new Error('No active import job');
+      try {
+        const result = await taskImportService.commit(projectId, jobId, proposalId);
+        return result;
+      } finally {
+        // Runs on both success AND failure — commit() claims the proposal
+        // (pending -> executing -> executed/failed) server-side atomically
+        // before it does anything else, so even a request that errors out
+        // partway through has already changed the proposal's real status.
+        // Previously this only ran on success and never touched the
+        // conversation query at all, so the review card kept showing the
+        // proposal as "pending" — with its Import button still enabled —
+        // long after the batch had actually been committed.
+        // The Tasks board (kanban/list, and the tab's own count) is driven
+        // by useProjectDetail's queryKeys.projects.detail query, not the
+        // plain tasks list.
+        queryClient.invalidateQueries({ queryKey: ['task-import-conversation', conversationId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(projectId) });
+        queryClient.invalidateQueries({ queryKey: ['task-import-job', projectId, jobId] });
+      }
+    },
+    [projectId, jobId, conversationId, queryClient],
+  );
+
+  return {
+    job: jobQuery.data ?? null,
+    jobLoading: jobQuery.isLoading,
+    conversation: conversationQuery.data ?? null,
+    pendingQuestion,
+    liveError,
+    sendMessage,
+    uploadAttachment,
+    commit,
+  };
+}
+
