@@ -123,12 +123,13 @@ const Login = () => {
 
         if (inviteIdentifier) {
           await teamService.acceptInvitation(inviteIdentifier);
-          localStorage.removeItem('pending_invite_id');
-          localStorage.removeItem('pending_invite_token');
         }
       } catch (inviteAcceptError) {
         // Non-fatal: user still logs in and can accept manually from Dashboard banner.
         console.warn('Auto-accept invitation after login failed:', inviteAcceptError);
+      } finally {
+        localStorage.removeItem('pending_invite_id');
+        localStorage.removeItem('pending_invite_token');
       }
 
       navigate(from, { replace: true });

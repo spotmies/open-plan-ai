@@ -518,7 +518,8 @@ export interface ProposalWarning {
 }
 
 export interface ProposalPreview {
-  destination: { projectId: string; projectName: string; inferredFrom: 'explicit' | 'pinned' | 'scope' };
+  /** Null for a personal (no-project) task proposal — a task creation with no project signal defaults there instead of asking which project. */
+  destination: { projectId: string | null; projectName: string; inferredFrom: 'explicit' | 'pinned' | 'scope' | 'personal' };
   entityType: string;
   actionKind: 'create' | 'update' | 'mixed';
   itemCount: number;
@@ -580,7 +581,8 @@ export interface AssistantProposal {
   id: string;
   conversationId: string;
   messageId: string;
-  projectId: string;
+  /** Null for a personal (no-project) task proposal. */
+  projectId: string | null;
   toolName: string;
   entityType: string;
   actionKind: 'create' | 'update' | 'mixed';

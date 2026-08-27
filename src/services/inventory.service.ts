@@ -1,6 +1,6 @@
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
-import type { StockRecord, OrderRecord, StockTransaction, BuildDef, BuildBomLine } from '@/features/projects/components/inventoryData';
+import type { StockRecord, OrderRecord, StockTransaction, BuildDef, BuildBomLine, BuildAssignee } from '@/features/projects/components/inventoryData';
 
 // ─── API response shapes (match backend inventory.types.ts responses) ─────────
 
@@ -54,6 +54,8 @@ export interface ApiStockTransaction {
   description: string | null;
   quarantine: boolean;
   buildId: string | null;
+  lotNumber: string | null;
+  serialNumber: string | null;
   createdAt: string;
   createdBy: string;
 }
@@ -69,6 +71,7 @@ export interface ApiBuildDef {
   milestone: string | null;
   targetDate: string | null;
   status: 'planned' | 'allocated' | 'kitted';
+  assignee: BuildAssignee | null;
 }
 
 export interface ApiBuildBomLine {
@@ -98,6 +101,19 @@ export interface ApiAllocateBuildResponse {
   build: ApiBuildDef;
   lines: ApiAllocateBuildLineResult[];
   fullyAllocated: boolean;
+}
+
+export interface ApiShortageOrderLineResult {
+  partId: string;
+  pn: string;
+  quantityOrdered: number;
+  orderId: string;
+  action: 'created' | 'updated';
+}
+
+export interface ApiGenerateShortageOrdersResponse {
+  build: ApiBuildDef;
+  lines: ApiShortageOrderLineResult[];
 }
 
 // ─── Adapters ───────────────────────────────────────────────────────────────────
@@ -156,6 +172,8 @@ export function fromApiTransaction(r: ApiStockTransaction): StockTransaction {
     description: r.description ?? undefined,
     quarantine: r.quarantine,
     buildId: r.buildId ?? undefined,
+    lotNumber: r.lotNumber ?? undefined,
+    serialNumber: r.serialNumber ?? undefined,
     createdAt: r.createdAt,
     createdBy: r.createdBy,
   };
@@ -173,6 +191,7 @@ export function fromApiBuild(r: ApiBuildDef): BuildDef {
     milestone: r.milestone ?? '',
     targetDate: r.targetDate ?? undefined,
     status: r.status,
+    assignee: r.assignee ?? null,
   };
 }
 
@@ -267,6 +286,7 @@ export interface CreateBuildDto {
   scrapPct: number;
   milestone?: string;
   targetDate?: string;
+  assigneeId: string;
 }
 
 // ─── Service ────────────────────────────────────────────────────────────────────
@@ -330,6 +350,17 @@ export const inventoryService = {
 
   async allocateBuild(orgId: string, buildId: string): Promise<ApiAllocateBuildResponse> {
     return apiClient.post<ApiAllocateBuildResponse>(ENDPOINTS.INVENTORY.ALLOCATE_BUILD(orgId, buildId), {});
+  },
+
+  async generateShortageOrders(
+    orgId: string,
+    buildId: string,
+    partIds: string[],
+  ): Promise<ApiGenerateShortageOrdersResponse> {
+    return apiClient.post<ApiGenerateShortageOrdersResponse>(
+      ENDPOINTS.INVENTORY.GENERATE_SHORTAGE_ORDERS(orgId, buildId),
+      { partIds },
+    );
   },
 
   async kitBuild(orgId: string, buildId: string): Promise<ApiBuildDef> {

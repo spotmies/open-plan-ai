@@ -299,7 +299,7 @@ const STAGE_LABEL: Record<ProjectStage, string> = {
 
 function GateStepper({ stage }: { stage: ProjectStage }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center justify-end gap-1">
       {STAGES.map((s) => (
         <span
           key={s}
@@ -641,12 +641,12 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
           <CardContent className="space-y-4 pt-0">
             {card.type === 'status' && (
               <>
-                <div className="flex items-end justify-between gap-4">
+                <div className="flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <div className="text-3xl font-bold text-foreground">{Math.round(card.metricValue)}%</div>
                     <p className="text-xs text-muted-foreground">{card.metricLabel ?? 'Complete'}</p>
                   </div>
-                  <div className="flex items-end gap-4">
+                  <div className="flex flex-wrap items-end justify-end gap-4">
                     {card.taskCount && (
                       <div className="text-right">
                         <div className="text-lg font-semibold text-foreground">

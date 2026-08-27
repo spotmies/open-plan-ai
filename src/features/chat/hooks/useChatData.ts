@@ -173,6 +173,8 @@ export function useMessages(conversationId: string | null) {
   const [joinedAt, setJoinedAt] = useState<string | null>(null);
   const channelRef = useRef<Unsubscribe | null>(null);
   const updateChannelRef = useRef<Unsubscribe | null>(null);
+  const activeConversationIdRef = useRef(conversationId);
+  activeConversationIdRef.current = conversationId;
   const PAGE_SIZE = 50;
 
   const accessStateCacheRef = useRef(new Map<string, { expiresAt: number; state: ConversationAccessState }>());
@@ -280,9 +282,26 @@ export function useMessages(conversationId: string | null) {
           .getMessages(conversationId, { limit: PAGE_SIZE })
           .then((data) => {
             if (cancelled) return;
-            setMessages(data);
-            setHasMore(data.length === PAGE_SIZE);
-            setCachedMessages(conversationId, data, data.length === PAGE_SIZE);
+            // Merge the freshened recent window into whatever's currently
+            // loaded instead of replacing it outright — the user may have
+            // paged further back via "Load older messages" while this was
+            // in flight, and a hard replace would silently discard that
+            // history and snap the view back to just the latest page.
+            // `hasMore` describes whether older history exists beyond what's
+            // loaded, so it's intentionally left untouched here.
+            setMessages((prev) => {
+              const byId = new Map(prev.map((m) => [m.id, m]));
+              for (const m of data) byId.set(m.id, m);
+              return Array.from(byId.values()).sort(
+                (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+            });
+            const cachedById = new Map(cachedEntry.messages.map((m) => [m.id, m]));
+            for (const m of data) cachedById.set(m.id, m);
+            const mergedForCache = Array.from(cachedById.values()).sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+            setCachedMessages(conversationId, mergedForCache, cachedEntry.hasMore);
           })
           .catch((err) => {
             if (!cancelled) logger.error('Background message revalidation failed:', err);
@@ -653,14 +672,25 @@ export function useMessages(conversationId: string | null) {
 
   const loadMore = useCallback(async () => {
     if (!conversationId || !messages.length || !hasMore) return;
-    const oldest = messages[0];
+    // `messages` isn't guaranteed to be sorted oldest-first (the initial fetch
+    // stores the API's own order), so find the true oldest by timestamp rather
+    // than trusting messages[0] — using the wrong cursor here re-fetches
+    // messages near "now" instead of paging further back in history.
+    const oldest = messages.reduce((min, m) => (new Date(m.createdAt) < new Date(min.createdAt) ? m : min));
     const older = await chatService.getMessages(conversationId, {
       before: oldest.createdAt,
       limit: PAGE_SIZE,
     });
+    // The user may have switched to a different conversation while this
+    // request was in flight — discard the result instead of prepending
+    // another chat's messages into the now-active one.
+    if (activeConversationIdRef.current !== conversationId) return;
     const newHasMore = older.length === PAGE_SIZE;
     setHasMore(newHasMore);
-    setMessages((prev) => [...older, ...prev]);
+    setMessages((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      return [...older.filter((m) => !existingIds.has(m.id)), ...prev];
+    });
     storeAppendOlder(conversationId, older, newHasMore);
   }, [conversationId, messages, hasMore, storeAppendOlder]);
 

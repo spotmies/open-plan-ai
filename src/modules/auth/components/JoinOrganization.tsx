@@ -52,8 +52,8 @@ export default function JoinOrganization() {
         const data = await apiClient.get<any>(`/invitations/lookup?invite=${encodeURIComponent(inviteParam)}`);
         setInvitation(data);
         setOrgName(data?.organizationName || data?.organization?.name || 'the organization');
-      } catch {
-        setError('This invitation is invalid or has already been used.');
+      } catch (err: any) {
+        setError(err?.message || 'This invitation is invalid or has already been used.');
       } finally {
         setLoading(false);
       }

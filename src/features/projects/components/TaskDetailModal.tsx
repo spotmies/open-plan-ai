@@ -165,6 +165,8 @@ function StatusDot({ color }: { color: string }) {
   return <span className={cn('w-2 h-2 rounded-full inline-block shrink-0', color)} />;
 }
 
+const MAX_TAG_LENGTH = 20;
+
 const DEFAULT_STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
   { value: 'backlog', label: 'Backlog', color: 'bg-[#6b7280]' },
   { value: 'todo', label: 'To Do', color: 'bg-[#3b82f6]' },
@@ -412,12 +414,30 @@ export const TaskDetailModal = ({
     setTagPendingDelete({ id: registryTag.id, name: registryTag.name });
   };
 
+  // Blocks a tag input at MAX_TAG_LENGTH instead of letting the user type
+  // past it and only finding out at task-create time — see handleCreate,
+  // which fires onCreate without awaiting it, so a backend rejection (e.g.
+  // the old 50-char limit) closed the modal with the task never created.
+  const handleTagInputChange = (rawValue: string, setValue: (value: string) => void) => {
+    if (rawValue.length > MAX_TAG_LENGTH) {
+      toast.error(`Tags must be ${MAX_TAG_LENGTH} characters or less`);
+      setValue(rawValue.slice(0, MAX_TAG_LENGTH));
+      return;
+    }
+    setValue(rawValue);
+  };
+
   // Always upserts against the shared project tag registry first — this is
   // what makes a tag created here show up (with the same color) when adding
   // tags to an issue, or any other task, in the same project.
   const addTag = async (rawValue: string) => {
     const value = rawValue.trim();
     if (!value) return;
+
+    if (value.length > MAX_TAG_LENGTH) {
+      toast.error(`Tags must be ${MAX_TAG_LENGTH} characters or less`);
+      return;
+    }
 
     setTagSearch('');
     setIsTagPopoverOpen(false);
@@ -436,6 +456,11 @@ export const TaskDetailModal = ({
   const saveEditedTag = () => {
     if (editingTagIndex === null && !editingTagOriginal) return;
     const value = editingTagValue.trim();
+
+    if (value.length > MAX_TAG_LENGTH) {
+      toast.error(`Tags must be ${MAX_TAG_LENGTH} characters or less`);
+      return;
+    }
 
     const nextTags = [...editedTask.tags];
     const targetIndex =
@@ -2166,7 +2191,8 @@ export const TaskDetailModal = ({
                                 <Input
                                   autoFocus
                                   value={editingTagValue}
-                                  onChange={(e) => setEditingTagValue(e.target.value)}
+                                  onChange={(e) => handleTagInputChange(e.target.value, setEditingTagValue)}
+                                  maxLength={MAX_TAG_LENGTH}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                       e.preventDefault();
@@ -2239,7 +2265,8 @@ export const TaskDetailModal = ({
                                   <Input
                                     placeholder="Search or create tag…"
                                     value={tagSearch}
-                                    onChange={(e) => setTagSearch(e.target.value)}
+                                    onChange={(e) => handleTagInputChange(e.target.value, setTagSearch)}
+                                    maxLength={MAX_TAG_LENGTH}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
                                         e.preventDefault();
@@ -2567,36 +2594,36 @@ export const TaskDetailModal = ({
                         const previewUrl = pendingFileUrls[i];
                         const isImage = f.type.startsWith('image/');
                         return (
-                        <div
-                          key={i}
-                          className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm cursor-pointer hover:bg-muted/50"
-                          onClick={() => setPreviewingFile({ url: previewUrl, fileName: f.name, mimeType: f.type })}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            {isImage && previewUrl ? (
-                              <img
-                                src={previewUrl}
-                                alt={f.name}
-                                className="h-10 w-10 rounded object-cover shrink-0 border"
-                              />
-                            ) : (
-                              <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            )}
-                            <span className="truncate">{f.name}</span>
-                            <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPendingFiles(prev => prev.filter((_, idx) => idx !== i));
-                            }}
+                          <div
+                            key={i}
+                            className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm cursor-pointer hover:bg-muted/50"
+                            onClick={() => setPreviewingFile({ url: previewUrl, fileName: f.name, mimeType: f.type })}
                           >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div>
+                            <div className="flex items-center gap-2 min-w-0">
+                              {isImage && previewUrl ? (
+                                <img
+                                  src={previewUrl}
+                                  alt={f.name}
+                                  className="h-10 w-10 rounded object-cover shrink-0 border"
+                                />
+                              ) : (
+                                <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              )}
+                              <span className="truncate">{f.name}</span>
+                              <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.size)}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPendingFiles(prev => prev.filter((_, idx) => idx !== i));
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
                         );
                       })}
                     </div>

@@ -172,3 +172,16 @@ export function useKitBuild(orgId: string) {
     onSuccess: (_data, buildId) => invalidateBuild(queryClient, orgId, buildId),
   });
 }
+
+export function useGenerateShortageOrders(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ buildId, partIds }: { buildId: string; partIds: string[] }) =>
+      inventoryService.generateShortageOrders(orgId, buildId, partIds),
+    onSuccess: (_data, { buildId }) => {
+      invalidateBuild(queryClient, orgId, buildId);
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory.orders(orgId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.locations.list(orgId) });
+    },
+  });
+}

@@ -425,6 +425,13 @@ export function PartDetailSheet({
                         {meta.detail && (
                           <div className="mt-1 text-xs text-muted-foreground truncate">{meta.detail}</div>
                         )}
+                        {(t.lotNumber || t.serialNumber) && (
+                          <div className="mt-1 text-xs text-muted-foreground truncate">
+                            {t.lotNumber && <>Lot {t.lotNumber}</>}
+                            {t.lotNumber && t.serialNumber && ' · '}
+                            {t.serialNumber && <>SN {t.serialNumber}</>}
+                          </div>
+                        )}
                         {t.type === 'receive' && t.quarantine && (
                           <div className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600">
                             <ShieldAlert className="h-3 w-3" /> Quarantine

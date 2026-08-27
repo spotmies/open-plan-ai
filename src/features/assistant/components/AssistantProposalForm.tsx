@@ -51,7 +51,7 @@ const MILESTONE_STATUS_OPTIONS = [
 
 interface FieldEditorProps {
   entityType: string;
-  projectId: string;
+  projectId: string | null;
   fieldKey: string;
   value: unknown;
   onChange: (value: unknown) => void;
@@ -59,9 +59,9 @@ interface FieldEditorProps {
 
 /** Renders the right control for one field key, shared by the full single-item form and the bulk-shared one-field editor — a field always looks and behaves the same way in both places. */
 function FieldEditor({ entityType, projectId, fieldKey, value, onChange }: FieldEditorProps) {
-  const membersQuery = useProjectMembers(projectId);
-  const projectDetailQuery = useProjectDetail(projectId);
-  const modulesQuery = useProjectModules(projectId);
+  const membersQuery = useProjectMembers(projectId ?? undefined);
+  const projectDetailQuery = useProjectDetail(projectId ?? undefined);
+  const modulesQuery = useProjectModules(projectId ?? undefined);
 
   const memberOptions = (membersQuery.data ?? []).map((m) => ({ value: m.id, label: m.name }));
   const milestoneOptions = (projectDetailQuery.data?.milestones ?? []).map((m) => ({ value: m.id, label: m.title }));
@@ -207,14 +207,20 @@ const FIELD_LABELS: Record<string, string> = {
 
 interface AssistantProposalFormProps {
   entityType: string;
-  projectId: string;
+  /** Null for a personal (no-project) task — its form never includes an assignee/milestone/module field, so the project-scoped pickers below are simply never rendered for it. */
+  projectId: string | null;
   formState: ProposalFormState;
   onSubmit: (edits: Record<string, unknown>) => Promise<unknown>;
   onCancel: () => void;
 }
 
 export function AssistantProposalForm({ entityType, projectId, formState, onSubmit, onCancel }: AssistantProposalFormProps) {
-  const initial = formState.mode === 'single' ? (formState.fields ?? {}) : { [formState.sharedFields?.[0]?.field ?? '']: formState.sharedFields?.[0]?.value };
+  const rawInitial = formState.mode === 'single' ? (formState.fields ?? {}) : { [formState.sharedFields?.[0]?.field ?? '']: formState.sharedFields?.[0]?.value };
+  // Milestones default to "Automatic" (null → computed from tasks) when the model doesn't propose
+  // a status, which reads as a fake status option to the user — default the form to On Track instead.
+  const initial = entityType === 'milestone' && 'status' in rawInitial && (rawInitial.status === null || rawInitial.status === undefined)
+    ? { ...rawInitial, status: 'on-track' }
+    : rawInitial;
   const [values, setValues] = useState<Record<string, unknown>>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -4,7 +4,7 @@ import { useQueries } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Search, Table as TableIcon, LayoutGrid, Download, Pencil, PackageSearch,
-  AlertTriangle, Truck, CheckCircle, Lock, Boxes as BoxesIcon, Layers, SlidersHorizontal, ShoppingCart,
+  AlertTriangle, Truck, CheckCircle, Lock, Boxes as BoxesIcon, Layers, SlidersHorizontal, ShoppingCart, Clock,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,7 @@ import {
 import {
   buildFromDef, computeCoverage, availableOf, onOrderOf,
   CoveragePill, CoverageBar,
-  type StockRecord, type CoverageStatus, type BuildDef,
+  type StockRecord, type CoverageStatus, type BuildDef, type OrderRecord,
 } from './inventoryData';
 import { HoverZoomImage, PartThumb } from './BOMShared';
 import { ReceiveStockDialog, type ReceiveStockInput } from './ReceiveStockDialog';
@@ -194,17 +194,59 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   // Note: `allocated` is intentionally left as-is here (always 0 from the backend, which never
   // writes reservations) — `availableOf`/`computeCoverage` already subtract BOM demand via the
   // `demandByPartId` param, so overriding `allocated` with that same demand would double-count it.
-  const displayStock = useMemo(
-    () => stock.map(r => ({ ...r, onOrder: onOrderOf(orders, r.partId) })),
-    [stock, orders]
+  //
+  // A part that's never been received has no stock row at all — without a synthetic zero-on-hand
+  // row here, placing its first order makes the order vanish from Inventory entirely (nothing to
+  // render it against) until someone happens to receive it. That reads as "the order didn't work."
+  const displayStock = useMemo(() => {
+    const stockPartIds = new Set(stock.map(r => r.partId));
+    const fromStock = stock.map(r => ({ ...r, onOrder: onOrderOf(orders, r.partId) }));
+    const pendingOrdersByPart = new Map<string, OrderRecord[]>();
+    for (const o of orders) {
+      if (stockPartIds.has(o.partId)) continue;
+      if (o.status !== 'planned' && o.status !== 'open' && o.status !== 'partially_received') continue;
+      const list = pendingOrdersByPart.get(o.partId) ?? [];
+      list.push(o);
+      pendingOrdersByPart.set(o.partId, list);
+    }
+    const stubs: StockRecord[] = [];
+    for (const p of parts) {
+      const partOrders = pendingOrdersByPart.get(p.id);
+      if (!partOrders) continue;
+      const latest = partOrders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+      stubs.push({
+        id: `pending-order:${p.id}`,
+        partId: p.id,
+        pn: p.partNumber,
+        name: p.name,
+        cat: p.category,
+        onHand: 0,
+        allocated: 0,
+        onOrder: onOrderOf(orders, p.id),
+        location: latest.location,
+        leadTimeDays: 0,
+      });
+    }
+    return [...fromStock, ...stubs];
+  }, [stock, orders, parts]);
+
+  // "Want to order" (planned) orders never move the On Order column — that's intentional, they
+  // aren't submitted to a supplier yet — but that means a planned order against a part that's
+  // *already* stocked produces zero visible change on its row. Surface it as a badge instead so
+  // the transaction is never invisible, whether or not the part already had a stock row.
+  const wantToOrderPartIds = useMemo(
+    () => new Set(orders.filter(o => o.status === 'planned').map(o => o.partId)),
+    [orders]
   );
 
-  // Receive/Place order only make sense for parts that already have a stock row — a part that
-  // only exists inside a BOM and has never been stocked isn't orderable/receivable yet.
+  // Receive/Place order only make sense for parts that already have a stock row or a pending
+  // order (i.e. appear in `displayStock`, including its synthetic pending-order rows) — a part
+  // that only exists inside a BOM, with neither, isn't orderable/receivable yet. Including the
+  // pending-order case is what lets a part actually get its first-ever Receive once ordered.
   const stockedParts = useMemo(() => {
-    const stockPartIds = new Set(stock.map(r => r.partId));
-    return parts.filter(p => stockPartIds.has(p.id));
-  }, [parts, stock]);
+    const displayPartIds = new Set(displayStock.map(r => r.partId));
+    return parts.filter(p => displayPartIds.has(p.id));
+  }, [parts, displayStock]);
 
   const [search, setSearch] = useState('');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
@@ -423,6 +465,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       milestone: input.milestone,
       targetDate: input.targetDate,
       projectId: input.projectId,
+      assigneeId: input.assigneeId,
     }, {
       onSuccess: (created) => {
         openBuild(created.id);
@@ -461,14 +504,23 @@ export function InventoryView({ orgId }: InventoryViewProps) {
 
   // Mobile's Receive/New transaction shortcuts live in the app header (AppHeader), which
   // has no access to this component's local dialog state — it hands off via ?action=.
+  // The BOM toolbar's build picker deep-links the same way via ?tab=builds&buildId=.
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     const action = searchParams.get('action');
     if (action === 'receive') openReceiveFor();
     else if (action === 'adjust') openAdjustFor();
     else if (action === 'order') openOrderFor();
-    if (action) {
-      setSearchParams((prev) => { prev.delete('action'); return prev; }, { replace: true });
+
+    const tab = searchParams.get('tab');
+    const buildId = searchParams.get('buildId');
+    if (tab === 'builds') {
+      if (buildId) openBuild(buildId);
+      else setActiveTab('builds');
+    }
+
+    if (action || tab || buildId) {
+      setSearchParams((prev) => { prev.delete('action'); prev.delete('tab'); prev.delete('buildId'); return prev; }, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -861,6 +913,11 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                               <div className="flex flex-wrap gap-1">
                                 <Badge variant="outline" className="text-[10px] font-normal">{r.location}</Badge>
                                 {r.quarantineQty ? <Badge variant="outline" className="text-[10px] font-normal"><Lock className="h-2.5 w-2.5 mr-1" />QA</Badge> : null}
+                                {wantToOrderPartIds.has(r.partId) ? (
+                                  <Badge variant="outline" className="text-[10px] font-normal border-amber-500/30 bg-amber-500/10 text-amber-600">
+                                    <Clock className="h-2.5 w-2.5 mr-1" />Want to order
+                                  </Badge>
+                                ) : null}
                               </div>
                             </TableCell>
                             <TableCell className="hidden lg:table-cell px-3 py-2 text-xs text-muted-foreground">{formatLeadTime(r.leadTimeDays)}</TableCell>
@@ -947,6 +1004,11 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                                     <div className="flex items-center gap-1 flex-wrap justify-end">
                                       <Badge variant="outline" className="text-[10px] font-normal">{r.location}</Badge>
                                       {r.quarantineQty ? <Badge variant="outline" className="text-[10px] font-normal"><Lock className="h-2.5 w-2.5 mr-1" />QA</Badge> : null}
+                                      {wantToOrderPartIds.has(r.partId) ? (
+                                        <Badge variant="outline" className="text-[10px] font-normal border-amber-500/30 bg-amber-500/10 text-amber-600">
+                                          <Clock className="h-2.5 w-2.5 mr-1" />Want to order
+                                        </Badge>
+                                      ) : null}
                                     </div>
                                   </div>
 
@@ -991,7 +1053,6 @@ export function InventoryView({ orgId }: InventoryViewProps) {
             openBuildId={openBuildId}
             onOpenBuildHandled={() => setOpenBuildId(null)}
             onAddBuild={handleAddBuild}
-            onGenerateShortageOrder={openOrderFor}
             projects={projects}
           />
         </TabsContent>

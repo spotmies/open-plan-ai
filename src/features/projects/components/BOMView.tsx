@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Layers, Search, Filter, List, LayoutGrid, Share2,
   CheckCircle, CheckCircle2, Clock, DollarSign, ChevronRight, ChevronDown, Hash, X, User, Plus, Check, Download, ExternalLink,
@@ -80,7 +80,8 @@ import { BOMPartSheet, BOMPartPayload, DocValue } from './BOMPartSheet';
 import { BOMRejectDialog } from './BOMRejectDialog';
 import { BOMImportSubcomponentsDialog } from './BOMImportSubcomponentsDialog';
 import { NewBuildDialog, type NewBuildInput } from './NewBuildDialog';
-import { useCreateInventoryBuild } from '@/hooks/useInventory';
+import { useCreateInventoryBuild, useInventoryBuilds } from '@/hooks/useInventory';
+import type { BuildDef } from './inventoryData';
 import BOMGoogleSheetsLinkDialog from './BOMGoogleSheetsLinkDialog';
 import BOMGoogleSheetsPullDialog from './BOMGoogleSheetsPullDialog';
 import BOMGoogleSheetsPushDialog from './BOMGoogleSheetsPushDialog';
@@ -223,6 +224,91 @@ function GoogleSheetsToolbarMenu({
             >
               <Unlink className="w-3.5 h-3.5 shrink-0" />
               <span>Disconnect</span>
+            </button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── New Build toolbar menu ────────────────────────────────────────
+// Mirrors GoogleSheetsToolbarMenu's popover pattern: the toolbar button opens
+// a panel listing every build already created for this project, plus an
+// "Add a build" action that opens NewBuildDialog.
+function NewBuildToolbarMenu({
+  builds,
+  onSelectBuild,
+  onAddBuild,
+  compact = false,
+}: {
+  builds: BuildDef[];
+  onSelectBuild: (buildId: string) => void;
+  onAddBuild: () => void;
+  compact?: boolean;
+}) {
+  const statusTint: Record<BuildDef['status'], string> = {
+    planned: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    allocated: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    kitted: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        {compact ? (
+          <button
+            type="button"
+            title="Builds"
+            className="relative w-8 h-8 flex items-center justify-center rounded-md border bg-card text-foreground border-border hover:bg-muted transition-colors shrink-0"
+          >
+            <Layers className="w-4 h-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            New Build
+            <ChevronDown className="w-3 h-3 text-muted-foreground -mr-0.5" />
+          </button>
+        )}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-3 rounded-2xl shadow-xl border border-border bg-card">
+        <div className="space-y-2">
+          <div className="text-xs font-semibold text-foreground px-1">
+            Builds{builds.length > 0 && <span className="text-muted-foreground font-normal"> ({builds.length})</span>}
+          </div>
+          <div className="max-h-56 overflow-y-auto space-y-0.5">
+            {builds.length === 0 ? (
+              <div className="text-xs text-muted-foreground px-1 py-3 text-center">
+                No builds yet for this project
+              </div>
+            ) : (
+              builds.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => onSelectBuild(b.id)}
+                  className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <span className="text-xs font-medium text-foreground truncate">{b.name}</span>
+                  <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 capitalize', statusTint[b.status])}>
+                    {b.status}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="pt-2 border-t border-border/60">
+            <button
+              type="button"
+              onClick={onAddBuild}
+              className="w-full flex items-center gap-2 text-xs font-medium text-foreground hover:text-primary transition-colors py-1.5 px-1 rounded cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add a build
             </button>
           </div>
         </div>
@@ -1133,6 +1219,10 @@ export function BOMView({
   const addRequirement = useAddRequirement(projectId);
   const { data: pendingApprovalRequests = [] } = useProjectApprovalRequests(projectId, 'pending');
   const createBuildMutation = useCreateInventoryBuild(orgId);
+  const { data: orgBuilds = [] } = useInventoryBuilds(orgId);
+  const projectBuilds = useMemo(() => orgBuilds.filter(b => b.projectId === projectId), [orgBuilds, projectId]);
+  const navigate = useNavigate();
+  const handleSelectBuild = (buildId: string) => navigate(`/inventory?tab=builds&buildId=${buildId}`);
 
   const handleAddBuild = (input: NewBuildInput) => {
     createBuildMutation.mutate({
@@ -1144,6 +1234,7 @@ export function BOMView({
       milestone: input.milestone,
       targetDate: input.targetDate,
       projectId: input.projectId,
+      assigneeId: input.assigneeId,
     }, {
       onSuccess: () => toast.success(`${input.name} created`),
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to create build'),
@@ -1533,14 +1624,12 @@ export function BOMView({
             onManage={() => setSheetsLinkOpen(true)}
           />
 
-          {/* Create build — opens the New Build dialog with this project locked in */}
-          <button
-            onClick={() => setNewBuildOpen(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            New Build
-          </button>
+          {/* Builds — lists this project's builds, with an "Add a build" action */}
+          <NewBuildToolbarMenu
+            builds={projectBuilds}
+            onSelectBuild={handleSelectBuild}
+            onAddBuild={() => setNewBuildOpen(true)}
+          />
 
           {/* Export dropdown */}
           <DropdownMenu>
@@ -1644,15 +1733,13 @@ export function BOMView({
                 compact
               />
 
-              {/* Create build — opens the New Build dialog with this project locked in */}
-              <button
-                onClick={() => setNewBuildOpen(true)}
-                title="New Build"
-                aria-label="New Build"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors shrink-0"
-              >
-                <Layers className="w-4 h-4" />
-              </button>
+              {/* Builds — lists this project's builds, with an "Add a build" action */}
+              <NewBuildToolbarMenu
+                builds={projectBuilds}
+                onSelectBuild={handleSelectBuild}
+                onAddBuild={() => setNewBuildOpen(true)}
+                compact
+              />
 
               {/* Export */}
               <DropdownMenu>

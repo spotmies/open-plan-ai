@@ -80,13 +80,13 @@ export function AssistantConversationRow({
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversation.lastActionSummary}</p>
       )}
       <div className="mt-1.5 flex items-center gap-1.5">
-        <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal">
+        <Badge variant="secondary" className="h-4 shrink-0 whitespace-nowrap px-1.5 text-[10px] font-normal">
           {resolveConversationScopeLabel(conversation.scope, projectName)}
         </Badge>
         {conversation.status === 'awaiting_input' && (
-          <Badge className="h-4 px-1.5 text-[10px] font-normal">Needs input</Badge>
+          <Badge className="h-4 shrink-0 whitespace-nowrap px-1.5 text-[10px] font-normal">Needs input</Badge>
         )}
-        <span className="text-[10px] text-muted-foreground">
+        <span className="min-w-0 shrink truncate text-[10px] text-muted-foreground">
           {formatDistanceToNow(new Date(conversation.updatedAt), { addSuffix: true })}
         </span>
       </div>

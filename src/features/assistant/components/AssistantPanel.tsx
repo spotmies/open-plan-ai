@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FolderPlus, Paperclip, Sparkles } from 'lucide-react';
+import { FolderPlus, Paperclip } from 'lucide-react';
 import { toast } from 'sonner';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useProjects } from '@/hooks/useProjects';
@@ -29,13 +28,6 @@ import {
   useUpdateAssistantConversation,
 } from '../hooks/useAssistantConversations';
 import { EMPTY_ASSISTANT_DRAFT, EMPTY_ASSISTANT_FILES, useAssistantDraftStore } from '../stores/useAssistantDraftStore';
-
-/** "ask" / "ask or act" / "ask, act, or build" — Oxford comma to match how the categories row itself reads left to right. */
-function joinCategoryLabels(labels: string[]): string {
-  if (labels.length <= 1) return labels[0] ?? '';
-  const allButLast = labels.slice(0, -1).join(', ');
-  return `${allButLast}${labels.length > 2 ? ',' : ''} or ${labels[labels.length - 1]}`;
-}
 
 interface AssistantPanelProps {
   variant?: 'page' | 'widget';
@@ -207,6 +199,33 @@ export function AssistantPanel({
     ask: askSuggestions,
     act: actSuggestions,
   };
+  // Flattened into one ChatGPT-style chip row instead of per-category
+  // labelled lists — interleaved so Ask/Act are mixed rather than all of one
+  // kind first, and capped so the empty state stays a couple of lines, not a
+  // wall of chips.
+  const emptyStateSuggestions = useMemo(() => {
+    const groups = visibleCategories.map((category) => {
+      const isDynamic = category.id in dynamicSuggestionsByCategory;
+      const items = isDynamic
+        ? dynamicSuggestionsByCategory[category.id] ?? []
+        : ASSISTANT_SUGGESTIONS.filter((s) => s.category === category.id);
+      return items;
+    });
+    const interleaved: typeof askSuggestions = [];
+    const maxLen = Math.max(0, ...groups.map((g) => g.length));
+    for (let i = 0; i < maxLen; i++) {
+      for (const group of groups) {
+        if (group[i]) interleaved.push(group[i]);
+      }
+    }
+    return interleaved.slice(0, isWidget ? 4 : 6);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askSuggestions, actSuggestions, isWidget]);
+  // Any visible category backed by real projects (ask/act) needs the org to
+  // have projects at all — when it doesn't, show one empty-state message
+  // instead of duplicating it once per category.
+  const needsProjectsEmptyState =
+    !projectsLoading && projects.length === 0 && visibleCategories.some((c) => c.id in dynamicSuggestionsByCategory);
 
   useEffect(() => {
     // isStreaming flipping true is the normal path (a successful send started
@@ -384,6 +403,29 @@ export function AssistantPanel({
       ]
     : messages;
 
+  // Rendered both centered in the empty state and docked at the bottom once
+  // a conversation has messages — same instance, just repositioned, so it
+  // never actually mounts twice.
+  const composer = (
+    <AssistantComposer
+      value={value}
+      onChange={setValue}
+      files={files}
+      onFilesAdd={handleFilesAdd}
+      onFileRemove={handleFileRemove}
+      scope={scope}
+      onScopeChange={setScope}
+      projects={projects}
+      selectedProjectId={selectedProjectId}
+      onProjectChange={handleProjectChange}
+      lockedScopeLabel={lockedScopeLabel}
+      onSend={handleSend}
+      disabled={isComposerInputDisabled}
+      isGenerating={canStop}
+      onStop={handleStop}
+    />
+  );
+
   return (
     <div
       className={cn('relative flex h-full min-h-0 flex-col', className)}
@@ -407,7 +449,7 @@ export function AssistantPanel({
               under the gradient instead of getting clipped by a hard edge. */}
           {!isWidget && activeConversationSummary && (
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 z-10 px-4 pb-8 pt-2 md:px-6"
+              className="pointer-events-none absolute inset-x-0 top-0 isolate z-10 px-4 pb-8 pt-2 md:px-6 [transform:translateZ(0)]"
               style={{
                 background:
                   'linear-gradient(to bottom, hsl(var(--background)) 55%, hsl(var(--background) / 0) 100%)',
@@ -481,106 +523,53 @@ export function AssistantPanel({
           />
         </div>
       ) : (
-        <ScrollArea className="flex-1 min-h-0">
-          <div className={cn('mx-auto flex flex-col gap-6', isWidget ? 'max-w-full p-4' : 'max-w-3xl p-4 md:p-6')}>
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-foreground">OpenPlan Assistant</h2>
-                <p className="text-sm text-muted-foreground">
-                  {visibleCategories.length > 1 ? (
-                    <>
-                      Hi {firstName} — I can{' '}
-                      <span className="font-semibold text-foreground">
-                        {joinCategoryLabels(visibleCategories.map((c) => c.label.toLowerCase()))}
-                      </span>{' '}
-                      across OpenPlan.
-                    </>
-                  ) : (
-                    <>
-                      Hi {firstName} — <span className="font-semibold text-foreground">ask</span> me anything about
-                      status, blockers, BOM health, or changes across OpenPlan.
-                    </>
-                  )}
-                </p>
-              </div>
-            </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div
+            className={cn(
+              'mx-auto flex min-h-full flex-col items-center justify-center gap-5',
+              isWidget ? 'max-w-full p-4' : 'max-w-2xl p-4 md:p-6',
+            )}
+          >
+            <h1 className={cn('text-center font-semibold text-foreground', isWidget ? 'text-base' : 'text-2xl sm:text-[28px]')}>
+              {isWidget ? (
+                <>How can I help, {firstName}?</>
+              ) : visibleCategories.length > 1 ? (
+                <>What can I help with, {firstName}?</>
+              ) : (
+                <>What do you want to know, {firstName}?</>
+              )}
+            </h1>
 
-            <div className={cn('grid gap-3', isWidget ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-3')}>
-              {visibleCategories.map((category) => (
-                <div key={category.id} className="rounded-xl border border-border p-4">
-                  <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-chart-1">
-                    <category.icon className="h-4 w-4" />
-                    {category.title}
-                  </div>
-                  <p className="text-xs leading-relaxed text-muted-foreground">{category.description}</p>
-                </div>
-              ))}
-            </div>
+            <div className="w-full">{composer}</div>
 
-            {visibleCategories.map((category) => {
-              const isDynamicCategory = category.id in dynamicSuggestionsByCategory;
-              if (isDynamicCategory && !projectsLoading && projects.length === 0) {
-                return (
-                  <div key={category.id} className="space-y-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {category.label}
-                    </p>
-                    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-3.5 py-6 text-center">
-                      <FolderPlus className="h-5 w-5 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Add some projects to get started.</p>
-                    </div>
-                  </div>
-                );
-              }
-              const suggestions =
-                dynamicSuggestionsByCategory[category.id] ?? ASSISTANT_SUGGESTIONS.filter((s) => s.category === category.id);
-              if (suggestions.length === 0) return null;
-              return (
-                <div key={category.id} className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {category.label}
-                  </p>
-                  <div className="space-y-2">
-                    {suggestions.map((suggestion) => (
-                      <AssistantSuggestionRow key={suggestion.id} suggestion={suggestion} onSelect={setValue} />
-                    ))}
-                  </div>
+            {needsProjectsEmptyState ? (
+              <div className="flex flex-col items-center gap-2 px-3.5 py-4 text-center">
+                <FolderPlus className="h-5 w-5 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Add some projects to get started.</p>
+              </div>
+            ) : (
+              emptyStateSuggestions.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {emptyStateSuggestions.map((suggestion) => (
+                    <AssistantSuggestionRow key={suggestion.id} suggestion={suggestion} onSelect={setValue} />
+                  ))}
                 </div>
-              );
-            })}
+              )
+            )}
           </div>
-        </ScrollArea>
+        </div>
       )}
 
-      <div
-        className={cn(
-          'shrink-0 border-t border-border',
-          isWidget ? 'p-3' : 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-6 md:py-4',
-        )}
-      >
-        <div className={cn('mx-auto', isWidget ? 'max-w-full' : 'max-w-3xl')}>
-          <AssistantComposer
-            value={value}
-            onChange={setValue}
-            files={files}
-            onFilesAdd={handleFilesAdd}
-            onFileRemove={handleFileRemove}
-            scope={scope}
-            onScopeChange={setScope}
-            projects={projects}
-            selectedProjectId={selectedProjectId}
-            onProjectChange={handleProjectChange}
-            lockedScopeLabel={lockedScopeLabel}
-            onSend={handleSend}
-            disabled={isComposerInputDisabled}
-            isGenerating={canStop}
-            onStop={handleStop}
-          />
+      {hasActiveConversation && (
+        <div
+          className={cn(
+            'shrink-0 border-t border-border',
+            isWidget ? 'p-3' : 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-6 md:py-4',
+          )}
+        >
+          <div className={cn('mx-auto', isWidget ? 'max-w-full' : 'max-w-3xl')}>{composer}</div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
