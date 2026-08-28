@@ -129,11 +129,11 @@ function GoogleSheetsToolbarMenu({
       return (
         <button
           type="button"
-          title="Link a Google Sheet"
+          title="Link a Sheet"
           onClick={onManage}
           className="relative w-8 h-8 flex items-center justify-center rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shrink-0"
         >
-          <GoogleSheetsLogo className="w-4 h-4 text-emerald-600" />
+          <GoogleSheetsLogo className="w-4 h-4 text-muted-foreground" />
         </button>
       );
     }
@@ -143,8 +143,8 @@ function GoogleSheetsToolbarMenu({
         onClick={onManage}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card text-foreground hover:bg-muted cursor-pointer transition-colors"
       >
-        <GoogleSheetsLogo className="w-3.5 h-3.5 text-emerald-600" />
-        Google Sheets
+        <GoogleSheetsLogo className="w-3.5 h-3.5 text-muted-foreground" />
+        Sheets
       </button>
     );
   }
@@ -154,18 +154,16 @@ function GoogleSheetsToolbarMenu({
       <PopoverTrigger asChild>
         {compact ? (
           <button
-            title="Google Sheets"
-            className="relative w-8 h-8 flex items-center justify-center rounded-lg border border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/40 transition-colors shrink-0"
+            title="Sheets"
+            className="relative w-8 h-8 flex items-center justify-center rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shrink-0"
           >
-            <GoogleSheetsLogo className="w-4 h-4 text-emerald-600" />
-            <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <GoogleSheetsLogo className="w-4 h-4 text-muted-foreground" />
           </button>
         ) : (
-          <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/40 cursor-pointer transition-colors shadow-xs">
-            <GoogleSheetsLogo className="w-3.5 h-3.5 text-emerald-600" />
-            Google Sheets
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            <ChevronDown className="w-3 h-3 text-emerald-600/80 -mr-0.5" />
+          <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border bg-card text-foreground hover:bg-muted cursor-pointer transition-colors shadow-xs">
+            <GoogleSheetsLogo className="w-3.5 h-3.5 text-muted-foreground" />
+            Sheets
+            <ChevronDown className="w-3 h-3 text-muted-foreground -mr-0.5" />
           </button>
         )}
       </PopoverTrigger>
@@ -223,7 +221,7 @@ function GoogleSheetsToolbarMenu({
               disabled={unlinkSheet.isPending}
             >
               <Unlink className="w-3.5 h-3.5 shrink-0" />
-              <span>Disconnect</span>
+              <span>Disconnect sheet</span>
             </button>
           </div>
         </div>
@@ -270,7 +268,7 @@ function NewBuildToolbarMenu({
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors"
           >
             <Layers className="w-3.5 h-3.5" />
-            New Build
+            Builds
             <ChevronDown className="w-3 h-3 text-muted-foreground -mr-0.5" />
           </button>
         )}
@@ -305,7 +303,7 @@ function NewBuildToolbarMenu({
             <button
               type="button"
               onClick={onAddBuild}
-              className="w-full flex items-center gap-2 text-xs font-medium text-foreground hover:text-primary transition-colors py-1.5 px-1 rounded cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors py-1.5 px-1 rounded-lg cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               Add a build
@@ -898,9 +896,9 @@ function ListView({
 // ── Mobile-only status pill (short label, matches the mobile design spec) ──
 const MOBILE_STATUS_STYLE: Record<BOMStatus, { bg: string; color: string; label: string }> = {
   approved: { bg: 'rgba(34,197,94,0.12)', color: '#16A34A', label: 'Approved' },
-  pending:  { bg: 'rgba(245,158,11,0.14)', color: '#D97706', label: 'Pending' },
+  pending: { bg: 'rgba(245,158,11,0.14)', color: '#D97706', label: 'Pending' },
   rejected: { bg: 'rgba(220,38,38,0.12)', color: '#DC2626', label: 'Rejected' },
-  draft:    { bg: 'rgba(100,116,139,0.12)', color: '#64748B', label: 'Draft' },
+  draft: { bg: 'rgba(100,116,139,0.12)', color: '#64748B', label: 'Draft' },
 };
 function MobileStatusPill({ status }: { status: BOMStatus }) {
   const s = MOBILE_STATUS_STYLE[status];
@@ -1342,29 +1340,29 @@ export function BOMView({
   const handleAddPart = async (payload: BOMPartPayload) => {
     try {
       const part = await createPart.mutateAsync({
-        partNumber:          payload.pn,
-        name:                payload.name,
-        description:         payload.desc,
-        category:            payload.category,
-        manufacturer:        payload.manufacturer || undefined,
-        distributor:         payload.distributor  || undefined,
-        mpn:                 payload.mpn          || undefined,
-        unit:                payload.uom,
-        initialStatus:       payload.status,
-        initialRev:          payload.rev,
-        initialPrice:        payload.price > 0 ? payload.price : undefined,
+        partNumber: payload.pn,
+        name: payload.name,
+        description: payload.desc,
+        category: payload.category,
+        manufacturer: payload.manufacturer || undefined,
+        distributor: payload.distributor || undefined,
+        mpn: payload.mpn || undefined,
+        unit: payload.uom,
+        initialStatus: payload.status,
+        initialRev: payload.rev,
+        initialPrice: payload.price > 0 ? payload.price : undefined,
         initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
-        initialSuppliers:    payload.suppliers?.length ? payload.suppliers : undefined,
+        initialSuppliers: payload.suppliers?.length ? payload.suppliers : undefined,
         // Additional Fields from the form — dropped here until now, so anything
         // typed into that section vanished the moment the part was created.
-        customFields:        payload.customFields?.length ? payload.customFields : undefined,
+        customFields: payload.customFields?.length ? payload.customFields : undefined,
       });
       const node = await createNode.mutateAsync({
-        partId:   part.id,
+        partId: part.id,
         quantity: payload.qty,
-        unit:     payload.uom,
-        status:   toNodeStatus(payload.status),
-        ownerId:  payload.ownerId ?? null,
+        unit: payload.uom,
+        status: toNodeStatus(payload.status),
+        ownerId: payload.ownerId ?? null,
       });
       // Upload any documents attached in the form
       await saveBomDocs(node.id, payload);
@@ -1385,30 +1383,30 @@ export function BOMView({
     if (!createSubNode) return;
     try {
       const part = await createPart.mutateAsync({
-        partNumber:          payload.pn,
-        name:                payload.name,
-        description:         payload.desc,
-        category:            payload.category,
-        manufacturer:        payload.manufacturer || undefined,
-        distributor:         payload.distributor  || undefined,
-        mpn:                 payload.mpn          || undefined,
-        unit:                payload.uom,
-        initialStatus:       payload.status,
-        initialRev:          payload.rev,
-        initialPrice:        payload.price > 0 ? payload.price : undefined,
+        partNumber: payload.pn,
+        name: payload.name,
+        description: payload.desc,
+        category: payload.category,
+        manufacturer: payload.manufacturer || undefined,
+        distributor: payload.distributor || undefined,
+        mpn: payload.mpn || undefined,
+        unit: payload.uom,
+        initialStatus: payload.status,
+        initialRev: payload.rev,
+        initialPrice: payload.price > 0 ? payload.price : undefined,
         initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
-        initialSuppliers:    payload.suppliers?.length ? payload.suppliers : undefined,
+        initialSuppliers: payload.suppliers?.length ? payload.suppliers : undefined,
         // Additional Fields from the form — dropped here until now, so anything
         // typed into that section vanished the moment the part was created.
-        customFields:        payload.customFields?.length ? payload.customFields : undefined,
+        customFields: payload.customFields?.length ? payload.customFields : undefined,
       });
       const node = await createNode.mutateAsync({
-        partId:   part.id,
+        partId: part.id,
         quantity: payload.qty,
-        unit:     payload.uom,
-        status:   toNodeStatus(payload.status),
+        unit: payload.uom,
+        status: toNodeStatus(payload.status),
         parentId: createSubNode.id,
-        ownerId:  payload.ownerId ?? null,
+        ownerId: payload.ownerId ?? null,
       });
       await saveBomDocs(node.id, payload);
       await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
@@ -1512,10 +1510,10 @@ export function BOMView({
 
   const gridRows = useMemo(() => allNodes.filter(pred), [allNodes, pred]);
 
-  const totalCount    = bomTree?.totalNodes    ?? allNodes.length;
+  const totalCount = bomTree?.totalNodes ?? allNodes.length;
   const approvedCount = bomTree?.approvedCount ?? allNodes.filter(n => n.status === 'approved').length;
-  const pendingCount  = bomTree?.pendingCount  ?? allNodes.filter(n => n.status === 'pending').length;
-  const totalCost     = useMemo(() => rootNodes.reduce((s, n) => s + n.price * n.qty, 0), [rootNodes]);
+  const pendingCount = bomTree?.pendingCount ?? allNodes.filter(n => n.status === 'pending').length;
+  const totalCost = useMemo(() => rootNodes.reduce((s, n) => s + n.price * n.qty, 0), [rootNodes]);
 
   if (treeLoading) return <BOMViewSkeleton />;
 

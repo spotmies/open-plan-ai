@@ -8,6 +8,7 @@ import { GateView } from './components/GateView';
 import { RiskView } from './components/RiskView';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 
 import { Label } from '@/components/ui/label';
@@ -33,6 +34,7 @@ import { ModulesSection, ModuleViewControls } from './components/ModulesSection'
 import { MilestonesView } from './components/MilestonesView';
 import { IssuesView } from './components/IssuesView';
 import { SupportLinksSheet } from './components/SupportLinksSheet';
+import { useFeatureTogglesStore } from '@/stores/useFeatureTogglesStore';
 import { ProjectDetailSkeleton } from './components/ProjectDetailSkeleton';
 import { ProjectProgressPopover } from './components/ProjectProgressPopover';
 import { AddModuleDialog } from './components/AddModuleDialog';
@@ -539,6 +541,7 @@ export default function ProjectDetail() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { id, tab: tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
+  const isSupportFeatureEnabled = useFeatureTogglesStore((s) => s.enabled.support);
 
   // The /bom/:partId, /eng-changes/:ecoId, /tasks/:taskId, /modules/:moduleId,
   // /milestones/:milestoneId, and /issues/:issueId routes encode the section as a
@@ -1482,33 +1485,42 @@ export default function ProjectDetail() {
                 {/* Project details — the full record (description, dates,
                     departments, links). Unreachable from inside the project
                     before this. */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-1.5 whitespace-nowrap rounded-lg px-2 md:px-3"
-                  onClick={() => navigate(`/projects/${id}/details`)}
-                  title="Project details"
-                >
-                  <FolderOpen className="h-4 w-4" />
-                  <span className="hidden md:inline">Project Details</span>
-                </Button>
-                {/* Start Chat */}
-                <Button
-                  type="button"
-                  variant={isChatPanelOpen ? 'secondary' : 'outline'}
-                  size="sm"
-                  className="h-9 gap-1.5 whitespace-nowrap rounded-lg hidden sm:flex"
-                  onClick={handleStartProjectChat}
-                  disabled={isStartingChat || !canStartProjectChat}
-                >
-                  {isStartingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-                  <span className="hidden md:inline">Chat</span>
-                </Button>
+                {!isMobile && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 rounded-lg shrink-0"
+                        onClick={() => navigate(`/projects/${id}/details`)}
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Project Details</TooltipContent>
+                  </Tooltip>
+                )}
                 {/* Team Popover */}
                 <div className="hidden md:block">
                   <ProjectTeamButton projectId={id!} />
                 </div>
+                {/* Start Chat */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={isChatPanelOpen ? 'secondary' : 'outline'}
+                      size="icon"
+                      className="h-9 w-9 rounded-lg hidden sm:flex shrink-0"
+                      onClick={handleStartProjectChat}
+                      disabled={isStartingChat || !canStartProjectChat}
+                    >
+                      {isStartingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Chat</TooltipContent>
+                </Tooltip>
                 {/* Critical Issues Badge */}
                 {/* {criticalIssuesCount > 0 && (
                 <Badge variant="destructive" className="gap-1 shrink-0 hidden sm:inline-flex">
@@ -1543,7 +1555,7 @@ export default function ProjectDetail() {
                 )}
                 {section === 'issues' && !isMobile && (
                   <>
-                    {id && <SupportLinksSheet projectId={id} />}
+                    {id && isSupportFeatureEnabled && <SupportLinksSheet projectId={id} />}
                     <Button size="sm" className="gap-2 shrink-0 px-2 md:px-3" onClick={() => setIsAddIssueDialogOpen(true)}>
                       <Plus className="h-4 w-4" />
                       <span className="hidden md:inline">Report Issue</span>

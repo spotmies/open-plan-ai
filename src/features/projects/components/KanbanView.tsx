@@ -671,7 +671,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
                                 {...provided.droppableProps}
                                 data-kanban-column-id={column.id}
                                 className={cn(
-                                  'space-y-2 min-h-[120px] h-full p-2 rounded-lg transition-colors',
+                                  'space-y-2 min-h-[120px] p-2 rounded-lg transition-colors flex-1 overflow-y-auto',
                                   snapshot.isDraggingOver
                                     ? 'bg-muted/50'
                                     : 'bg-muted/30'
@@ -1012,10 +1012,8 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
                               {addTaskButton}
                             </div>
 
-                            {/* Tasks Droppable - scrollable area */}
-                            <div className="flex-1 overflow-y-auto min-h-0">
-                              {cardsDroppable}
-                            </div>
+                            {/* Tasks Droppable - itself the scrollable area */}
+                            {cardsDroppable}
                           </div>
                         );
                       }}

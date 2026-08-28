@@ -3,3 +3,5 @@ export { useProjectStore, useSelectedProject, useProjectById, useAllTasks, useAl
 export { useFilterStore } from './useFilterStore';
 export type { ReportFilter, ReportTimeRange, TaskFilterState } from './useFilterStore';
 export { useUserStore } from './useUserStore';
+export { useFeatureTogglesStore } from './useFeatureTogglesStore';
+export type { ToggleableFeature } from './useFeatureTogglesStore';

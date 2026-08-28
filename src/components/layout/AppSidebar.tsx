@@ -19,8 +19,9 @@ import { resolveFileUrl } from '@/utils/fileUrl';
 import { toast } from 'sonner';
 import { useChatStore } from '@/features/chat/stores/useChatStore';
 import { useAssistantDraftStore } from '@/features/assistant/stores/useAssistantDraftStore';
+import { useFeatureTogglesStore, type ToggleableFeature } from '@/stores/useFeatureTogglesStore';
 
-const mainNavItems = [{
+const mainNavItems: { title: string; url: string; icon: typeof LayoutDashboard; feature?: ToggleableFeature }[] = [{
   title: 'Dashboard',
   url: '/',
   icon: LayoutDashboard
@@ -31,7 +32,8 @@ const mainNavItems = [{
 }, {
   title: 'My Tasks',
   url: '/my-day',
-  icon: ListTodo
+  icon: ListTodo,
+  feature: 'my-tasks'
 }, {
   title: 'Projects',
   url: '/projects',
@@ -39,15 +41,18 @@ const mainNavItems = [{
 }, {
   title: 'Calendar',
   url: '/calendar',
-  icon: Calendar
+  icon: Calendar,
+  feature: 'calendar'
 }, {
   title: 'Reports',
   url: '/reports',
-  icon: BarChart3
+  icon: BarChart3,
+  feature: 'reports'
 }, {
   title: 'Inventory',
   url: '/inventory',
-  icon: Warehouse
+  icon: Warehouse,
+  feature: 'inventory'
 }, {
   title: 'Chat',
   url: '/chat',
@@ -77,6 +82,8 @@ export function AppSidebar() {
   const { isOrgAdmin: canCreateOrg } = useOrgPermissions();
   const chatUnreadCount = useChatStore((s) => s.getTotalUnread());
   const lastAssistantConversationId = useAssistantDraftStore((s) => s.lastActiveConversationId);
+  const enabledFeatures = useFeatureTogglesStore((s) => s.enabled);
+  const visibleMainNavItems = mainNavItems.filter((item) => !item.feature || enabledFeatures[item.feature]);
 
   const [orgPopoverOpen, setOrgPopoverOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -275,7 +282,7 @@ export function AppSidebar() {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {mainNavItems.map(item => {
+                {visibleMainNavItems.map(item => {
                   const showChatBadge = item.title === 'Chat' && chatUnreadCount > 0;
                   return (
                     <SidebarMenuItem key={item.title}>
