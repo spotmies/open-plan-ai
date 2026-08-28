@@ -30,6 +30,7 @@ import {
   LifeBuoy,
 } from 'lucide-react';
 import { useFeatureTogglesStore, type ToggleableFeature } from '@/stores/useFeatureTogglesStore';
+import { useSetFeatureToggle } from '@/hooks/useFeatureToggles';
 import { useGoogleMeetStore } from './stores/useGoogleMeetStore';
 import { useGoogleMeetStatus } from './hooks/useGoogleMeetStatus';
 import { googleMeetService } from '@/services/googleMeet.service';
@@ -254,7 +255,7 @@ export default function Integrations() {
   // project then just links a spreadsheet from its own BOM, reusing this
   // connection (see BOMPartSheet.tsx's Sourcing tab).
   const enabledFeatures = useFeatureTogglesStore((s) => s.enabled);
-  const setFeatureEnabled = useFeatureTogglesStore((s) => s.setFeatureEnabled);
+  const setFeatureEnabled = useSetFeatureToggle();
 
   const { data: sheetsStatus, isLoading: isSheetsStatusLoading } = useGoogleSheetsOrgStatus(currentOrganization?.id);
   const disconnectSheets = useDisconnectGoogleSheets(currentOrganization?.id);

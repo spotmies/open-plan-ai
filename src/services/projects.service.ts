@@ -84,6 +84,7 @@ export function fromApiIssue(raw: Record<string, unknown>): Issue {
     number: raw.number as number,
     moduleId: (raw.moduleId as string) || undefined,
     category: raw.category as IssueCategory,
+    categoryOther: (raw.categoryOther as string) || undefined,
     severity: (raw.severity as IssueSeverity) ?? 'minor',
     status: normaliseIssueStatus(raw.status),
     reportedAt: (raw.createdAt as string) ?? new Date().toISOString(),

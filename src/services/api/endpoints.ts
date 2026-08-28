@@ -200,6 +200,8 @@ export const ENDPOINTS = {
     SUBSCRIBE: '/push-subscriptions',
     UNSUBSCRIBE: '/push-subscriptions',
   },
+  // Per-user opt-in feature toggles (Integrations page "Features" cards)
+  FEATURE_TOGGLES: '/feature-toggles',
   // Comments
   COMMENTS: {
     UPDATE: (id: string) => `/comments/${id}`,

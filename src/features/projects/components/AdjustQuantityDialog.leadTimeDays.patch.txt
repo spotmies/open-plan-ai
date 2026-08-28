@@ -1,0 +1,154 @@
+Apply these exact edits manually to:
+/Users/jagantripuragiri/Desktop/Open_plan/open-plan-ai/src/features/projects/components/AdjustQuantityDialog.tsx
+
+1) In adjustSchema:
+- add `leadTimeDays`
+- remove the superRefine that requires expectedDate
+
+Replace:
+const adjustSchema = z.object({
+  partId: z.string().min(1, 'Select a part'),
+  location: z.string().min(1, 'Select a location'),
+  category: z.string().min(1, 'Select a category'),
+  stockStatus: z.enum(['in_stock', 'place_order']),
+  orderStatus: z.enum(['planned', 'open']),
+  direction: z.enum(['add', 'remove']),
+  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  reasonCode: z.string().optional(),
+  expectedDate: z.string().optional(),
+  note: z.string().max(300, 'Note must be less than 300 characters').optional(),
+  description: z.string().max(500, 'Description must be less than 500 characters').optional(),
+  orderNote: z.string().max(500, 'Notes must be less than 500 characters').optional(),
+  purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
+}).superRefine((data, ctx) => {
+  if (data.stockStatus === 'place_order' && !data.expectedDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Expected date is required', path: ['expectedDate'] });
+  }
+});
+
+With:
+const adjustSchema = z.object({
+  partId: z.string().min(1, 'Select a part'),
+  location: z.string().min(1, 'Select a location'),
+  category: z.string().min(1, 'Select a category'),
+  stockStatus: z.enum(['in_stock', 'place_order']),
+  orderStatus: z.enum(['planned', 'open']),
+  direction: z.enum(['add', 'remove']),
+  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  reasonCode: z.string().optional(),
+  expectedDate: z.string().optional(),
+  leadTimeDays: z.union([z.coerce.number().int().min(0, 'Lead time must be 0 or more'), z.literal('')]).optional(),
+  note: z.string().max(300, 'Note must be less than 300 characters').optional(),
+  description: z.string().max(500, 'Description must be less than 500 characters').optional(),
+  orderNote: z.string().max(500, 'Notes must be less than 500 characters').optional(),
+  purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
+});
+
+2) In AdjustQuantityInput add:
+leadTimeDays?: number;
+
+3) In defaultValues add:
+leadTimeDays: '',
+right after expectedDate.
+
+4) In the onPlaceOrder payload change:
+cat,
+quantity: data.quantity,
+expectedDate: data.expectedDate as string,
+location: data.location,
+
+to:
+cat: cat as BOMCategory,
+quantity: data.quantity,
+expectedDate: data.expectedDate?.trim() || undefined,
+leadTime: data.leadTimeDays === '' || data.leadTimeDays === undefined ? undefined : Number(data.leadTimeDays),
+location: data.location,
+
+5) In the onAdjust payload add:
+leadTimeDays: data.leadTimeDays === '' || data.leadTimeDays === undefined ? undefined : Number(data.leadTimeDays),
+
+6) Replace the broken quantity/expected-date JSX block with this:
+
+{stockStatus === 'in_stock' ? (
+  <>
+    <div className="grid grid-cols-1 gap-4">
+      <FormField
+        control={form.control}
+        name="quantity"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+            <FormControl>
+              <Input type="number" min={1} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+
+    <div className="grid grid-cols-1 gap-4">
+      <FormField
+        control={form.control}
+        name="leadTimeDays"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="normal-case font-normal">optional</span></FormLabel>
+            <FormControl>
+              <Input type="number" min={0} step={1} placeholder="Days" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  </>
+) : (
+  <>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <FormField
+        control={form.control}
+        name="quantity"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+            <FormControl>
+              <Input type="number" min={1} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="expectedDate"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date <span className="normal-case font-normal">optional</span></FormLabel>
+            <FormControl>
+              <Input type="date" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+
+    <div className="grid grid-cols-1 gap-4">
+      <FormField
+        control={form.control}
+        name="leadTimeDays"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="normal-case font-normal">optional</span></FormLabel>
+            <FormControl>
+              <Input type="number" min={0} step={1} placeholder="Days" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  </>
+)}

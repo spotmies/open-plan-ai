@@ -45,7 +45,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory, getCategoryMeta } from './bomData';
-import { LocationCombobox, CategoryCombobox, type StockLocation, type StockRecord } from './inventoryData';
+import { LocationCombobox, CategoryCombobox, UnitCombobox, type StockLocation, type StockRecord } from './inventoryData';
 import type { PlaceOrderInput } from './PlaceOrderDialog';
 
 interface PickerPart {
@@ -54,6 +54,7 @@ interface PickerPart {
   name: string;
   location: string;
   onHand: number;
+  leadTimeDays: number;
   cat?: BOMCategory;
   projects: string[];
 }
@@ -68,14 +69,11 @@ const adjustSchema = z.object({
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
   reasonCode: z.string().optional(),
   expectedDate: z.string().optional(),
+  leadTimeDays: z.coerce.number().int().min(1, 'Lead time must be at least 1 day'),
   note: z.string().max(300, 'Note must be less than 300 characters').optional(),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   orderNote: z.string().max(500, 'Notes must be less than 500 characters').optional(),
   purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
-}).superRefine((data, ctx) => {
-  if (data.stockStatus === 'place_order' && !data.expectedDate) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Expected date is required', path: ['expectedDate'] });
-  }
 });
 
 type AdjustFormData = z.infer<typeof adjustSchema>;
@@ -94,6 +92,7 @@ export interface AdjustQuantityInput {
   lotNumber?: string;
   serialNumber?: string;
   image?: File;
+  leadTimeDays?: number;
 }
 
 interface AdjustQuantityDialogProps {
@@ -135,10 +134,10 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   // from a BOM (never received) still needs to be selectable when starting a new transaction.
   const pickerParts = useMemo<PickerPart[]>(() => {
     const stockPartIds = new Set(stock.map(r => r.partId));
-    const fromStock: PickerPart[] = stock.map(r => ({ partId: r.partId, pn: r.pn, name: r.name, location: r.location, onHand: r.onHand, cat: r.cat, projects: partProjects?.get(r.partId) ?? [] }));
+    const fromStock: PickerPart[] = stock.map(r => ({ partId: r.partId, pn: r.pn, name: r.name, location: r.location, onHand: r.onHand, leadTimeDays: r.leadTimeDays, cat: r.cat, projects: partProjects?.get(r.partId) ?? [] }));
     const fromPartsOnly: PickerPart[] = parts
       .filter(p => !stockPartIds.has(p.id))
-      .map(p => ({ partId: p.id, pn: p.partNumber, name: p.name, location: '', onHand: 0, cat: p.category, projects: partProjects?.get(p.id) ?? [] }));
+      .map(p => ({ partId: p.id, pn: p.partNumber, name: p.name, location: '', onHand: 0, leadTimeDays: p.latestRevision?.leadTimeDays ?? 0, cat: p.category, projects: partProjects?.get(p.id) ?? [] }));
     return [...fromStock, ...fromPartsOnly];
   }, [stock, parts, partProjects]);
 
@@ -161,6 +160,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       quantity: 1,
       reasonCode: '',
       expectedDate: '',
+      leadTimeDays: 1,
       note: '',
       description: '',
       orderNote: '',
@@ -172,17 +172,31 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   const orderStatus = form.watch('orderStatus');
 
   useEffect(() => {
-    if (isOpen && initialPartId) {
+    if (!isOpen) return;
+
+    if (initialPartId) {
       const match = pickerParts.find(r => r.partId === initialPartId);
       if (match) {
         setSelectedRecord(match);
         form.setValue('partId', match.partId, { shouldValidate: true });
         form.setValue('location', match.location, { shouldValidate: true });
         form.setValue('category', match.cat ?? '', { shouldValidate: true });
+        form.setValue('leadTimeDays', match.leadTimeDays > 0 ? match.leadTimeDays : 1, { shouldValidate: true });
       }
+      return;
     }
+
+    const currentPartId = form.getValues('partId');
+    if (!currentPartId) return;
+    const match = pickerParts.find(r => r.partId === currentPartId);
+    if (!match) return;
+
+    setSelectedRecord(match);
+    form.setValue('location', match.location, { shouldValidate: true });
+    form.setValue('category', match.cat ?? '', { shouldValidate: true });
+    form.setValue('leadTimeDays', match.leadTimeDays > 0 ? match.leadTimeDays : 1, { shouldValidate: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialPartId]);
+  }, [isOpen, initialPartId, pickerParts]);
 
   const isFormDirty = form.formState.isDirty || showAddPart || !!image;
 
@@ -352,9 +366,10 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         partId: part.partId,
         pn: part.pn,
         name: part.name,
-        cat,
+        cat: cat as BOMCategory,
         quantity: data.quantity,
-        expectedDate: data.expectedDate as string,
+        expectedDate: data.expectedDate?.trim() || undefined,
+        leadTime: data.leadTimeDays,
         location: data.location,
         supplierRef: data.note?.trim() || undefined,
         note: data.orderNote?.trim() || undefined,
@@ -373,6 +388,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         note: data.note?.trim() || undefined,
         description: data.description?.trim() || undefined,
         image: image ?? undefined,
+        leadTimeDays: data.leadTimeDays,
       });
     }
     resetAndClose();
@@ -480,6 +496,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                                         form.setValue('partId', r.partId, { shouldDirty: true, shouldValidate: true });
                                         form.setValue('location', r.location, { shouldDirty: true, shouldValidate: true });
                                         form.setValue('category', r.cat ?? '', { shouldDirty: true, shouldValidate: true });
+                                        form.setValue('leadTimeDays', r.leadTimeDays > 0 ? r.leadTimeDays : 1, { shouldDirty: true, shouldValidate: true });
                                         setPartPickerOpen(false);
                                       }}
                                     >
@@ -561,10 +578,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                             </div>
                             <div className="space-y-1.5">
                               <Label className="text-xs">Unit</Label>
-                              <Input
+                              <UnitCombobox
                                 value={newPart.unit}
-                                onChange={(e) => setNewPart(prev => ({ ...prev, unit: e.target.value }))}
-                                placeholder="EA"
+                                onChange={(v) => setNewPart(prev => ({ ...prev, unit: v }))}
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -717,51 +733,87 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                 )}
 
                 {stockStatus === 'in_stock' ? (
-                  <div className="grid grid-cols-1 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="quantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                          <FormControl>
-                            <Input type="number" min={1} {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="quantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                          <FormControl>
-                            <Input type="number" min={1} {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <>
+                    <div className="grid grid-cols-1 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="quantity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                            <FormControl>
+                              <Input type="number" min={1} {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
-                    <FormField
-                      control={form.control}
-                      name="expectedDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="leadTimeDays"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                            <FormControl>
+                              <Input type="number" min={0} step={1} placeholder="Days" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="quantity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                            <FormControl>
+                              <Input type="number" min={1} {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="expectedDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date <span className="normal-case font-normal">optional</span></FormLabel>
+                            <FormControl>
+                              <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="leadTimeDays"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                            <FormControl>
+                              <Input type="number" min={0} step={1} placeholder="Days" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </>
                 )}
 
                 <FormField

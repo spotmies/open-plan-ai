@@ -9,6 +9,8 @@ export type ToggleableFeature = 'my-tasks' | 'calendar' | 'reports' | 'inventory
 interface FeatureTogglesState {
   enabled: Record<ToggleableFeature, boolean>;
   setFeatureEnabled: (feature: ToggleableFeature, enabled: boolean) => void;
+  /** Overwrites local state with the server's copy — see useFeatureToggles.ts. */
+  hydrate: (enabled: Record<ToggleableFeature, boolean>) => void;
 }
 
 export const useFeatureTogglesStore = create<FeatureTogglesState>()(
@@ -25,6 +27,7 @@ export const useFeatureTogglesStore = create<FeatureTogglesState>()(
         set((state) => ({
           enabled: { ...state.enabled, [feature]: enabled },
         })),
+      hydrate: (enabled) => set({ enabled }),
     }),
     {
       name: 'feature-toggles-store',

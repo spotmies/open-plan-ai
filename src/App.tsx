@@ -14,6 +14,7 @@ import { OrganizationProvider } from "@/contexts/OrganizationContext";
 import { useUserStore } from "@/stores/useUserStore";
 import { ChatNotificationsProvider } from "@/features/chat/providers/ChatNotificationsProvider";
 import { PushReconciliationProvider } from "@/features/notifications/providers/PushReconciliationProvider";
+import { FeatureTogglesHydrationProvider } from "@/features/integrations/FeatureTogglesHydrationProvider";
 import { AssistantWidget } from "@/features/assistant/components/AssistantWidget";
 import { initializeGA, setUserId } from "@/services/analytics";
 import { usePageTracking } from "@/hooks/usePageTracking";
@@ -93,6 +94,7 @@ function AppShell() {
     <>
       <ChatNotificationsProvider />
       <PushReconciliationProvider />
+      <FeatureTogglesHydrationProvider />
       <AssistantWidget />
       <Routes>
         {/* ── Public (auth) routes ─────────────────────────────── */}

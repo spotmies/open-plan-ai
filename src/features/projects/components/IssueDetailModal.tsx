@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Trash2, Maximize2, MoreVertical, Check, ChevronLeft, X, Pencil } from 'lucide-react';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useLayoutEffect, useMemo, useRef } from 'react';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
@@ -123,7 +123,12 @@ export function IssueDetailModal({
   const editLockTitle = 'You can only edit items you created or are assigned to';
   const deleteLockTitle = 'Only the issue reporter or a project/organization Admin can delete this issue';
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) — this runs synchronously before the
+  // browser paints, so switching to a different issue while the modal is
+  // already open (or reopening the same modal instance for a new one)
+  // doesn't briefly flash the PREVIOUS issue's content for a frame before
+  // this resets editedIssue to the new one.
+  useLayoutEffect(() => {
     if (isOpen && issue) {
       setEditedIssue(issue);
       setPendingFiles([]);
@@ -159,11 +164,11 @@ export function IssueDetailModal({
   };
 
   const handleUpdateIssue = async () => {
-    if (editedIssue) {
+    if (editedIssue && isDirty) {
       onUpdate(editedIssue);
       await issueContentRef.current?.commitPendingComments();
-      onClose();
     }
+    onClose();
   };
 
   return (
@@ -229,7 +234,7 @@ export function IssueDetailModal({
                 ) : (
                   <DropdownMenuItem
                     onClick={handleUpdateIssue}
-                    disabled={!editedIssue.title.trim() || !canEditIssue || !hasValidCategory}
+                    disabled={!editedIssue.title.trim() || !canEditIssue || !hasValidCategory || !isDirty}
                   >
                     <Check className="h-4 w-4 mr-2" />
                     Update Issue
@@ -316,7 +321,7 @@ export function IssueDetailModal({
             <Button
               className="w-full"
               onClick={handleUpdateIssue}
-              disabled={!editedIssue.title.trim() || !canEditIssue || !hasValidCategory}
+              disabled={!editedIssue.title.trim() || !canEditIssue || !hasValidCategory || !isDirty}
             >
               Update Issue
             </Button>
@@ -359,8 +364,8 @@ export function IssueDetailModal({
             <Button variant="outline" onClick={attemptClose}>Cancel</Button>
             <Button
               onClick={handleUpdateIssue}
-              disabled={!editedIssue.title.trim() || !canEditIssue || !hasValidCategory}
-              title={canEditIssue ? undefined : editLockTitle}
+              disabled={!editedIssue.title.trim() || !canEditIssue || !hasValidCategory || !isDirty}
+              title={canEditIssue ? undefined : (isDirty ? editLockTitle : 'No changes to save')}
             >
               Update Issue
             </Button>

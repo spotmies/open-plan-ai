@@ -26,7 +26,7 @@ async function saveBomDocs(nodeId: string, payload: BOMPartPayload) {
   );
 }
 
-// New parts can only be added as 'approved' or 'pending' (see BOMPartSheet's
+// New parts can only be added as 'approved' or 'draft' (see BOMPartSheet's
 // add-mode status toggle); narrow to what useCreateBomNode's DTO accepts.
 function toNodeStatus(status: BOMStatus): 'approved' | 'pending' | 'draft' {
   return status === 'rejected' ? 'pending' : status;
@@ -330,7 +330,7 @@ function StatCardSkeleton() {
 
 function ListRowSkeleton({ level = 0 }: { level?: number }) {
   return (
-    <div className="flex items-center px-6 border-b border-border" style={{ minWidth: 1200, height: 46 }}>
+    <div className="flex items-center px-6 border-b border-border" style={{ minWidth: 1320, height: 46 }}>
       <div style={{ flexBasis: 74, flexShrink: 0 }} className="flex items-center">
         <Skeleton className="h-3 w-6" style={{ marginLeft: level * 16 }} />
       </div>
@@ -344,6 +344,7 @@ function ListRowSkeleton({ level = 0 }: { level?: number }) {
       <div style={{ flexBasis: 50, flexShrink: 0 }} className="px-2 flex justify-end"><Skeleton className="h-3.5 w-6" /></div>
       <div style={{ flexBasis: 50, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-8" /></div>
       <div style={{ flexBasis: 140, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-20" /></div>
+      <div style={{ flexBasis: 120, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-14" /></div>
       <div style={{ flexBasis: 90, flexShrink: 0 }} className="px-2 flex justify-end"><Skeleton className="h-3.5 w-14" /></div>
       <div style={{ flexBasis: 74, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-10" /></div>
       <div style={{ flexBasis: 50, flexShrink: 0 }} className="px-2"><Skeleton className="h-5 w-8 rounded" /></div>
@@ -410,7 +411,7 @@ function BOMViewSkeleton() {
       {/* Table skeleton — desktop/tablet only */}
       <div className="hidden md:flex md:flex-col md:flex-1 overflow-hidden">
         {/* Table header — real so column names are visible */}
-        <div className="flex items-center px-6 border-b border-t border-border bg-muted/40" style={{ minWidth: 1200 }}>
+        <div className="flex items-center px-6 border-b border-t border-border bg-muted/40" style={{ minWidth: 1320 }}>
           {HEADERS.map((c, i) => (
             <div key={c.key}
               style={{ flexBasis: c.w ?? 'auto', flexGrow: c.w ? 0 : 1, flexShrink: c.w ? 0 : 1 }}
@@ -421,7 +422,7 @@ function BOMViewSkeleton() {
             </div>
           ))}
         </div>
-        <div className="flex-1 overflow-hidden border-t-0" style={{ minWidth: 1200 }}>
+        <div className="flex-1 overflow-hidden border-t-0" style={{ minWidth: 1320 }}>
           {SKELETON_LEVELS.map((level, i) => <ListRowSkeleton key={i} level={level} />)}
         </div>
       </div>
@@ -713,6 +714,7 @@ const HEADERS = [
   { key: 'qty', label: 'Qty', w: 50 },
   { key: 'uom', label: 'UOM', w: 50 },
   { key: 'mfr', label: 'Manufacturer', w: 140 },
+  { key: 'avail', label: 'Available', w: 120 },
   { key: 'price', label: 'Unit Price', w: 90 },
   { key: 'lead', label: 'Lead', w: 74 },
   { key: 'rev', label: 'Rev', w: 50 },
@@ -746,7 +748,7 @@ function ListView({
   return (
     <div className="hidden md:block flex-1 overflow-y-auto overflow-x-auto border-t border-border">
       {/* Header */}
-      <div className="flex items-center px-6 border-b border-border bg-background sticky top-0 z-10" style={{ minWidth: 1200 }}>
+      <div className="flex items-center px-6 border-b border-border bg-background sticky top-0 z-10" style={{ minWidth: 1320 }}>
         {HEADERS.map((c, i) => (
           <div key={c.key}
             style={{ flexBasis: c.w ?? 'auto', flexGrow: c.w ? 0 : 1, flexShrink: c.w ? 0 : 1 }}
@@ -760,7 +762,7 @@ function ListView({
       </div>
 
       {/* Rows */}
-      <div style={{ minWidth: 1200 }}>
+      <div style={{ minWidth: 1320 }}>
         {rows.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground">
             <Search className="w-7 h-7 mx-auto mb-3 opacity-30" />
@@ -821,6 +823,16 @@ function ListView({
               <div style={{ flexBasis: 50, flexShrink: 0 }} className="px-2 text-xs text-muted-foreground">{row.uom}</div>
               {/* Manufacturer */}
               <div style={{ flexBasis: 140, flexShrink: 0 }} className="px-2 text-xs text-muted-foreground truncate">{row.manufacturer}</div>
+              {/* Available */}
+              <div style={{ flexBasis: 120, flexShrink: 0 }} className="px-2 text-xs truncate" title={row.available === null ? 'This part is not in the inventory' : undefined}>
+                {row.available === null ? (
+                  <span className="text-muted-foreground/60 italic">Not in inventory</span>
+                ) : (
+                  <span className={cn('font-medium tabular-nums', row.available <= 0 ? 'text-destructive' : 'text-foreground')}>
+                    {row.available} {row.uom}
+                  </span>
+                )}
+              </div>
               {/* Price */}
               <div style={{ flexBasis: 90, flexShrink: 0 }} className="px-2 text-sm text-foreground text-right tabular-nums">{formatCurrency(row.price)}</div>
               {/* Lead */}
@@ -884,7 +896,7 @@ function ListView({
 
       {/* Footer */}
       {rows.length > 0 && (
-        <div className="px-6 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground" style={{ minWidth: 1200 }}>
+        <div className="px-6 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground" style={{ minWidth: 1320 }}>
           <span>Showing {rows.length} of {totalCount} total parts</span>
           <span>Last updated 23-Apr-2026 · Rev C approved by Engineering</span>
         </div>

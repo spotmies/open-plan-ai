@@ -18,7 +18,7 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<{ error: Error | null; requiresVerification?: boolean; email?: string; orgReview?: OrgReviewBlock }>;
   signUp: (email: string, password: string, metadata?: SignUpMetadata) => Promise<{ error: Error | null; orgReview?: OrgReviewBlock }>;
   signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  resetPassword: (email: string) => Promise<{ error: Error | null; exists?: boolean }>;
   updatePassword: (currentPassword: string, newPassword: string) => Promise<{ error: Error | null }>;
   refreshProfile: () => Promise<void>;
   deleteAccount: () => Promise<{ error: Error | null }>;
@@ -186,8 +186,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = useCallback(async (email: string) => {
     try {
-      await authService.forgotPassword(email);
-      return { error: null };
+      const result = await authService.forgotPassword(email);
+      return { error: null, exists: result.exists };
     } catch (err) {
       return { error: err instanceof Error ? err : new Error('Failed to send reset email') };
     }

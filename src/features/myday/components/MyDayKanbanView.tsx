@@ -243,10 +243,6 @@ export function MyDayKanbanView({ tasks: initialTasks, onTaskClick, onStatusUpda
     </Droppable>
   );
 
-  if (columns.every((c) => c.tasks.length === 0)) {
-    return <div className="text-center py-12 text-muted-foreground">No tasks to display</div>;
-  }
-
   return (
     <div className="space-y-4">
       <DragDropContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

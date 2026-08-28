@@ -28,6 +28,7 @@ export interface ApiOrderRecord {
   quantity: number;
   remainingQty: number;
   expectedDate: string;
+  leadTimeDays: number | null;
   supplierRef: string | null;
   unitCost: number | null;
   location: string;
@@ -56,6 +57,7 @@ export interface ApiStockTransaction {
   buildId: string | null;
   lotNumber: string | null;
   serialNumber: string | null;
+  leadTimeDays: number | null;
   createdAt: string;
   createdBy: string;
 }
@@ -144,6 +146,7 @@ export function fromApiOrder(r: ApiOrderRecord): OrderRecord {
     quantity: r.quantity,
     remainingQty: r.remainingQty,
     expectedDate: r.expectedDate,
+    leadTimeDays: r.leadTimeDays ?? undefined,
     supplierRef: r.supplierRef ?? undefined,
     unitCost: r.unitCost ?? undefined,
     location: r.location,
@@ -174,6 +177,7 @@ export function fromApiTransaction(r: ApiStockTransaction): StockTransaction {
     buildId: r.buildId ?? undefined,
     lotNumber: r.lotNumber ?? undefined,
     serialNumber: r.serialNumber ?? undefined,
+    leadTimeDays: r.leadTimeDays ?? undefined,
     createdAt: r.createdAt,
     createdBy: r.createdBy,
   };
@@ -236,6 +240,7 @@ export interface AdjustQuantityDto {
   description?: string;
   lotNumber?: string;
   serialNumber?: string;
+  leadTimeDays?: number;
 }
 
 export interface IssueStockDto {
@@ -264,7 +269,8 @@ export interface AllocateStockDto {
 export interface PlaceOrderDto {
   partId: string;
   quantity: number;
-  expectedDate: string;
+  expectedDate?: string;
+  leadTimeDays?: number;
   supplierRef?: string;
   unitCost?: number;
   location: string;

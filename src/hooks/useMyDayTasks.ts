@@ -10,7 +10,7 @@ import type { MyDayItem, DueDateStatus } from '@/features/myday/utils/myDayUtils
 import type { MyDayFilter } from '@/types';
 
 function matchesFilter(status: DueDateStatus, filter: MyDayFilter): boolean {
-  if (filter === 'all') return true;
+  if (filter === 'all' || filter === 'completed') return true;
   if (filter === 'today') return status === 'today';
   return status === 'overdue';
 }
@@ -76,10 +76,11 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
   const includeWontFix = statusFilter?.includes('wont-fix') ?? false;
   const includeResolved = statusFilter?.includes('resolved') ?? false;
   const includeDone = statusFilter?.includes('done') ?? false;
+  const isCompletedTab = filter === 'completed';
   // Any of these selected means the full done/resolved/wont-fix history is
   // actually needed, not just today's — fetch it on demand for this case only.
   const { user, rawTasks, rawIssues, isLoading } = useMyDayRawData({
-    includeDone: includeDone || includeResolved || includeWontFix,
+    includeDone: includeDone || includeResolved || includeWontFix || isCompletedTab,
   });
 
   const data = useMemo((): MyDayItem[] => {
@@ -90,8 +91,10 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
     // disappears from the list immediately, unless the user explicitly filters for "Done".
     const taskItems: MyDayItem[] = rawTasks
       .filter(task =>
-        matchesFilter(getDueDateStatus(task.dueDate, task.startDate), filter) &&
-        (task.status !== 'done' || includeDone)
+        isCompletedTab
+          ? task.status === 'done'
+          : matchesFilter(getDueDateStatus(task.dueDate, task.startDate), filter) &&
+            (task.status !== 'done' || includeDone)
       )
       .map(task => {
         const dueDateStatus = getDueDateStatus(task.dueDate, task.startDate);
@@ -124,10 +127,11 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
     const issueItems: MyDayItem[] = rawIssues
       .filter(({ issue }) => {
         const isAssignedToUser = issue.assignees?.some(a => a.id === user.id) ?? false;
+        if (!isAssignedToUser) return false;
+        if (isCompletedTab) return issue.status === 'resolved' || issue.status === 'wont-fix';
         if (issue.status === 'wont-fix' && !includeWontFix) return false;
         if (issue.status === 'resolved' && !includeResolved) return false;
-        return isAssignedToUser &&
-          matchesFilter(getDueDateStatus(issue.dueDate), filter);
+        return matchesFilter(getDueDateStatus(issue.dueDate), filter);
       })
       .map(({ issue, projectName, projectCode }) => {
         const dueDateStatus = getDueDateStatus(issue.dueDate);

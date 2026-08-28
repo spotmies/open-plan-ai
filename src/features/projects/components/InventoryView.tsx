@@ -30,7 +30,7 @@ import {
   useIssueStock, useTransferStock, useAllocateStock,
 } from '@/hooks/useInventory';
 import {
-  fromApiNode, applyPriceRollup, assignLevelLabels, bomFlatAll, formatLeadTime,
+  fromApiNode, applyPriceRollup, assignLevelLabels, bomFlatAll,
   KNOWN_BOM_CATEGORIES, getCategoryMeta, type BOMCategory,
 } from './bomData';
 import {
@@ -281,6 +281,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       partId: input.partId,
       quantity: input.quantity,
       expectedDate: input.expectedDate,
+      leadTimeDays: input.leadTime,
       supplierRef: input.supplierRef,
       unitCost: input.unitCost,
       location: input.location,
@@ -325,10 +326,15 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       description: input.description,
       lotNumber: input.lotNumber,
       serialNumber: input.serialNumber,
+      leadTimeDays: input.leadTimeDays,
     };
     console.table(Object.entries(dto).map(([field, value]) => ({ field, value: JSON.stringify(value), type: typeof value })));
     adjustStockMutation.mutate(dto, {
       onSuccess: (result) => {
+        console.table([
+          { source: 'submit', leadTimeDays: input.leadTimeDays },
+          { source: 'response', leadTimeDays: result.leadTimeDays },
+        ]);
         toast.success('Adjustment posted');
         if (input.image && result.transactionId) {
           attachmentsService
@@ -841,7 +847,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                         <TableHead className="h-9 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider"><HeaderTip label="Available" /></TableHead>
                         <TableHead className="hidden md:table-cell h-9 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider"><HeaderTip label="On Order" /></TableHead>
                         <TableHead className="h-9 px-3 py-2 text-[11px] font-medium uppercase tracking-wider">Location</TableHead>
-                        <TableHead className="hidden lg:table-cell h-9 px-3 py-2 text-[11px] font-medium uppercase tracking-wider">Lead</TableHead>
+
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -920,7 +926,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                                 ) : null}
                               </div>
                             </TableCell>
-                            <TableCell className="hidden lg:table-cell px-3 py-2 text-xs text-muted-foreground">{formatLeadTime(r.leadTimeDays)}</TableCell>
+
                           </TableRow>
                         );
                       })}

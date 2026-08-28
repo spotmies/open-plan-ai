@@ -15,6 +15,19 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
 import { buildTaskStatusOptions } from '../utils/taskStatusOptions';
 
+function toDayString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function matchesCustomDateRange(date: Date | null, from: string | undefined, to: string | undefined): boolean {
+  if (!date || !from) return false;
+  const day = toDayString(date);
+  return day >= from && day <= (to || from);
+}
+
 interface TasksSectionProps {
   projectId: string;
   projectCode?: string;
@@ -244,10 +257,10 @@ export function TasksSection({
         }
       }
 
-      // Exact due date filter (calendar-picked, takes precedence over preset)
+      // Custom due date range filter (calendar-picked, takes precedence over preset)
       if (filters.dueDateCustom) {
         const taskDueDate = task.dueDate ? new Date(task.dueDate) : null;
-        if (!taskDueDate || taskDueDate.toDateString() !== new Date(filters.dueDateCustom).toDateString()) {
+        if (!matchesCustomDateRange(taskDueDate, filters.dueDateCustom, filters.dueDateCustomTo)) {
           return false;
         }
       } else if (filters.dueDate) {
@@ -279,10 +292,10 @@ export function TasksSection({
         }
       }
 
-      // Exact completion date filter (calendar-picked, takes precedence over preset)
+      // Custom completion date range filter (calendar-picked, takes precedence over preset)
       if (filters.completedDateCustom) {
         const taskCompletedDate = task.completedAt ? new Date(task.completedAt) : null;
-        if (!taskCompletedDate || taskCompletedDate.toDateString() !== new Date(filters.completedDateCustom).toDateString()) {
+        if (!matchesCustomDateRange(taskCompletedDate, filters.completedDateCustom, filters.completedDateCustomTo)) {
           return false;
         }
       } else if (filters.completedDate) {

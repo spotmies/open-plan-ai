@@ -1,5 +1,5 @@
 // BOMSendForReviewModal — submitter picks scope (this part only vs. + sub-components)
-// and one or more approvers from the project team, then sends the part(s) for review.
+// and a single approver from the project team, then sends the part(s) for review.
 import { useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -7,7 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AlertCircle, Boxes, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
@@ -46,8 +46,8 @@ export function BOMSendForReviewModal({ open, projectId, partLabel, hasChildren,
     onClose();
   };
 
-  const toggleApprover = (id: string) => {
-    setApproverIds(prev => (prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]));
+  const selectApprover = (id: string) => {
+    setApproverIds([id]);
     if (err) setErr(false);
   };
 
@@ -69,7 +69,7 @@ export function BOMSendForReviewModal({ open, projectId, partLabel, hasChildren,
         <DialogHeader>
           <DialogTitle>Send {partLabel} for Review</DialogTitle>
           <DialogDescription>
-            Choose what to include and who should review it. The selected approver(s) will be notified.
+            Choose what to include and who should review it. The selected approver will be notified.
           </DialogDescription>
         </DialogHeader>
 
@@ -116,27 +116,28 @@ export function BOMSendForReviewModal({ open, projectId, partLabel, hasChildren,
 
           <div className="space-y-1.5">
             <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Approver(s)<span className="text-destructive ml-0.5">*</span>
+              Approver<span className="text-destructive ml-0.5">*</span>
             </Label>
             {members.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">No project members found to assign as approvers.</p>
             ) : (
-              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto border border-border rounded-md p-2">
+              <RadioGroup
+                value={approverIds[0] ?? ''}
+                onValueChange={selectApprover}
+                className="flex flex-col gap-1 max-h-40 overflow-y-auto border border-border rounded-md p-2"
+              >
                 {members.map(m => (
                   <label key={m.id} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted/60 cursor-pointer">
-                    <Checkbox
-                      checked={approverIds.includes(m.id)}
-                      onCheckedChange={() => toggleApprover(m.id)}
-                    />
+                    <RadioGroupItem value={m.id} />
                     <span className="text-sm text-foreground">{m.name}</span>
                     <span className="text-[10px] text-muted-foreground">· {m.role}</span>
                   </label>
                 ))}
-              </div>
+              </RadioGroup>
             )}
             {err && (
               <p className="text-[11px] text-destructive flex items-center gap-1 mt-1">
-                <AlertCircle className="w-3 h-3" /> Select at least one approver.
+                <AlertCircle className="w-3 h-3" /> Select an approver.
               </p>
             )}
           </div>

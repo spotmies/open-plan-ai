@@ -292,6 +292,8 @@ export function PartDetailSheet({
             <Button
               className="min-w-0 sm:w-auto px-4"
               onClick={onReceive}
+              disabled={record.onOrder <= 0}
+              title={record.onOrder <= 0 ? 'No orders available for this part' : undefined}
             >
               <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" /> <span className="truncate">Receive</span>
             </Button>
@@ -502,6 +504,18 @@ export function PartDetailSheet({
                       <span className="text-muted-foreground">Expected</span>
                       <span className="font-medium">{formatShortDate(o.expectedDate)}</span>
                     </div>
+                    {o.leadTimeDays !== undefined && o.leadTimeDays !== null && o.leadTimeDays > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Lead time</span>
+                        <span className="font-medium">{formatLeadTime(o.leadTimeDays)}</span>
+                      </div>
+                    )}
+                    {record.leadTimeDays > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Part lead time</span>
+                        <span className="font-medium">{formatLeadTime(record.leadTimeDays)}</span>
+                      </div>
+                    )}
                     {o.supplierRef && (
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">Supplier / PO</span>
@@ -543,7 +557,6 @@ export function PartDetailSheet({
                     )}
                   </div>
                 ))}
-                <div className="text-xs text-muted-foreground">Lead time: {formatLeadTime(record.leadTimeDays)}</div>
               </>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8">Nothing on order.</p>

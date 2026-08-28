@@ -31,14 +31,33 @@ export interface Milestone {
   updated_at: string | null;
 }
 
-/** Map snake_case insert payload to camelCase for the REST backend. */
-function toApiPayload(data: MilestoneInsert | MilestoneUpdate): Record<string, unknown> {
+/**
+ * Map snake_case insert/update payload to camelCase for the REST backend.
+ *
+ * `mode` matters because the two backend schemas disagree on nullability:
+ * createMilestoneSchema's description/assigneeId are optional but NOT
+ * nullable (there's no existing value to clear yet), while
+ * updateMilestoneSchema's description/status/assigneeId are optional AND
+ * nullable (so a client can explicitly clear a previously-set value).
+ * Forwarding an explicit `null` on create for a non-nullable field throws
+ * "Expected string, received null" from Zod — due_date is never nullable in
+ * either schema, so it always drops null regardless of mode.
+ */
+function toApiPayload(data: MilestoneInsert | MilestoneUpdate, mode: 'create' | 'update'): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if ('name' in data && data.name !== undefined) out.title = data.name;
   if ('due_date' in data && data.due_date != null) out.dueDate = data.due_date;
-  if ('description' in data && data.description != null) out.description = data.description;
-  if ('status' in data && data.status !== undefined) out.status = data.status;
-  if ('assignee_id' in data && data.assignee_id !== undefined) out.assigneeId = data.assignee_id;
+
+  if (mode === 'create') {
+    if ('description' in data && data.description != null) out.description = data.description;
+    if ('status' in data && data.status != null) out.status = data.status;
+    if ('assignee_id' in data && data.assignee_id != null) out.assigneeId = data.assignee_id;
+  } else {
+    if ('description' in data && data.description !== undefined) out.description = data.description;
+    if ('status' in data && data.status !== undefined) out.status = data.status;
+    if ('assignee_id' in data && data.assignee_id !== undefined) out.assigneeId = data.assignee_id;
+  }
+
   if ('project_id' in data) out.projectId = (data as MilestoneInsert).project_id;
   return out;
 }
@@ -86,7 +105,7 @@ export const milestonesService = {
   async create(milestone: MilestoneInsert): Promise<Milestone> {
     const data = await apiClient.post<Record<string, unknown>>(
       ENDPOINTS.MILESTONES.LIST(milestone.project_id),
-      toApiPayload(milestone)
+      toApiPayload(milestone, 'create')
     );
     return fromApi(data);
   },
@@ -99,7 +118,7 @@ export const milestonesService = {
     // Backend only registers PUT for this route (no PATCH handler exists).
     const data = await apiClient.put<Record<string, unknown>>(
       ENDPOINTS.MILESTONES.BY_ID(id),
-      toApiPayload(updates)
+      toApiPayload(updates, 'update')
     );
     return fromApi(data);
   },
