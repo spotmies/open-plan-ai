@@ -48,7 +48,8 @@ import { LocationCombobox } from './inventoryData';
 const orderSchema = z.object({
   partId: z.string().min(1, 'Select a part'),
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
-  expectedDate: z.string().min(1, 'Expected date is required'),
+  expectedDate: z.string().optional(),
+  leadTime: z.coerce.number().int().min(1, 'Lead time must be at least 1 day'),
   supplierRef: z.string().max(60, 'Reference must be less than 60 characters').optional(),
   unitCost: z.union([z.coerce.number().min(0), z.literal('')]).optional(),
   location: z.string().min(1, 'Select a destination location'),
@@ -64,7 +65,8 @@ export interface PlaceOrderInput {
   name: string;
   cat: BOMCategory;
   quantity: number;
-  expectedDate: string;
+  expectedDate?: string;
+  leadTime?: number;
   supplierRef?: string;
   unitCost?: number;
   location: string;
@@ -101,6 +103,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       partId: '',
       quantity: 1,
       expectedDate: '',
+      leadTime: 1,
       supplierRef: '',
       unitCost: '',
       location: '',
@@ -148,7 +151,8 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       name: selectedPart.name,
       cat: selectedPart.category,
       quantity: data.quantity,
-      expectedDate: data.expectedDate,
+      expectedDate: data.expectedDate?.trim() || undefined,
+      leadTime: data.leadTime,
       supplierRef: data.supplierRef?.trim() || undefined,
       unitCost: data.unitCost === '' || data.unitCost === undefined ? undefined : Number(data.unitCost),
       location: data.location,
@@ -314,9 +318,25 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                     name="expectedDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date <span className="normal-case font-normal">optional</span></FormLabel>
                         <FormControl>
                           <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="leadTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                        <FormControl>
+                          <Input type="number" min={0} step={1} placeholder="Days" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

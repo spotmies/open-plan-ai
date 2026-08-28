@@ -108,7 +108,7 @@ export const authService = {
     }
   },
 
-  async forgotPassword(email: string): Promise<{ message: string }> {
+  async forgotPassword(email: string): Promise<{ message: string; exists: boolean }> {
     return apiClient.post(ENDPOINTS.AUTH.FORGOT_PASSWORD, { email });
   },
 

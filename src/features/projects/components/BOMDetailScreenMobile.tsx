@@ -788,12 +788,12 @@ export function BOMDetailScreenMobile({
 
             <Section
               label="Approval History"
-              action={approvalsLoading ? <Skeleton className="h-3.5 w-14" /> : <CountBadge>{approvals.length} action{approvals.length !== 1 ? 's' : ''}</CountBadge>}
+              action={approvalsLoading ? <Skeleton className="h-3.5 w-14" /> : <CountBadge>{approvals.length + (activeRequest ? 1 : 0)} action{approvals.length + (activeRequest ? 1 : 0) !== 1 ? 's' : ''}</CountBadge>}
             >
               {activeRequest && (
                 <div className="mx-4 mt-3.5 px-2.5 py-2 rounded-md bg-muted/50 border border-border text-[11.5px] text-muted-foreground">
-                  <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> sent{' '}
-                  {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} for review by{' '}
+                  <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
+                  {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
                   {activeRequest.approvers.map(a => a.name).join(', ')}.
                 </div>
               )}
@@ -802,7 +802,7 @@ export function BOMDetailScreenMobile({
                   {[0, 1].map(i => <Skeleton key={i} className="h-10 w-full" />)}
                 </div>
               ) : approvals.length === 0 ? (
-                <p className="text-sm text-muted-foreground px-4 py-3.5">No approval activity yet.</p>
+                !activeRequest && <p className="text-sm text-muted-foreground px-4 py-3.5">No approval activity yet.</p>
               ) : (
                 <div className="divide-y divide-border">
                   {approvals.map(a => (

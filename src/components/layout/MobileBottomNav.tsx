@@ -24,16 +24,18 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { OrganizationSettings } from '@/services/organizations.service';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useAssistantDraftStore } from '@/features/assistant/stores/useAssistantDraftStore';
+import { useFeatureTogglesStore, type ToggleableFeature } from '@/stores/useFeatureTogglesStore';
 
 interface NavItem {
   title: string;
   url: string;
   icon: React.ElementType;
+  feature?: ToggleableFeature;
 }
 
 // Primary tabs shown in the footer
 const primaryNavItems: NavItem[] = [
-  { title: 'My Tasks',   url: '/my-day',   icon: ListTodo       },
+  { title: 'My Tasks',   url: '/my-day',   icon: ListTodo,        feature: 'my-tasks' },
   { title: 'Projects',   url: '/projects', icon: FolderKanban   },
   { title: 'Dashboard',  url: '/',         icon: LayoutDashboard},
   { title: 'Chat',       url: '/chat',     icon: MessageSquare  },
@@ -43,9 +45,9 @@ const primaryNavItems: NavItem[] = [
 const moreNavItems: NavItem[] = [
   { title: 'Assistant', url: '/assistant', icon: Sparkles      },
   { title: 'Team',      url: '/team',     icon: Users         },
-  { title: 'Calendar',  url: '/calendar', icon: Calendar      },
-  { title: 'Reports',   url: '/reports',  icon: BarChart3     },
-  { title: 'Inventory', url: '/inventory', icon: Warehouse    },
+  { title: 'Calendar',  url: '/calendar', icon: Calendar,      feature: 'calendar' },
+  { title: 'Reports',   url: '/reports',  icon: BarChart3,     feature: 'reports' },
+  { title: 'Inventory', url: '/inventory', icon: Warehouse,    feature: 'inventory' },
   { title: 'Integrations', url: '/integrations', icon: Plug   },
   { title: 'Settings',  url: '/settings', icon: Settings      },
 ];
@@ -55,7 +57,9 @@ export function MobileBottomNav() {
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
-  const visibleMoreNavItems = moreNavItems;
+  const enabledFeatures = useFeatureTogglesStore((s) => s.enabled);
+  const visiblePrimaryNavItems = primaryNavItems.filter((item) => !item.feature || enabledFeatures[item.feature]);
+  const visibleMoreNavItems = moreNavItems.filter((item) => !item.feature || enabledFeatures[item.feature]);
   const lastAssistantConversationId = useAssistantDraftStore((s) => s.lastActiveConversationId);
 
   // Org switching lives in the sidebar on desktop, which mobile never renders —
@@ -275,8 +279,11 @@ export function MobileBottomNav() {
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         aria-label="Mobile bottom navigation"
       >
-        <div className="h-16 px-2 grid grid-cols-5 items-center">
-          {primaryNavItems.map((item) => {
+        <div
+          className="h-16 px-2 grid items-center"
+          style={{ gridTemplateColumns: `repeat(${visiblePrimaryNavItems.length + 1}, minmax(0, 1fr))` }}
+        >
+          {visiblePrimaryNavItems.map((item) => {
             const active = isActive(item.url);
             return (
               <button

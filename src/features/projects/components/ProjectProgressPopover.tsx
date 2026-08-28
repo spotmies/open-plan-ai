@@ -21,7 +21,8 @@ function getStatusColor(status: string) {
     'in-progress': 'hsl(var(--status-in-progress))',
     'review': 'hsl(var(--status-review))',
     'done': 'hsl(var(--status-done))',
-    'blocked': 'hsl(var(--status-blocked))'
+    'blocked': 'hsl(var(--status-blocked))',
+    'others': 'hsl(var(--muted-foreground))'
   };
   return colors[status] || 'hsl(var(--muted))';
 }
@@ -113,7 +114,8 @@ export function ProjectProgressBreakdown({ breakdown }: { breakdown: ProgressBre
               'in-progress': breakdown.taskStats.inProgress,
               'review': breakdown.taskStats.review,
               'done': breakdown.taskStats.done,
-              'blocked': breakdown.taskStats.blocked
+              'blocked': breakdown.taskStats.blocked,
+              'others': breakdown.taskStats.others
             }).map(([status, count]) => {
               if (count === 0) return null;
               const percentage = (count / breakdown.taskStats!.total) * 100;
@@ -169,6 +171,15 @@ export function ProjectProgressBreakdown({ breakdown }: { breakdown: ProgressBre
                 </span>
                 <span className="font-medium">{breakdown.taskStats.blocked}</span>
               </div>
+              {breakdown.taskStats.others > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'hsl(var(--muted-foreground))' }} />
+                    Others
+                  </span>
+                  <span className="font-medium">{breakdown.taskStats.others}</span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-[11px] text-muted-foreground mt-2">No task data</div>

@@ -157,6 +157,13 @@ const issueSeverityBorder: Record<IssueSeverity, string> = {
 
 const BOARD_CHECKLIST_PREVIEW_COUNT = 2;
 
+// Stable identity for unset array filter props. A literal `[]` default in a
+// destructured prop is re-created on every render, which made the pagination
+// reset effect below (keyed on these arrays) fire on every render — including
+// the one right after clicking "Next" — snapping the page back to 1 before
+// the new rows ever showed.
+const EMPTY_ARRAY: never[] = [];
+
 /**
  * Inclusive yyyy-MM-dd comparison for the "Custom..." date filters — `to`
  * falls back to `from` so a single-day pick (from === to) still works via
@@ -177,11 +184,11 @@ export function IssuesView({
   tasks = [],
   teamMembers = [],
   searchQuery: externalSearchQuery,
-  severityFilter: externalSeverityFilter = [],
-  statusFilter: externalStatusFilter = [],
-  assigneeFilter: externalAssigneeFilter = [],
-  assignedByFilter: externalAssignedByFilter = [],
-  updatedByFilter: externalUpdatedByFilter = [],
+  severityFilter: externalSeverityFilter = EMPTY_ARRAY,
+  statusFilter: externalStatusFilter = EMPTY_ARRAY,
+  assigneeFilter: externalAssigneeFilter = EMPTY_ARRAY,
+  assignedByFilter: externalAssignedByFilter = EMPTY_ARRAY,
+  updatedByFilter: externalUpdatedByFilter = EMPTY_ARRAY,
   dueDateFilter: externalDueDateFilter,
   dueDateCustomFilter: externalDueDateCustomFilter,
   dueDateCustomToFilter: externalDueDateCustomToFilter,
@@ -191,7 +198,7 @@ export function IssuesView({
   completedDateFilter: externalCompletedDateFilter,
   completedDateCustomFilter: externalCompletedDateCustomFilter,
   completedDateCustomToFilter: externalCompletedDateCustomToFilter,
-  tagsFilter: externalTagsFilter = [],
+  tagsFilter: externalTagsFilter = EMPTY_ARRAY,
   isAddDialogOpen: externalIsAddDialogOpen,
   onAddDialogClose,
   onIssueUpdate,
@@ -817,7 +824,7 @@ export function IssuesView({
                                     {...issuesProvided.droppableProps}
                                     data-kanban-column-id={column.id}
                                     className={cn(
-                                      'space-y-2 min-h-[120px] h-full p-2 rounded-lg transition-colors',
+                                      'space-y-2 min-h-[120px] p-2 rounded-lg transition-colors flex-1 overflow-y-auto',
                                       snapshot.isDraggingOver ? 'bg-muted/50' : 'bg-muted/30'
                                     )}
                                   >
@@ -1089,9 +1096,7 @@ export function IssuesView({
                                 {addIssueButton}
                               </div>
 
-                              <div className="flex-1 overflow-y-auto min-h-0">
-                                {cardsDroppable}
-                              </div>
+                              {cardsDroppable}
                             </div>
                           );
                         }}

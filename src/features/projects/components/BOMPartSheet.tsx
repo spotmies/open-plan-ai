@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Zap, Cpu, Package, Box, Monitor, Shield, Layers, ChevronsUpDown, Tag,
-  CheckCircle, Clock, GitBranch, Save, Plus, X, ChevronRight, ChevronLeft,
+  CheckCircle, GitBranch, Save, Plus, X, ChevronRight, ChevronLeft,
   FileText, ImageIcon, Upload, Paperclip, AlertCircle, Link as LinkIcon,
   Check, XCircle, History, Loader2,
   FileSpreadsheet, ExternalLink,
@@ -462,7 +462,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
   const [name, setName] = useState(isEdit ? (node?.name || node?.pn || '') : (node?.name ?? ''));
   const [desc, setDesc] = useState(node?.desc ?? '');
   const [category, setCategory] = useState<BOMCategory>(node?.cat ?? 'assembly');
-  const [status, setStatus] = useState<BOMStatus>(node?.status ?? 'pending');
+  const [status, setStatus] = useState<BOMStatus>(node?.status ?? 'draft');
   const [rev, setRev] = useState(node?.rev ?? 'A');
   const [qty, setQty] = useState(String(node?.qty ?? 1));
   const [uom, setUom] = useState(node?.uom ?? 'EA');
@@ -505,7 +505,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
     setName(isEdit ? (node?.name || node?.pn || '') : (node?.name ?? ''));
     setDesc(node?.desc ?? '');
     setCategory(node?.cat ?? 'assembly');
-    setStatus(node?.status ?? 'pending');
+    setStatus(node?.status ?? 'draft');
     setRev(node?.rev ?? 'A');
     setQty(String(node?.qty ?? 1));
     setUom(node?.uom ?? 'EA');
@@ -891,7 +891,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                     {!isEdit ? (
                       <>
                         <div className="flex gap-2">
-                          {(['approved', 'pending'] as BOMStatus[]).map(s => (
+                          {(['draft', 'approved'] as BOMStatus[]).map(s => (
                             <button key={s} type="button" disabled={!canEditStatus}
                               onClick={() => canEditStatus && setStatus(s)}
                               title={canEditStatus ? undefined : 'Only project managers or admins can change part status'}
@@ -902,8 +902,8 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                               )}>
                               {s === 'approved'
                                 ? <CheckCircle className="w-4 h-4" style={{ color: '#16A34A' }} />
-                                : <Clock className="w-4 h-4" style={{ color: '#D97706' }} />}
-                              {s === 'approved' ? 'Approved' : 'Pending'}
+                                : <FileText className="w-4 h-4" style={{ color: '#64748B' }} />}
+                              {s === 'approved' ? 'Approved' : 'Draft'}
                             </button>
                           ))}
                         </div>
@@ -1432,7 +1432,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                     {!isEdit ? (
                       <>
                         <div className="flex gap-2">
-                          {(['approved', 'pending'] as BOMStatus[]).map(s => (
+                          {(['draft', 'approved'] as BOMStatus[]).map(s => (
                             <button key={s} type="button" disabled={!canEditStatus}
                               onClick={() => canEditStatus && setStatus(s)}
                               title={canEditStatus ? undefined : 'Only project managers or admins can change part status'}
@@ -1443,8 +1443,8 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                               )}>
                               {s === 'approved'
                                 ? <CheckCircle className="w-4 h-4" style={{ color: '#16A34A' }} />
-                                : <Clock className="w-4 h-4" style={{ color: '#D97706' }} />}
-                              {s === 'approved' ? 'Approved' : 'Pending'}
+                                : <FileText className="w-4 h-4" style={{ color: '#64748B' }} />}
+                              {s === 'approved' ? 'Approved' : 'Draft'}
                             </button>
                           ))}
                         </div>

@@ -319,6 +319,7 @@ export default function MyDay() {
                 )}
               </TabsTrigger>
               <TabsTrigger value="all" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">All</TabsTrigger>
+              <TabsTrigger value="completed" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">Completed</TabsTrigger>
             </TabsList>
           </Tabs>
 
@@ -395,7 +396,9 @@ export default function MyDay() {
                       ? "You're all caught up — nothing assigned to you is overdue."
                       : filter === 'today'
                         ? 'No tasks or issues assigned to you are due today.'
-                        : 'You have no active tasks assigned to you. Check the Projects page to see available work.'
+                        : filter === 'completed'
+                          ? "You haven't completed any tasks or issues yet."
+                          : 'You have no active tasks assigned to you. Check the Projects page to see available work.'
                 }
               />
             )}

@@ -588,7 +588,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
       const leadTimeChanged = payload.leadTime !== activeRev.leadTime;
       await Promise.all([
         updateNode.mutateAsync({ nodeId: originalNode.id, dto: { quantity: payload.qty, unit: payload.uom } }),
-        updatePart.mutateAsync({ partId: originalNode._partId, dto: { name: payload.name, description: payload.desc, manufacturer: payload.manufacturer || undefined, distributor: payload.distributor || undefined, mpn: payload.mpn || undefined, customFields: payload.customFields } }),
+        updatePart.mutateAsync({ partId: originalNode._partId, dto: { name: payload.name, description: payload.desc, category: payload.category, manufacturer: payload.manufacturer || undefined, distributor: payload.distributor || undefined, mpn: payload.mpn || undefined, customFields: payload.customFields } }),
         ...(priceChanged || leadTimeChanged ? [createRev.mutateAsync({
           partId: originalNode._partId,
           dto: {
@@ -1183,15 +1183,15 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                 ) : (
                   <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    {approvals.length} action{approvals.length !== 1 ? 's' : ''}
+                    {approvals.length + (activeRequest ? 1 : 0)} action{approvals.length + (activeRequest ? 1 : 0) !== 1 ? 's' : ''}
                   </div>
                 )
               }
             >
               {activeRequest && (
                 <div className="mb-3 px-2.5 py-2 rounded-md bg-muted/50 border border-border text-[11.5px] text-muted-foreground">
-                  <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> sent{' '}
-                  {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} for review by{' '}
+                  <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
+                  {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
                   {activeRequest.approvers.map(a => a.name).join(', ')}.
                 </div>
               )}
@@ -1212,7 +1212,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                   ))}
                 </div>
               ) : approvals.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No approval activity yet.</p>
+                !activeRequest && <p className="text-sm text-muted-foreground">No approval activity yet.</p>
               ) : (
                 <div className="flex flex-col gap-0">
                   {approvals.map((a, i) => {

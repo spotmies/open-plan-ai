@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Users, Trash2, Loader2, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -203,16 +204,19 @@ export function ProjectTeamButton({ projectId }: ProjectTeamButtonProps) {
   return (
     <>
       <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer rounded-md border border-border px-2 py-1 sm:py-1.5 text-foreground hover:bg-muted transition-colors h-8 sm:h-9"
-          >
-            <Users className="h-4 w-4 sm:h-4 sm:w-4 shrink-0 text-muted-foreground" />
-            {/* <span className="text-[11px] sm:text-xs font-medium">Team</span> */}
-            {/* <span className="text-[11px] sm:text-xs text-muted-foreground">{projectMembers.length}</span> */}
-          </button>
-        </PopoverTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer rounded-md border border-border px-2 py-1 sm:py-1.5 text-foreground hover:bg-muted transition-colors h-8 sm:h-9"
+              >
+                <Users className="h-4 w-4 sm:h-4 sm:w-4 shrink-0 text-muted-foreground" />
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent>Team</TooltipContent>
+        </Tooltip>
         <PopoverContent className="w-80" align="end">
           <div className="space-y-2">
             <p className="text-sm font-medium">Project Team</p>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
+  ArrowLeft,
   Building2,
   FileText,
   Flag,
@@ -104,7 +105,18 @@ function Section({
 export default function ProjectDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
+
+  // Fall back to the workspace when this page was opened directly (new tab,
+  // refresh, shared link) and there's nothing in history to go back to.
+  const handleBack = () => {
+    if (location.key !== 'default') {
+      navigate(-1);
+    } else {
+      navigate(`/projects/${id}`);
+    }
+  };
   const [previewFile, setPreviewFile] = useState<AttachmentLike | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -180,9 +192,20 @@ export default function ProjectDetailsPage() {
           the page instead of repeating the project and leaving the actions
           floating on an otherwise empty line. */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight">Project Details</h1>
-          <p className="text-sm text-muted-foreground">Scope, timeline, team and workspace at a glance</p>
+        <div className="flex min-w-0 items-start gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mt-0.5 shrink-0"
+            onClick={handleBack}
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold tracking-tight">Project Details</h1>
+            <p className="text-sm text-muted-foreground">Scope, timeline, team and workspace at a glance</p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" className="gap-2" onClick={() => navigate(`/projects/${id}`)}>

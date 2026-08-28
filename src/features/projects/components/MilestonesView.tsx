@@ -163,19 +163,13 @@ export function MilestonesView({
 
   return (
     <div className="space-y-6">
-      {/* Empty State */}
-      {milestones.length === 0 ? (
-        <Card className="p-12 flex flex-col items-center justify-center text-center min-h-[calc(100vh-320px)]">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-            <Flag className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-medium mb-2">No milestones yet</h3>
-          <p className="text-sm text-muted-foreground max-w-sm">
-            Create milestones to track important project deadlines and deliverables.
-          </p>
-        </Card>
-
-      ) : sortedMilestones.length === 0 ? (
+      {/* Only a search yielding nothing gets the full-page takeover — a genuinely
+          empty board (no milestones at all) instead falls through to the normal
+          Kanban/timeline layout below, which already renders each column/section
+          empty on its own (e.g. renderMilestoneCards' "No milestones" placeholder),
+          so the column headers and counts stay visible instead of the whole board
+          disappearing behind a single generic card. */}
+      {searchQuery.trim() && sortedMilestones.length === 0 ? (
         <Card className="p-12 flex flex-col items-center justify-center text-center min-h-[calc(100vh-320px)]">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
             <Flag className="h-8 w-8 text-muted-foreground" />
@@ -328,6 +322,11 @@ export function MilestonesView({
       ) : isMobile ? (
         /* Mobile Milestone Cards */
         <div className="space-y-3">
+          {sortedMilestones.length === 0 && (
+            <Card className="p-4 border-dashed text-center">
+              <p className="text-sm text-muted-foreground">No milestones yet</p>
+            </Card>
+          )}
           {sortedMilestones.map((milestone) => {
             const progress = getMilestoneProgress(milestone, tasks);
             const milestoneTasks = getMilestoneTasks(milestone, tasks);
@@ -383,6 +382,9 @@ export function MilestonesView({
       ) : (
         /* Timeline View */
         <Card className="p-3 sm:p-6">
+          {sortedMilestones.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No milestones yet</p>
+          ) : (
           <div className="relative">
             {/* Timeline line */}
             <div className="absolute left-3 sm:left-4 top-0 bottom-0 w-0.5 bg-border" />
@@ -588,6 +590,7 @@ export function MilestonesView({
               })}
             </div>
           </div>
+          )}
         </Card>
       )
       }

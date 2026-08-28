@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useLayoutEffect, useRef } from 'react';
 import { format, parseISO, startOfMonth, startOfToday } from 'date-fns';
 import {
   Dialog,
@@ -70,7 +70,7 @@ import {
 } from 'lucide-react';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { Milestone, MilestoneStatus, Task, Issue, Module, TeamMember } from '@/types';
-import { getMilestoneTasks, getMilestoneModules, getMilestoneIssues, getMilestoneStatus, getModuleProgress, sortByAssignee } from '../utils/projectUtils';
+import { getMilestoneTasks, getMilestoneModules, getMilestoneStatus, getModuleProgress, sortByAssignee } from '../utils/projectUtils';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -139,6 +139,14 @@ export function MilestoneDetailModal({
   const [isAddModulesDrawerOpen, setIsAddModulesDrawerOpen] = useState(false);
   const [isAddIssuesDrawerOpen, setIsAddIssuesDrawerOpen] = useState(false);
   const [isMobileEditMode, setIsMobileEditMode] = useState(false);
+  // Issue linking lives on the ISSUE side (issue.blocksMilestoneIds), not on the
+  // milestone itself, so — unlike linkedTaskIds/linkedModuleIds, which are staged
+  // on editedMilestone and only committed via onUpdate — it needs its own local
+  // staging map: issueId -> desired linked state, only flushed as real
+  // onIssueUpdate calls when "Update Milestone" is actually clicked. Without
+  // this, toggling a linked issue was writing straight to the issue immediately,
+  // so Cancel/close couldn't discard it.
+  const [pendingIssueLinks, setPendingIssueLinks] = useState<Map<string, boolean>>(new Map());
   const initialSnapshotRef = useRef<string>('');
   // On mobile, the core fields (title, dates, status, description) stay read-only until
   // "Edit Milestone" is tapped — but linking/unlinking tasks, modules, and issues is always
@@ -151,7 +159,13 @@ export function MilestoneDetailModal({
     setMilestoneDateCalendarMonth(startOfMonth(parseISO(editedMilestone.date)));
   }, [editedMilestone?.id, editedMilestone?.date, isMilestoneDateOpen]);
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) — this modal instance is reused across
+  // different milestones opened one after another, so a regular useEffect
+  // (which runs after paint) would show a frame of the PREVIOUS milestone's
+  // data before this reset catches up: a visible flash when switching
+  // milestones quickly (same fix applied to IssueDetailModal/Content and
+  // TaskDetailModal).
+  useLayoutEffect(() => {
     // Only set initial state when opening modal with a new milestone.
     // Seed linkedTaskIds/linkedModuleIds from the real link state (which includes
     // tasks/modules linked via their own milestoneId, not just the milestone's own
@@ -165,6 +179,7 @@ export function MilestoneDetailModal({
       };
       setEditedMilestone(seeded);
       initialSnapshotRef.current = serializeMilestoneForDirtyCheck(seeded);
+      setPendingIssueLinks(new Map());
       setTaskSearchQuery('');
       setIssueSearchQuery('');
     }
@@ -175,7 +190,14 @@ export function MilestoneDetailModal({
 
   if (!editedMilestone) return null;
 
-  const isMilestoneDirty = initialSnapshotRef.current !== '' && serializeMilestoneForDirtyCheck(editedMilestone) !== initialSnapshotRef.current;
+  const isMilestoneDirty =
+    (initialSnapshotRef.current !== '' && serializeMilestoneForDirtyCheck(editedMilestone) !== initialSnapshotRef.current) ||
+    pendingIssueLinks.size > 0;
+
+  const isIssueLinked = (issue: Issue): boolean =>
+    pendingIssueLinks.has(issue.id)
+      ? pendingIssueLinks.get(issue.id)!
+      : (issue.blocksMilestoneIds?.includes(editedMilestone.id) ?? false);
 
   const handleFieldChange = <K extends keyof Milestone>(field: K, value: Milestone[K]) => {
     setEditedMilestone(prev => {
@@ -218,7 +240,12 @@ export function MilestoneDetailModal({
     tasks.filter(t => editedMilestone.linkedTaskIds?.includes(t.id)),
     editedMilestone.assignee?.id,
   );
-  const milestoneIssues = sortByAssignee(getMilestoneIssues(editedMilestone.id, issues), editedMilestone.assignee?.id);
+  // Reflects pendingIssueLinks on top of the real issue.blocksMilestoneIds state —
+  // see isIssueLinked's comment above.
+  const milestoneIssues = sortByAssignee(
+    issues.filter(i => isIssueLinked(i) && i.status !== 'resolved' && i.status !== 'wont-fix'),
+    editedMilestone.assignee?.id,
+  );
   const status = getMilestoneStatus(editedMilestone, tasks, issues);
   const daysUntil = editedMilestone.date ? Math.ceil((new Date(editedMilestone.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : NaN;
 
@@ -273,17 +300,15 @@ export function MilestoneDetailModal({
     const issue = issues.find(i => i.id === issueId);
     if (!issue) return;
 
-    const currentMilestones = issue.blocksMilestoneIds || [];
-    const isLinked = currentMilestones.includes(editedMilestone.id);
-
-    const updatedIssue = {
-      ...issue,
-      blocksMilestoneIds: isLinked
-        ? currentMilestones.filter(id => id !== editedMilestone.id)
-        : [...currentMilestones, editedMilestone.id]
-    };
-
-    onIssueUpdate(updatedIssue);
+    // Stage only — the real issue.blocksMilestoneIds mutation is flushed in
+    // handleUpdateMilestone, so Cancel/close can discard it like every other
+    // field on this form.
+    const nextLinked = !isIssueLinked(issue);
+    setPendingIssueLinks(prev => {
+      const next = new Map(prev);
+      next.set(issueId, nextLinked);
+      return next;
+    });
   };
 
   const handleDelete = () => {
@@ -297,6 +322,23 @@ export function MilestoneDetailModal({
   const handleUpdateMilestone = () => {
     if (editedMilestone) {
       onUpdate(editedMilestone);
+
+      if (onIssueUpdate) {
+        pendingIssueLinks.forEach((shouldBeLinked, issueId) => {
+          const issue = issues.find(i => i.id === issueId);
+          if (!issue) return;
+          const currentMilestones = issue.blocksMilestoneIds || [];
+          const isActuallyLinked = currentMilestones.includes(editedMilestone.id);
+          if (isActuallyLinked === shouldBeLinked) return;
+          onIssueUpdate({
+            ...issue,
+            blocksMilestoneIds: shouldBeLinked
+              ? [...currentMilestones, editedMilestone.id]
+              : currentMilestones.filter(id => id !== editedMilestone.id),
+          });
+        });
+      }
+
       onClose();
     }
   };
