@@ -9,7 +9,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useKanbanEdgeAutoScroll, resolveKanbanColumnIdAtPoint } from '@/hooks/useKanbanEdgeAutoScroll';
 import { MobileKanbanColumn } from '@/components/shared/MobileKanbanColumn';
 import { Check, CheckSquare, Bug } from 'lucide-react';
-import { MyDayItem, KanbanColumnId, groupItemsByKanbanStatus, formatTaskDateRange } from '../utils/myDayUtils';
+import { MyDayItem, KanbanColumnId, groupItemsByKanbanStatus, formatTaskDateRange, isMyDayItemComplete } from '../utils/myDayUtils';
 import { TaskStatus } from '@/types';
 import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
@@ -135,7 +135,7 @@ export function MyDayKanbanView({ tasks: initialTasks, onTaskClick, onStatusUpda
           )}
         >
           {column.tasks.map((task, taskIndex) => {
-            const isComplete = task.status === 'done' || task.status === 'resolved';
+            const isComplete = isMyDayItemComplete(task.status);
             return (
               <Draggable key={task.id} draggableId={task.id} index={taskIndex} isDragDisabled={column.id === 'dependency'}>
                 {(dragProvided, dragSnapshot) => (

@@ -19,8 +19,9 @@ export interface CreatePartDto {
   mpn?: string;
   unit?: string;
   notes?: string;
-  // Initial revision overrides
-  initialStatus?: BOMStatus;
+  // Initial revision overrides (the revision itself only ever has these two
+  // states — 'draft'/'rejected' exist only at the BOM-node level)
+  initialStatus?: 'approved' | 'pending';
   initialRev?: string;
   initialPrice?: number;
   initialLeadTimeDays?: number;

@@ -1194,19 +1194,20 @@ const NewProject = () => {
                       .map((member) => (
                         <div
                           key={member.id}
-                          className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                          className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
                           onClick={() => handleToggleMemberSelection(member.id)}
                         >
                           <Checkbox
                             checked={assignedMembers.some(am => am.memberId === member.id)}
                             onCheckedChange={() => handleToggleMemberSelection(member.id)}
                             onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 mt-0.5"
                           />
-                          <Avatar className="h-7 w-7">
+                          <Avatar className="h-7 w-7 mt-0.5 shrink-0">
                             <AvatarImage src={member.avatar} />
                             <AvatarFallback className="text-xs">{member.initials}</AvatarFallback>
                           </Avatar>
-                          <span className="text-sm">{member.name}</span>
+                          <span className="text-sm min-w-0">{member.name}</span>
                         </div>
                       ))
                   )}

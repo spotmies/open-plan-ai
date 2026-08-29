@@ -8,6 +8,7 @@ import {
   Plus, Boxes, FileSpreadsheet, XCircle, Loader2, ShieldCheck, Sliders, RefreshCw,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { BOMDocuments } from './BOMDocuments';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -319,7 +320,12 @@ interface Props {
 const Field = ({ label, children, mono }: { label: string; children: React.ReactNode; mono?: boolean }) => (
   <div className="min-w-0">
     <div className="text-[10.5px] text-muted-foreground uppercase tracking-wider mb-1">{label}</div>
-    <div className={`text-sm font-medium text-foreground break-words ${mono ? 'font-mono' : ''}`}>{children}</div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={`text-sm font-medium text-foreground truncate ${mono ? 'font-mono' : ''}`}>{children}</div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm break-words">{children}</TooltipContent>
+    </Tooltip>
   </div>
 );
 
@@ -546,7 +552,9 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
       distributor: payload.distributor || undefined,
       mpn: payload.mpn || undefined,
       unit: payload.uom,
-      initialStatus: payload.status,
+      // The Part's initial revision has no 'draft'/'rejected' state — only the
+      // BOM node does.
+      initialStatus: payload.status === 'approved' ? 'approved' : 'pending',
       initialRev: payload.rev,
       initialPrice: payload.price > 0 ? payload.price : undefined,
       initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
@@ -775,7 +783,12 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                <h1 className="text-xl font-semibold text-foreground">{node.name || node.pn}</h1>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <h1 className="text-xl font-semibold text-foreground truncate max-w-[420px]">{node.name || node.pn}</h1>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm break-words">{node.name || node.pn}</TooltipContent>
+                </Tooltip>
                 <BOMStatusPill status={node.status} />
                 {/* ── Version toggle ── */}
                 <RevisionToggle
@@ -996,8 +1009,13 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                   >
                     <PartImageThumb nodeId={c.id} cat={c.cat} size={34} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-foreground truncate">{c.name || c.desc}</div>
-                      <div className="text-[11px] font-medium font-mono text-muted-foreground">{c.pn}</div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="text-sm font-medium text-foreground truncate">{c.name || c.desc}</div>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-sm break-words">{c.name || c.desc}</TooltipContent>
+                      </Tooltip>
+                      <div className="text-[11px] font-medium font-mono text-muted-foreground truncate">{c.pn}</div>
                     </div>
                     <span className="text-xs text-muted-foreground tabular-nums shrink-0">{c.qty} {c.uom}</span>
                     <span className="text-sm text-foreground tabular-nums w-20 text-right shrink-0">{formatCurrency(c.price)}</span>
@@ -1297,6 +1315,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
         open={showCreateNewSub}
         onClose={() => setShowCreateNewSub(false)}
         onSave={handleNewSubSaved}
+        isSubPart
       />
 
       {/* Import Sub-components from Excel */}

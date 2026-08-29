@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/select';
 import { cn, getDisplayId } from '@/lib/utils';
 import { resolveFileUrl } from '@/utils/fileUrl';
+import { renamePastedImageFile } from '@/utils/pastedFile';
 import { FilePreviewDialog, FilePreviewTarget, getVideoThumbnail } from '@/components/FilePreviewDialog';
 import {
     Calendar as CalendarIcon,
@@ -612,7 +613,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
         for (const item of Array.from(items)) {
             if (item.kind === 'file' && item.type.startsWith('image/')) {
                 const file = item.getAsFile();
-                if (file) imageFiles.push(file);
+                if (file) imageFiles.push(renamePastedImageFile(file, imageFiles.length));
             }
         }
         if (imageFiles.length === 0) return;
@@ -996,13 +997,13 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                                                             onSelect={() => {
                                                                 handleFieldChange('assignees', [...(editedIssue.assignees || []), member]);
                                                             }}
-                                                            className="cursor-pointer"
+                                                            className="cursor-pointer items-start"
                                                         >
-                                                            <Avatar className="h-5 w-5 mr-2">
+                                                            <Avatar className="h-5 w-5 mr-2 mt-0.5 shrink-0">
                                                                 <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
                                                                 <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
                                                             </Avatar>
-                                                            {member.name}
+                                                            <span className="min-w-0">{member.name}</span>
                                                         </CommandItem>
                                                     ))}
                                             </CommandGroup>

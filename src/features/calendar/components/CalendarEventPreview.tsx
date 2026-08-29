@@ -92,7 +92,14 @@ export const CalendarEventPreview: React.FC<CalendarEventPreviewProps> = ({
           </div>
 
           {/* Title */}
-          <h4 className="font-semibold text-sm leading-tight">{event.title}</h4>
+          <h4
+            className={cn(
+              'font-semibold text-sm leading-tight',
+              event.type === 'task' && event.status === 'done' && 'line-through text-muted-foreground'
+            )}
+          >
+            {event.title}
+          </h4>
 
           {/* Status and Priority row */}
           {(statusInfo || priorityInfo) && (

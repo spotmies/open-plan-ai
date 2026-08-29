@@ -42,6 +42,10 @@ export const taskImportService = {
   },
 
   async commit(projectId: string, jobId: string, proposalId: string): Promise<CommitImportResult> {
-    return apiClient.post(ENDPOINTS.TASK_IMPORTS.COMMIT(projectId, jobId), { proposalId });
+    // Longer than the client's default 15s — committing writes every row's
+    // task/assignee/module rows inside one transaction, so a big batch can
+    // legitimately take longer than a typical request even after batching
+    // the inserts on the backend.
+    return apiClient.post(ENDPOINTS.TASK_IMPORTS.COMMIT(projectId, jobId), { proposalId }, { timeout: 60000 });
   },
 };
