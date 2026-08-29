@@ -29,6 +29,7 @@ export function useTaskImportFlow(projectId: string, jobId: string | null) {
   const socketRef = useRef<Socket | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<ImportAskUserQuestion[] | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [assistantWorking, setAssistantWorking] = useState(false);
 
   const jobQuery = useQuery<TaskImportJobStatusDto>({
     queryKey: ['task-import-job', projectId, jobId],
@@ -62,18 +63,32 @@ export function useTaskImportFlow(projectId: string, jobId: string | null) {
     socketRef.current = socket;
 
     socket.on('connect', () => socket.emit('join-ai-conversation', conversationId));
-    socket.on('ai:card', () => refetchConversation());
-    socket.on('ai:proposal', () => refetchConversation());
-    socket.on('ai:proposal-update', () => refetchConversation());
+    socket.on('ai:card', () => {
+      setAssistantWorking(true);
+      refetchConversation();
+    });
+    socket.on('ai:proposal', () => {
+      setAssistantWorking(true);
+      refetchConversation();
+    });
+    socket.on('ai:proposal-update', () => {
+      setAssistantWorking(true);
+      refetchConversation();
+    });
+    socket.on('ai:tool-call', () => setAssistantWorking(true));
+    socket.on('ai:tool-result', () => setAssistantWorking(true));
     socket.on('ai:done', () => {
+      setAssistantWorking(false);
       setPendingQuestion(null);
       refetchConversation();
     });
     socket.on('ai:question', (payload: { questions: ImportAskUserQuestion[] }) => {
+      setAssistantWorking(false);
       setPendingQuestion(payload.questions);
       refetchConversation();
     });
     socket.on('ai:error', (payload: { message: string }) => {
+      setAssistantWorking(false);
       setLiveError(payload.message);
       queryClient.invalidateQueries({ queryKey: ['task-import-job', projectId, jobId] });
     });
@@ -85,11 +100,23 @@ export function useTaskImportFlow(projectId: string, jobId: string | null) {
   }, [conversationId, projectId, jobId, queryClient, refetchConversation]);
 
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!jobId) return;
+    async (content: string): Promise<{ messageId: string } | undefined> => {
+      if (!jobId) return undefined;
       setLiveError(null);
-      await taskImportService.sendMessage(projectId, jobId, content);
-      refetchConversation();
+      setAssistantWorking(true);
+      try {
+        const result = await taskImportService.sendMessage(projectId, jobId, content);
+        refetchConversation();
+        return result;
+      } catch (err) {
+        // The request never made it to a job the socket could report on, so
+        // there's no ai:error coming to clear this — reset it here or the
+        // "Fixing the issues…" spinner stays stuck forever with nothing
+        // actually in flight.
+        setAssistantWorking(false);
+        setLiveError(err instanceof Error ? err.message : 'Failed to send that message. Please try again.');
+        throw err;
+      }
     },
     [projectId, jobId, refetchConversation],
   );
@@ -98,8 +125,15 @@ export function useTaskImportFlow(projectId: string, jobId: string | null) {
     async (file: File) => {
       if (!jobId) return;
       setLiveError(null);
-      await taskImportService.uploadMessageAttachment(projectId, jobId, file);
-      refetchConversation();
+      setAssistantWorking(true);
+      try {
+        await taskImportService.uploadMessageAttachment(projectId, jobId, file);
+        refetchConversation();
+      } catch (err) {
+        setAssistantWorking(false);
+        setLiveError(err instanceof Error ? err.message : 'Failed to upload that file. Please try again.');
+        throw err;
+      }
     },
     [projectId, jobId, refetchConversation],
   );
@@ -138,6 +172,7 @@ export function useTaskImportFlow(projectId: string, jobId: string | null) {
     conversation: conversationQuery.data ?? null,
     pendingQuestion,
     liveError,
+    assistantWorking,
     sendMessage,
     uploadAttachment,
     commit,

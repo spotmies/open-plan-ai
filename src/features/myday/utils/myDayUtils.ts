@@ -557,6 +557,13 @@ export function groupTasksByProgress(items: MyDayTask[] | MyDayItem[]): {
 const KANBAN_COMPLETED_STATUSES = new Set(['done', 'resolved', 'closed', 'wont-fix']);
 const KANBAN_IN_PROGRESS_STATUSES = new Set(['in-progress', 'review']);
 
+// Whether a My Tasks item's raw status counts as finished — a task marked `done`,
+// or an issue that's `resolved` or `wont-fix` (won't-fix issues appear on the
+// Completed tab alongside resolved ones, so they need the same "complete" mark).
+export function isMyDayItemComplete(status: string): boolean {
+  return KANBAN_COMPLETED_STATUSES.has(status);
+}
+
 export type KanbanColumnId = 'dependency' | 'todo' | 'inProgress' | 'completed';
 
 /**

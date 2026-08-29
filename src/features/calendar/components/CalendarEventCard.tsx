@@ -165,7 +165,10 @@ export const CalendarEventCard: React.FC<CalendarEventCardProps> = ({
         <AlertTriangle className="h-3 w-3 text-destructive flex-shrink-0" />
       )}
       
-      <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0">
+      <span className={cn(
+        'text-xs font-medium text-foreground truncate flex-1 min-w-0',
+        event.status === 'done' && 'line-through text-muted-foreground'
+      )}>
         {event.title}
       </span>
 

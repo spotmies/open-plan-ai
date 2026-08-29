@@ -33,7 +33,8 @@ const stageLabels = {
 };
 
 const RAG_RANK = { red: 0, amber: 1, green: 2 };
-const CARD_PROJECT_LIMIT = 5;
+const CARD_PROJECT_LIMIT_MOBILE = 5;
+const CARD_PROJECT_LIMIT_DESKTOP = 8;
 
 export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOverviewProps) {
   const isMobile = useIsMobile();
@@ -45,7 +46,7 @@ export function ProjectsOverview({ projects, atRiskProjectIds }: ProjectsOvervie
       return RAG_RANK[a.health.rag] - RAG_RANK[b.health.rag];
     });
   const onTrack = ranked.filter((r) => r.health.rag === 'green').length;
-  const visible = ranked.slice(0, CARD_PROJECT_LIMIT);
+  const visible = ranked.slice(0, isMobile ? CARD_PROJECT_LIMIT_MOBILE : CARD_PROJECT_LIMIT_DESKTOP);
 
   return (
     <Card className="flex flex-col h-full min-h-0 overflow-hidden rounded-2xl border-border/70 shadow-sm min-w-0">

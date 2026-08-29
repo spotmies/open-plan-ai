@@ -111,6 +111,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { logger } from '@/services/monitoring/logger';
 import { resolveFileUrl } from '@/utils/fileUrl';
+import { renamePastedImageFile } from '@/utils/pastedFile';
 import { FilePreviewDialog, FilePreviewTarget, getVideoThumbnail } from '@/components/FilePreviewDialog';
 import { useProjectTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks/useProjectTags';
 import { getFallbackTagColor } from '@/lib/tagColors';
@@ -910,7 +911,7 @@ export const TaskDetailModal = ({
     for (const item of Array.from(items)) {
       if (item.kind === 'file' && item.type.startsWith('image/')) {
         const file = item.getAsFile();
-        if (file) imageFiles.push(file);
+        if (file) imageFiles.push(renamePastedImageFile(file, imageFiles.length));
       }
     }
     if (imageFiles.length === 0) return;
@@ -1605,12 +1606,12 @@ export const TaskDetailModal = ({
                                     }}
                                     className="cursor-pointer"
                                   >
-                                    <div className="flex items-center gap-2">
-                                      <Avatar className="h-5 w-5">
+                                    <div className="flex items-start gap-2">
+                                      <Avatar className="h-5 w-5 mt-0.5 shrink-0">
                                         <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
                                         <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
                                       </Avatar>
-                                      {member.name}
+                                      <span className="min-w-0">{member.name}</span>
                                     </div>
                                   </CommandItem>
                                 ))}

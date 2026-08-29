@@ -21,6 +21,7 @@ import {
   groupTasksByProgress,
   groupTasksByDueDate,
   groupTasksByPriority,
+  isMyDayItemComplete,
 } from '../utils/myDayUtils';
 import { MyDayGroupBy, TaskStatus } from '@/types';
 
@@ -278,7 +279,7 @@ export function MyDayListView({
       <div className="space-y-3">
         <div className="rounded-lg border divide-y divide-border">
           {visibleTasks.map((task) => {
-            const isComplete = task.status === 'done' || task.status === 'resolved';
+            const isComplete = isMyDayItemComplete(task.status);
             return (
               <div
                 key={task.id}
@@ -387,18 +388,18 @@ export function MyDayListView({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      const isComplete = task.status === 'done' || task.status === 'resolved';
+                      const isComplete = isMyDayItemComplete(task.status);
                       onStatusUpdate(task.id, isComplete ? 'todo' : 'done');
                     }}
-                    aria-label={(task.status === 'done' || task.status === 'resolved') ? 'Mark as incomplete' : 'Mark as complete'}
+                    aria-label={isMyDayItemComplete(task.status) ? 'Mark as incomplete' : 'Mark as complete'}
                     className={cn(
                       'h-4 w-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors',
-                      (task.status === 'done' || task.status === 'resolved')
+                      isMyDayItemComplete(task.status)
                         ? 'bg-status-done border-status-done'
                         : 'border-muted-foreground/40 hover:border-status-done'
                     )}
                   >
-                    {(task.status === 'done' || task.status === 'resolved') && (
+                    {isMyDayItemComplete(task.status) && (
                       <Check className="h-3 w-3 text-white" />
                     )}
                   </button>

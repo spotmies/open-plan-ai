@@ -5,7 +5,7 @@
  * Assistant panel) per the confirmed design — see the task-import feature
  * plan. Three internal stages: upload -> chat (review + resolve) -> result.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { taskImportService } from './services/taskImport.service';
 import { useTaskImportFlow } from './hooks/useTaskImportFlow';
 import { ImportProposalCard } from './components/ImportProposalCard';
+import { AssistantQuestionCard } from '@/features/assistant/components/AssistantQuestionCard';
 import { isSupportedImportFile, SUPPORTED_IMPORT_FILE_LABEL, type ImportProposalPreview, type CommitImportResult } from './taskImportData';
 
 interface Props {
@@ -24,31 +25,74 @@ interface Props {
   projectId: string;
 }
 
+interface PendingUserMessage {
+  id: string;
+  content: string;
+}
+
+interface ChatMessageItem {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  optimistic?: boolean;
+}
+
 type Stage = 'upload' | 'chat' | 'result';
+
+function toFriendlyImportError(errorSummary: string | null | undefined): string {
+  if (!errorSummary) {
+    return 'We couldn’t read this file. Please try another file or simplify the contents and try again.';
+  }
+
+  const normalized = errorSummary.toLowerCase();
+
+  if (normalized.includes('validation failed') || normalized.includes('expected string')) {
+    return 'We couldn’t understand this file as a task list. Try uploading a clearer task document, spreadsheet, or CSV with task names and optional assignee, due date, or priority columns.';
+  }
+
+  if (normalized.includes('not relevant') || normalized.includes('doesn\'t appear to actually contain task data') || normalized.includes('no actionable items')) {
+    return 'This file doesn’t seem to contain importable tasks. Try a file that clearly lists task names or action items.';
+  }
+
+  if (normalized.includes('unsupported file type')) {
+    return `This file type isn’t supported for task import. Please use ${SUPPORTED_IMPORT_FILE_LABEL}.`;
+  }
+
+  if (normalized.includes('couldn\'t read') || normalized.includes('could not read')) {
+    return 'We couldn’t read this file properly. Try exporting it again, using a simpler format, or uploading another file.';
+  }
+
+  return 'We couldn’t import this file. Please try another file or edit the file so the tasks are clearer, then try again.';
+}
 
 export function ImportTasksDialog({ open, onClose, projectId }: Props) {
   const [stage, setStage] = useState<Stage>('upload');
   const [jobId, setJobId] = useState<string | null>(null);
+  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserMessage[]>([]);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [result, setResult] = useState<CommitImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const flow = useTaskImportFlow(projectId, jobId);
 
   function reset() {
     setStage('upload');
     setJobId(null);
+    setPendingFileName(null);
     setUploadError(null);
     setDraft('');
     setResult(null);
     setCommitError(null);
+    setPendingUserMessages([]);
   }
 
   function handleClose() {
@@ -62,24 +106,54 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
       return;
     }
     setUploadError(null);
+    setPendingFileName(file.name);
     setUploading(true);
     try {
       const job = await taskImportService.startImport(projectId, file);
       setJobId(job.jobId);
       setStage('chat');
     } catch (err) {
+      setPendingFileName(null);
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
     }
   }
 
+  const job = flow.job;
+
+  useEffect(() => {
+    if (job?.sourceFileName) {
+      setPendingFileName(job.sourceFileName);
+    }
+  }, [job?.sourceFileName]);
+
   async function handleSend() {
-    if (!draft.trim()) return;
+    const content = draft.trim();
+    if (!content) return;
+
+    const optimisticId = `pending-${Date.now()}`;
+    setPendingUserMessages((current) => [...current, { id: optimisticId, content }]);
+    setDraft('');
     setSending(true);
     try {
-      await flow.sendMessage(draft.trim());
-      setDraft('');
+      const sent = await flow.sendMessage(content);
+      // Swap the temp id for the real server id the instant it's known —
+      // otherwise, once the conversation refetch confirms this message, its
+      // id won't match the optimistic bubble's, React treats them as two
+      // different elements, unmounts the old one and mounts a fresh one,
+      // and that remount (plus the entrance animation replaying) is what
+      // shows up as a brief width/layout glitch right as "Sending…" clears.
+      if (sent?.messageId) {
+        setPendingUserMessages((current) =>
+          current.map((message) => (message.id === optimisticId ? { ...message, id: sent.messageId } : message)),
+        );
+      }
+    } catch {
+      // flow.sendMessage already surfaces the failure via flow.liveError —
+      // just undo the optimistic bubble and give the user their draft back.
+      setPendingUserMessages((current) => current.filter((message) => message.id !== optimisticId));
+      setDraft((current) => current || content);
     } finally {
       setSending(false);
     }
@@ -89,6 +163,18 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     setSending(true);
     try {
       await flow.uploadAttachment(file);
+    } catch {
+      // flow.uploadAttachment already surfaces the failure via flow.liveError.
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleAnswerQuestion(answers: Array<{ header: string; selected: string[] }>) {
+    const content = answers.map((a) => `${a.header}: ${a.selected.join(', ')}`).join('\n');
+    setSending(true);
+    try {
+      await flow.sendMessage(content);
     } finally {
       setSending(false);
     }
@@ -102,11 +188,17 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
       setResult(res);
       setStage('result');
     } catch (err) {
-      // A double-click (or a retry after a slow first request already
-      // landed) hits the "no longer pending" guard — that means the import
-      // already succeeded, so re-check the job status instead of showing a
-      // scary error for something that actually worked.
-      const latestStatus = await taskImportService.getStatus(projectId, jobId!).catch(() => null);
+      // A double-click hits the "no longer pending" guard, and a slow batch
+      // can also blow past the request's own timeout while the backend
+      // transaction keeps running — both land here even though the import
+      // already succeeded or is about to. Poll status for a few seconds
+      // before showing a scary error for something that actually worked.
+      let latestStatus: Awaited<ReturnType<typeof taskImportService.getStatus>> | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        latestStatus = await taskImportService.getStatus(projectId, jobId!).catch(() => null);
+        if (latestStatus?.status === 'completed' || latestStatus?.status === 'failed') break;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
       if (latestStatus?.status === 'completed') {
         setStage('result');
         setResult(null); // exact created/skipped counts aren't recoverable from status alone, but the board already reflects the real outcome
@@ -118,7 +210,6 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     }
   }
 
-  const job = flow.job;
   // The latest proposal for this conversation, whatever its current status —
   // not filtered to 'pending' only. ImportProposalCard itself renders the
   // right thing for every status (editable review, importing spinner,
@@ -128,9 +219,53 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
   // proposals[0] is the newest — the backend returns them ordered by
   // createdAt descending (see proposals.repository.ts's listByConversation).
   const latestProposal = flow.conversation?.proposals[0] ?? null;
-  const messages = flow.conversation?.messages.filter((m) => m.role === 'user' || m.role === 'assistant') ?? [];
-  const isProcessing = job && !['awaiting_review', 'completed', 'failed'].includes(job.status);
+  const confirmedMessages: ChatMessageItem[] = (flow.conversation?.messages ?? [])
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({
+      id: m.id,
+      role: m.role as 'user' | 'assistant',
+      content: m.content ?? '',
+    }));
+  const confirmedUserMessageContents = new Set(
+    confirmedMessages
+      .filter((message) => message.role === 'user')
+      .map((message) => message.content?.trim())
+      .filter((content): content is string => !!content),
+  );
+  const optimisticMessages = pendingUserMessages
+    .filter((message) => !confirmedUserMessageContents.has(message.content.trim()))
+    .map((message) => ({
+      id: message.id,
+      role: 'user',
+      content: message.content,
+      createdAt: new Date().toISOString(),
+      optimistic: true,
+    }));
+  const messages = [...confirmedMessages, ...optimisticMessages];
+  // Identity+status fingerprint, not just messages.length — an optimistic
+  // "Sending…" bubble resolving into its confirmed twin moves one entry
+  // from optimisticMessages to confirmedMessages without changing the count,
+  // so a length-only dependency below misses it and the view stops tracking
+  // the bottom right as that bubble's height shrinks (the "Sending…" line
+  // disappearing), which yanks older messages back into view.
+  const messagesSignature = messages.map((m) => `${m.id}:${'optimistic' in m && m.optimistic ? 1 : 0}`).join(',');
+  const hasReviewContent = messages.length > 0 || !!latestProposal || !!flow.liveError || !!commitError;
+  const hasChatStarted = messages.length > 0;
+  const isProcessing = uploading || !job || !['awaiting_review', 'completed', 'failed'].includes(job.status) || !hasReviewContent;
   const isFailed = job?.status === 'failed';
+  const showAssistantWorking = flow.assistantWorking && stage === 'chat' && !isProcessing && !isFailed;
+
+  useEffect(() => {
+    if (pendingUserMessages.length === 0) return;
+    setPendingUserMessages((current) => current.filter((message) => !confirmedUserMessageContents.has(message.content.trim())));
+  }, [confirmedUserMessageContents, pendingUserMessages.length]);
+
+  useLayoutEffect(() => {
+    if (stage !== 'chat' || isProcessing) return;
+    const viewport = scrollAreaRef.current;
+    if (!viewport) return;
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [stage, isProcessing, messagesSignature, latestProposal?.id, latestProposal?.status, flow.liveError, commitError, flow.pendingQuestion]);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
@@ -142,7 +277,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
             {stage === 'chat' && !isFailed && (
               <span className="flex items-center gap-1.5 truncate">
                 <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{job?.sourceFileName}</span>
+                <span className="truncate">{pendingFileName ?? job?.sourceFileName ?? 'Preparing import…'}</span>
               </span>
             )}
             {stage === 'chat' && isFailed && 'This file couldn’t be imported'}
@@ -212,7 +347,14 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
           {stage === 'chat' && isProcessing && (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
               <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Reading {job?.sourceFileName}…</p>
+              <p className="text-sm text-muted-foreground">
+                {uploading
+                  ? `Uploading ${pendingFileName ?? 'your file'}…`
+                  : `Reading ${pendingFileName ?? job?.sourceFileName ?? 'your file'}…`}
+              </p>
+              <p className="text-xs text-muted-foreground max-w-sm">
+                The AI is extracting tasks and preparing the review.
+              </p>
             </div>
           )}
 
@@ -223,7 +365,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
               </div>
               <div className="space-y-1.5 max-w-md">
                 <p className="text-sm font-medium">Couldn't import this file</p>
-                <p className="text-sm text-muted-foreground">{job?.errorSummary ?? 'Something went wrong while reading this file.'}</p>
+                <p className="text-sm text-muted-foreground">{toFriendlyImportError(job?.errorSummary)}</p>
               </div>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={reset}>
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -234,36 +376,74 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
 
           {stage === 'chat' && !isProcessing && !isFailed && (
             <div className="flex-1 flex flex-col min-h-0 gap-4">
-              <div className="flex-1 overflow-y-auto space-y-4 min-h-0 pr-1">
+              <div ref={scrollAreaRef} className="flex-1 overflow-y-auto space-y-3 min-h-0 pr-1 pb-1">
                 {messages.map((m) => (
                   <div
                     key={m.id}
                     className={cn(
-                      'text-sm rounded-xl px-3.5 py-2.5 max-w-[85%] leading-relaxed',
+                      'text-sm rounded-xl px-3.5 py-2.5 max-w-[85%] leading-relaxed animate-fade-in',
                       m.role === 'user' ? 'bg-primary text-primary-foreground ml-auto' : 'bg-muted',
+                      'optimistic' in m && m.optimistic && 'opacity-80',
                     )}
                   >
                     {m.content}
+                    {'optimistic' in m && m.optimistic && (
+                      <div className="mt-1 text-[11px] opacity-70">Sending…</div>
+                    )}
                   </div>
                 ))}
-                {latestProposal && (
-                  <ImportProposalCard
-                    preview={latestProposal.preview as ImportProposalPreview}
-                    status={latestProposal.status}
-                    result={latestProposal.result as CommitImportResult | null}
-                    committing={committing}
-                    onCommit={() => handleCommit(latestProposal.id)}
-                  />
+                {flow.pendingQuestion && (
+                  <div className="animate-fade-in">
+                    <AssistantQuestionCard
+                      questions={flow.pendingQuestion}
+                      onSubmit={handleAnswerQuestion}
+                      disabled={sending}
+                    />
+                  </div>
+                )}
+                {showAssistantWorking && (
+                  <div className="bg-muted text-sm rounded-xl px-3.5 py-2.5 max-w-[85%] animate-fade-in">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce" />
+                      </span>
+                      <span>Thinking…</span>
+                    </div>
+                  </div>
                 )}
                 {(flow.liveError || commitError) && (
-                  <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+                  <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive animate-fade-in">
                     <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                     <span>{commitError ?? flow.liveError}</span>
                   </div>
                 )}
               </div>
 
-              <div className="flex items-end gap-2 pt-4 border-t">
+              {latestProposal && (
+                <div
+                  // Keyed on a fingerprint of the proposal's actual content
+                  // (not just its id) so every meaningful change — rows
+                  // added, warnings resolved, status flip — remounts this
+                  // block and replays the fade-in instead of the card's
+                  // height snapping instantly between states (e.g. the
+                  // "Import N tasks" button appearing/disappearing).
+                  key={`${latestProposal.id}-${(latestProposal.preview as ImportProposalPreview)?.itemCount}-${(latestProposal.preview as ImportProposalPreview)?.cleanCount}-${latestProposal.status}`}
+                  className="shrink-0 pt-1 animate-fade-in"
+                >
+                  <ImportProposalCard
+                    preview={latestProposal.preview as ImportProposalPreview}
+                    status={latestProposal.status}
+                    result={latestProposal.result as CommitImportResult | null}
+                    committing={committing}
+                    compact={hasChatStarted}
+                    onCommit={() => handleCommit(latestProposal.id)}
+                  />
+                </div>
+              )}
+
+              <div className="shrink-0 pt-4 border-t">
                 <input
                   ref={attachInputRef}
                   type="file"
@@ -275,31 +455,39 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                     e.target.value = '';
                   }}
                 />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0 h-10 w-10"
-                  onClick={() => attachInputRef.current?.click()}
-                  disabled={sending}
-                  title="Attach another file"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </Button>
-                <Textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Ask the AI to fix a row, or explain what to change…"
-                  className="min-h-[40px] max-h-[120px] resize-none"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void handleSend();
-                    }
-                  }}
-                />
-                <Button size="icon" className="shrink-0 h-10 w-10" onClick={handleSend} disabled={sending || !draft.trim()}>
-                  {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </Button>
+                <div className="flex items-end gap-1 rounded-2xl border border-input bg-background py-1 pl-1 pr-1.5 shadow-sm ring-offset-background transition-shadow focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 h-9 w-9 self-end rounded-full text-muted-foreground hover:text-foreground"
+                    onClick={() => attachInputRef.current?.click()}
+                    disabled={sending}
+                    title="Attach another file"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                  <Textarea
+                    rows={1}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Ask the AI to fix a row, or explain what to change…"
+                    className="min-h-9 max-h-[120px] resize-none self-center border-0 bg-transparent px-1.5 py-2 leading-[20px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                  />
+                  <Button
+                    size="icon"
+                    className="shrink-0 h-9 w-9 self-end rounded-full"
+                    onClick={handleSend}
+                    disabled={sending || !draft.trim()}
+                  >
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
             </div>
           )}

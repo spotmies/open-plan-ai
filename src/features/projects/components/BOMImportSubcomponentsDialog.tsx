@@ -358,7 +358,9 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
             distributor:         row.supplier || undefined,
             mpn:                 row.mpn || undefined,
             unit:                row.uom,
-            initialStatus:       row.status,
+            // The Part's initial revision has no 'draft'/'rejected' state —
+            // only the BOM node does.
+            initialStatus:       row.status === 'approved' ? 'approved' : 'pending',
             initialPrice:        row.unitPrice !== undefined ? row.unitPrice : undefined,
             initialLeadTimeDays: row.leadTimeWeeks !== undefined && row.leadTimeWeeks > 0 ? row.leadTimeWeeks * 7 : undefined,
           });
