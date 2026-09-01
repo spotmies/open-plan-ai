@@ -91,6 +91,8 @@ interface IssuesViewProps {
   onIssueCreate?: (issue: Partial<Issue>, pendingFiles?: File[]) => void;
   onIssueDelete?: (issueId: string) => void;
   userProjectRole?: string;
+  /** Px offset from the top of the scroll container to stick the table header below — e.g. the height of a sticky page header rendered above this view. */
+  stickyOffset?: number;
 }
 
 interface IssuesKanbanColumn {
@@ -205,6 +207,7 @@ export function IssuesView({
   onIssueCreate,
   onIssueDelete,
   userProjectRole,
+  stickyOffset = 0,
 }: IssuesViewProps) {
   const { id: routeProjectId } = useParams();
   const { user } = useAuth();
@@ -819,134 +822,134 @@ export function IssuesView({
                               isDropDisabled={isDependenciesColumn}
                             >
                               {(issuesProvided, snapshot) => (
-                                  <div
-                                    ref={issuesProvided.innerRef}
-                                    {...issuesProvided.droppableProps}
-                                    data-kanban-column-id={column.id}
-                                    className={cn(
-                                      'space-y-2 min-h-[120px] p-2 rounded-lg transition-colors flex-1 overflow-y-auto',
-                                      snapshot.isDraggingOver ? 'bg-muted/50' : 'bg-muted/30'
-                                    )}
-                                  >
-                                    {columnIssues.length === 0 ? (
-                                      <p className="text-xs text-muted-foreground p-1">
-                                        {isDependenciesColumn ? 'No dependency-linked issues' : 'No issues'}
-                                      </p>
-                                    ) : (
-                                      columnIssues.map((issue, issueIndex) => {
-                                        const SeverityIcon = ISSUE_SEVERITY_DISPLAY[issue.severity].icon;
-                                        const linkedCount = (issue.blocksTaskIds?.length || 0)
-                                          + (issue.blocksMilestoneIds?.length || 0)
-                                          + (issue.blockedBy?.length || 0);
+                                <div
+                                  ref={issuesProvided.innerRef}
+                                  {...issuesProvided.droppableProps}
+                                  data-kanban-column-id={column.id}
+                                  className={cn(
+                                    'space-y-2 min-h-[120px] p-2 rounded-lg transition-colors flex-1 overflow-y-auto',
+                                    snapshot.isDraggingOver ? 'bg-muted/50' : 'bg-muted/30'
+                                  )}
+                                >
+                                  {columnIssues.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground p-1">
+                                      {isDependenciesColumn ? 'No dependency-linked issues' : 'No issues'}
+                                    </p>
+                                  ) : (
+                                    columnIssues.map((issue, issueIndex) => {
+                                      const SeverityIcon = ISSUE_SEVERITY_DISPLAY[issue.severity].icon;
+                                      const linkedCount = (issue.blocksTaskIds?.length || 0)
+                                        + (issue.blocksMilestoneIds?.length || 0)
+                                        + (issue.blockedBy?.length || 0);
 
-                                        return (
-                                          <Draggable key={issue.id} draggableId={issue.id} index={issueIndex}>
-                                            {(issueProvided, issueSnapshot) => (
-                                              <Card
-                                                ref={issueProvided.innerRef}
-                                                {...issueProvided.draggableProps}
-                                                {...issueProvided.dragHandleProps}
-                                                className={cn(
-                                                  'p-3 cursor-grab active:cursor-grabbing border-l-4 relative group hover:shadow-md transition-shadow',
-                                                  issueSeverityBorder[issue.severity],
-                                                  issueSnapshot.isDragging && 'shadow-lg rotate-2'
-                                                )}
-                                                onClick={() => handleIssueClick(issue)}
-                                              >
-                                                <div className="space-y-2">
-                                                  <div className="flex items-start justify-between gap-2">
-                                                    <div className="flex items-start gap-2 min-w-0 flex-1">
-                                                      <button
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          handleStatusChange(issue, issue.status === 'resolved' ? 'open' : 'resolved');
-                                                        }}
-                                                        className={cn(
-                                                          'shrink-0 mt-0.5 h-4 w-4 rounded-full border flex items-center justify-center transition-all',
-                                                          issue.status === 'resolved'
-                                                            ? 'bg-status-done/20 border-status-done'
-                                                            : 'border-foreground/30 hover:border-foreground hover:bg-muted bg-background'
-                                                        )}
-                                                        aria-label="Mark as resolved"
-                                                      >
-                                                        {issue.status === 'resolved' && <Check className="h-2.5 w-2.5 text-status-done" />}
-                                                      </button>
-                                                      <div className="min-w-0">
-                                                        {getDisplayId(projectCode, 'I', issue.number) && (
-                                                          <span className="font-mono font-semibold text-[10px] text-blue-500 block">
-                                                            {getDisplayId(projectCode, 'I', issue.number)}
-                                                          </span>
-                                                        )}
-                                                        <p className="text-sm font-medium line-clamp-2">{issue.title}</p>
-                                                      </div>
-                                                    </div>
-                                                    <div className="text-muted-foreground hover:text-foreground mt-0.5">
-                                                      <GripVertical className="h-4 w-4" />
+                                      return (
+                                        <Draggable key={issue.id} draggableId={issue.id} index={issueIndex}>
+                                          {(issueProvided, issueSnapshot) => (
+                                            <Card
+                                              ref={issueProvided.innerRef}
+                                              {...issueProvided.draggableProps}
+                                              {...issueProvided.dragHandleProps}
+                                              className={cn(
+                                                'p-3 cursor-grab active:cursor-grabbing border-l-4 relative group hover:shadow-md transition-shadow',
+                                                issueSeverityBorder[issue.severity],
+                                                issueSnapshot.isDragging && 'shadow-lg rotate-2'
+                                              )}
+                                              onClick={() => handleIssueClick(issue)}
+                                            >
+                                              <div className="space-y-2">
+                                                <div className="flex items-start justify-between gap-2">
+                                                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                                                    <button
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleStatusChange(issue, issue.status === 'resolved' ? 'open' : 'resolved');
+                                                      }}
+                                                      className={cn(
+                                                        'shrink-0 mt-0.5 h-4 w-4 rounded-full border flex items-center justify-center transition-all',
+                                                        issue.status === 'resolved'
+                                                          ? 'bg-status-done/20 border-status-done'
+                                                          : 'border-foreground/30 hover:border-foreground hover:bg-muted bg-background'
+                                                      )}
+                                                      aria-label="Mark as resolved"
+                                                    >
+                                                      {issue.status === 'resolved' && <Check className="h-2.5 w-2.5 text-status-done" />}
+                                                    </button>
+                                                    <div className="min-w-0">
+                                                      {getDisplayId(projectCode, 'I', issue.number) && (
+                                                        <span className="font-mono font-semibold text-[10px] text-blue-500 block">
+                                                          {getDisplayId(projectCode, 'I', issue.number)}
+                                                        </span>
+                                                      )}
+                                                      <p className="text-sm font-medium line-clamp-2">{issue.title}</p>
                                                     </div>
                                                   </div>
+                                                  <div className="text-muted-foreground hover:text-foreground mt-0.5">
+                                                    <GripVertical className="h-4 w-4" />
+                                                  </div>
+                                                </div>
 
-                                                  {issue.description && (
-                                                    <p className="text-xs text-muted-foreground line-clamp-2">{issue.description}</p>
-                                                  )}
+                                                {issue.description && (
+                                                  <p className="text-xs text-muted-foreground line-clamp-2">{issue.description}</p>
+                                                )}
 
-                                                  {(() => {
-                                                    const boardChecklistItems = (issue.checklist || []).filter(
-                                                      (item) => item.showInBoardView === true
-                                                    );
-                                                    if (boardChecklistItems.length === 0) return null;
-                                                    const isExpanded = expandedChecklistPreview[issue.id] === true;
-                                                    const visibleItems = isExpanded
-                                                      ? boardChecklistItems
-                                                      : boardChecklistItems.slice(0, BOARD_CHECKLIST_PREVIEW_COUNT);
-                                                    const hasMore = boardChecklistItems.length > BOARD_CHECKLIST_PREVIEW_COUNT;
-                                                    return (
-                                                      <div className="space-y-1.5 pt-1">
-                                                        {visibleItems.map((item) => (
-                                                          <div key={item.id} className="flex items-center gap-2">
-                                                            <Checkbox
-                                                              checked={item.completed}
-                                                              onCheckedChange={(checked) => {
-                                                                if (checked === 'indeterminate') return;
-                                                                handleToggleChecklistItemOnCard(issue.id, item.id);
-                                                              }}
-                                                              className="h-3.5 w-3.5 rounded-[3px]"
-                                                              onClick={(event) => event.stopPropagation()}
-                                                            />
-                                                            <button
-                                                              type="button"
-                                                              onClick={(event) => {
-                                                                event.stopPropagation();
-                                                                handleToggleChecklistItemOnCard(issue.id, item.id);
-                                                              }}
-                                                              className={cn(
-                                                                'min-w-0 flex-1 text-left text-[11px] text-muted-foreground truncate',
-                                                                item.completed && 'line-through'
-                                                              )}
-                                                            >
-                                                              {item.text}
-                                                            </button>
-                                                          </div>
-                                                        ))}
-                                                        {hasMore && (
+                                                {(() => {
+                                                  const boardChecklistItems = (issue.checklist || []).filter(
+                                                    (item) => item.showInBoardView === true
+                                                  );
+                                                  if (boardChecklistItems.length === 0) return null;
+                                                  const isExpanded = expandedChecklistPreview[issue.id] === true;
+                                                  const visibleItems = isExpanded
+                                                    ? boardChecklistItems
+                                                    : boardChecklistItems.slice(0, BOARD_CHECKLIST_PREVIEW_COUNT);
+                                                  const hasMore = boardChecklistItems.length > BOARD_CHECKLIST_PREVIEW_COUNT;
+                                                  return (
+                                                    <div className="space-y-1.5 pt-1">
+                                                      {visibleItems.map((item) => (
+                                                        <div key={item.id} className="flex items-center gap-2">
+                                                          <Checkbox
+                                                            checked={item.completed}
+                                                            onCheckedChange={(checked) => {
+                                                              if (checked === 'indeterminate') return;
+                                                              handleToggleChecklistItemOnCard(issue.id, item.id);
+                                                            }}
+                                                            className="h-3.5 w-3.5 rounded-[3px]"
+                                                            onClick={(event) => event.stopPropagation()}
+                                                          />
                                                           <button
                                                             type="button"
-                                                            className="text-[11px] text-primary hover:underline"
                                                             onClick={(event) => {
                                                               event.stopPropagation();
-                                                              setExpandedChecklistPreview((prev) => ({
-                                                                ...prev,
-                                                                [issue.id]: !isExpanded,
-                                                              }));
+                                                              handleToggleChecklistItemOnCard(issue.id, item.id);
                                                             }}
+                                                            className={cn(
+                                                              'min-w-0 flex-1 text-left text-[11px] text-muted-foreground truncate',
+                                                              item.completed && 'line-through'
+                                                            )}
                                                           >
-                                                            {isExpanded ? 'View less' : `View more (${boardChecklistItems.length - BOARD_CHECKLIST_PREVIEW_COUNT})`}
+                                                            {item.text}
                                                           </button>
-                                                        )}
-                                                      </div>
-                                                    );
-                                                  })()}
+                                                        </div>
+                                                      ))}
+                                                      {hasMore && (
+                                                        <button
+                                                          type="button"
+                                                          className="text-[11px] text-primary hover:underline"
+                                                          onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            setExpandedChecklistPreview((prev) => ({
+                                                              ...prev,
+                                                              [issue.id]: !isExpanded,
+                                                            }));
+                                                          }}
+                                                        >
+                                                          {isExpanded ? 'View less' : `View more (${boardChecklistItems.length - BOARD_CHECKLIST_PREVIEW_COUNT})`}
+                                                        </button>
+                                                      )}
+                                                    </div>
+                                                  );
+                                                })()}
 
-                                                  {/* <div className="flex items-center justify-between gap-2">
+                                                {/* <div className="flex items-center justify-between gap-2">
                                                     <Badge className={cn('gap-1', ISSUE_SEVERITY_DISPLAY[issue.severity].color)}>
                                                       <SeverityIcon className="h-3 w-3" />
                                                       {ISSUE_SEVERITY_DISPLAY[issue.severity].label}
@@ -963,44 +966,44 @@ export function IssuesView({
                                                     )}
                                                   </div> */}
 
-                                                  <div className="flex items-center justify-between pt-1">
-                                                    <div className="flex -space-x-2">
-                                                      {(issue.assignees || []).slice(0, 3).map((assignee) => (
-                                                        <Avatar key={assignee.id} className="h-5 w-5 border-2 border-background">
-                                                          <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
-                                                          <AvatarFallback className="text-[9px] bg-muted">{assignee.initials}</AvatarFallback>
-                                                        </Avatar>
-                                                      ))}
-                                                      {(issue.assignees || []).length > 3 && (
-                                                        <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center border-2 border-background z-10">
-                                                          <span className="text-[8px] text-muted-foreground font-medium">+{(issue.assignees || []).length - 3}</span>
-                                                        </div>
-                                                      )}
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                      <AttachmentBadges
-                                                        attachmentCounts={issue.attachmentCounts}
-                                                        videoLinksCount={issue.videoLinks?.length ?? 0}
-                                                        className="text-[10px]"
-                                                      />
-                                                      {issue.dueDate && (
-                                                        <span className="text-[10px] text-muted-foreground">
-                                                          {new Date(issue.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                                        </span>
-                                                      )}
-                                                    </div>
+                                                <div className="flex items-center justify-between pt-1">
+                                                  <div className="flex -space-x-2">
+                                                    {(issue.assignees || []).slice(0, 3).map((assignee) => (
+                                                      <Avatar key={assignee.id} className="h-5 w-5 border-2 border-background">
+                                                        <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
+                                                        <AvatarFallback className="text-[9px] bg-muted">{assignee.initials}</AvatarFallback>
+                                                      </Avatar>
+                                                    ))}
+                                                    {(issue.assignees || []).length > 3 && (
+                                                      <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center border-2 border-background z-10">
+                                                        <span className="text-[8px] text-muted-foreground font-medium">+{(issue.assignees || []).length - 3}</span>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex items-center gap-2">
+                                                    <AttachmentBadges
+                                                      attachmentCounts={issue.attachmentCounts}
+                                                      videoLinksCount={issue.videoLinks?.length ?? 0}
+                                                      className="text-[10px]"
+                                                    />
+                                                    {issue.dueDate && (
+                                                      <span className="text-[10px] text-muted-foreground">
+                                                        {new Date(issue.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                      </span>
+                                                    )}
                                                   </div>
                                                 </div>
-                                              </Card>
-                                            )}
-                                          </Draggable>
-                                        );
-                                      })
-                                    )}
-                                    {issuesProvided.placeholder}
-                                  </div>
-                                )}
-                              </Droppable>
+                                              </div>
+                                            </Card>
+                                          )}
+                                        </Draggable>
+                                      );
+                                    })
+                                  )}
+                                  {issuesProvided.placeholder}
+                                </div>
+                              )}
+                            </Droppable>
                           );
 
                           if (isMobile) {
@@ -1109,10 +1112,10 @@ export function IssuesView({
                   <div className={isMobile ? 'w-full' : 'w-[280px] flex-shrink-0'}>
                     <div className={isMobile ? 'pb-1' : 'sticky top-0 bg-background z-10 pb-3 space-y-3'}>
                       {!isMobile && (
-                      <div className="flex items-center gap-2 px-1">
-                        <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
-                        <h3 className="font-medium text-sm text-muted-foreground">Add Bucket</h3>
-                      </div>
+                        <div className="flex items-center gap-2 px-1">
+                          <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
+                          <h3 className="font-medium text-sm text-muted-foreground">Add Bucket</h3>
+                        </div>
                       )}
                       <div className="px-2">
                         <Button
@@ -1265,18 +1268,19 @@ export function IssuesView({
         </div>
       ) : (
         <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[80px]">Priority</TableHead>
-                <TableHead className="w-[300px]">Issue</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Blocking</TableHead>
-                <TableHead>Assigned</TableHead>
-                <TableHead>Reported</TableHead>
-              </TableRow>
-            </TableHeader>
+          <div className="max-h-[calc(100vh-320px)] min-h-[240px] overflow-y-auto">
+            <Table containerClassName="relative w-full overflow-visible">
+              <TableHeader className="sticky top-0 z-10 bg-background shadow-sm">
+                <TableRow className="bg-background">
+                  <TableHead className="w-[80px] sticky top-0 z-10 bg-background">Priority</TableHead>
+                  <TableHead className="w-[300px] sticky top-0 z-10 bg-background">Issue</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background">Category</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background">Status</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background">Blocking</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background">Assigned</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background">Reported</TableHead>
+                </TableRow>
+              </TableHeader>
             <TableBody>
               {paginatedIssues.length === 0 ? (
                 <TableRow>
@@ -1378,6 +1382,7 @@ export function IssuesView({
             </TableBody>
           </Table>
         </div>
+      </div>
       )}
 
       {viewMode !== 'kanban' && !isMobile && issuesPaginationControls}

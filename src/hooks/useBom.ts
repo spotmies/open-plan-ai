@@ -83,6 +83,12 @@ export function useDeleteBomNode(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.bom.tree(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.bom.summary(projectId) });
+      // Deleting a node can orphan its part, which the backend soft-deletes from the
+      // org catalog (bom.service.ts deleteNode → softDeletePartsByIds). Without this,
+      // useOrgParts() keeps serving the stale pre-delete list, so re-adding the same
+      // part number (e.g. via the BOM import dialog) matches the now-deleted part's
+      // stale id and fails with "Part not found" when the backend rejects it.
+      queryClient.invalidateQueries({ queryKey: queryKeys.parts.all });
     },
   });
 }
