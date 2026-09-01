@@ -55,6 +55,7 @@ const Notifications = lazy(() => import("./features/notifications"));
 const Chat          = lazy(() => import("./features/chat"));
 const Integrations  = lazy(() => import("./features/integrations"));
 const Inventory     = lazy(() => import("./features/inventory"));
+const Requirements  = lazy(() => import("./features/requirements"));
 const SharedConversation = lazy(() => import("./features/assistant/SharedConversation"));
 
 // ── ReactQueryDevtools — dev only, lazy so it is never in the production bundle
@@ -280,6 +281,14 @@ function AppShell() {
               element={
                 <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
                   <Inventory />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/requirements"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
+                  <Requirements />
                 </Suspense>
               }
             />

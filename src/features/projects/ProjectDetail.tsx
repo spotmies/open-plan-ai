@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag, ChevronDown, FolderOpen } from 'lucide-react';
 import { BOMView } from './components/BOMView';
-import RequirementsView from './components/RequirementsView';
 import { ECOView } from './components/ECOView';
 import { GateView } from './components/GateView';
 import { RiskView } from './components/RiskView';
@@ -1906,9 +1905,6 @@ export default function ProjectDetail() {
               }
               onEcoCreated={(ecoId) => navigate(`/projects/${id}/eng-changes/${ecoId}`)}
             />
-          </TabsContent>
-          <TabsContent value="requirements" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">
-            <RequirementsView />
           </TabsContent>
           <TabsContent value="eng-changes" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">
             <ECOView

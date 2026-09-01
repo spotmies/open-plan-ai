@@ -26,6 +26,17 @@ import {
 import RequirementDetailScreen from './RequirementDetailScreen';
 import RequirementEditor from './RequirementEditor';
 import RequirementImpact from './RequirementImpact';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+// ── Project switcher (mock — Requirements has no backend yet, so this is a
+// local, static stand-in for the org's real project list; see requirementsData.ts) ──
+interface ReqProject { id: string; name: string; rev: string; populated: boolean; }
+const REQ_PROJECTS: ReqProject[] = [
+  { id: 'ev', name: 'EV Charging Station', rev: 'Rev C', populated: true },
+  { id: 'shc', name: 'Smart Home Controller', rev: 'Concept', populated: false },
+];
 
 // ── Group icons ────────────────────────────────────────────────────────────────
 const GROUP_ICONS: Record<ReqGroup, React.ElementType> = {
@@ -66,6 +77,8 @@ type ViewTab = 'table' | 'map' | 'trace' | 'coverage' | 'readiness';
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function RequirementsView() {
+  const [projectId, setProjectId] = useState('ev');
+  const project = REQ_PROJECTS.find(p => p.id === projectId) ?? REQ_PROJECTS[0];
   const [view, setView] = useState<ViewTab>('table');
   const [filters, setFilters] = useState<FilterState>(emptyFilters());
   const [sortField, setSortField] = useState<SortField>('tree');
@@ -182,20 +195,39 @@ export default function RequirementsView() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
               <ListChecks size={20} color="#3B82F6" />
               <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1, color: 'hsl(var(--foreground))' }}>Requirements</span>
-              <button style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px',
-                borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted))',
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}>
-                <Monitor size={12} color="hsl(var(--muted-foreground))" />
-                <span style={{ fontSize: 12.5, fontWeight: 500, color: 'hsl(var(--foreground))' }}>EV Charging Station</span>
-                <ChevronDown size={10} color="hsl(var(--muted-foreground))" />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px',
+                    borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted))',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}>
+                    <Monitor size={12} color="hsl(var(--muted-foreground))" />
+                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'hsl(var(--foreground))' }}>{project.name}</span>
+                    <ChevronDown size={10} color="hsl(var(--muted-foreground))" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                  {REQ_PROJECTS.map(p => (
+                    <DropdownMenuItem key={p.id} onClick={() => setProjectId(p.id)}
+                      className="flex items-center gap-2.5 py-2">
+                      <Monitor size={14} className="text-muted-foreground shrink-0" />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium truncate">{p.name}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {p.populated ? `${stats.total} requirements` : 'No requirements yet'}
+                        </span>
+                      </span>
+                      {p.id === projectId && <Check size={14} className="text-primary shrink-0" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <span style={{
                 height: 22, padding: '0 8px', borderRadius: 5,
                 border: '1px solid #3B82F6', color: '#3B82F6',
                 fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center',
-              }}>Rev C</span>
+              }}>{project.rev}</span>
             </div>
 
             {/* Right: action buttons */}
@@ -239,6 +271,7 @@ export default function RequirementsView() {
         {/* Separator */}
         <div style={{ height: 1, background: 'hsl(var(--border))' }} />
 
+        {project.populated && <>
         {/* Stats tiles row */}
         <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, padding: '10px 20px' }}>
           <SummaryTile icon={ShieldCheck} label="Verified or validated" value={`${stats.verifiedPct}%`}
@@ -333,22 +366,29 @@ export default function RequirementsView() {
             </button>
           </div>
         )}
+        </>}
       </div>
 
       {/* ── Body ── */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {view === 'table' && (
+        {!project.populated ? (
+          <RequirementsEmptyState projectName={project.name} />
+        ) : view === 'table' ? (
           <ReqTable rows={rows} expanded={expanded} selected={selected}
             filtersActive={hasActiveFilters(filters)}
             toggleExpand={toggleExpand} toggleSelect={toggleSelect}
             allSelected={allSelected} toggleAll={toggleAll}
             onOpen={openDetail} onEdit={k => openEditor(k)} onImpact={k => setImpactKey(k)}
             onClearFilters={() => setFilters(emptyFilters())} />
+        ) : view === 'map' ? (
+          <RequirementsMapView onOpen={openDetail} />
+        ) : view === 'trace' ? (
+          <TraceabilityView onOpen={openDetail} onDrill={drillToTable} />
+        ) : view === 'coverage' ? (
+          <CoverageDashboard stats={stats} onDrill={drillToTable} onOpen={openDetail} />
+        ) : (
+          <ReadinessView />
         )}
-        {view === 'map' && <RequirementsMapView onOpen={openDetail} />}
-        {view === 'trace' && <TraceabilityView onOpen={openDetail} onDrill={drillToTable} />}
-        {view === 'coverage' && <CoverageDashboard stats={stats} onDrill={drillToTable} onOpen={openDetail} />}
-        {view === 'readiness' && <ReadinessView />}
       </div>
 
       {/* ── Bulk bar ── */}
@@ -365,6 +405,47 @@ export default function RequirementsView() {
       {impactKey && (
         <RequirementImpact reqKey={impactKey} onClose={() => setImpactKey(null)} onOpen={openDetail} />
       )}
+    </div>
+  );
+}
+
+// ── Empty state — project has no requirements yet ──────────────────────────────
+function RequirementsEmptyState({ projectName }: { projectName: string }) {
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center', maxWidth: 380, padding: 24 }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: 12, margin: '0 auto 16px',
+          background: softTint('#3B82F6', 0.10), display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <ListChecks size={22} color="#3B82F6" />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: 'hsl(var(--foreground))', marginBottom: 6 }}>
+          No requirements yet
+        </div>
+        <div style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, marginBottom: 18 }}>
+          {projectName} doesn't have any requirements captured. Import from a PRD or spec, or add one manually to start the traceability chain.
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          <button style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px',
+            borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
+            cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+            color: 'hsl(var(--foreground))',
+          }}>
+            <Download size={13} />
+            Import
+          </button>
+          <button style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px',
+            borderRadius: 7, border: 'none', background: '#3B82F6', color: '#fff',
+            cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
+          }}>
+            <Plus size={13} />
+            New Requirement
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
