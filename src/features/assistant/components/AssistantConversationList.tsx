@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+
+sessionStorage.getItem('openplan:last-react-error')
 import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -50,7 +52,12 @@ export function AssistantConversationList({
   const [sharingConversation, setSharingConversation] = useState<AssistantConversationSummary | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const sorted = [...conversations].sort(
+  const safeConversations = conversations.filter(
+    (conversation): conversation is AssistantConversationSummary =>
+      !!conversation && typeof conversation.id === 'string',
+  );
+
+  const sorted = [...safeConversations].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
   const query = searchQuery.trim().toLowerCase();
@@ -136,7 +143,7 @@ export function AssistantConversationList({
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive gap-2"
-                disabled={conversations.length === 0}
+                disabled={safeConversations.length === 0}
                 onClick={() => setConfirmDeleteAll(true)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -147,7 +154,7 @@ export function AssistantConversationList({
         )}
       </div>
 
-      {conversations.length > 0 && (
+      {safeConversations.length > 0 && (
         <div className="px-3 pb-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -166,13 +173,13 @@ export function AssistantConversationList({
           {isLoading &&
             Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="mx-1 h-14 rounded-lg" />)}
 
-          {!isLoading && conversations.length === 0 && (
+          {!isLoading && safeConversations.length === 0 && (
             <p className="px-2 py-4 text-center text-xs text-muted-foreground">
               No conversations yet — ask the assistant something to get started.
             </p>
           )}
 
-          {!isLoading && conversations.length > 0 && filtered.length === 0 && (
+          {!isLoading && safeConversations.length > 0 && filtered.length === 0 && (
             <p className="px-2 py-4 text-center text-xs text-muted-foreground">
               No conversations match "{searchQuery.trim()}".
             </p>
@@ -241,7 +248,7 @@ export function AssistantConversationList({
         onOpenChange={setConfirmDeleteAll}
         onConfirm={handleConfirmDeleteAll}
         title="Delete all conversations?"
-        description={`This will permanently delete all ${conversations.length} conversation${conversations.length === 1 ? '' : 's'}, including pinned ones.`}
+        description={`This will permanently delete all ${safeConversations.length} conversation${safeConversations.length === 1 ? '' : 's'}, including pinned ones.`}
         confirmText="Delete all"
         variant="destructive"
       />

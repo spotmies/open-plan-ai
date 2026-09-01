@@ -58,6 +58,8 @@ interface MilestonesViewProps {
   onMilestoneCreate?: (milestone: Omit<Milestone, 'id'>) => void;
   onMilestoneDelete?: (milestoneId: string) => void;
   onIssueUpdate?: (issue: Issue) => void;
+  /** Px offset from the top of the scroll container to stick the kanban column headers below — e.g. the height of a sticky page header rendered above this view. */
+  stickyOffset?: number;
 }
 
 const statusConfig = {
@@ -91,6 +93,7 @@ export function MilestonesView({
   onMilestoneCreate,
   onMilestoneDelete,
   onIssueUpdate,
+  stickyOffset = 0,
 }: MilestonesViewProps) {
   const [expandedMilestones, setExpandedMilestones] = useState<string[]>([]);
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
@@ -120,11 +123,11 @@ export function MilestonesView({
     label: string;
     color: string;
   }> = [
-    { key: 'on-track', label: 'On Track', color: 'bg-chart-2' },
-    { key: 'at-risk', label: 'At Risk', color: 'bg-orange-500' },
-    { key: 'blocked', label: 'Blocked', color: 'bg-destructive' },
-    { key: 'completed', label: 'Completed', color: 'bg-status-done' },
-  ];
+      { key: 'on-track', label: 'On Track', color: 'bg-chart-2' },
+      { key: 'at-risk', label: 'At Risk', color: 'bg-orange-500' },
+      { key: 'blocked', label: 'Blocked', color: 'bg-destructive' },
+      { key: 'completed', label: 'Completed', color: 'bg-status-done' },
+    ];
 
   const handleColumnDragEnd = (result: DropResult) => {
     const { destination, source } = result;
@@ -303,7 +306,7 @@ export function MilestonesView({
 
                   return (
                     <div key={column.key} className="w-[300px] flex-shrink-0">
-                      <div className="sticky top-0 bg-background z-10 pb-3 space-y-3">
+                      <div className="sticky bg-background z-10 pb-3 space-y-3" style={{ top: stickyOffset }}>
                         <div className="flex items-center gap-2 px-1">
                           <div className={cn('w-2 h-2 rounded-full', column.color)} />
                           <h3 className="font-medium text-sm">{column.label}</h3>
@@ -385,211 +388,211 @@ export function MilestonesView({
           {sortedMilestones.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">No milestones yet</p>
           ) : (
-          <div className="relative">
-            {/* Timeline line */}
-            <div className="absolute left-3 sm:left-4 top-0 bottom-0 w-0.5 bg-border" />
+            <div className="relative">
+              {/* Timeline line */}
+              <div className="absolute left-3 sm:left-4 top-0 bottom-0 w-0.5 bg-border" />
 
-            <div className="space-y-4 sm:space-y-6">
-              {sortedMilestones.map((milestone, index) => {
-                const progress = getMilestoneProgress(milestone, tasks);
-                const milestoneTasks = getMilestoneTasks(milestone, tasks);
-                const milestoneIssues = getMilestoneIssues(milestone.id, issues);
-                const linkedModules = getMilestoneModules(milestone, modules);
-                const status = getMilestoneStatus(milestone, tasks, issues);
-                const StatusIcon = statusConfig[status].icon;
-                const isExpanded = expandedMilestones.includes(milestone.id);
-                const daysUntil = milestone.date ? Math.ceil((new Date(milestone.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : NaN;
-                const displayTitle = isMobile && milestone.title.length > 22
-                  ? `${milestone.title.slice(0, 22)}...`
-                  : milestone.title;
+              <div className="space-y-4 sm:space-y-6">
+                {sortedMilestones.map((milestone, index) => {
+                  const progress = getMilestoneProgress(milestone, tasks);
+                  const milestoneTasks = getMilestoneTasks(milestone, tasks);
+                  const milestoneIssues = getMilestoneIssues(milestone.id, issues);
+                  const linkedModules = getMilestoneModules(milestone, modules);
+                  const status = getMilestoneStatus(milestone, tasks, issues);
+                  const StatusIcon = statusConfig[status].icon;
+                  const isExpanded = expandedMilestones.includes(milestone.id);
+                  const daysUntil = milestone.date ? Math.ceil((new Date(milestone.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : NaN;
+                  const displayTitle = isMobile && milestone.title.length > 22
+                    ? `${milestone.title.slice(0, 22)}...`
+                    : milestone.title;
 
-                return (
-                  <Collapsible key={milestone.id} open={isExpanded} onOpenChange={() => toggleExpanded(milestone.id)}>
-                    <div className="relative pl-8 sm:pl-10">
-                      {/* Timeline dot */}
-                      <div className={cn(
-                        'absolute left-1 sm:left-2 top-0.5 sm:top-0 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-background flex items-center justify-center',
-                        statusConfig[status].color
-                      )}>
-                        {milestone.completed && <CheckCircle2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-white" />}
-                      </div>
+                  return (
+                    <Collapsible key={milestone.id} open={isExpanded} onOpenChange={() => toggleExpanded(milestone.id)}>
+                      <div className="relative pl-8 sm:pl-10">
+                        {/* Timeline dot */}
+                        <div className={cn(
+                          'absolute left-1 sm:left-2 top-0.5 sm:top-0 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-background flex items-center justify-center',
+                          statusConfig[status].color
+                        )}>
+                          {milestone.completed && <CheckCircle2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-white" />}
+                        </div>
 
-                      {/* Milestone card */}
-                      <Card className={cn(
-                        'p-3 sm:p-4 transition-shadow hover:shadow-md cursor-pointer',
-                        milestone.completed && 'opacity-75'
-                      )}
-                        onClick={() => handleMilestoneClick(milestone)}
-                      >
-                        <div className="space-y-2.5 sm:space-y-3">
-                          {/* Header */}
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
-                              <CollapsibleTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 shrink-0"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4" />
+                        {/* Milestone card */}
+                        <Card className={cn(
+                          'p-3 sm:p-4 transition-shadow hover:shadow-md cursor-pointer',
+                          milestone.completed && 'opacity-75'
+                        )}
+                          onClick={() => handleMilestoneClick(milestone)}
+                        >
+                          <div className="space-y-2.5 sm:space-y-3">
+                            {/* Header */}
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
+                                <CollapsibleTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 shrink-0"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </CollapsibleTrigger>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className={cn(
+                                      'font-medium text-sm sm:text-base line-clamp-2 break-words min-w-0',
+                                      milestone.completed && 'line-through text-muted-foreground'
+                                    )}>
+                                      {displayTitle}
+                                    </h3>
+                                    <Badge variant="outline" className={cn('text-xs shrink-0', statusConfig[status].textColor)}>
+                                      <StatusIcon className="h-3 w-3 mr-1" />
+                                      {statusConfig[status].label}
+                                    </Badge>
+                                  </div>
+                                  {milestone.description && (
+                                    <p className="text-xs sm:text-sm text-muted-foreground mt-1 line-clamp-2 break-words">{milestone.description}</p>
                                   )}
-                                </Button>
-                              </CollapsibleTrigger>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h3 className={cn(
-                                    'font-medium text-sm sm:text-base line-clamp-2 break-words min-w-0',
-                                    milestone.completed && 'line-through text-muted-foreground'
+                                </div>
+                              </div>
+                              <div className="pl-8 sm:pl-0 text-xs sm:text-sm sm:text-right shrink-0">
+                                <div className="flex items-center gap-1.5 text-muted-foreground">
+                                  <Calendar className="h-3.5 w-3.5 shrink-0" />
+                                  {milestone.date ? new Date(milestone.date).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  }) : 'No target date'}
+                                </div>
+                                {!milestone.completed && !isNaN(daysUntil) && (
+                                  <div className={cn(
+                                    'text-xs mt-0.5 sm:mt-1',
+                                    daysUntil < 0 ? 'text-destructive' : daysUntil < 7 ? 'text-orange-500' : 'text-muted-foreground'
                                   )}>
-                                    {displayTitle}
-                                  </h3>
-                                  <Badge variant="outline" className={cn('text-xs shrink-0', statusConfig[status].textColor)}>
-                                    <StatusIcon className="h-3 w-3 mr-1" />
-                                    {statusConfig[status].label}
+                                    {daysUntil < 0
+                                      ? `${Math.abs(daysUntil)} days overdue`
+                                      : daysUntil === 0
+                                        ? 'Due today'
+                                        : `${daysUntil} days left`
+                                    }
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Progress and stats */}
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 pl-8 sm:pl-9">
+                              <div className="flex-1 flex items-center gap-3">
+                                <Progress value={progress} className="h-2 flex-1 sm:max-w-[200px]" />
+                                <span className="text-sm font-medium shrink-0">{progress}%</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs sm:text-sm text-muted-foreground">
+                                <span>{milestoneTasks.filter(t => t.status === 'done').length}/{milestoneTasks.length} tasks</span>
+                                {milestoneIssues.length > 0 && (
+                                  <Badge variant="destructive" className="text-xs gap-1">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    {milestoneIssues.length} issue{milestoneIssues.length > 1 ? 's' : ''}
                                   </Badge>
-                                </div>
-                                {milestone.description && (
-                                  <p className="text-xs sm:text-sm text-muted-foreground mt-1 line-clamp-2 break-words">{milestone.description}</p>
                                 )}
                               </div>
                             </div>
-                            <div className="pl-8 sm:pl-0 text-xs sm:text-sm sm:text-right shrink-0">
-                              <div className="flex items-center gap-1.5 text-muted-foreground">
-                                <Calendar className="h-3.5 w-3.5 shrink-0" />
-                                {milestone.date ? new Date(milestone.date).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                }) : 'No target date'}
-                              </div>
-                              {!milestone.completed && !isNaN(daysUntil) && (
-                                <div className={cn(
-                                  'text-xs mt-0.5 sm:mt-1',
-                                  daysUntil < 0 ? 'text-destructive' : daysUntil < 7 ? 'text-orange-500' : 'text-muted-foreground'
-                                )}>
-                                  {daysUntil < 0
-                                    ? `${Math.abs(daysUntil)} days overdue`
-                                    : daysUntil === 0
-                                      ? 'Due today'
-                                      : `${daysUntil} days left`
-                                  }
-                                </div>
-                              )}
-                            </div>
-                          </div>
 
-                          {/* Progress and stats */}
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 pl-8 sm:pl-9">
-                            <div className="flex-1 flex items-center gap-3">
-                              <Progress value={progress} className="h-2 flex-1 sm:max-w-[200px]" />
-                              <span className="text-sm font-medium shrink-0">{progress}%</span>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs sm:text-sm text-muted-foreground">
-                              <span>{milestoneTasks.filter(t => t.status === 'done').length}/{milestoneTasks.length} tasks</span>
-                              {milestoneIssues.length > 0 && (
-                                <Badge variant="destructive" className="text-xs gap-1">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  {milestoneIssues.length} issue{milestoneIssues.length > 1 ? 's' : ''}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Expanded content */}
-                          <CollapsibleContent>
-                            <div className="pl-8 sm:pl-9 pt-3 space-y-3">
-                              <div className="text-sm font-medium text-muted-foreground">Linked Tasks</div>
-                              <div className="space-y-2">
-                                {milestoneTasks.length === 0 ? (
-                                  <p className="text-sm text-muted-foreground italic">No tasks linked to this milestone</p>
-                                ) : (
-                                  milestoneTasks.map(task => (
-                                    <div key={task.id} className="flex items-center justify-between p-2 bg-muted/50 rounded-md">
-                                      <div className="flex items-center gap-2">
-                                        <div className={cn(
-                                          'w-2 h-2 rounded-full',
-                                          task.status === 'done' ? 'bg-status-done' :
-                                            task.status === 'in-progress' ? 'bg-status-in-progress' :
-                                              task.status === 'blocked' ? 'bg-status-blocked' :
-                                                'bg-status-todo'
-                                        )} />
-                                        <span className={cn(
-                                          'text-sm',
-                                          task.status === 'done' && 'line-through text-muted-foreground'
-                                        )}>
-                                          {task.title}
-                                        </span>
-                                      </div>
-                                      <Badge variant="outline" className="text-xs capitalize">
-                                        {task.status.replace('-', ' ')}
-                                      </Badge>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-
-                              {/* Linked Modules */}
-                              {linkedModules.length > 0 && (
-                                <>
-                                  <div className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 mt-4">
-                                    <Box className="h-4 w-4" />
-                                    Linked Modules
-                                  </div>
-                                  <div className="space-y-2">
-                                    {linkedModules.map(module => {
-                                      const moduleProgress = getModuleProgress(module.id, tasks);
-                                      return (
-                                        <div key={module.id} className="flex items-center justify-between p-2 bg-muted/50 rounded-md">
-                                          <div className="flex items-center gap-2">
-                                            <div
-                                              className="w-2.5 h-2.5 rounded-full"
-                                              style={{ backgroundColor: module.color || '#6B7280' }}
-                                            />
-                                            <span className="text-sm">{module.name}</span>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <Progress value={moduleProgress} className="h-1.5 w-16" />
-                                            <span className="text-xs text-muted-foreground">{moduleProgress}%</span>
-                                          </div>
+                            {/* Expanded content */}
+                            <CollapsibleContent>
+                              <div className="pl-8 sm:pl-9 pt-3 space-y-3">
+                                <div className="text-sm font-medium text-muted-foreground">Linked Tasks</div>
+                                <div className="space-y-2">
+                                  {milestoneTasks.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground italic">No tasks linked to this milestone</p>
+                                  ) : (
+                                    milestoneTasks.map(task => (
+                                      <div key={task.id} className="flex items-center justify-between p-2 bg-muted/50 rounded-md">
+                                        <div className="flex items-center gap-2">
+                                          <div className={cn(
+                                            'w-2 h-2 rounded-full',
+                                            task.status === 'done' ? 'bg-status-done' :
+                                              task.status === 'in-progress' ? 'bg-status-in-progress' :
+                                                task.status === 'blocked' ? 'bg-status-blocked' :
+                                                  'bg-status-todo'
+                                          )} />
+                                          <span className={cn(
+                                            'text-sm',
+                                            task.status === 'done' && 'line-through text-muted-foreground'
+                                          )}>
+                                            {task.title}
+                                          </span>
                                         </div>
-                                      );
-                                    })}
-                                  </div>
-                                </>
-                              )}
-
-                              {milestoneIssues.length > 0 && (
-                                <>
-                                  <div className="text-sm font-medium text-destructive flex items-center gap-1.5 mt-4">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    Blocking Issues
-                                  </div>
-                                  <div className="space-y-2">
-                                    {milestoneIssues.map(issue => (
-                                      <div key={issue.id} className="flex items-center justify-between p-2 bg-destructive/10 rounded-md border border-destructive/20">
-                                        <span className="text-sm">{issue.title}</span>
-                                        <Badge variant="outline" className="text-xs capitalize border-destructive/30 text-destructive">
-                                          {issue.severity}
+                                        <Badge variant="outline" className="text-xs capitalize">
+                                          {task.status.replace('-', ' ')}
                                         </Badge>
                                       </div>
-                                    ))}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </CollapsibleContent>
-                        </div>
-                      </Card>
-                    </div>
-                  </Collapsible>
-                );
-              })}
+                                    ))
+                                  )}
+                                </div>
+
+                                {/* Linked Modules */}
+                                {linkedModules.length > 0 && (
+                                  <>
+                                    <div className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 mt-4">
+                                      <Box className="h-4 w-4" />
+                                      Linked Modules
+                                    </div>
+                                    <div className="space-y-2">
+                                      {linkedModules.map(module => {
+                                        const moduleProgress = getModuleProgress(module.id, tasks);
+                                        return (
+                                          <div key={module.id} className="flex items-center justify-between p-2 bg-muted/50 rounded-md">
+                                            <div className="flex items-center gap-2">
+                                              <div
+                                                className="w-2.5 h-2.5 rounded-full"
+                                                style={{ backgroundColor: module.color || '#6B7280' }}
+                                              />
+                                              <span className="text-sm">{module.name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <Progress value={moduleProgress} className="h-1.5 w-16" />
+                                              <span className="text-xs text-muted-foreground">{moduleProgress}%</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </>
+                                )}
+
+                                {milestoneIssues.length > 0 && (
+                                  <>
+                                    <div className="text-sm font-medium text-destructive flex items-center gap-1.5 mt-4">
+                                      <AlertTriangle className="h-4 w-4" />
+                                      Blocking Issues
+                                    </div>
+                                    <div className="space-y-2">
+                                      {milestoneIssues.map(issue => (
+                                        <div key={issue.id} className="flex items-center justify-between p-2 bg-destructive/10 rounded-md border border-destructive/20">
+                                          <span className="text-sm">{issue.title}</span>
+                                          <Badge variant="outline" className="text-xs capitalize border-destructive/30 text-destructive">
+                                            {issue.severity}
+                                          </Badge>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </CollapsibleContent>
+                          </div>
+                        </Card>
+                      </div>
+                    </Collapsible>
+                  );
+                })}
+              </div>
             </div>
-          </div>
           )}
         </Card>
       )

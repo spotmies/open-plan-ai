@@ -25,6 +25,8 @@ export interface StockRecord {
   partId: string;   // links to ApiPartResponse.id in the real Parts catalog
   pn: string;
   name: string;
+  mpn?: string;
+  manufacturer?: string;
   cat: BOMCategory;
   onHand: number;
   allocated: number;
@@ -430,6 +432,7 @@ export interface BuildLine {
   pn: string;
   name: string;
   cat: BOMCategory;
+  imageUrl?: string;
   qtyPerUnit: number;
   uom: string;
   required: number;
@@ -494,6 +497,7 @@ export interface BuildBomLine {
   pn: string;
   name: string;
   cat: BOMCategory;
+  imageUrl?: string;
   qtyPerUnit: number;
   uom: string;
   onHand: number;
@@ -540,7 +544,7 @@ export function buildFromDef(def: BuildDef, bomLines: BuildBomLine[]): Build {
     };
     const status = computeCoverage(stockLike, required);
     return {
-      partId: r.partId, pn: r.pn, name: r.name, cat: r.cat,
+      partId: r.partId, pn: r.pn, name: r.name, cat: r.cat, imageUrl: r.imageUrl,
       qtyPerUnit, uom: r.uom,
       required, available: availableOf(stockLike), allocated: r.allocated, onOrder: r.onOrder,
       leadTimeDays: r.leadTimeDays, status,

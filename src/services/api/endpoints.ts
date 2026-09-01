@@ -97,6 +97,16 @@ export const ENDPOINTS = {
       `/projects/${projectId}/task-imports/${jobId}/messages/attachments`,
     COMMIT: (projectId: string, jobId: string) => `/projects/${projectId}/task-imports/${jobId}/commit`,
   },
+  // Issue Import (file upload -> AI structuring -> chat resolve -> bulk create)
+  ISSUE_IMPORTS: {
+    START: (projectId: string) => `/projects/${projectId}/issue-imports`,
+    STATUS: (projectId: string, jobId: string) => `/projects/${projectId}/issue-imports/${jobId}`,
+    CONVERSATION: (projectId: string, jobId: string) => `/projects/${projectId}/issue-imports/${jobId}/conversation`,
+    MESSAGES: (projectId: string, jobId: string) => `/projects/${projectId}/issue-imports/${jobId}/messages`,
+    MESSAGE_ATTACHMENTS: (projectId: string, jobId: string) =>
+      `/projects/${projectId}/issue-imports/${jobId}/messages/attachments`,
+    COMMIT: (projectId: string, jobId: string) => `/projects/${projectId}/issue-imports/${jobId}/commit`,
+  },
   // Hardware Modules
   MODULES: {
     LIST: (projectId: string) => `/projects/${projectId}/hardware-modules`,
@@ -247,6 +257,7 @@ export const ENDPOINTS = {
   // Engineering Changes (ECO)
   ECOS: {
     LIST:     (projectId: string) => `/projects/${projectId}/ecos`,
+    BY_PART:  (projectId: string, partId: string) => `/projects/${projectId}/ecos/by-part/${partId}`,
     STATS:    (projectId: string) => `/projects/${projectId}/ecos/stats`,
     CREATE:   (projectId: string) => `/projects/${projectId}/ecos`,
     BY_ID:    (projectId: string, ecoId: string) => `/projects/${projectId}/ecos/${ecoId}`,

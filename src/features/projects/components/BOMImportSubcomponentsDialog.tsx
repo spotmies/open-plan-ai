@@ -17,7 +17,7 @@ import {
 import {
   BOMNode, ApiPartResponse, ParsedImportRow,
   SUBCOMPONENT_IMPORT_COLUMNS, parseSubcomponentImportRows,
-  checkColumnMappingConfidence, applyColumnMapping, validateLevels,
+  checkColumnMappingConfidence, applyColumnMapping, validateLevels, validateDuplicateParts,
 } from './bomData';
 import { useOrgParts, useCreatePart } from '@/hooks/useParts';
 import { useCreateBomNode, useMapImportColumns, useFixImportRow } from '@/hooks/useBom';
@@ -37,6 +37,9 @@ interface Props {
   onClose: () => void;
   /** If null/undefined, parts are imported as top-level BOM nodes (no parent). */
   parentNode?: BOMNode | null;
+  /** The BOM's existing top-level nodes — only needed when parentNode is omitted,
+   *  so duplicate-part detection can see what's already there. */
+  rootNodes?: BOMNode[];
   projectId: string;
   orgId: string;
   /**
@@ -161,7 +164,7 @@ async function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projectId, orgId, onImported }: Props) {
+export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, rootNodes, projectId, orgId, onImported }: Props) {
   const [stage, setStage] = useState<'upload' | 'preview' | 'result'>('upload');
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -323,7 +326,10 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
   };
 
   const levelIssues = validateLevels(parsedRows);
-  const validRows = parsedRows.filter(r => r.errors.length === 0 && !levelIssues.has(r.rowNumber));
+  const existingSiblings = parentNode ? (parentNode.children ?? []) : (rootNodes ?? []);
+  const duplicateIssues = validateDuplicateParts(parsedRows, levelIssues, existingSiblings);
+  const validRows = parsedRows.filter(r =>
+    r.errors.length === 0 && !levelIssues.has(r.rowNumber) && !duplicateIssues.has(r.rowNumber));
   const isMultiLevel = parsedRows.some(r => r.level > 0);
 
   const handleImport = async () => {
@@ -485,8 +491,9 @@ export function BOMImportSubcomponentsDialog({ open, onClose, parentNode, projec
               <div className="space-y-1">
                 {parsedRows.map(row => {
                   const levelError = levelIssues.get(row.rowNumber);
-                  const isValid = row.errors.length === 0 && !levelError;
-                  const allErrors = levelError ? [...row.errors, levelError] : row.errors;
+                  const duplicateError = duplicateIssues.get(row.rowNumber);
+                  const isValid = row.errors.length === 0 && !levelError && !duplicateError;
+                  const allErrors = [...row.errors, ...(levelError ? [levelError] : []), ...(duplicateError ? [duplicateError] : [])];
                   return (
                     <div key={row.rowNumber}
                       style={isMultiLevel ? { paddingLeft: `${12 + row.level * 16}px` } : undefined}

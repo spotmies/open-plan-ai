@@ -59,7 +59,7 @@ const components: Components = {
 
 export function AssistantMarkdown({ content, className }: AssistantMarkdownProps) {
   return (
-    <div className={cn('min-w-0 text-sm leading-relaxed', className)}>
+    <div className={cn('min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]', className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

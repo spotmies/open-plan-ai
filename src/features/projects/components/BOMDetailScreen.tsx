@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -20,6 +21,9 @@ import { BOMNode, BOMRevision, BOM_CAT_META, bomPath, bomTypeOf, bomCountAll, de
 import { BOMStatusPill, ReqTag, PartThumb, PartImageThumb, ImageViewerModal } from './BOMShared';
 import { BOMPartSheet, BOMPartPayload, DocValue } from './BOMPartSheet';
 import { BOMECOSheet } from './BOMECOSheet';
+import { StatusPill } from './ECOShared';
+import { fromApiEcoByPart, statusMeta } from './ecoData';
+import { useEcosByPart } from '@/hooks/useECOs';
 import { BOMImportSubcomponentsDialog } from './BOMImportSubcomponentsDialog';
 import { usePartRevisions, useCreatePart, useUpdatePart, useCreateRevision } from '@/hooks/useParts';
 import { useCreateBomNode, useUpdateBomNode, useDeleteBomNode, useAddRequirement, useRemoveRequirement, useCreateApprovalRequest, useDecideApprovalRequest, useBomNodeApprovals, useBomApprovalRequests, useActiveBomApprovalRequest } from '@/hooks/useBom';
@@ -27,7 +31,7 @@ import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useAuth } from '@/contexts/AuthContext';
 import { BOMSendForReviewModal } from './BOMSendForReviewModal';
 import { BOMApprovalReviewCard } from './BOMApprovalReviewCard';
-import { uploadBomDocumentFile, addBomDocumentLink, useBomDocuments, isImageAttachment } from '@/hooks/useBomDocuments';
+import { uploadBomDocumentFile, addBomDocumentLink, deleteBomDocument, useBomDocuments, isImageAttachment, type BomAttachment } from '@/hooks/useBomDocuments';
 import { useCurrency } from '@/hooks/useCurrency';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useBomNotes, useAddBomNote, useUpdateBomNote, useDeleteBomNote } from '@/hooks/useBomNotes';
@@ -39,12 +43,30 @@ function getInitials(name: string | undefined | null): string {
   return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-async function saveBomDocs(nodeId: string, payload: BOMPartPayload) {
-  const docs = [payload.docPhoto, ...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])].filter(Boolean) as DocValue[];
-  const newDocs = docs.filter(d => d.kind !== 'existing');
-  await Promise.allSettled(
-    newDocs.map(d => d.kind === 'file' ? uploadBomDocumentFile(nodeId, d.file) : addBomDocumentLink(nodeId, d.url, d.fileName)),
+// Returns the uploaded/linked photo's resolved fileUrl (for persisting onto the
+// part catalog row so Inventory can show it) — undefined when the photo wasn't
+// touched (unchanged or still the same 'existing' attachment), null when the
+// user explicitly removed it.
+async function saveBomDocs(nodeId: string, payload: BOMPartPayload): Promise<{ photoUrl?: string | null }> {
+  const otherDocs = [...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])].filter(Boolean) as DocValue[];
+  const newOtherDocs = otherDocs.filter(d => d.kind !== 'existing');
+  const uploads = Promise.allSettled(
+    newOtherDocs.map(d => d.kind === 'file' ? uploadBomDocumentFile(nodeId, d.file) : addBomDocumentLink(nodeId, d.url, d.fileName)),
   );
+
+  let photoUrl: string | null | undefined;
+  if (payload.docPhoto === null) {
+    photoUrl = null;
+  } else if (payload.docPhoto?.kind === 'file') {
+    const attachment = await uploadBomDocumentFile(nodeId, payload.docPhoto.file);
+    photoUrl = attachment.fileUrl;
+  } else if (payload.docPhoto?.kind === 'url') {
+    await addBomDocumentLink(nodeId, payload.docPhoto.url, payload.docPhoto.fileName);
+    photoUrl = payload.docPhoto.url;
+  }
+
+  await uploads;
+  return { photoUrl };
 }
 
 // ── Add Sub-component Dialog ───────────────────────────────────────
@@ -329,6 +351,9 @@ const Field = ({ label, children, mono }: { label: string; children: React.React
   </div>
 );
 
+// Toggle to bring the "Where Used" card back — see its usage below.
+const SHOW_WHERE_USED = false;
+
 const Card = ({ title, action, children, noPad }: {
   title?: string; action?: React.ReactNode; children: React.ReactNode; noPad?: boolean;
 }) => (
@@ -446,6 +471,11 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
   const { formatCurrency } = useCurrency();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
+
+  // ── Engineering Changes that reference this part ──
+  const { data: apiRelatedEcos, isLoading: relatedEcosLoading } = useEcosByPart(projectId, originalNode._partId);
+  const relatedEcos = useMemo(() => (apiRelatedEcos ?? []).map(fromApiEcoByPart), [apiRelatedEcos]);
 
   // ── Uploaded documents — pull the product photo (first image attachment) ──
   const { data: nodeDocs } = useBomDocuments(originalNode.id);
@@ -566,13 +596,17 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
       status: payload.status, parentId: originalNode.id,
       ownerId: payload.ownerId ?? null,
     });
-    await saveBomDocs(node.id, payload);
+    const { photoUrl } = await saveBomDocs(node.id, payload);
+    if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
     setShowCreateNewSub(false);
   };
 
   // ── Save handler ──
   const handleSave = async (payload: BOMPartPayload) => {
     if (!originalNode._partId) return;
+    // Upload any documents attached in the edit form first so a new/removed
+    // photo's URL can ride along in the same updatePart call below.
+    const { photoUrl } = await saveBomDocs(originalNode.id, payload);
     if (payload.versionMode === 'new') {
       await createRev.mutateAsync({
         partId: originalNode._partId,
@@ -587,6 +621,9 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
           suppliers: payload.suppliers?.length ? payload.suppliers.map(s => ({ ...s, price: parseFloat(s.price) || 0 })) : undefined,
         },
       });
+      if (photoUrl !== undefined) {
+        await updatePart.mutateAsync({ partId: originalNode._partId, dto: { imageUrl: photoUrl } });
+      }
     } else {
       // Revisions are append-only on the backend — there is no endpoint to
       // patch price/leadTime on an existing row. "Update in place" therefore
@@ -596,7 +633,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
       const leadTimeChanged = payload.leadTime !== activeRev.leadTime;
       await Promise.all([
         updateNode.mutateAsync({ nodeId: originalNode.id, dto: { quantity: payload.qty, unit: payload.uom } }),
-        updatePart.mutateAsync({ partId: originalNode._partId, dto: { name: payload.name, description: payload.desc, category: payload.category, manufacturer: payload.manufacturer || undefined, distributor: payload.distributor || undefined, mpn: payload.mpn || undefined, customFields: payload.customFields } }),
+        updatePart.mutateAsync({ partId: originalNode._partId, dto: { name: payload.name, description: payload.desc, category: payload.category, manufacturer: payload.manufacturer || undefined, distributor: payload.distributor || undefined, mpn: payload.mpn || undefined, customFields: payload.customFields, ...(photoUrl !== undefined ? { imageUrl: photoUrl } : {}) } }),
         ...(priceChanged || leadTimeChanged ? [createRev.mutateAsync({
           partId: originalNode._partId,
           dto: {
@@ -612,8 +649,6 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
         })] : []),
       ]);
     }
-    // Upload any documents attached in the edit form
-    await saveBomDocs(originalNode.id, payload);
     queryClient.invalidateQueries({ queryKey: ['bom-documents', originalNode.id] });
 
     // Sync requirement traceability links
@@ -740,33 +775,33 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
         />
       ) : (
         <>
-      {/* Breadcrumb */}
-      <div className="px-6 pt-3 flex items-center m-2 gap-1.5 text-xs text-muted-foreground flex-wrap">
-        <span className="cursor-pointer hover:text-foreground transition-colors" onClick={onBack}>BOM</span>
-        <ChevronRight className="w-3 h-3" />
-        {path.slice(0, -1).map((p) => (
-          <span key={p.id} className="flex items-center gap-1.5">
-            <span
-              className="cursor-pointer hover:text-foreground transition-colors font-mono"
-              onClick={() => onNavigate(p.id)}
-            >
-              {p.pn}
-            </span>
+          {/* Breadcrumb */}
+          <div className="px-6 pt-3 flex items-center m-2 gap-1.5 text-xs text-muted-foreground flex-wrap">
+            <span className="cursor-pointer hover:text-foreground transition-colors" onClick={onBack}>BOM</span>
             <ChevronRight className="w-3 h-3" />
-          </span>
-        ))}
-        <span className="font-mono text-foreground font-medium">{node.pn}</span>
-        {!isLatest && (
-          <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-300/40">
-            Viewing historical revision
-          </span>
-        )}
-      </div>
+            {path.slice(0, -1).map((p) => (
+              <span key={p.id} className="flex items-center gap-1.5">
+                <span
+                  className="cursor-pointer hover:text-foreground transition-colors font-mono"
+                  onClick={() => onNavigate(p.id)}
+                >
+                  {p.pn}
+                </span>
+                <ChevronRight className="w-3 h-3" />
+              </span>
+            ))}
+            <span className="font-mono text-foreground font-medium">{node.pn}</span>
+            {!isLatest && (
+              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-300/40">
+                Viewing historical revision
+              </span>
+            )}
+          </div>
 
-      {/* Scrollable body */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {/* Back button */}
-        {/* <div className="px-6 pt-3">
+          {/* Scrollable body */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+            {/* Back button */}
+            {/* <div className="px-6 pt-3">
           <button
             onClick={onBack}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mb-3 rounded-md text-xs font-medium text-muted-foreground border border-border bg-transparent hover:text-foreground hover:bg-muted transition-colors"
@@ -775,302 +810,315 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
           </button>
         </div> */}
 
-        {/* Part header */}
-        <div className="px-6 pb-4 flex items-start justify-between gap-5">
-          <div className="flex gap-4 items-start min-w-0">
-            <div className="w-16 shrink-0">
-              <PartThumb cat={node.cat} size={64} radius={12} imageUrl={photoUrl} onImageClick={photoUrl ? () => setViewingImage(true) : undefined} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <h1 className="text-xl font-semibold text-foreground truncate max-w-[420px]">{node.name || node.pn}</h1>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-sm break-words">{node.name || node.pn}</TooltipContent>
-                </Tooltip>
-                <BOMStatusPill status={node.status} />
-                {/* ── Version toggle ── */}
-                <RevisionToggle
-                  revHistory={revHistory}
-                  activeIdx={activeRevIdx}
-                  onChange={setActiveRevIdx}
-                />
+            {/* Part header */}
+            <div className="px-6 pb-4 flex items-start justify-between gap-5">
+              <div className="flex gap-4 items-start min-w-0">
+                <div className="w-16 shrink-0">
+                  <PartThumb cat={node.cat} size={64} radius={12} imageUrl={photoUrl} onImageClick={photoUrl ? () => setViewingImage(true) : undefined} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2.5 mb-1 flex-wrap">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <h1 className="text-xl font-semibold text-foreground truncate max-w-[420px]">{node.name || node.pn}</h1>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm break-words">{node.name || node.pn}</TooltipContent>
+                    </Tooltip>
+                    <BOMStatusPill status={node.status} />
+                    {/* ── Version toggle ── */}
+                    <RevisionToggle
+                      revHistory={revHistory}
+                      activeIdx={activeRevIdx}
+                      onChange={setActiveRevIdx}
+                    />
+                  </div>
+                  <div className="text-xs font-mono text-muted-foreground mb-1">{node.pn}</div>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+                    <span className="inline-flex items-center gap-1.5" style={{ color: meta.tint }}>
+                      <span className="w-2 h-2 rounded-sm inline-block" style={{ background: meta.tint }} />
+                      {meta.label}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="text-xs font-mono text-muted-foreground mb-1">{node.pn}</div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
-                <span className="inline-flex items-center gap-1.5" style={{ color: meta.tint }}>
-                  <span className="w-2 h-2 rounded-sm inline-block" style={{ background: meta.tint }} />
-                  {meta.label}
-                </span>
+              <div className="flex gap-2 shrink-0">
+                {canSendForReview && (
+                  <button
+                    onClick={() => setShowSendForReview(true)}
+                    title="Send this part for review"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors whitespace-nowrap"
+                  >
+                    <Send className="w-3.5 h-3.5 text-muted-foreground" /> Send for Review
+                  </button>
+                )}
+                {canReviseAndResubmit && (
+                  <button
+                    onClick={() => setShowEdit(true)}
+                    title="Revise this part and resubmit for review"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors whitespace-nowrap"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Revise &amp; Resubmit
+                  </button>
+                )}
+                {activeRequest && !canDecide && (
+                  <span
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap"
+                    style={{ background: 'rgba(245,158,11,0.1)', color: '#D97706', border: '1px solid rgba(245,158,11,0.2)' }}
+                  >
+                    Awaiting review by {activeRequest.approvers.map(a => a.name).join(', ')}
+                  </span>
+                )}
+                {!canReviseAndResubmit && <button
+                  onClick={() => setEcoOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors whitespace-nowrap"
+                >
+                  <GitMerge className="w-3.5 h-3.5 text-muted-foreground" /> New ECO
+                </button>}
+                {!canReviseAndResubmit && <button
+                  onClick={() => isLatest && setShowEdit(true)}
+                  disabled={!isLatest}
+                  title={isLatest ? 'Edit this part' : 'Switch to latest revision to edit'}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap',
+                    isLatest
+                      ? 'bg-foreground text-background hover:bg-foreground/90 cursor-pointer'
+                      : 'bg-muted text-muted-foreground border border-border cursor-not-allowed opacity-50'
+                  )}
+                >
+                  <SquarePen className="w-3.5 h-3.5" /> Edit Part
+                </button>}
+                {canApprove && (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    title="Delete this part"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium border border-border bg-card hover:bg-destructive/10 hover:border-destructive/30 transition-colors whitespace-nowrap"
+                    style={{ color: '#DC2626' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Part
+                  </button>
+                )}
               </div>
             </div>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            {canSendForReview && (
-              <button
-                onClick={() => setShowSendForReview(true)}
-                title="Send this part for review"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors whitespace-nowrap"
-              >
-                <Send className="w-3.5 h-3.5 text-muted-foreground" /> Send for Review
-              </button>
-            )}
-            {canReviseAndResubmit && (
-              <button
-                onClick={() => setShowEdit(true)}
-                title="Revise this part and resubmit for review"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors whitespace-nowrap"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Revise &amp; Resubmit
-              </button>
-            )}
-            {activeRequest && !canDecide && (
-              <span
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap"
-                style={{ background: 'rgba(245,158,11,0.1)', color: '#D97706', border: '1px solid rgba(245,158,11,0.2)' }}
-              >
-                Awaiting review by {activeRequest.approvers.map(a => a.name).join(', ')}
-              </span>
-            )}
-            {!canReviseAndResubmit && <button
-              onClick={() => setEcoOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors whitespace-nowrap"
-            >
-              <GitMerge className="w-3.5 h-3.5 text-muted-foreground" /> New ECO
-            </button>}
-            {!canReviseAndResubmit && <button
-              onClick={() => isLatest && setShowEdit(true)}
-              disabled={!isLatest}
-              title={isLatest ? 'Edit this part' : 'Switch to latest revision to edit'}
-              className={cn(
-                'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap',
-                isLatest
-                  ? 'bg-foreground text-background hover:bg-foreground/90 cursor-pointer'
-                  : 'bg-muted text-muted-foreground border border-border cursor-not-allowed opacity-50'
-              )}
-            >
-              <SquarePen className="w-3.5 h-3.5" /> Edit Part
-            </button>}
-            {canApprove && (
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                title="Delete this part"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium border border-border bg-card hover:bg-destructive/10 hover:border-destructive/30 transition-colors whitespace-nowrap"
-                style={{ color: '#DC2626' }}
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete Part
-              </button>
-            )}
-          </div>
-        </div>
 
-        {showRejectionBanner && (
-          <div
-            className="mx-6 mb-4 px-4 py-2.5 rounded-lg text-[12px] flex flex-col items-start gap-2"
-            style={{ color: '#DC2626', background: '#DC262614', border: '1px solid #DC262633' }}
-          >
-            <div className='flex items-start gap-2'>
-              <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span className="font-semibold">Review rejected by {lastRequest?.decidedByName ?? 'an approver'}.</span>
-            </div>
-            <div><span>Rejection Reason:</span>{lastRequest?.reason && <span> {lastRequest.reason}</span>}</div>
-            <div>Click &quot;Revise &amp; Resubmit&quot; to update the part and resubmit for review.</div>
-          </div>
-        )}
+            {showRejectionBanner && (
+              <div
+                className="mx-6 mb-4 px-4 py-2.5 rounded-lg text-[12px] flex flex-col items-start gap-2"
+                style={{ color: '#DC2626', background: '#DC262614', border: '1px solid #DC262633' }}
+              >
+                <div className='flex items-start gap-2'>
+                  <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span className="font-semibold">Review rejected by {lastRequest?.decidedByName ?? 'an approver'}.</span>
+                </div>
+                <div><span>Rejection Reason:</span>{lastRequest?.reason && <span> {lastRequest.reason}</span>}</div>
+                <div>Click &quot;Revise &amp; Resubmit&quot; to update the part and resubmit for review.</div>
+              </div>
+            )}
 
-        {showApprovalActions && activeRequest && (
-          <BOMApprovalReviewCard
-            request={activeRequest}
-            partLabel={node.pn}
-            onApprove={handleApprove}
-            onReject={handleRejectConfirm}
-            isPending={decideApprovalRequest.isPending}
-          />
-        )}
+            {showApprovalActions && activeRequest && (
+              <BOMApprovalReviewCard
+                request={activeRequest}
+                partLabel={node.pn}
+                onApprove={handleApprove}
+                onReject={handleRejectConfirm}
+                isPending={decideApprovalRequest.isPending}
+              />
+            )}
 
-        {/* Info row */}
-        <div className="mx-6 mb-5 px-4 py-3.5 bg-card border border-border rounded-xl grid gap-4"
-          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
-          <Field label="Part Number" mono>{node.pn}</Field>
-          <Field label="Part Name">{node.name}</Field>
-          <Field label="MPN" mono>{node.mpn}</Field>
-          <Field label="Manufacturer">{node.manufacturer}</Field>
-          <Field label="Supplier">{node.distributor}</Field>
-          <Field label="Quantity">{node.qty} {node.uom}</Field>
-          {node.designators && <Field label="Designators" mono>{node.designators}</Field>}
-          <Field label="Unit Price">{formatCurrency(node.price)}</Field>
-          <Field label="Lead Time">{formatLeadTime(node.leadTime)}</Field>
-          <Field label="BOM Level">{node.levelLabel ?? node.level}</Field>
-          <Field label="Handled By">
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[8px] font-bold text-primary shrink-0">
-                {getInitials(node.owner)}
-              </span>
-              {node.owner}
-            </span>
-          </Field>
-          {node.createdByName && (
-            <Field label="Created By">
-              <span className="flex items-center gap-1.5">
-                <span className="w-4 h-4 rounded-full bg-muted border border-border flex items-center justify-center text-[8px] font-bold text-muted-foreground shrink-0">
-                  {getInitials(node.createdByName)}
+            {/* Info row */}
+            <div className="mx-6 mb-5 px-4 py-3.5 bg-card border border-border rounded-xl grid gap-4"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
+              <Field label="Part Number" mono>{node.pn}</Field>
+              <Field label="Part Name">{node.name}</Field>
+              <Field label="MPN" mono>{node.mpn}</Field>
+              <Field label="Manufacturer">{node.manufacturer}</Field>
+              <Field label="Supplier">{node.distributor}</Field>
+              <Field label="Quantity">{node.qty} {node.uom}</Field>
+              {node.designators && <Field label="Designators" mono>{node.designators}</Field>}
+              <Field label="Unit Price">{formatCurrency(node.price)}</Field>
+              <Field label="Lead Time">{formatLeadTime(node.leadTime)}</Field>
+              <Field label="BOM Level">{node.levelLabel ?? node.level}</Field>
+              <Field label="Handled By">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[8px] font-bold text-primary shrink-0">
+                    {getInitials(node.owner)}
+                  </span>
+                  {node.owner}
                 </span>
-                {node.createdByName}
-              </span>
-            </Field>
-          )}
-          {Array.isArray(node.customFields) && node.customFields.length > 0 && (
-            <>
-              {/* <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">Additional Fields</p> */}
-              {node.customFields.map((cf, i) => (
-                // <div key={i} className="flex items-center gap-3 mb-2 last:mb-0">
-                //   <div className="w-8 h-8 rounded-lg bg-muted border border-border flex items-center justify-center shrink-0">
-                //     <Sliders className="w-3.5 h-3.5 text-muted-foreground" />
-                //   </div>
-                //   <span className="text-xs text-muted-foreground flex-1">{cf.label}</span>
-                //   <span className="text-sm font-medium text-foreground text-right">{cf.value}</span>
-                // </div>
-                <Field label={cf.label}>
+              </Field>
+              {node.createdByName && (
+                <Field label="Created By">
                   <span className="flex items-center gap-1.5">
-                    {cf.value}
+                    <span className="w-4 h-4 rounded-full bg-muted border border-border flex items-center justify-center text-[8px] font-bold text-muted-foreground shrink-0">
+                      {getInitials(node.createdByName)}
+                    </span>
+                    {node.createdByName}
                   </span>
                 </Field>
-              ))}
-            </>
-          )}
-        </div>
+              )}
+              {Array.isArray(node.customFields) && node.customFields.length > 0 && (
+                <>
+                  {/* <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">Additional Fields</p> */}
+                  {node.customFields.map((cf, i) => (
+                    // <div key={i} className="flex items-center gap-3 mb-2 last:mb-0">
+                    //   <div className="w-8 h-8 rounded-lg bg-muted border border-border flex items-center justify-center shrink-0">
+                    //     <Sliders className="w-3.5 h-3.5 text-muted-foreground" />
+                    //   </div>
+                    //   <span className="text-xs text-muted-foreground flex-1">{cf.label}</span>
+                    //   <span className="text-sm font-medium text-foreground text-right">{cf.value}</span>
+                    // </div>
+                    <Field label={cf.label}>
+                      <span className="flex items-center gap-1.5">
+                        {cf.value}
+                      </span>
+                    </Field>
+                  ))}
+                </>
+              )}
+            </div>
 
-        {/* Two-column body */}
-        <div className="px-6 pb-8 grid gap-4" style={{ gridTemplateColumns: 'minmax(0,1.7fr) minmax(0,1fr)' }}>
-          {/* LEFT */}
-          <div className="flex flex-col gap-4 min-w-0">
-            {/* Overview */}
-            <Card title="Overview">
-              <div className="flex gap-4">
-                <div className="w-48 shrink-0"><PartThumb cat={node.cat} big imageUrl={photoUrl} onImageClick={photoUrl ? () => setViewingImage(true) : undefined} /></div>
-                <div className="flex-1 min-w-0">
-                  {node.desc && (
-                    <div className="mb-3.5">
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">Description</p>
-                      <p className="text-sm text-muted-foreground leading-relaxed break-words">{node.desc}</p>
+            {/* Two-column body */}
+            <div className="px-6 pb-8 grid gap-4" style={{ gridTemplateColumns: 'minmax(0,1.7fr) minmax(0,1fr)' }}>
+              {/* LEFT */}
+              <div className="flex flex-col gap-4 min-w-0">
+                {/* Overview */}
+                <Card title="Overview">
+                  <div className="flex gap-4">
+                    <div className="w-48 shrink-0"><PartThumb cat={node.cat} big imageUrl={photoUrl} onImageClick={photoUrl ? () => setViewingImage(true) : undefined} /></div>
+                    <div className="flex-1 min-w-0">
+                      {node.desc && (
+                        <div className="mb-3.5">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">Description</p>
+                          <p className="text-sm text-muted-foreground leading-relaxed break-words">{node.desc}</p>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-3 gap-x-4 gap-y-3.5">
+                        <Field label="Extended Price">{formatCurrency(extended)}</Field>
+                        <Field label="Status">
+                          {node.status === 'approved' ? 'Approved' : node.status === 'draft' ? 'Draft' : 'Pending review'}
+                        </Field>
+                        <Field label="Revision">Rev {node.rev}</Field>
+                        <Field label="Category">{meta.label}</Field>
+                        <Field label="Sub-components">{children.length}</Field>
+                        <Field label="Traceability links">{node.req.length}</Field>
+                        {Array.isArray(node.customFields) && node.customFields.map((cf, i) => (
+                          <Field key={i} label={cf.label}>{cf.value}</Field>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Sub-components — always visible for every BOM part */}
+                <Card
+                  title={`Sub-components (${children.length})`}
+                  noPad={children.length > 0}
+                  action={
+                    <button
+                      onClick={() => setShowAddSub(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Plus className="w-3 h-3" /> Add
+                    </button>
+                  }
+                >
+                  {children.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-6 gap-2">
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                        <Boxes className="w-5 h-5 text-muted-foreground/50" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">No sub-components yet</p>
+                      <button
+                        onClick={() => setShowAddSub(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-dashed border-primary/40 text-primary hover:bg-primary/5 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add first sub-component
+                      </button>
+                    </div>
+                  ) : (
+                    // Each row is ~54px (34px thumb + py-2.5 padding) — 324px caps the
+                    // list at 6 visible rows before it scrolls internally, so a part
+                    // with many sub-components doesn't push the rest of the page down.
+                    <div className="max-h-[324px] overflow-y-auto">
+                      {children.map((c, i) => (
+                        <div
+                          key={c.id}
+                          onClick={() => onNavigate(c.id)}
+                          className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                          style={{ borderBottom: i < children.length - 1 ? '1px solid var(--border)' : undefined }}
+                        >
+                          <PartImageThumb nodeId={c.id} cat={c.cat} size={34} />
+                          <div className="flex-1 min-w-0">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="text-sm font-medium text-foreground truncate">{c.name || c.desc}</div>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-sm break-words">{c.name || c.desc}</TooltipContent>
+                            </Tooltip>
+                            <div className="text-[11px] font-medium font-mono text-muted-foreground truncate">{c.pn}</div>
+                          </div>
+                          <span className="text-xs text-muted-foreground tabular-nums shrink-0">{c.qty} {c.uom}</span>
+                          <span className="text-sm text-foreground tabular-nums w-20 text-right shrink-0">{formatCurrency(c.price)}</span>
+                          <BOMStatusPill status={c.status} />
+                          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                        </div>
+                      ))}
                     </div>
                   )}
-                  <div className="grid grid-cols-3 gap-x-4 gap-y-3.5">
-                    <Field label="Extended Price">{formatCurrency(extended)}</Field>
-                    <Field label="Status">
-                      {node.status === 'approved' ? 'Approved' : node.status === 'draft' ? 'Draft' : 'Pending review'}
-                    </Field>
-                    <Field label="Revision">Rev {node.rev}</Field>
-                    <Field label="Category">{meta.label}</Field>
-                    <Field label="Sub-components">{children.length}</Field>
-                    <Field label="Traceability links">{node.req.length}</Field>
-                    {Array.isArray(node.customFields) && node.customFields.map((cf, i) => (
-                      <Field key={i} label={cf.label}>{cf.value}</Field>
-                    ))}
-                  </div>
-                </div>
+                </Card>
+
+                {/* Where Used — hidden per request (kept, not deleted, in case it's
+                wanted back). Same `path` data as the Hierarchy card below; the
+                "top-level assembly" message it showed was confusing right next
+                to Hierarchy's own breadcrumb of the same node. */}
+                {SHOW_WHERE_USED && (
+                  <Card title="Where Used">
+                    {path.slice(0, -1).length === 0 ? (
+                      <p className="text-xs text-muted-foreground">This is the top-level assembly — not used inside any other part.</p>
+                    ) : (
+                      // Breadcrumb trail: each ancestor is a clickable chip that navigates
+                      // up to it, followed by a chevron; the current node is appended last
+                      // as a non-clickable chip so the whole path reads root → ... → here.
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {path.slice(0, -1).map((p) => (
+                          <div key={p.id} className="flex items-center gap-2">
+                            <button
+                              onClick={() => onNavigate(p.id)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted border border-border cursor-pointer hover:bg-accent transition-colors"
+                            >
+                              <span className="text-xs text-foreground">{p.name || p.desc}</span>
+                              <span className="text-[11px] font-mono text-muted-foreground">{p.pn}</span>
+                            </button>
+                            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                        ))}
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted border border-border">
+                          <span className="text-xs text-foreground font-medium">{node.name || node.desc}</span>
+                          <span className="text-[11px] font-mono text-muted-foreground">{node.pn}</span>
+                        </span>
+                      </div>
+                    )}
+                  </Card>
+                )}
+
+                {/* Requirements traceability */}
+                <Card title="Requirements Traceability">
+                  {node.req.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No requirements linked to this part.</p>
+                  ) : (
+                    <div className="flex gap-2 flex-wrap">
+                      {node.req.map(r => <ReqTag key={r} label={r} />)}
+                    </div>
+                  )}
+                </Card>
+
+                {/* Notes */}
+                <NotesCard nodeId={node.id} currentUserId={user?.id} />
               </div>
-            </Card>
 
-            {/* Sub-components — always visible for every BOM part */}
-            <Card
-              title={`Sub-components (${children.length})`}
-              noPad={children.length > 0}
-              action={
-                <button
-                  onClick={() => setShowAddSub(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                >
-                  <Plus className="w-3 h-3" /> Add
-                </button>
-              }
-            >
-              {children.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 gap-2">
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                    <Boxes className="w-5 h-5 text-muted-foreground/50" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">No sub-components yet</p>
-                  <button
-                    onClick={() => setShowAddSub(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-dashed border-primary/40 text-primary hover:bg-primary/5 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add first sub-component
-                  </button>
-                </div>
-              ) : (
-                children.map((c, i) => (
-                  <div
-                    key={c.id}
-                    onClick={() => onNavigate(c.id)}
-                    className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
-                    style={{ borderBottom: i < children.length - 1 ? '1px solid var(--border)' : undefined }}
-                  >
-                    <PartImageThumb nodeId={c.id} cat={c.cat} size={34} />
-                    <div className="flex-1 min-w-0">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="text-sm font-medium text-foreground truncate">{c.name || c.desc}</div>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-sm break-words">{c.name || c.desc}</TooltipContent>
-                      </Tooltip>
-                      <div className="text-[11px] font-medium font-mono text-muted-foreground truncate">{c.pn}</div>
-                    </div>
-                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">{c.qty} {c.uom}</span>
-                    <span className="text-sm text-foreground tabular-nums w-20 text-right shrink-0">{formatCurrency(c.price)}</span>
-                    <BOMStatusPill status={c.status} />
-                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                  </div>
-                ))
-              )}
-            </Card>
-
-            {/* Where Used — always visible */}
-            <Card title="Where Used">
-              {path.slice(0, -1).length === 0 ? (
-                <p className="text-xs text-muted-foreground">This is the top-level assembly — not used inside any other part.</p>
-              ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {path.slice(0, -1).map((p) => (
-                    <div key={p.id} className="flex items-center gap-2">
-                      <button
-                        onClick={() => onNavigate(p.id)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted border border-border cursor-pointer hover:bg-accent transition-colors"
-                      >
-                        <span className="text-xs text-foreground">{p.name || p.desc}</span>
-                        <span className="text-[11px] font-mono text-muted-foreground">{p.pn}</span>
-                      </button>
-                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                    </div>
-                  ))}
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted border border-border">
-                    <span className="text-xs text-foreground font-medium">{node.name || node.desc}</span>
-                    <span className="text-[11px] font-mono text-muted-foreground">{node.pn}</span>
-                  </span>
-                </div>
-              )}
-            </Card>
-
-            {/* Requirements traceability */}
-            <Card title="Requirements Traceability">
-              {node.req.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No requirements linked to this part.</p>
-              ) : (
-                <div className="flex gap-2 flex-wrap">
-                  {node.req.map(r => <ReqTag key={r} label={r} />)}
-                </div>
-              )}
-            </Card>
-
-            {/* Notes */}
-            <NotesCard nodeId={node.id} currentUserId={user?.id} />
-          </div>
-
-          {/* RIGHT */}
-          <div className="flex flex-col gap-4 min-w-0">
-            {/* Sourcing */}
-            {/* <Card title="Sourcing">
+              {/* RIGHT */}
+              <div className="flex flex-col gap-4 min-w-0">
+                {/* Sourcing */}
+                {/* <Card title="Sourcing">
               <div className="flex flex-col gap-3">
                 {[
                   { label: 'Manufacturer', value: node.manufacturer, icon: 'Factory' },
@@ -1113,188 +1161,232 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
               </div>
             </Card> */}
 
-            {/* Revision History */}
-            <Card
-              title="Revision History"
-              action={
-                revisionsLoading ? (
-                  <Skeleton className="h-4 w-14" />
-                ) : (
-                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <History className="w-3.5 h-3.5" />
-                    {revHistory.length} rev{revHistory.length !== 1 ? 's' : ''}
-                  </div>
-                )
-              }
-            >
-              {revisionsLoading ? (
-                <div className="flex flex-col gap-0">
-                  {[0, 1, 2].map(i => (
-                    <div key={i} className="flex items-start gap-3 py-2.5 px-2 -mx-2">
-                      <div className="flex flex-col items-center shrink-0 mt-1.5">
-                        <Skeleton className="w-2 h-2 rounded-full" />
-                        {i < 2 && <Skeleton className="w-px flex-1 min-h-[18px] mt-1" />}
+                {/* Revision History */}
+                <Card
+                  title="Revision History"
+                  action={
+                    revisionsLoading ? (
+                      <Skeleton className="h-4 w-14" />
+                    ) : (
+                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <History className="w-3.5 h-3.5" />
+                        {revHistory.length} rev{revHistory.length !== 1 ? 's' : ''}
                       </div>
-                      <div className="flex-1 min-w-0 pb-1">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <Skeleton className="h-3 w-12" />
-                          {i === 0 && <Skeleton className="h-3.5 w-10 rounded" />}
+                    )
+                  }
+                >
+                  {revisionsLoading ? (
+                    <div className="flex flex-col gap-0">
+                      {[0, 1, 2].map(i => (
+                        <div key={i} className="flex items-start gap-3 py-2.5 px-2 -mx-2">
+                          <div className="flex flex-col items-center shrink-0 mt-1.5">
+                            <Skeleton className="w-2 h-2 rounded-full" />
+                            {i < 2 && <Skeleton className="w-px flex-1 min-h-[18px] mt-1" />}
+                          </div>
+                          <div className="flex-1 min-w-0 pb-1">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <Skeleton className="h-3 w-12" />
+                              {i === 0 && <Skeleton className="h-3.5 w-10 rounded" />}
+                            </div>
+                            <Skeleton className="h-3 w-full mb-1" />
+                            <Skeleton className="h-2.5 w-28" />
+                          </div>
                         </div>
-                        <Skeleton className="h-3 w-full mb-1" />
-                        <Skeleton className="h-2.5 w-28" />
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col gap-0">
-                  {[...revHistory].reverse().map((r, ri) => {
-                    const origIdx = revHistory.length - 1 - ri;
-                    const isActive = origIdx === activeRevIdx;
-                    const isLatestRev = origIdx === revHistory.length - 1;
-                    return (
-                      <div key={r.id}
-                        onClick={() => setActiveRevIdx(origIdx)}
-                        className={cn(
-                          'flex items-start gap-3 py-2.5 px-2 rounded-lg cursor-pointer transition-colors -mx-2',
-                          isActive ? 'bg-primary/5' : 'hover:bg-muted/50'
-                        )}
-                      >
-                        {/* Timeline */}
-                        <div className="flex flex-col items-center shrink-0 mt-1.5">
-                          <div className={cn(
-                            'w-2 h-2 rounded-full border-2 shrink-0',
-                            isActive ? 'border-primary bg-primary' : 'border-muted-foreground bg-transparent'
-                          )} />
-                          {ri < revHistory.length - 1 && (
-                            <div className="w-px bg-border flex-1 min-h-[18px] mt-1" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0 pb-1">
-                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                            <span className={cn('text-xs font-mono font-semibold', isActive ? 'text-primary' : 'text-foreground')}>
-                              Rev {r.rev}
-                            </span>
-                            {isLatestRev && (
-                              <span className="text-[9px] uppercase tracking-wide px-1 rounded bg-primary/10 text-primary font-semibold">latest</span>
+                  ) : (
+                    <div className="flex flex-col gap-0">
+                      {[...revHistory].reverse().map((r, ri) => {
+                        const origIdx = revHistory.length - 1 - ri;
+                        const isActive = origIdx === activeRevIdx;
+                        const isLatestRev = origIdx === revHistory.length - 1;
+                        return (
+                          <div key={r.id}
+                            onClick={() => setActiveRevIdx(origIdx)}
+                            className={cn(
+                              'flex items-start gap-3 py-2.5 px-2 rounded-lg cursor-pointer transition-colors -mx-2',
+                              isActive ? 'bg-primary/5' : 'hover:bg-muted/50'
                             )}
-                            {isActive && <Check className="w-3 h-3 text-primary ml-auto shrink-0" />}
+                          >
+                            {/* Timeline */}
+                            <div className="flex flex-col items-center shrink-0 mt-1.5">
+                              <div className={cn(
+                                'w-2 h-2 rounded-full border-2 shrink-0',
+                                isActive ? 'border-primary bg-primary' : 'border-muted-foreground bg-transparent'
+                              )} />
+                              {ri < revHistory.length - 1 && (
+                                <div className="w-px bg-border flex-1 min-h-[18px] mt-1" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0 pb-1">
+                              <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                <span className={cn('text-xs font-mono font-semibold', isActive ? 'text-primary' : 'text-foreground')}>
+                                  Rev {r.rev}
+                                </span>
+                                {isLatestRev && (
+                                  <span className="text-[9px] uppercase tracking-wide px-1 rounded bg-primary/10 text-primary font-semibold">latest</span>
+                                )}
+                                {isActive && <Check className="w-3 h-3 text-primary ml-auto shrink-0" />}
+                              </div>
+                              <div className="text-[11.5px] text-muted-foreground leading-snug">{r.changes}</div>
+                              <div className="text-[10.5px] text-muted-foreground/60 mt-0.5">
+                                {r.date} · {r.author}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[11.5px] text-muted-foreground leading-snug">{r.changes}</div>
-                          <div className="text-[10.5px] text-muted-foreground/60 mt-0.5">
-                            {r.date} · {r.author}
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+
+                {/* Approval History */}
+                <Card
+                  title="Approval History"
+                  action={
+                    approvalsLoading ? (
+                      <Skeleton className="h-4 w-14" />
+                    ) : (
+                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        {approvals.length + (activeRequest ? 1 : 0)} action{approvals.length + (activeRequest ? 1 : 0) !== 1 ? 's' : ''}
+                      </div>
+                    )
+                  }
+                >
+                  {activeRequest && (
+                    <div className="mb-3 px-2.5 py-2 rounded-md bg-muted/50 border border-border text-[11.5px] text-muted-foreground">
+                      <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
+                      {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
+                      {activeRequest.approvers.map(a => a.name).join(', ')}.
+                    </div>
+                  )}
+                  {approvalsLoading ? (
+                    <div className="flex flex-col gap-0">
+                      {[0, 1].map(i => (
+                        <div key={i} className="flex items-start gap-3 py-2.5 px-2 -mx-2">
+                          <div className="flex flex-col items-center shrink-0 mt-1.5">
+                            <Skeleton className="w-2 h-2 rounded-full" />
+                            {i < 1 && <Skeleton className="w-px flex-1 min-h-[18px] mt-1" />}
+                          </div>
+                          <div className="flex-1 min-w-0 pb-1">
+                            <Skeleton className="h-3 w-24 mb-1.5" />
+                            <Skeleton className="h-3 w-full mb-1" />
+                            <Skeleton className="h-2.5 w-28" />
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
+                      ))}
+                    </div>
+                  ) : approvals.length === 0 ? (
+                    !activeRequest && <p className="text-sm text-muted-foreground">No approval activity yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-0">
+                      {approvals.map((a, i) => {
+                        const color = a.action === 'approved' ? '#16A34A' : '#DC2626';
+                        return (
+                          <div key={a.id} className="flex items-start gap-3 py-2.5 px-2 -mx-2">
+                            <div className="flex flex-col items-center shrink-0 mt-1.5">
+                              <div className="w-2 h-2 rounded-full border-2 shrink-0" style={{ borderColor: color, background: color }} />
+                              {i < approvals.length - 1 && <div className="w-px bg-border flex-1 min-h-[18px] mt-1" />}
+                            </div>
+                            <div className="flex-1 min-w-0 pb-1">
+                              <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                <span className="text-xs font-semibold" style={{ color }}>
+                                  {a.action === 'approved' ? 'Approved' : 'Rejected'}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground">by {a.performedByName}</span>
+                              </div>
+                              {a.reason && (
+                                <div className="text-[11.5px] text-foreground leading-snug">Reason: {a.reason}</div>
+                              )}
+                              {a.comment && (
+                                <div className="text-[11.5px] text-muted-foreground leading-snug">{a.comment}</div>
+                              )}
+                              <div className="text-[10.5px] text-muted-foreground/60 mt-0.5">
+                                {new Date(a.date).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
 
-            {/* Approval History */}
-            <Card
-              title="Approval History"
-              action={
-                approvalsLoading ? (
-                  <Skeleton className="h-4 w-14" />
-                ) : (
-                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    {approvals.length + (activeRequest ? 1 : 0)} action{approvals.length + (activeRequest ? 1 : 0) !== 1 ? 's' : ''}
+                {/* Hierarchy */}
+                <Card title="Hierarchy">
+                  <div className="flex flex-col">
+                    {path.map((p, i) => {
+                      const isCur = p.id === originalNode.id;
+                      const pm = getCategoryMeta(p.cat);
+                      return (
+                        <div key={p.id}
+                          onClick={() => !isCur && onNavigate(p.id)}
+                          className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg transition-colors"
+                          style={{ marginLeft: i * 14, cursor: isCur ? 'default' : 'pointer', background: isCur ? 'hsl(var(--muted))' : undefined }}
+                          onMouseEnter={e => { if (!isCur) (e.currentTarget as HTMLElement).style.background = 'hsl(var(--muted))'; }}
+                          onMouseLeave={e => { if (!isCur) (e.currentTarget as HTMLElement).style.background = ''; }}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: pm.tint }} />
+                          <span className={`text-[12.5px] truncate ${isCur ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                            {p.name || p.desc}
+                          </span>
+                          <span className="text-[11px] font-mono shrink-0 text-muted-foreground">{p.pn}</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                )
-              }
-            >
-              {activeRequest && (
-                <div className="mb-3 px-2.5 py-2 rounded-md bg-muted/50 border border-border text-[11.5px] text-muted-foreground">
-                  <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
-                  {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
-                  {activeRequest.approvers.map(a => a.name).join(', ')}.
-                </div>
-              )}
-              {approvalsLoading ? (
-                <div className="flex flex-col gap-0">
-                  {[0, 1].map(i => (
-                    <div key={i} className="flex items-start gap-3 py-2.5 px-2 -mx-2">
-                      <div className="flex flex-col items-center shrink-0 mt-1.5">
-                        <Skeleton className="w-2 h-2 rounded-full" />
-                        {i < 1 && <Skeleton className="w-px flex-1 min-h-[18px] mt-1" />}
-                      </div>
-                      <div className="flex-1 min-w-0 pb-1">
-                        <Skeleton className="h-3 w-24 mb-1.5" />
-                        <Skeleton className="h-3 w-full mb-1" />
-                        <Skeleton className="h-2.5 w-28" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : approvals.length === 0 ? (
-                !activeRequest && <p className="text-sm text-muted-foreground">No approval activity yet.</p>
-              ) : (
-                <div className="flex flex-col gap-0">
-                  {approvals.map((a, i) => {
-                    const color = a.action === 'approved' ? '#16A34A' : '#DC2626';
-                    return (
-                      <div key={a.id} className="flex items-start gap-3 py-2.5 px-2 -mx-2">
-                        <div className="flex flex-col items-center shrink-0 mt-1.5">
-                          <div className="w-2 h-2 rounded-full border-2 shrink-0" style={{ borderColor: color, background: color }} />
-                          {i < approvals.length - 1 && <div className="w-px bg-border flex-1 min-h-[18px] mt-1" />}
-                        </div>
-                        <div className="flex-1 min-w-0 pb-1">
-                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                            <span className="text-xs font-semibold" style={{ color }}>
-                              {a.action === 'approved' ? 'Approved' : 'Rejected'}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground">by {a.performedByName}</span>
-                          </div>
-                          {a.reason && (
-                            <div className="text-[11.5px] text-foreground leading-snug">Reason: {a.reason}</div>
-                          )}
-                          {a.comment && (
-                            <div className="text-[11.5px] text-muted-foreground leading-snug">{a.comment}</div>
-                          )}
-                          <div className="text-[10.5px] text-muted-foreground/60 mt-0.5">
-                            {new Date(a.date).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
+                </Card>
 
-            {/* Hierarchy */}
-            <Card title="Hierarchy">
-              <div className="flex flex-col">
-                {path.map((p, i) => {
-                  const isCur = p.id === originalNode.id;
-                  const pm = getCategoryMeta(p.cat);
-                  return (
-                    <div key={p.id}
-                      onClick={() => !isCur && onNavigate(p.id)}
-                      className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg transition-colors"
-                      style={{ marginLeft: i * 14, cursor: isCur ? 'default' : 'pointer', background: isCur ? 'hsl(var(--muted))' : undefined }}
-                      onMouseEnter={e => { if (!isCur) (e.currentTarget as HTMLElement).style.background = 'hsl(var(--muted))'; }}
-                      onMouseLeave={e => { if (!isCur) (e.currentTarget as HTMLElement).style.background = ''; }}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: pm.tint }} />
-                      <span className={`text-[12.5px] truncate ${isCur ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
-                        {p.name || p.desc}
-                      </span>
-                      <span className="text-[11px] font-mono shrink-0 text-muted-foreground">{p.pn}</span>
+                {/* Documents */}
+                <BOMDocuments nodeId={originalNode.id} />
+
+                {/* Engineering Changes referencing this part */}
+                <Card
+                  title="Engineering Changes"
+                  action={relatedEcos.length > 0 && (
+                    <span className="text-[11px] text-muted-foreground">{relatedEcos.length}</span>
+                  )}
+                  noPad
+                >
+                  {relatedEcosLoading ? (
+                    <div className="p-4 flex flex-col gap-2">
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
                     </div>
-                  );
-                })}
+                  ) : relatedEcos.length === 0 ? (
+                    <div className="p-4 text-xs text-muted-foreground text-center">
+                      No ECOs reference this part yet
+                    </div>
+                  ) : (
+                    <div className="flex flex-col divide-y divide-border">
+                      {relatedEcos.map(eco => (
+                        <button
+                          key={eco.id}
+                          onClick={() => navigate(`/projects/${projectId}/eng-changes/${eco.id}`)}
+                          className="flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-muted/60 transition-colors cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[12.5px] font-semibold text-foreground font-mono">{eco.num}</span>
+                              <StatusPill meta={statusMeta(eco.status)} />
+                            </div>
+                            <div className="text-[11.5px] text-muted-foreground truncate mt-0.5">{eco.title}</div>
+                            {(eco.revFrom || eco.revTo) && (
+                              <div className="text-[10.5px] text-muted-foreground/70 font-mono mt-0.5">
+                                Rev {eco.revFrom || '—'} → {eco.revTo || '—'}
+                              </div>
+                            )}
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </Card>
               </div>
-            </Card>
-
-            {/* Documents */}
-            <BOMDocuments nodeId={originalNode.id} />
+            </div>
           </div>
-        </div>
-      </div>
         </>
       )}
 

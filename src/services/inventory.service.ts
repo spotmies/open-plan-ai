@@ -1,5 +1,6 @@
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
+import { resolveFileUrl } from '@/utils/fileUrl';
 import type { StockRecord, OrderRecord, StockTransaction, BuildDef, BuildBomLine, BuildAssignee } from '@/features/projects/components/inventoryData';
 
 // ─── API response shapes (match backend inventory.types.ts responses) ─────────
@@ -9,7 +10,10 @@ export interface ApiStockRecord {
   partId: string;
   pn: string;
   name: string;
+  mpn: string | null;
+  manufacturer: string | null;
   cat: string;
+  imageUrl: string | null;
   onHand: number;
   allocated: number;
   onOrder: number;
@@ -81,6 +85,7 @@ export interface ApiBuildBomLine {
   pn: string;
   name: string;
   cat: string;
+  imageUrl: string | null;
   qtyPerUnit: number;
   uom: string;
   onHand: number;
@@ -126,6 +131,8 @@ export function fromApiStock(r: ApiStockRecord): StockRecord {
     partId: r.partId,
     pn: r.pn,
     name: r.name,
+    mpn: r.mpn ?? undefined,
+    manufacturer: r.manufacturer ?? undefined,
     cat: r.cat,
     onHand: r.onHand,
     allocated: r.allocated,
@@ -135,6 +142,7 @@ export function fromApiStock(r: ApiStockRecord): StockRecord {
     lotNumber: r.lotNumber ?? undefined,
     serialNumber: r.serialNumber ?? undefined,
     quarantineQty: r.quarantineQty || undefined,
+    imageUrl: resolveFileUrl(r.imageUrl) ?? undefined,
   };
 }
 
@@ -205,6 +213,7 @@ export function fromApiBuildBomLine(r: ApiBuildBomLine): BuildBomLine {
     pn: r.pn,
     name: r.name,
     cat: r.cat as BuildBomLine['cat'],
+    imageUrl: resolveFileUrl(r.imageUrl) ?? undefined,
     qtyPerUnit: r.qtyPerUnit,
     uom: r.uom,
     onHand: r.onHand,

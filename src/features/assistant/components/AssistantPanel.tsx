@@ -107,7 +107,7 @@ export function AssistantPanel({
   // warm, so this is free.
   const { data: allConversations = [] } = useAssistantConversations();
   const activeConversationSummary = conversationId
-    ? allConversations.find((c) => c.id === conversationId)
+    ? allConversations.find((c) => c?.id === conversationId)
     : undefined;
   const isActiveConversationLocked =
     !!activeConversationSummary && activeConversationSummary.scope !== 'all_projects';
@@ -186,6 +186,24 @@ export function AssistantPanel({
       setPendingFirstAttachments(null);
     }
   }, [pendingFirstMessage, messages.length]);
+
+  // Composer-side turn state (the Stop button, the "thinking" indicator that
+  // rides on justSubmitted, the optimistic first-message bubble) all belong to
+  // the thread we're leaving — clear them when switching threads so the next
+  // one doesn't open with a stuck Stop button over a turn that isn't its own.
+  // Deliberately skipped on the null -> new-id hop right after a conversation
+  // is created (prev === null): pendingFirstMessage still has to bridge that
+  // gap until the created thread's first fetch lands.
+  const prevConversationIdRef = useRef(conversationId);
+  useEffect(() => {
+    const prev = prevConversationIdRef.current;
+    prevConversationIdRef.current = conversationId;
+    if (prev !== null && prev !== conversationId) {
+      setJustSubmitted(false);
+      setPendingFirstMessage(null);
+      setPendingFirstAttachments(null);
+    }
+  }, [conversationId]);
 
   const firstName = user?.name?.split(' ')[0] || 'there';
   const isWidget = variant === 'widget';

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { AssistantTranscript } from './AssistantTranscript';
 import type { AssistantMessage, AssistantStatusCard } from '../assistantData';
 
@@ -34,15 +35,17 @@ function makeMessages(): AssistantMessage[] {
 describe('AssistantTranscript', () => {
   it('renders the assistant text message before its present_card, even though the card is persisted first', () => {
     render(
-      <AssistantTranscript
-        messages={makeMessages()}
-        streamingText=""
-        isStreaming={false}
-        toolStatus={[]}
-        pendingQuestions={null}
-        onAnswer={() => {}}
-        isAnswering={false}
-      />,
+      <MemoryRouter>
+        <AssistantTranscript
+          messages={makeMessages()}
+          streamingText=""
+          isStreaming={false}
+          toolStatus={[]}
+          pendingQuestions={null}
+          onAnswer={() => {}}
+          isAnswering={false}
+        />
+      </MemoryRouter>,
     );
 
     const textNode = screen.getByText('I pulled the projects row plus tasks.');
