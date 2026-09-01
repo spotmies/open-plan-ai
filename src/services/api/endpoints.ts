@@ -257,6 +257,7 @@ export const ENDPOINTS = {
   // Engineering Changes (ECO)
   ECOS: {
     LIST:     (projectId: string) => `/projects/${projectId}/ecos`,
+    BY_PART:  (projectId: string, partId: string) => `/projects/${projectId}/ecos/by-part/${partId}`,
     STATS:    (projectId: string) => `/projects/${projectId}/ecos/stats`,
     CREATE:   (projectId: string) => `/projects/${projectId}/ecos`,
     BY_ID:    (projectId: string, ecoId: string) => `/projects/${projectId}/ecos/${ecoId}`,

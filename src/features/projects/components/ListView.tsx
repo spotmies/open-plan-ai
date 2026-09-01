@@ -244,29 +244,29 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
 
       <div className="rounded-lg border">
         <div className="max-h-[calc(100vh-320px)] min-h-[240px] overflow-y-auto">
-        <Table>
-          <TableHeader className="sticky top-0 z-10 bg-background">
-            <TableRow>
-              <TableHead className="w-[300px]">
+        <Table containerClassName="relative w-full overflow-visible">
+          <TableHeader className="sticky top-0 z-10 bg-background shadow-sm">
+            <TableRow className="bg-background">
+              <TableHead className="w-[300px] sticky top-0 z-10 bg-background">
                 <SortableHeader field="title">Task</SortableHeader>
               </TableHead>
-              <TableHead>
+              <TableHead className="sticky top-0 z-10 bg-background">
                 <SortableHeader field="status">Status</SortableHeader>
               </TableHead>
-              <TableHead>
+              <TableHead className="sticky top-0 z-10 bg-background">
                 <SortableHeader field="priority">Priority</SortableHeader>
               </TableHead>
-              <TableHead>
+              <TableHead className="sticky top-0 z-10 bg-background">
                 <SortableHeader field="module">Module</SortableHeader>
               </TableHead>
-              <TableHead>Milestone</TableHead>
-              <TableHead>
+              <TableHead className="sticky top-0 z-10 bg-background">Milestone</TableHead>
+              <TableHead className="sticky top-0 z-10 bg-background">
                 <SortableHeader field="assignee">Assignee</SortableHeader>
               </TableHead>
-              <TableHead>
+              <TableHead className="sticky top-0 z-10 bg-background">
                 <SortableHeader field="dueDate">Due Date</SortableHeader>
               </TableHead>
-              <TableHead className="w-[80px] text-center">Blockers</TableHead>
+              <TableHead className="w-[80px] text-center sticky top-0 z-10 bg-background">Blockers</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

@@ -5,6 +5,7 @@ import {
   CheckCircle, CheckCircle2, Clock, DollarSign, ChevronRight, ChevronDown, Hash, X, User, Plus, Check, Download, ExternalLink,
   FileSpreadsheet, PenLine, Trash2, Eye,
   Sheet as SheetIcon, ArrowDownToLine, ArrowUpFromLine, Unlink, ArrowLeftRight, RotateCcw,
+  Ruler, Factory, Truck, Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -90,7 +91,7 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import {
   BOMNode, BOMFilters, BOMStatus, EMPTY_FILTERS,
-  getCategoryMeta,
+  getCategoryMeta, leadTimeValueToDays,
   bomFlatAll, bomFlatten, bomFind,
   bomFilterTree, bomFlattenInclude, bomTypeOf,
   fromApiNode, applyPriceRollup, assignLevelLabels, formatLeadTime,
@@ -481,10 +482,20 @@ function StatCard({ label, value, icon: Icon, iconColor, accent }: {
 }
 
 // ── Filter drawer ──────────────────────────────────────────────────
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, icon: Icon, count, children }: {
+  title: string; icon?: React.ElementType; count?: number; children: React.ReactNode;
+}) {
   return (
-    <div className="px-4 py-4 border-b border-border">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">{title}</div>
+    <div className="mx-3 my-2.5 rounded-lg border border-border/70 bg-muted/20 p-3">
+      <div className="flex items-center gap-1.5 mb-2.5">
+        {Icon && <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex-1">{title}</span>
+        {!!count && (
+          <span className="text-[10px] font-semibold text-primary bg-primary/10 rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">
+            {count}
+          </span>
+        )}
+      </div>
       {children}
     </div>
   );
@@ -494,8 +505,9 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   return (
     <button
       onClick={onClick}
+      title={typeof children === 'string' ? children : undefined}
       className={cn(
-        'px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer whitespace-nowrap border transition-colors',
+        'px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border transition-colors max-w-[190px] truncate',
         active
           ? 'bg-primary/10 text-primary border-primary/30'
           : 'bg-card text-muted-foreground border-border hover:bg-muted'
@@ -525,7 +537,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
   open: boolean; filters: BOMFilters;
   setFilters: React.Dispatch<React.SetStateAction<BOMFilters>>;
   onClose: () => void;
-  facets: { units: string[]; manufacturers: string[]; suppliers: string[]; owners: string[] };
+  facets: { units: string[]; manufacturers: string[]; suppliers: string[]; owners: string[]; categories: string[] };
   currencySymbol: string;
 }) {
   const [draft, setDraft] = useState<BOMFilters>({ ...filters });
@@ -541,7 +553,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
 
   if (!open) return null;
 
-  const toggle = (key: 'units' | 'suppliers' | 'manufacturers' | 'statuses' | 'owners', val: string) =>
+  const toggle = (key: 'units' | 'suppliers' | 'manufacturers' | 'statuses' | 'owners' | 'categories', val: string) =>
     setDraft(f => ({
       ...f,
       [key]: (f[key] as string[]).includes(val)
@@ -576,15 +588,28 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
   };
 
 
+  const draftCount =
+    (draft.bomType !== 'all' ? 1 : 0) + draft.statuses.length + draft.units.length +
+    draft.manufacturers.length + draft.suppliers.length + draft.owners.length +
+    draft.categories.length +
+    (draft.priceMin || draft.priceMax ? 1 : 0) +
+    (draft.leadOp !== 'any' && draft.leadValue ? 1 : 0) +
+    (draft.mpn ? 1 : 0);
+
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-[60]" />
-      <div className="fixed top-0 right-0 bottom-0 w-[352px] bg-card border-l border-border z-[61] flex flex-col shadow-xl">
+      <div className="fixed top-0 right-0 bottom-0 w-[380px] max-w-full bg-card border-l border-border z-[61] flex flex-col shadow-xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b border-border">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm font-semibold text-foreground">Filters</span>
+            {!!draftCount && (
+              <span className="text-[10px] font-semibold text-primary-foreground bg-primary rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center leading-none">
+                {draftCount}
+              </span>
+            )}
           </div>
           <button onClick={onClose}
             className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
@@ -592,8 +617,8 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <Section title="Type of BOM">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
+          <Section title="Type of BOM" icon={Layers}>
             <div className="flex bg-muted border border-border rounded-lg p-0.5 gap-0.5">
               {([['all', 'All BOM'], ['top', 'Top Level'], ['catalog', 'Catalog']] as const).map(([id, label]) => (
                 <button key={id} onClick={() => set('bomType', id)}
@@ -605,7 +630,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
             </div>
           </Section>
 
-          <Section title="Status">
+          <Section title="Status" icon={CheckCircle2} count={draft.statuses.length}>
             <div className="flex gap-2 flex-wrap">
               {(['approved', 'pending', 'rejected'] as const).map(s => (
                 <Chip key={s} active={draft.statuses.includes(s)} onClick={() => toggle('statuses', s)}>
@@ -615,7 +640,35 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
             </div>
           </Section>
 
-          <Section title={`Unit Price (${currencySymbol})`}>
+          <Section title="Category" icon={Tag} count={draft.categories.length}>
+            <div className="flex gap-2 flex-wrap">
+              {facets.categories.map(c => {
+                const meta = getCategoryMeta(c);
+                const active = draft.categories.includes(c);
+                return (
+                  <button
+                    key={c}
+                    onClick={() => toggle('categories', c)}
+                    title={meta.label}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border transition-colors max-w-[190px]',
+                      active
+                        ? 'bg-primary/10 text-primary border-primary/30'
+                        : 'bg-card text-muted-foreground border-border hover:bg-muted'
+                    )}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: meta.tint }} />
+                    <span className="truncate">{meta.label}</span>
+                  </button>
+                );
+              })}
+              {!facets.categories.length && (
+                <span className="text-xs text-muted-foreground">No categories yet</span>
+              )}
+            </div>
+          </Section>
+
+          <Section title={`Unit Price (${currencySymbol})`} icon={DollarSign} count={draft.priceMin || draft.priceMax ? 1 : 0}>
             <div className="flex items-center gap-2">
               <RangeInput value={draft.priceMin} onChange={v => set('priceMin', v)} placeholder="Min" prefix={currencySymbol} />
               <span className="text-muted-foreground text-xs">–</span>
@@ -623,21 +676,43 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
             </div>
           </Section>
 
-          <Section title="Lead Time (days)">
-            <div className="flex items-center gap-2">
-              <RangeInput value={draft.leadMin} onChange={v => set('leadMin', v)} placeholder="Min" />
-              <span className="text-muted-foreground text-xs">–</span>
-              <RangeInput value={draft.leadMax} onChange={v => set('leadMax', v)} placeholder="Max" />
+          <Section title="Lead Time" icon={Clock} count={draft.leadOp !== 'any' && draft.leadValue ? 1 : 0}>
+            <div className="flex bg-muted border border-border rounded-lg p-0.5 gap-0.5 mb-2.5">
+              {([['any', 'Any'], ['lt', 'Less than'], ['gt', 'Greater than'], ['eq', 'Exactly']] as const).map(([id, label]) => (
+                <button key={id} onClick={() => set('leadOp', id)}
+                  className={cn('flex-1 py-1.5 rounded-md text-[10.5px] font-medium cursor-pointer border-none transition-colors whitespace-nowrap',
+                    draft.leadOp === id ? 'bg-foreground text-background' : 'bg-transparent text-muted-foreground hover:text-foreground')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className={cn('flex items-center gap-2 transition-opacity', draft.leadOp === 'any' && 'opacity-40 pointer-events-none')}>
+              <div className="flex items-center gap-1.5 bg-muted border border-border rounded-md px-2.5 py-1.5 flex-1 min-w-0">
+                <input
+                  type="number" value={draft.leadValue} onChange={e => set('leadValue', e.target.value)}
+                  onWheel={e => e.currentTarget.blur()} placeholder="e.g. 10"
+                  className="bg-transparent border-none outline-none text-foreground text-xs w-full"
+                />
+              </div>
+              <select
+                value={draft.leadUnit}
+                onChange={e => set('leadUnit', e.target.value as BOMFilters['leadUnit'])}
+                className="bg-muted border border-border rounded-md px-2 py-1.5 text-xs text-foreground outline-none cursor-pointer shrink-0"
+              >
+                <option value="days">Days</option>
+                <option value="weeks">Weeks</option>
+                <option value="months">Months</option>
+              </select>
             </div>
           </Section>
 
-          <Section title="Units (UOM)">
+          <Section title="Units (UOM)" icon={Ruler} count={draft.units.length}>
             <div className="flex gap-2 flex-wrap">
               {facets.units.map(u => <Chip key={u} active={draft.units.includes(u)} onClick={() => toggle('units', u)}>{u}</Chip>)}
             </div>
           </Section>
 
-          <Section title="Manufacturer">
+          <Section title="Manufacturer" icon={Factory} count={draft.manufacturers.length}>
             <div className="flex gap-2 flex-wrap">
               {[...facets.manufacturers, ...customMfrs.filter(c => !facets.manufacturers.includes(c))].map(m => (
                 <Chip key={m} active={draft.manufacturers.includes(m)} onClick={() => toggle('manufacturers', m)}>{m}</Chip>
@@ -665,7 +740,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
             </div>
           </Section>
 
-          <Section title="Supplier / Distributor">
+          <Section title="Supplier / Distributor" icon={Truck} count={draft.suppliers.length}>
             <div className="flex gap-2 flex-wrap">
               {[...facets.suppliers, ...customSuppliers.filter(c => !facets.suppliers.includes(c))].map(s => (
                 <Chip key={s} active={draft.suppliers.includes(s)} onClick={() => toggle('suppliers', s)}>{s}</Chip>
@@ -693,7 +768,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
             </div>
           </Section>
 
-          <Section title="Owner / Handled By">
+          <Section title="Owner / Handled By" icon={User} count={draft.owners.length}>
             <div className="flex gap-2 flex-wrap">
               {facets.owners.map(o => (
                 <Chip key={o} active={draft.owners.includes(o)} onClick={() => toggle('owners', o)}>
@@ -709,7 +784,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
             </div>
           </Section>
 
-          <Section title="Manufacturer Part Number (MPN)">
+          <Section title="Manufacturer Part Number (MPN)" icon={Hash} count={draft.mpn ? 1 : 0}>
             <div className="flex items-center gap-2 bg-muted border border-border rounded-md px-2.5 py-1.5">
               <Hash className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               <input
@@ -721,9 +796,11 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
           </Section>
         </div>
 
-        <div className="flex gap-2.5 px-4 py-3.5 border-t border-border">
+        <div className="flex gap-2.5 px-4 py-3.5 border-t border-border bg-card">
           <Button variant="outline" className="flex-1" onClick={() => { setDraft({ ...EMPTY_FILTERS }); setFilters({ ...EMPTY_FILTERS }); onClose(); }}>Clear all</Button>
-          <Button className="flex-1" onClick={() => { setFilters(draft); onClose(); }}>Show results</Button>
+          <Button className="flex-1" onClick={() => { setFilters(draft); onClose(); }}>
+            Show results{!!draftCount && ` (${draftCount})`}
+          </Button>
         </div>
       </div>
     </>
@@ -1225,13 +1302,20 @@ export function BOMView({
     prevAddOpen.current = addOpen;
   }, [addOpen]);
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all');
   const [rejectTarget, setRejectTarget] = useState<BOMNode | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BOMNode | null>(null);
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem('bom_view') as ViewMode) ?? 'list');
   const [filterOpen, setFilterOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [filters, setFilters] = useState<BOMFilters>({ ...EMPTY_FILTERS });
+  // The toolbar's All/Approved/Pending/Rejected quick-tab is a single-select shortcut
+  // over the same status filter the drawer's Status chips edit — it reads/writes
+  // filters.statuses directly instead of keeping its own state, so the two controls
+  // can never disagree (e.g. tab="Approved" + drawer chip="Pending" would otherwise
+  // AND together into an always-empty result with no indication why).
+  const filterStatus: 'all' | BOMStatus = filters.statuses.length === 1 ? filters.statuses[0] : 'all';
+  const setFilterStatus = (id: 'all' | BOMStatus) =>
+    setFilters(f => ({ ...f, statuses: id === 'all' ? [] : [id] }));
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('bom_expanded');
     if (saved) { try { return JSON.parse(saved); } catch { /* ignore */ } }
@@ -1508,37 +1592,44 @@ export function BOMView({
     manufacturers: [...new Set(allNodes.map(n => n.manufacturer))].sort(),
     suppliers: [...new Set(allNodes.map(n => n.distributor))].sort(),
     owners: [...new Set(allNodes.map(n => n.owner))].sort(),
+    categories: [...new Set(allNodes.map(n => n.cat))].sort(),
   }), [allNodes]);
 
   const activeCount =
     (filters.bomType !== 'all' ? 1 : 0) + filters.statuses.length + filters.units.length +
     filters.manufacturers.length + filters.suppliers.length + filters.owners.length +
+    filters.categories.length +
     (filters.priceMin || filters.priceMax ? 1 : 0) +
-    (filters.leadMin || filters.leadMax ? 1 : 0) +
+    (filters.leadOp !== 'any' && filters.leadValue ? 1 : 0) +
     (filters.mpn ? 1 : 0);
 
   const pred = useCallback((row: BOMNode) => {
     const q = search.toLowerCase();
     if (q && !(row.pn.toLowerCase().includes(q) || row.name.toLowerCase().includes(q) || row.desc.toLowerCase().includes(q) ||
       row.manufacturer.toLowerCase().includes(q) || row.mpn.toLowerCase().includes(q))) return false;
-    if (filterStatus !== 'all' && row.status !== filterStatus) return false;
     if (filters.statuses.length && !filters.statuses.includes(row.status)) return false;
     if (filters.units.length && !filters.units.includes(row.uom)) return false;
     if (filters.manufacturers.length && !filters.manufacturers.includes(row.manufacturer)) return false;
     if (filters.suppliers.length && !filters.suppliers.includes(row.distributor)) return false;
     if (filters.owners.length && !filters.owners.includes(row.owner)) return false;
+    if (filters.categories.length && !filters.categories.includes(row.cat)) return false;
     if (filters.bomType !== 'all' && bomTypeOf(row) !== filters.bomType) return false;
     if (filters.mpn && !row.mpn.toLowerCase().includes(filters.mpn.toLowerCase())) return false;
     const pMin = parseFloat(filters.priceMin), pMax = parseFloat(filters.priceMax);
     if (!isNaN(pMin) && row.price < pMin) return false;
     if (!isNaN(pMax) && row.price > pMax) return false;
-    const lMin = parseFloat(filters.leadMin), lMax = parseFloat(filters.leadMax);
-    if (!isNaN(lMin) && row.leadTime < lMin) return false;
-    if (!isNaN(lMax) && row.leadTime > lMax) return false;
+    if (filters.leadOp !== 'any' && filters.leadValue) {
+      const lVal = leadTimeValueToDays(parseFloat(filters.leadValue), filters.leadUnit);
+      if (!isNaN(lVal)) {
+        if (filters.leadOp === 'lt' && !(row.leadTime < lVal)) return false;
+        if (filters.leadOp === 'gt' && !(row.leadTime > lVal)) return false;
+        if (filters.leadOp === 'eq' && row.leadTime !== lVal) return false;
+      }
+    }
     return true;
-  }, [search, filterStatus, filters]);
+  }, [search, filters]);
 
-  const filtersActive = !!search || filterStatus !== 'all' || activeCount > 0;
+  const filtersActive = !!search || activeCount > 0;
 
   const listRows = useMemo(() => {
     if (!filtersActive) return bomFlatten(rootNodes, expanded);
@@ -1563,7 +1654,14 @@ export function BOMView({
     // (the row still exists, just deleted) but never appear in the live tree.
     // Part number is the one thing guaranteed unique among *live* parts, so it
     // is the most reliable fallback once the id-based lookups come up empty.
-    const node = (selected && bomFind(selected, rootNodes))
+    const selectedNode = selected ? bomFind(selected, rootNodes) : null;
+    // bomNodeId and partId are captured together as a pair (e.g. by an ECO's
+    // affected-parts snapshot) and should agree. A node id can still resolve
+    // in the live tree yet have since been reassigned to a different part —
+    // trust it only when the two actually match, otherwise fall through to
+    // resolving by the part id/number directly so a stale node id can't
+    // silently surface the wrong part.
+    const node = (selectedNode && (!fallbackPartId || selectedNode._partId === fallbackPartId) ? selectedNode : null)
       || (fallbackPartId ? allNodes.find(n => n._partId === fallbackPartId) ?? null : null)
       || (fallbackPn ? allNodes.find(n => n.pn === fallbackPn) ?? null : null);
     if (node) return (
@@ -1971,6 +2069,7 @@ export function BOMView({
           onClose={() => { setAddImportOpen(false); onAddClose?.(); }}
           projectId={projectId}
           orgId={orgId}
+          rootNodes={rootNodes}
           onImported={expandNodes}
         />
       )}

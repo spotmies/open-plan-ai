@@ -1,7 +1,7 @@
 // ECO (Engineering Change Order) — types, enums, mock data, color helpers
 import type {
   ApiEcoListItem, ApiEcoDetail, ApiEcoPart, ApiEcoPipelineStep,
-  ApiEcoDiffRow, ApiEcoActivity,
+  ApiEcoDiffRow, ApiEcoActivity, ApiEcoByPart,
 } from '@/hooks/useECOs';
 
 // ── Enumerations ──────────────────────────────────────────────────────────────
@@ -693,6 +693,36 @@ export const ACTIVITY_META: Record<string, ActivityMeta> = {
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Summary row for "which ECOs affect this part" — shown on the BOM part detail page,
+// the reverse direction of ECOPart (which lists a single ECO's affected parts).
+export interface ECOByPartItem {
+  id: string;
+  num: string;
+  title: string;
+  type: ECOType;
+  status: ECOStatus;
+  priority: ECOPriority;
+  revFrom: string;
+  revTo: string;
+  impact: ImpactLevel;
+  created: string;
+}
+
+export function fromApiEcoByPart(raw: ApiEcoByPart): ECOByPartItem {
+  return {
+    id:       raw.id,
+    num:      raw.num,
+    title:    raw.title,
+    type:     raw.type.toUpperCase() as ECOType,
+    status:   raw.status.toUpperCase() as ECOStatus,
+    priority: raw.priority.toUpperCase() as ECOPriority,
+    revFrom:  raw.revFrom ?? '',
+    revTo:    raw.revTo ?? '',
+    impact:   raw.impactLevel.toUpperCase() as ImpactLevel,
+    created:  fmtDate(raw.createdAt),
+  };
 }
 
 export function fromApiEcoListItem(raw: ApiEcoListItem): ECOListItem {

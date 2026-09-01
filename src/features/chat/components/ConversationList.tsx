@@ -227,14 +227,9 @@ export function ConversationList({
                   onToggle={() => setChatsExpanded((e) => !e)}
                 />
               )}
-              {searchQuery.trim() && (
-                <PeopleList
-                  users={filteredPeople}
-                  onSelect={handleSelectPerson}
-                  onlineUserIds={onlineUserIds}
-                  searchQuery={searchQuery}
-                />
-              )}
+              {/* People already chatted with match on name/email too — show those hits
+                  first, highlighted like any other result. Reachable-but-never-messaged
+                  people are secondary, so they render after, dimmed. */}
               {(!showChatsSection || chatsExpanded) && regularConversations.map((conv) => (
                 <ConversationItem
                   key={conv.id}
@@ -247,16 +242,16 @@ export function ConversationList({
                   onToggleMute={onToggleMute ? () => onToggleMute(conv.id) : undefined}
                   onMarkRead={onMarkRead ? () => onMarkRead(conv.id) : undefined}
                   onDeleteChat={onDeleteChat ? () => onDeleteChat(conv.id) : undefined}
-                />
-              ))}
-              {!searchQuery.trim() && (
-                <PeopleList
-                  users={filteredPeople}
-                  onSelect={handleSelectPerson}
-                  onlineUserIds={onlineUserIds}
                   searchQuery={searchQuery}
                 />
-              )}
+              ))}
+              <PeopleList
+                users={filteredPeople}
+                onSelect={handleSelectPerson}
+                onlineUserIds={onlineUserIds}
+                searchQuery={searchQuery}
+                dimmed={searchQuery.trim().length > 0}
+              />
               {isCreatingDM && (
                 <div className="flex items-center gap-2.5 px-3 py-1.5 animate-pulse">
                   <Skeleton className="h-5 w-5 rounded-full" />

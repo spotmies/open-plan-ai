@@ -35,6 +35,20 @@ export interface ApiEcoListItem {
   updatedAt: string;
 }
 
+// Summary row for "which ECOs affect this part" — shown on the BOM part detail page.
+export interface ApiEcoByPart {
+  id: string;
+  num: string;
+  title: string;
+  type: string;
+  status: string;
+  priority: string;
+  revFrom: string | null;
+  revTo: string | null;
+  impactLevel: 'high' | 'medium' | 'low';
+  createdAt: string;
+}
+
 export interface ApiEcoPipelineStep {
   id: string;
   order: number;
@@ -168,6 +182,15 @@ export async function fetchAllEcoIds(
     page += 1;
   }
   return ids;
+}
+
+export function useEcosByPart(projectId: string | undefined, partId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.ecos.byPart(partId ?? ''),
+    queryFn: (): Promise<ApiEcoByPart[]> =>
+      apiClient.get<ApiEcoByPart[]>(ENDPOINTS.ECOS.BY_PART(projectId!, partId!)),
+    enabled: !!projectId && !!partId,
+  });
 }
 
 export function useECOStats(projectId: string | undefined) {

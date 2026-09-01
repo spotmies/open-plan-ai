@@ -194,6 +194,7 @@ export const queryKeys = {
     // filtered/unfiltered useECOList query, since RQ does partial-key matching.
     listRoot: (projectId: string) => ['ecos', 'list', projectId] as const,
     list:     (projectId: string, filters?: object) => ['ecos', 'list', projectId, filters] as const,
+    byPart:   (partId: string) => ['ecos', 'by-part', partId] as const,
     stats:    (projectId: string) => ['ecos', 'stats', projectId] as const,
     detail:   (ecoId: string) => ['ecos', 'detail', ecoId] as const,
     ecn:      (ecoId: string) => ['ecos', 'ecn', ecoId] as const,

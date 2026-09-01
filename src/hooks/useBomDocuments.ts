@@ -25,6 +25,12 @@ export async function addBomDocumentLink(nodeId: string, url: string, fileName?:
   return res.data.data;
 }
 
+// Plain async helper for removing a document — usable outside React hooks (e.g. when a
+// BOM part edit form drops a previously-existing attachment).
+export async function deleteBomDocument(attachmentId: string): Promise<void> {
+  await apiClient.delete<void>(ENDPOINTS.UPLOADS.ATTACHMENT(attachmentId));
+}
+
 export interface BomAttachment {
   id: string;
   entityId: string;
