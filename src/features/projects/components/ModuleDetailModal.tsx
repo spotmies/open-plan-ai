@@ -71,6 +71,9 @@ const moduleTypes: ModuleType[] = [
   'procurement', 'manufacturing', 'qa', 'logistics', 'enclosure', 'pcb', 'power'
 ];
 
+// Sentinel Select value for clearing the owner — Radix Select can't use an empty string.
+const UNASSIGNED_OWNER = '__unassigned__';
+
 export function ModuleDetailModal({
   module,
   allTasks,
@@ -367,9 +370,9 @@ export function ModuleDetailModal({
                     <Label className="text-xs text-muted-foreground">Owner</Label>
                     {isEditing && editedModule ? (
                       <Select
-                        value={editedModule.owner?.id || ''}
+                        value={editedModule.owner?.id || UNASSIGNED_OWNER}
                         onValueChange={(value) => {
-                          const owner = teamMembers.find(m => m.id === value);
+                          const owner = value === UNASSIGNED_OWNER ? undefined : teamMembers.find(m => m.id === value);
                           handleSelectFieldChange({ owner });
                         }}
                       >
@@ -377,6 +380,9 @@ export function ModuleDetailModal({
                           <SelectValue placeholder="Select owner" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value={UNASSIGNED_OWNER}>
+                            <span className="text-muted-foreground">Unassigned</span>
+                          </SelectItem>
                           {teamMembers.map((member) => (
                             <SelectItem key={member.id} value={member.id}>
                               <div className="flex items-center gap-2">

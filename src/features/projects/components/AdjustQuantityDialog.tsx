@@ -52,6 +52,7 @@ interface PickerPart {
   partId: string;
   pn: string;
   name: string;
+  mpn?: string | null;
   location: string;
   onHand: number;
   leadTimeDays: number;
@@ -134,12 +135,23 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   // from a BOM (never received) still needs to be selectable when starting a new transaction.
   const pickerParts = useMemo<PickerPart[]>(() => {
     const stockPartIds = new Set(stock.map(r => r.partId));
-    const fromStock: PickerPart[] = stock.map(r => ({ partId: r.partId, pn: r.pn, name: r.name, location: r.location, onHand: r.onHand, leadTimeDays: r.leadTimeDays, cat: r.cat, projects: partProjects?.get(r.partId) ?? [] }));
+    const fromStock: PickerPart[] = stock.map(r => ({ partId: r.partId, pn: r.pn, name: r.name, mpn: r.mpn, location: r.location, onHand: r.onHand, leadTimeDays: r.leadTimeDays, cat: r.cat, projects: partProjects?.get(r.partId) ?? [] }));
     const fromPartsOnly: PickerPart[] = parts
       .filter(p => !stockPartIds.has(p.id))
-      .map(p => ({ partId: p.id, pn: p.partNumber, name: p.name, location: '', onHand: 0, leadTimeDays: p.latestRevision?.leadTimeDays ?? 0, cat: p.category, projects: partProjects?.get(p.id) ?? [] }));
+      .map(p => ({ partId: p.id, pn: p.partNumber, name: p.name, mpn: p.mpn, location: '', onHand: 0, leadTimeDays: p.latestRevision?.leadTimeDays ?? 0, cat: p.category, projects: partProjects?.get(p.id) ?? [] }));
     return [...fromStock, ...fromPartsOnly];
   }, [stock, parts, partProjects]);
+
+  const [partSearch, setPartSearch] = useState('');
+  const filteredPickerParts = useMemo(() => {
+    const q = partSearch.trim().toLowerCase();
+    if (!q) return pickerParts;
+    return pickerParts.filter(r =>
+      r.pn.toLowerCase().includes(q) ||
+      r.name.toLowerCase().includes(q) ||
+      (r.mpn ?? '').toLowerCase().includes(q)
+    );
+  }, [pickerParts, partSearch]);
 
   // Custom categories already in use (created via "Add new part") — mirrors InventoryView's
   // allCategories so they're selectable here too, not just filterable on the inventory page.
@@ -459,7 +471,13 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                       </div>
 
                       {!showAddPart ? (
-                        <Popover open={partPickerOpen} onOpenChange={setPartPickerOpen}>
+                        <Popover
+                          open={partPickerOpen}
+                          onOpenChange={(open) => {
+                            setPartPickerOpen(open);
+                            if (!open) setPartSearch('');
+                          }}
+                        >
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
@@ -481,12 +499,16 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                             </FormControl>
                           </PopoverTrigger>
                           <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[420px] p-0" align="start">
-                            <Command>
-                              <CommandInput placeholder="Search parts..." />
+                            <Command shouldFilter={false}>
+                              <CommandInput
+                                placeholder="Search parts..."
+                                value={partSearch}
+                                onValueChange={setPartSearch}
+                              />
                               <CommandList>
                                 <CommandEmpty>No parts found.</CommandEmpty>
                                 <CommandGroup>
-                                  {pickerParts.map((r) => (
+                                  {filteredPickerParts.map((r) => (
                                     <CommandItem
                                       key={r.partId}
                                       value={`${r.pn} ${r.name}`}
@@ -498,6 +520,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                                         form.setValue('category', r.cat ?? '', { shouldDirty: true, shouldValidate: true });
                                         form.setValue('leadTimeDays', r.leadTimeDays > 0 ? r.leadTimeDays : 1, { shouldDirty: true, shouldValidate: true });
                                         setPartPickerOpen(false);
+                                        setPartSearch('');
                                       }}
                                     >
                                       <Check

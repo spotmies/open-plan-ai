@@ -117,7 +117,14 @@ export function useAssistantConversation(conversationId: string | null) {
     aiAssistantTransport.connect();
     aiAssistantTransport.joinConversation(conversationId);
 
+    // Every piece of turn-local state is reset here so opening a thread never
+    // inherits the one we're leaving. isStreaming in particular used to be
+    // left set — a send in thread A followed by a jump to thread B kept B
+    // pinned showing "Thinking…" for a turn that was never B's. The socket
+    // room already scopes the real ai:* events per conversation; it was only
+    // this in-memory state that leaked across the switch.
     setStreamingText('');
+    setIsStreaming(false);
     setToolStatus([]);
     setLiveQuestion(null);
     setLiveCard(null);
@@ -125,7 +132,17 @@ export function useAssistantConversation(conversationId: string | null) {
     setOptimisticAttachments(null);
     setEditingMessage(null);
     setBranchOverrides({});
+    sentMessageCountRef.current = 0;
+    editCountRef.current = 0;
+    toolSeqRef.current = 0;
     stoppedRef.current = false;
+
+    // A turn that finished (or errored, or was retried to completion by the
+    // BullMQ worker) while this thread was off-screen never refetched — its
+    // ai:done went to a room we'd already left. Pull the persisted transcript
+    // now so the thread shows its real current state instead of a stale
+    // pre-navigation snapshot.
+    invalidate();
 
     const unsubs = [
       aiAssistantTransport.onToken((token) => {

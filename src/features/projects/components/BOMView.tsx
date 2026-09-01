@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { useBomTree, useCreateBomNode, useDecideApprovalRequest, useDeleteBomNode, useAddRequirement, useProjectApprovalRequests } from '@/hooks/useBom';
-import { useCreatePart } from '@/hooks/useParts';
+import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useAuth } from '@/contexts/AuthContext';
 import { uploadBomDocumentFile, addBomDocumentLink } from '@/hooks/useBomDocuments';
@@ -19,11 +19,28 @@ import { downloadBomCsv } from '@/features/reports/utils/exportUtils';
 import { createBomWorkbook, downloadExcelFile } from '@/utils/excelExport';
 import type { BOMApprovalRequest } from './bomData';
 
-async function saveBomDocs(nodeId: string, payload: BOMPartPayload) {
-  const docs = [payload.docPhoto, ...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])].filter(Boolean) as DocValue[];
-  await Promise.allSettled(
-    docs.map(d => d.kind === 'file' ? uploadBomDocumentFile(nodeId, d.file) : addBomDocumentLink(nodeId, d.url, d.fileName ?? undefined)),
+// Returns the uploaded/linked photo's resolved fileUrl (for persisting onto the
+// part catalog row so Inventory can show it) — undefined when the photo wasn't
+// touched, null when the user explicitly removed it.
+async function saveBomDocs(nodeId: string, payload: BOMPartPayload): Promise<{ photoUrl?: string | null }> {
+  const otherDocs = [...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])].filter(Boolean) as DocValue[];
+  const uploads = Promise.allSettled(
+    otherDocs.map(d => d.kind === 'file' ? uploadBomDocumentFile(nodeId, d.file) : addBomDocumentLink(nodeId, d.url, d.fileName ?? undefined)),
   );
+
+  let photoUrl: string | null | undefined;
+  if (payload.docPhoto === null) {
+    photoUrl = null;
+  } else if (payload.docPhoto?.kind === 'file') {
+    const attachment = await uploadBomDocumentFile(nodeId, payload.docPhoto.file);
+    photoUrl = attachment.fileUrl;
+  } else if (payload.docPhoto?.kind === 'url') {
+    await addBomDocumentLink(nodeId, payload.docPhoto.url, payload.docPhoto.fileName);
+    photoUrl = payload.docPhoto.url;
+  }
+
+  await uploads;
+  return { photoUrl };
 }
 
 // New parts can only be added as 'approved' or 'draft' (see BOMPartSheet's
@@ -1229,6 +1246,7 @@ export function BOMView({
   const { data: project } = useProjectDetail(projectId);
   const { user } = useAuth();
   const createPart = useCreatePart(orgId);
+  const updatePart = useUpdatePart();
   const createNode = useCreateBomNode(projectId);
   const decideApprovalRequest = useDecideApprovalRequest(projectId);
   const deleteBomNode = useDeleteBomNode(projectId);
@@ -1383,7 +1401,8 @@ export function BOMView({
         ownerId: payload.ownerId ?? null,
       });
       // Upload any documents attached in the form
-      await saveBomDocs(node.id, payload);
+      const { photoUrl } = await saveBomDocs(node.id, payload);
+      if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
       // Link any requirements added in the Traceability tab
       await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
       toast.success('Part added to BOM');
@@ -1426,7 +1445,8 @@ export function BOMView({
         parentId: createSubNode.id,
         ownerId: payload.ownerId ?? null,
       });
-      await saveBomDocs(node.id, payload);
+      const { photoUrl } = await saveBomDocs(node.id, payload);
+      if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
       await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
       setCreateSubNode(null);
     } catch {

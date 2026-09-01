@@ -112,11 +112,26 @@ const TERMINAL_META: Record<
 export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject, onRevise, isConfirming, isRejecting, isRevising }: AssistantProposalCardProps) {
   const [showAll, setShowAll] = useState(false);
   const [editingOverride, setEditingOverride] = useState<boolean | null>(null);
-  const { preview } = proposal;
+  const preview = proposal.preview ?? {
+    destination: { projectId: proposal.projectId, projectName: 'Unknown project', inferredFrom: 'explicit' as const },
+    entityType: proposal.entityType,
+    actionKind: proposal.actionKind,
+    itemCount: 0,
+    noopCount: 0,
+    items: [],
+    warnings: [],
+  };
+  const destination = preview.destination ?? {
+    projectId: proposal.projectId,
+    projectName: 'Unknown project',
+    inferredFrom: 'explicit' as const,
+  };
   const isPending = proposal.status === 'pending';
   const isExecuting = proposal.status === 'executing';
   const isBusy = isConfirming || isRejecting || isRevising || isExecuting;
-  const items = preview.items;
+  const items = Array.isArray(preview.items) ? preview.items : [];
+  const warnings = Array.isArray(preview.warnings) ? preview.warnings : [];
+  const resultItems = Array.isArray(proposal.result?.items) ? proposal.result.items : [];
   const visibleItems = showAll ? items : items.slice(0, VISIBLE_ITEMS_COLLAPSED);
   const hiddenCount = items.length - visibleItems.length;
   const headline = `${actionVerb(preview.actionKind, preview.itemCount)} ${entityNoun(preview.entityType, preview.itemCount)}`;
@@ -157,7 +172,7 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
                   <h4 className="truncate text-base font-semibold text-foreground">{headline}</h4>
                 </div>
                 <Badge variant="outline" className="shrink-0 gap-1 text-xs font-normal">
-                  {preview.destination.projectName}
+                  {destination.projectName}
                 </Badge>
               </div>
             </CardHeader>
@@ -190,17 +205,17 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
                 <h4 className="truncate text-base font-semibold text-foreground">{headline}</h4>
               </div>
               <Badge variant="outline" className="shrink-0 gap-1 text-xs font-normal">
-                {preview.destination.projectName}
-                {preview.destination.inferredFrom === 'pinned' && <span className="text-muted-foreground">(inferred)</span>}
+                {destination.projectName}
+                {destination.inferredFrom === 'pinned' && <span className="text-muted-foreground">(inferred)</span>}
               </Badge>
             </div>
             {preview.rationale && <p className="mt-1 text-xs italic text-muted-foreground">{preview.rationale}</p>}
           </CardHeader>
 
           <CardContent className="space-y-3 pt-0">
-            {preview.warnings.length > 0 && (
+            {warnings.length > 0 && (
               <div className="space-y-1 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/30">
-                {preview.warnings.map((warning) => (
+                {warnings.map((warning) => (
                   <div key={warning.code} className="flex items-start gap-1.5 text-xs text-amber-800 dark:text-amber-300">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>{warning.message}</span>
@@ -250,7 +265,7 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
 
             {proposal.result && proposal.result.failed > 0 && (
               <div className="space-y-1 border-t border-border/60 pt-2">
-                {proposal.result.items
+                {resultItems
                   .filter((i) => i.status === 'failed')
                   .map((i) => (
                     <p key={i.index} className="text-xs text-red-600 dark:text-red-400">

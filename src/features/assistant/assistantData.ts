@@ -207,7 +207,7 @@ export interface CardItem {
   entityType?: CardItemEntityType;
 }
 
-export type BomCardFlag = 'single_sourced' | 'long_lead' | 'missing_mfr_pn' | 'missing_approval';
+export type BomCardFlag = 'single_sourced' | 'long_lead' | 'missing_lead_time' | 'missing_mfr_pn' | 'missing_approval';
 
 export interface BomCardItem {
   id: string;
@@ -284,8 +284,15 @@ export interface AssistantBomCard extends AssistantCardBase {
   rolledUpCost?: number;
   singleSourcedCount: number;
   longLeadCount: number;
+  /** Absent on cards persisted before this field existed. */
+  missingLeadTimeCount?: number;
   missingMfrPnCount: number;
   missingApprovalCount: number;
+  // The BOM page's status stat cards — only set for an approval-progress question.
+  approvedCount?: number;
+  pendingCount?: number;
+  rejectedCount?: number;
+  draftCount?: number;
 }
 
 export interface AssistantModuleListCard extends AssistantCardBase {
@@ -369,6 +376,50 @@ export interface AssistantModuleDetailCard extends AssistantDetailCardBase {
   owner?: string;
 }
 
+export type BomAttachmentKind = 'image' | 'document' | 'file';
+export interface BomDetailSupplier {
+  distributor: string;
+  unitPrice?: number;
+}
+export interface BomDetailCustomField {
+  label: string;
+  value: string;
+}
+export interface BomDetailAttachment {
+  name: string;
+  kind: BomAttachmentKind;
+}
+
+// One BOM line's own profile — the "Add New Part" form (details / sourcing /
+// traceability / documents) for a single part. The reference badge is the real
+// `partNumber` (BOM lines do have a human-facing code, unlike tasks/issues/
+// modules — see headerBadge in AssistantCardMessage).
+export interface AssistantBomDetailCard extends AssistantDetailCardBase {
+  type: 'bom_detail';
+  id: string;
+  /** Absent on cards persisted before this field existed. */
+  projectId?: string;
+  partNumber: string;
+  status: string;
+  category?: string;
+  revision?: string;
+  quantity?: number;
+  unit?: string;
+  owner?: string;
+  createdBy?: string;
+  manufacturer?: string;
+  mpn?: string;
+  unitPrice?: number;
+  extendedCost?: number;
+  leadTimeDays?: number;
+  designators?: string;
+  suppliers?: BomDetailSupplier[];
+  requirements?: string[];
+  customFields?: BomDetailCustomField[];
+  attachments?: BomDetailAttachment[];
+  approvalStage?: string;
+}
+
 export type AssistantCard =
   | AssistantStatusCard
   | AssistantListCard
@@ -378,7 +429,8 @@ export type AssistantCard =
   | AssistantTaskDetailCard
   | AssistantIssueDetailCard
   | AssistantEcoDetailCard
-  | AssistantModuleDetailCard;
+  | AssistantModuleDetailCard
+  | AssistantBomDetailCard;
 
 const PRESENT_CARD_TYPES = new Set<AssistantCard['type']>([
   'status',
@@ -390,6 +442,7 @@ const PRESENT_CARD_TYPES = new Set<AssistantCard['type']>([
   'issue_detail',
   'eco_detail',
   'module_detail',
+  'bom_detail',
 ]);
 
 /**

@@ -19,6 +19,7 @@ export interface CreatePartDto {
   mpn?: string;
   unit?: string;
   notes?: string;
+  imageUrl?: string | null;
   // Initial revision overrides (the revision itself only ever has these two
   // states — 'draft'/'rejected' exist only at the BOM-node level)
   initialStatus?: 'approved' | 'pending';
