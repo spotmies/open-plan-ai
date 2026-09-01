@@ -1,9 +1,8 @@
 /**
- * ImportTasksDialog — upload a file, watch the background AI job parse and
- * map it onto the task schema, then resolve any flagged rows in a chat with
- * the AI before committing. Purpose-built (not the full cross-entity
- * Assistant panel) per the confirmed design — see the task-import feature
- * plan. Three internal stages: upload -> chat (review + resolve) -> result.
+ * ImportIssuesDialog — upload a file, watch the background AI job parse and
+ * map it onto the issue schema, then resolve any flagged rows in a chat with
+ * the AI before committing. Mirrors task-import/ImportTasksDialog.tsx — same
+ * three internal stages: upload -> chat (review + resolve) -> result.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -13,11 +12,11 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Upload, Paperclip, Send, Loader2, CheckCircle2, AlertTriangle, FileSpreadsheet, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { taskImportService } from './services/taskImport.service';
-import { useTaskImportFlow } from './hooks/useTaskImportFlow';
+import { issueImportService } from './services/issueImport.service';
+import { useIssueImportFlow } from './hooks/useIssueImportFlow';
 import { ImportProposalCard } from './components/ImportProposalCard';
 import { AssistantQuestionCard } from '@/features/assistant/components/AssistantQuestionCard';
-import { isSupportedImportFile, SUPPORTED_IMPORT_FILE_LABEL, type ImportProposalPreview, type CommitImportResult } from './taskImportData';
+import { isSupportedImportFile, SUPPORTED_IMPORT_FILE_LABEL, type ImportProposalPreview, type CommitImportResult } from './issueImportData';
 
 interface Props {
   open: boolean;
@@ -47,31 +46,31 @@ function toFriendlyImportError(errorSummary: string | null | undefined): string 
   const normalized = errorSummary.toLowerCase();
 
   if (normalized.includes('validation failed') || normalized.includes('expected string')) {
-    return 'We couldn’t understand this file as a task list. Try uploading a clearer task document, spreadsheet, or CSV with task names and optional assignee, due date, or priority columns.';
+    return 'We couldn’t understand this file as an issue list. Try uploading a clearer issue document, spreadsheet, or CSV with issue titles and optional assignee, severity, or category columns.';
   }
 
   if (
     normalized.includes('not relevant') ||
-    normalized.includes('doesn\'t look like it describes tasks') ||
-    normalized.includes('doesn\'t look like a task list') ||
-    normalized.includes('no actionable tasks') ||
-    normalized.includes('no tasks could be found')
+    normalized.includes('doesn\'t look like it describes issues') ||
+    normalized.includes('doesn\'t look like an issue list') ||
+    normalized.includes('no reported issues') ||
+    normalized.includes('no issues could be found')
   ) {
-    return 'This file doesn’t seem to contain importable tasks. Try a file that clearly lists task names or action items.';
+    return 'This file doesn’t seem to contain importable issues. Try a file that clearly lists reported problems or defects.';
   }
 
   if (normalized.includes('unsupported file type')) {
-    return `This file type isn’t supported for task import. Please use ${SUPPORTED_IMPORT_FILE_LABEL}.`;
+    return `This file type isn’t supported for issue import. Please use ${SUPPORTED_IMPORT_FILE_LABEL}.`;
   }
 
   if (normalized.includes('couldn\'t read') || normalized.includes('could not read')) {
     return 'We couldn’t read this file properly. Try exporting it again, using a simpler format, or uploading another file.';
   }
 
-  return 'We couldn’t import this file. Please try another file or edit the file so the tasks are clearer, then try again.';
+  return 'We couldn’t import this file. Please try another file or edit the file so the issues are clearer, then try again.';
 }
 
-export function ImportTasksDialog({ open, onClose, projectId }: Props) {
+export function ImportIssuesDialog({ open, onClose, projectId }: Props) {
   const [stage, setStage] = useState<Stage>('upload');
   const [jobId, setJobId] = useState<string | null>(null);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
@@ -88,7 +87,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
   const attachInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const flow = useTaskImportFlow(projectId, jobId);
+  const flow = useIssueImportFlow(projectId, jobId);
 
   function reset() {
     setStage('upload');
@@ -115,7 +114,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     setPendingFileName(file.name);
     setUploading(true);
     try {
-      const job = await taskImportService.startImport(projectId, file);
+      const job = await issueImportService.startImport(projectId, file);
       setJobId(job.jobId);
       setStage('chat');
     } catch (err) {
@@ -144,20 +143,12 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     setSending(true);
     try {
       const sent = await flow.sendMessage(content);
-      // Swap the temp id for the real server id the instant it's known —
-      // otherwise, once the conversation refetch confirms this message, its
-      // id won't match the optimistic bubble's, React treats them as two
-      // different elements, unmounts the old one and mounts a fresh one,
-      // and that remount (plus the entrance animation replaying) is what
-      // shows up as a brief width/layout glitch right as "Sending…" clears.
       if (sent?.messageId) {
         setPendingUserMessages((current) =>
           current.map((message) => (message.id === optimisticId ? { ...message, id: sent.messageId } : message)),
         );
       }
     } catch {
-      // flow.sendMessage already surfaces the failure via flow.liveError —
-      // just undo the optimistic bubble and give the user their draft back.
       setPendingUserMessages((current) => current.filter((message) => message.id !== optimisticId));
       setDraft((current) => current || content);
     } finally {
@@ -199,9 +190,9 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
       // transaction keeps running — both land here even though the import
       // already succeeded or is about to. Poll status for a few seconds
       // before showing a scary error for something that actually worked.
-      let latestStatus: Awaited<ReturnType<typeof taskImportService.getStatus>> | null = null;
+      let latestStatus: Awaited<ReturnType<typeof issueImportService.getStatus>> | null = null;
       for (let attempt = 0; attempt < 5; attempt++) {
-        latestStatus = await taskImportService.getStatus(projectId, jobId!).catch(() => null);
+        latestStatus = await issueImportService.getStatus(projectId, jobId!).catch(() => null);
         if (latestStatus?.status === 'completed' || latestStatus?.status === 'failed') break;
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
@@ -216,14 +207,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     }
   }
 
-  // The latest proposal for this conversation, whatever its current status —
-  // not filtered to 'pending' only. ImportProposalCard itself renders the
-  // right thing for every status (editable review, importing spinner,
-  // success, failure), so once a proposal is committed it keeps showing
-  // here as a persistent "Import successful" confirmation instead of
-  // silently vanishing the moment its status stops being 'pending'.
-  // proposals[0] is the newest — the backend returns them ordered by
-  // createdAt descending (see proposals.repository.ts's listByConversation).
+  // The latest proposal for this conversation, whatever its current status.
   const latestProposal = flow.conversation?.proposals[0] ?? null;
   const confirmedMessages: ChatMessageItem[] = (flow.conversation?.messages ?? [])
     .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -248,12 +232,6 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
       optimistic: true,
     }));
   const messages = [...confirmedMessages, ...optimisticMessages];
-  // Identity+status fingerprint, not just messages.length — an optimistic
-  // "Sending…" bubble resolving into its confirmed twin moves one entry
-  // from optimisticMessages to confirmedMessages without changing the count,
-  // so a length-only dependency below misses it and the view stops tracking
-  // the bottom right as that bubble's height shrinks (the "Sending…" line
-  // disappearing), which yanks older messages back into view.
   const messagesSignature = messages.map((m) => `${m.id}:${'optimistic' in m && m.optimistic ? 1 : 0}`).join(',');
   const hasReviewContent = messages.length > 0 || !!latestProposal || !!flow.liveError || !!commitError;
   const hasChatStarted = messages.length > 0;
@@ -277,9 +255,9 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
-          <DialogTitle className="text-lg">Import Tasks</DialogTitle>
+          <DialogTitle className="text-lg">Import Issues</DialogTitle>
           <DialogDescription className="text-sm">
-            {stage === 'upload' && `Upload a file and AI will map it to tasks — ${SUPPORTED_IMPORT_FILE_LABEL}.`}
+            {stage === 'upload' && `Upload a file and AI will map it to issues — ${SUPPORTED_IMPORT_FILE_LABEL}.`}
             {stage === 'chat' && !isFailed && (
               <span className="flex items-center gap-1.5 truncate">
                 <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
@@ -345,7 +323,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                 </div>
               )}
               <p className="text-xs text-muted-foreground text-center">
-                Works best with a Title column (or a document that clearly describes action items). Non-task files — BOMs, change logs, invoices — will be rejected automatically.
+                Works best with a Title column (or a document that clearly describes reported problems). Non-issue files — task lists, BOMs, change logs — will be rejected automatically.
               </p>
             </div>
           )}
@@ -359,7 +337,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                   : `Reading ${pendingFileName ?? job?.sourceFileName ?? 'your file'}…`}
               </p>
               <p className="text-xs text-muted-foreground max-w-sm">
-                The AI is extracting tasks and preparing the review.
+                The AI is extracting issues and preparing the review.
               </p>
             </div>
           )}
@@ -429,12 +407,6 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
 
               {latestProposal && (
                 <div
-                  // Keyed on a fingerprint of the proposal's actual content
-                  // (not just its id) so every meaningful change — rows
-                  // added, warnings resolved, status flip — remounts this
-                  // block and replays the fade-in instead of the card's
-                  // height snapping instantly between states (e.g. the
-                  // "Import N tasks" button appearing/disappearing).
                   key={`${latestProposal.id}-${(latestProposal.preview as ImportProposalPreview)?.itemCount}-${(latestProposal.preview as ImportProposalPreview)?.cleanCount}-${latestProposal.status}`}
                   className="shrink-0 pt-1 animate-fade-in"
                 >
@@ -505,7 +477,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
               </div>
               <div className="space-y-1.5">
                 <p className="text-base font-medium">
-                  {result ? `${result.created} task${result.created === 1 ? '' : 's'} imported` : 'Import complete'}
+                  {result ? `${result.created} issue${result.created === 1 ? '' : 's'} imported` : 'Import complete'}
                 </p>
                 {result && result.skipped > 0 && (
                   <p className="text-sm text-muted-foreground max-w-sm">

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
 import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
@@ -178,6 +179,13 @@ function FieldEditor({ entityType, projectId, fieldKey, value, onChange }: Field
     case 'dueDate':
     case 'targetDate':
       return <Input type="date" value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value || null)} />;
+    case 'completed':
+      return (
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <Checkbox checked={value === true} onCheckedChange={(checked) => onChange(checked === true)} />
+          Mark this milestone as complete
+        </label>
+      );
     default:
       return <Input value={typeof value === 'string' ? value : ''} onChange={(e) => onChange(e.target.value)} />;
   }
@@ -185,7 +193,7 @@ function FieldEditor({ entityType, projectId, fieldKey, value, onChange }: Field
 
 const FIELD_ORDER = [
   'title', 'name', 'description', 'category', 'type', 'assigneeIds', 'ownerId',
-  'milestoneId', 'moduleId', 'status', 'severity', 'priority', 'startDate', 'targetDate', 'dueDate',
+  'milestoneId', 'moduleId', 'status', 'completed', 'severity', 'priority', 'startDate', 'targetDate', 'dueDate',
 ];
 const FIELD_LABELS: Record<string, string> = {
   title: 'Title',
@@ -198,6 +206,7 @@ const FIELD_LABELS: Record<string, string> = {
   milestoneId: 'Milestone',
   moduleId: 'Module',
   status: 'Status',
+  completed: 'Completion',
   severity: 'Severity',
   priority: 'Priority',
   startDate: 'Start date',
@@ -218,7 +227,10 @@ export function AssistantProposalForm({ entityType, projectId, formState, onSubm
   const rawInitial = formState.mode === 'single' ? (formState.fields ?? {}) : { [formState.sharedFields?.[0]?.field ?? '']: formState.sharedFields?.[0]?.value };
   // Milestones default to "Automatic" (null → computed from tasks) when the model doesn't propose
   // a status, which reads as a fake status option to the user — default the form to On Track instead.
-  const initial = entityType === 'milestone' && 'status' in rawInitial && (rawInitial.status === null || rawInitial.status === undefined)
+  // Skip that when the proposal is about completion (a 'completed' field is present): pinning an
+  // unrelated status override onto a "mark complete" request would be a surprise side effect.
+  const initial = entityType === 'milestone' && 'status' in rawInitial && !('completed' in rawInitial)
+    && (rawInitial.status === null || rawInitial.status === undefined)
     ? { ...rawInitial, status: 'on-track' }
     : rawInitial;
   const [values, setValues] = useState<Record<string, unknown>>(initial);

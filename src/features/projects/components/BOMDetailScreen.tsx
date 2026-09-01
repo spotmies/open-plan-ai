@@ -39,12 +39,30 @@ function getInitials(name: string | undefined | null): string {
   return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-async function saveBomDocs(nodeId: string, payload: BOMPartPayload) {
-  const docs = [payload.docPhoto, ...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])].filter(Boolean) as DocValue[];
-  const newDocs = docs.filter(d => d.kind !== 'existing');
-  await Promise.allSettled(
-    newDocs.map(d => d.kind === 'file' ? uploadBomDocumentFile(nodeId, d.file) : addBomDocumentLink(nodeId, d.url, d.fileName)),
+// Returns the uploaded/linked photo's resolved fileUrl (for persisting onto the
+// part catalog row so Inventory can show it) — undefined when the photo wasn't
+// touched (unchanged or still the same 'existing' attachment), null when the
+// user explicitly removed it.
+async function saveBomDocs(nodeId: string, payload: BOMPartPayload): Promise<{ photoUrl?: string | null }> {
+  const otherDocs = [...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])].filter(Boolean) as DocValue[];
+  const newOtherDocs = otherDocs.filter(d => d.kind !== 'existing');
+  const uploads = Promise.allSettled(
+    newOtherDocs.map(d => d.kind === 'file' ? uploadBomDocumentFile(nodeId, d.file) : addBomDocumentLink(nodeId, d.url, d.fileName)),
   );
+
+  let photoUrl: string | null | undefined;
+  if (payload.docPhoto === null) {
+    photoUrl = null;
+  } else if (payload.docPhoto?.kind === 'file') {
+    const attachment = await uploadBomDocumentFile(nodeId, payload.docPhoto.file);
+    photoUrl = attachment.fileUrl;
+  } else if (payload.docPhoto?.kind === 'url') {
+    await addBomDocumentLink(nodeId, payload.docPhoto.url, payload.docPhoto.fileName);
+    photoUrl = payload.docPhoto.url;
+  }
+
+  await uploads;
+  return { photoUrl };
 }
 
 // ── Add Sub-component Dialog ───────────────────────────────────────
@@ -566,13 +584,17 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
       status: payload.status, parentId: originalNode.id,
       ownerId: payload.ownerId ?? null,
     });
-    await saveBomDocs(node.id, payload);
+    const { photoUrl } = await saveBomDocs(node.id, payload);
+    if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
     setShowCreateNewSub(false);
   };
 
   // ── Save handler ──
   const handleSave = async (payload: BOMPartPayload) => {
     if (!originalNode._partId) return;
+    // Upload any documents attached in the edit form first so a new/removed
+    // photo's URL can ride along in the same updatePart call below.
+    const { photoUrl } = await saveBomDocs(originalNode.id, payload);
     if (payload.versionMode === 'new') {
       await createRev.mutateAsync({
         partId: originalNode._partId,
@@ -587,6 +609,9 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
           suppliers: payload.suppliers?.length ? payload.suppliers.map(s => ({ ...s, price: parseFloat(s.price) || 0 })) : undefined,
         },
       });
+      if (photoUrl !== undefined) {
+        await updatePart.mutateAsync({ partId: originalNode._partId, dto: { imageUrl: photoUrl } });
+      }
     } else {
       // Revisions are append-only on the backend — there is no endpoint to
       // patch price/leadTime on an existing row. "Update in place" therefore
@@ -596,7 +621,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
       const leadTimeChanged = payload.leadTime !== activeRev.leadTime;
       await Promise.all([
         updateNode.mutateAsync({ nodeId: originalNode.id, dto: { quantity: payload.qty, unit: payload.uom } }),
-        updatePart.mutateAsync({ partId: originalNode._partId, dto: { name: payload.name, description: payload.desc, category: payload.category, manufacturer: payload.manufacturer || undefined, distributor: payload.distributor || undefined, mpn: payload.mpn || undefined, customFields: payload.customFields } }),
+        updatePart.mutateAsync({ partId: originalNode._partId, dto: { name: payload.name, description: payload.desc, category: payload.category, manufacturer: payload.manufacturer || undefined, distributor: payload.distributor || undefined, mpn: payload.mpn || undefined, customFields: payload.customFields, ...(photoUrl !== undefined ? { imageUrl: photoUrl } : {}) } }),
         ...(priceChanged || leadTimeChanged ? [createRev.mutateAsync({
           partId: originalNode._partId,
           dto: {
@@ -612,8 +637,6 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
         })] : []),
       ]);
     }
-    // Upload any documents attached in the edit form
-    await saveBomDocs(originalNode.id, payload);
     queryClient.invalidateQueries({ queryKey: ['bom-documents', originalNode.id] });
 
     // Sync requirement traceability links

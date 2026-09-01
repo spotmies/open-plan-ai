@@ -178,7 +178,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
             : 'max-w-lg'
         )}
       >
-        <DialogHeader className="px-4 sm:px-6 py-4 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
+        <DialogHeader className="px-4 sm:px-6 py-3.5 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <ShoppingCart className="h-4 w-4" />
           </div>
@@ -195,7 +195,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
             <div className="overflow-y-auto flex-1">
-              <div className="p-4 sm:p-6 space-y-5">
+              <div className="p-4 sm:p-6 space-y-4">
                 <FormField
                   control={form.control}
                   name="partId"
@@ -298,7 +298,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   )}
                 />
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   <FormField
                     control={form.control}
                     name="quantity"
@@ -315,28 +315,26 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
 
                   <FormField
                     control={form.control}
-                    name="expectedDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date <span className="normal-case font-normal">optional</span></FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <FormField
-                    control={form.control}
                     name="leadTime"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                         <FormControl>
                           <Input type="number" min={0} step={1} placeholder="Days" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="expectedDate"
+                    render={({ field }) => (
+                      <FormItem className="col-span-2 sm:col-span-1">
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -364,7 +362,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                     name="supplierRef"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Supplier / PO ref <span className="normal-case font-normal">optional</span></FormLabel>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Supplier / PO ref</FormLabel>
                         <FormControl>
                           <Input placeholder="PO-…" {...field} />
                         </FormControl>
@@ -378,7 +376,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                     name="unitCost"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit cost <span className="normal-case font-normal">optional</span></FormLabel>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit cost</FormLabel>
                         <FormControl>
                           <Input type="number" min={0} step="0.01" placeholder="0.00" {...field} />
                         </FormControl>
@@ -393,11 +391,11 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   name="purpose"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Purpose <span className="normal-case font-normal">optional</span></FormLabel>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Purpose</FormLabel>
                       <FormControl>
                         <Textarea
                           placeholder="Why is this being ordered?"
-                          className="min-h-[70px] resize-none"
+                          className="min-h-[56px] resize-none"
                           {...field}
                         />
                       </FormControl>
@@ -408,7 +406,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
               </div>
             </div>
 
-            <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-4 border-t shrink-0">
+            <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-3.5 border-t shrink-0">
               <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
               <Button type="submit" className="flex-1" disabled={!selectedPart}>
                 {orderStatus === 'planned' ? 'Flag as needed' : 'Place order'}

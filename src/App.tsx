@@ -275,6 +275,10 @@ function AppShell() {
                 </Suspense>
               }
             />
+          </Route>
+
+          {/* ── Routes without content padding ───────────────── */}
+          <Route element={<AppLayoutOutlet noPadding />}>
             <Route
               path="/inventory"
               element={
@@ -283,10 +287,6 @@ function AppShell() {
                 </Suspense>
               }
             />
-          </Route>
-
-          {/* ── Routes without content padding ───────────────── */}
-          <Route element={<AppLayoutOutlet noPadding />}>
             <Route
               path="/team"
               element={

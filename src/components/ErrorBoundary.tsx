@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { logger } from '@/services/monitoring/logger';
 
+const DEV_ERROR_LOG_KEY = 'openplan:last-react-error';
+
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
@@ -38,11 +40,22 @@ export class ErrorBoundary extends Component<Props, State> {
       }
     }
 
-    logger.error('React Error Boundary caught error', {
+    const errorContext = {
       error: error.message,
       stack: error.stack,
       componentStack: errorInfo.componentStack,
-    });
+    };
+
+    logger.error('React Error Boundary caught error', errorContext);
+
+    if (import.meta.env.DEV) {
+      try {
+        sessionStorage.setItem(DEV_ERROR_LOG_KEY, JSON.stringify(errorContext));
+      } catch {
+        // Ignore storage failures in dev diagnostics.
+      }
+      console.error('[ErrorBoundary]', errorContext);
+    }
     this.setState({ errorInfo });
   }
 

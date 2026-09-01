@@ -4,13 +4,18 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  DollarSign,
+  FileText,
   Flag,
   Folder,
   GitPullRequest,
+  Image as ImageIcon,
   LayoutGrid,
   Layers,
   Link2,
   ListChecks,
+  Package,
+  Paperclip,
   ShieldAlert,
   type LucideIcon,
 } from 'lucide-react';
@@ -284,6 +289,17 @@ function DetailFacts({ children }: { children: ReactNode }) {
   );
 }
 
+// A labelled sub-block on the bom_detail card (suppliers / requirement links /
+// additional fields / documents) — each is a short list, not a fact row.
+function BomDetailSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="border-t border-border pt-3">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
+
 // ─── Status card gate stepper ──────────────────────────────────────────────
 // The real 5-stage projects.stage enum — never the design mock's EVT/DVT/
 // PVT/MP gate names (see ProjectStage's own comment in assistantData.ts).
@@ -374,6 +390,12 @@ const TYPE_META: Record<Exclude<AssistantCard['type'], 'list'>, StaticCardKindMe
     chipClass: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
     kickerClass: 'text-indigo-600 dark:text-indigo-400',
   },
+  bom_detail: {
+    kicker: 'BOM LINE',
+    Icon: Package,
+    chipClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    kickerClass: 'text-amber-600 dark:text-amber-400',
+  },
 };
 
 function baseMetaForList(card: AssistantListCard): StaticCardKindMeta {
@@ -421,6 +443,10 @@ function headerBadge(card: AssistantCard): string | undefined {
   switch (card.type) {
     case 'eco_detail':
       return card.num;
+    case 'bom_detail':
+      // BOM lines have a real human-facing part number — show it verbatim,
+      // like an ECO's num, not a hashed id.
+      return card.partNumber;
     case 'task_detail':
     case 'issue_detail':
     case 'module_detail':
@@ -480,6 +506,10 @@ const BOM_FLAG_META: Record<BomCardFlag, { label: string; badgeClass: string }> 
   single_sourced: { label: 'Single-sourced', badgeClass: 'border-destructive/30 bg-destructive/10 text-destructive' },
   long_lead: {
     label: 'Long-lead',
+    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  },
+  missing_lead_time: {
+    label: 'Missing lead time',
     badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
   },
   missing_mfr_pn: {
@@ -592,6 +622,8 @@ function detailCardTarget(card: AssistantCard): string | undefined {
       return card.projectId && card.id ? ENTITY_DEEP_LINK.eco(card.projectId, card.id) : undefined;
     case 'module_detail':
       return card.projectId ? ENTITY_DEEP_LINK.hardware_module(card.projectId, card.id) : undefined;
+    case 'bom_detail':
+      return card.projectId ? ENTITY_DEEP_LINK.bom_node(card.projectId, card.id) : undefined;
     default:
       return undefined;
   }
@@ -674,16 +706,35 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
                     <div className="text-2xl font-bold text-foreground">
                       {card.rolledUpCost != null ? formatCurrency(card.rolledUpCost) : '—'}
                     </div>
-                    <p className="text-xs text-muted-foreground">rolled-up cost / unit</p>
+                    <p className="text-xs text-muted-foreground">total BOM cost</p>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-semibold text-foreground">{card.totalLines} lines</div>
                     <p className="text-xs text-muted-foreground">{card.clearToBuildPct}% clear-to-build</p>
                   </div>
                 </div>
+                {(card.approvedCount != null || card.pendingCount != null || card.rejectedCount != null) && (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
+                    {card.approvedCount != null && (
+                      <span><span className="font-semibold text-foreground">{card.approvedCount}</span> approved</span>
+                    )}
+                    {card.pendingCount != null && (
+                      <span><span className="font-semibold text-foreground">{card.pendingCount}</span> pending review</span>
+                    )}
+                    {card.rejectedCount != null && card.rejectedCount > 0 && (
+                      <span><span className="font-semibold text-foreground">{card.rejectedCount}</span> rejected</span>
+                    )}
+                    {card.draftCount != null && card.draftCount > 0 && (
+                      <span><span className="font-semibold text-foreground">{card.draftCount}</span> draft</span>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-1.5">
                   {card.singleSourcedCount > 0 && <BomFlagCountBadge flag="single_sourced" count={card.singleSourcedCount} />}
                   {card.longLeadCount > 0 && <BomFlagCountBadge flag="long_lead" count={card.longLeadCount} />}
+                  {card.missingLeadTimeCount != null && card.missingLeadTimeCount > 0 && (
+                    <BomFlagCountBadge flag="missing_lead_time" count={card.missingLeadTimeCount} />
+                  )}
                   {card.missingMfrPnCount > 0 && <BomFlagCountBadge flag="missing_mfr_pn" count={card.missingMfrPnCount} />}
                   {card.missingApprovalCount > 0 && (
                     <BomFlagCountBadge flag="missing_approval" count={card.missingApprovalCount} />
@@ -793,6 +844,93 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
                   </div>
                 )}
                 <DetailFacts>{card.owner ? <PersonFact key="owner" name={card.owner} /> : null}</DetailFacts>
+              </>
+            )}
+
+            {card.type === 'bom_detail' && (
+              <>
+                <StatusPill status={card.status} />
+                {card.description && <p className="text-sm text-muted-foreground">{card.description}</p>}
+                {(card.category || card.revision || card.designators) && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {card.category && <TagBadge category="Category">{titleCase(card.category)}</TagBadge>}
+                    {card.revision && <TagBadge category="Revision">Rev {card.revision}</TagBadge>}
+                    {card.designators && <TagBadge category="Designators">{card.designators}</TagBadge>}
+                  </div>
+                )}
+                <DetailFacts>
+                  {card.quantity != null ? (
+                    <Fact key="qty" icon={Package} text={`Qty ${card.quantity}${card.unit ? ` ${card.unit}` : ''}`} />
+                  ) : null}
+                  {card.manufacturer ? (
+                    <Fact
+                      key="mfr"
+                      icon={Layers}
+                      text={card.mpn ? `${card.manufacturer} · ${card.mpn}` : card.manufacturer}
+                    />
+                  ) : null}
+                  {card.leadTimeDays != null ? <Fact key="lead" icon={Clock} text={`${card.leadTimeDays}d lead`} /> : null}
+                  {card.unitPrice != null ? (
+                    <Fact
+                      key="price"
+                      icon={DollarSign}
+                      text={`${formatCurrency(card.unitPrice)}/unit${
+                        card.extendedCost != null ? ` · ${formatCurrency(card.extendedCost)} total` : ''
+                      }`}
+                    />
+                  ) : null}
+                  {card.owner ? <PersonFact key="owner" name={card.owner} /> : null}
+                  {card.createdBy && card.createdBy !== card.owner ? (
+                    <PersonFact key="cre" name={card.createdBy} prefix="Added by" />
+                  ) : null}
+                </DetailFacts>
+                {card.suppliers && card.suppliers.length > 0 && (
+                  <BomDetailSection label="Suppliers">
+                    {card.suppliers.map((s, i) => (
+                      <div key={`${s.distributor}-${i}`} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-foreground">{s.distributor}</span>
+                        {s.unitPrice != null && <span className="text-muted-foreground">{formatCurrency(s.unitPrice)}</span>}
+                      </div>
+                    ))}
+                  </BomDetailSection>
+                )}
+                {card.requirements && card.requirements.length > 0 && (
+                  <BomDetailSection label="Requirement links">
+                    <div className="flex flex-wrap gap-1.5">
+                      {card.requirements.map((r) => (
+                        <Badge key={r} variant="outline" className="font-mono text-[10px]">
+                          {r}
+                        </Badge>
+                      ))}
+                    </div>
+                  </BomDetailSection>
+                )}
+                {card.customFields && card.customFields.length > 0 && (
+                  <BomDetailSection label="Additional fields">
+                    {card.customFields.map((f) => (
+                      <div key={f.label} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground">{f.label}</span>
+                        <span className="text-foreground">{f.value}</span>
+                      </div>
+                    ))}
+                  </BomDetailSection>
+                )}
+                {card.attachments && card.attachments.length > 0 && (
+                  <BomDetailSection label="Documents">
+                    {card.attachments.map((a, i) => {
+                      const Icon = a.kind === 'image' ? ImageIcon : a.kind === 'document' ? FileText : Paperclip;
+                      return (
+                        <div key={`${a.name}-${i}`} className="flex items-center gap-2 text-sm text-foreground">
+                          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{a.name}</span>
+                        </div>
+                      );
+                    })}
+                  </BomDetailSection>
+                )}
+                {card.approvalStage && (
+                  <p className="border-t border-border pt-3 text-xs text-muted-foreground">{card.approvalStage}</p>
+                )}
               </>
             )}
 

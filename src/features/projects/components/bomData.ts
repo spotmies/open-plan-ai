@@ -153,6 +153,7 @@ export interface ApiPartResponse {
   mpn: string | null;
   unit: string;
   notes: string | null;
+  imageUrl: string | null;
   customFields: ApiCustomFieldEntry[] | null;
   latestRevision: ApiRevisionResponse | null;
   available: number | null;

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import {
   Search, Table as TableIcon, LayoutGrid, Download, Pencil, PackageSearch,
   AlertTriangle, Truck, CheckCircle, Lock, Boxes as BoxesIcon, Layers, SlidersHorizontal, ShoppingCart, Clock,
+  ChevronDown,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious,
+} from '@/components/ui/pagination';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useProjects } from '@/hooks/useProjects';
@@ -251,6 +256,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   const [search, setSearch] = useState('');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>(isMobile ? 'cards' : 'table');
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
@@ -394,18 +400,45 @@ export function InventoryView({ orgId }: InventoryViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayStock, categoryFilter, search, quickFilter, demandByPartId]);
 
+  // Pagination applies to the desktop table/cards views — mobile keeps scrolling the full
+  // filtered list within its own scroll region rather than paging (paginatedStock === filteredStock
+  // there), since there's no room for page-number controls on a phone-width toolbar.
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const totalPages = Math.max(1, Math.ceil(filteredStock.length / pageSize));
+
+  useEffect(() => { setCurrentPage(1); }, [search, quickFilter, categoryFilter, pageSize]);
+  useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [currentPage, totalPages]);
+
+  const paginatedStock = useMemo(() => {
+    if (isMobile) return filteredStock;
+    const start = (currentPage - 1) * pageSize;
+    return filteredStock.slice(start, start + pageSize);
+  }, [filteredStock, currentPage, pageSize, isMobile]);
+
+  const getPageNumbers = (): (number | 'ellipsis')[] => {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const pages: (number | 'ellipsis')[] = [1];
+    if (currentPage > 3) pages.push('ellipsis');
+    for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) pages.push(p);
+    if (currentPage < totalPages - 2) pages.push('ellipsis');
+    pages.push(totalPages);
+    return pages;
+  };
+
   // Cards view groups by category (unless a single category is already filtered), each
   // group preceded by a small "CATEGORY NAME · count" header — mirrors the design system's
-  // card grouping for Inventory.
+  // card grouping for Inventory. Grouped from the paginated slice, so cards view paginates
+  // the same as table view.
   const cardGroups = useMemo(() => {
-    if (categoryFilter !== 'all') return [{ cat: categoryFilter as BOMCategory, items: filteredStock }];
+    if (categoryFilter !== 'all') return [{ cat: categoryFilter as BOMCategory, items: paginatedStock }];
     const byCat = new Map<BOMCategory, StockRecord[]>();
-    for (const r of filteredStock) {
+    for (const r of paginatedStock) {
       if (!byCat.has(r.cat)) byCat.set(r.cat, []);
       byCat.get(r.cat)!.push(r);
     }
     return allCategories.filter(cat => byCat.has(cat)).map(cat => ({ cat, items: byCat.get(cat)! }));
-  }, [filteredStock, categoryFilter, allCategories]);
+  }, [paginatedStock, categoryFilter, allCategories]);
 
   const coverageCounts = useMemo(() => {
     const counts: Record<CoverageStatus, number> = { ready: 0, 'covered-by-order': 0, short: 0, conflict: 0 };
@@ -534,48 +567,55 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   return (
-    <div className="space-y-4 md:space-y-6 px-4 md:px-6 pb-6">
-      {isMobile ? null : (
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
-          <div className="flex flex-wrap items-center justify-start gap-2 shrink-0 lg:justify-end">
-            <Button variant="outline" onClick={() => openOrderFor()}>
-              <ShoppingCart className="h-4 w-4 mr-2" />
-              Order
-            </Button>
-            <Button variant="outline" onClick={() => openReceiveFor()}>
-              <Download className="h-4 w-4 mr-2" />
-              Receive
-            </Button>
-            <Button onClick={() => openAdjustFor()}>
-              <Pencil className="h-4 w-4 mr-2" />
-              <span className="truncate">New transaction</span>
-            </Button>
-          </div>
-        </div>
-      )}
+    <div className="h-full min-h-0 flex flex-col px-4 md:px-6 pt-4 pb-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col">
+        {/* Toolbar/stat-cards/tabs plus, within the Stock tab, the search/filter/category-chip
+            row are one `shrink-0` block outside the scrolling region below, so they stay
+            visible together while only the table rows or card grid scroll. This relies on
+            `/inventory` being a `noPadding` route (App.tsx) — a `position: sticky` block here
+            would work fine visually but was dropped in favor of this simpler layout, since it
+            avoids CSS sticky's "floor" being pinned to the scroll ancestor's own padding edge. */}
+        <div className="shrink-0 space-y-4 md:space-y-6 pb-4">
+          <div className={cn(isMobile ? undefined : 'flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between')}>
+            <TabsList className={cn(isMobile && 'w-full grid grid-cols-3 sticky top-0 z-10 bg-background')}>
+              <TabsTrigger value="stock">Stock</TabsTrigger>
+              <TabsTrigger value="builds">Builds</TabsTrigger>
+              <TabsTrigger value="alerts">
+                Alerts
+                {belowCoverage > 0 && (
+                  <Badge variant="destructive" className="ml-1.5 h-5 px-1.5 text-[10px]">{belowCoverage}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
 
-      <div className={cn('gap-2.5', isMobile ? 'grid grid-cols-2' : 'flex flex-wrap md:gap-3')}>
-        <StatCard label="Total Parts" value={String(totalParts)} icon={BoxesIcon} iconColor="#2563EB" accent loading={isInventoryLoading} />
-        <StatCard label="Ready to Build" value={String(coverageCounts.ready)} icon={CheckCircle} iconColor="#16A34A" loading={isInventoryLoading} />
-        <StatCard label="Below Coverage" value={String(belowCoverage)} icon={AlertTriangle} iconColor="#DC2626" loading={isInventoryLoading} />
-        <StatCard label="Incoming This Week" value={String(incomingCount)} icon={Truck} iconColor="#D97706" loading={isInventoryLoading} />
-        <StatCard label="In Quarantine" value={String(quarantineCount)} icon={Lock} iconColor="#7C3AED" loading={isInventoryLoading} />
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className={cn(isMobile && 'w-full grid grid-cols-3 sticky top-0 z-10 bg-background')}>
-          <TabsTrigger value="stock">Stock</TabsTrigger>
-          <TabsTrigger value="builds">Builds</TabsTrigger>
-          <TabsTrigger value="alerts">
-            Alerts
-            {belowCoverage > 0 && (
-              <Badge variant="destructive" className="ml-1.5 h-5 px-1.5 text-[10px]">{belowCoverage}</Badge>
+            {isMobile ? null : (
+              <div className="flex flex-wrap items-center justify-start gap-2 shrink-0 lg:justify-end">
+                <Button variant="outline" onClick={() => openOrderFor()}>
+                  <ShoppingCart className="h-4 w-4 mr-2" />
+                  Order
+                </Button>
+                <Button variant="outline" onClick={() => openReceiveFor()}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Receive
+                </Button>
+                <Button onClick={() => openAdjustFor()}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  <span className="truncate">New transaction</span>
+                </Button>
+              </div>
             )}
-          </TabsTrigger>
-        </TabsList>
+          </div>
 
-        <TabsContent value="stock" className="mt-4">
-          <div className="space-y-4">
+          <div className={cn('gap-2.5', isMobile ? 'grid grid-cols-2' : 'flex flex-wrap md:gap-3')}>
+            <StatCard label="Total Parts" value={String(totalParts)} icon={BoxesIcon} iconColor="#2563EB" accent loading={isInventoryLoading} />
+            <StatCard label="Ready to Build" value={String(coverageCounts.ready)} icon={CheckCircle} iconColor="#16A34A" loading={isInventoryLoading} />
+            <StatCard label="Below Coverage" value={String(belowCoverage)} icon={AlertTriangle} iconColor="#DC2626" loading={isInventoryLoading} />
+            <StatCard label="Incoming This Week" value={String(incomingCount)} icon={Truck} iconColor="#D97706" loading={isInventoryLoading} />
+            <StatCard label="In Quarantine" value={String(quarantineCount)} icon={Lock} iconColor="#7C3AED" loading={isInventoryLoading} />
+          </div>
+
+          {activeTab === 'stock' && (
+            <div className="space-y-4">
               <div className={cn('flex gap-3', isMobile ? 'flex-row items-center' : 'flex-col lg:flex-row lg:items-center')}>
                 <div className="relative w-full lg:max-w-xs lg:flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -639,34 +679,52 @@ export function InventoryView({ orgId }: InventoryViewProps) {
               </div>
 
               {!isMobile && (
-                <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap pb-0.5">
-                  <button
-                    onClick={() => setCategoryFilter('all')}
+                <div className="flex items-start gap-1">
+                  <div
                     className={cn(
-                      'shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-                      categoryFilter === 'all'
-                        ? 'bg-foreground text-background border-foreground'
-                        : 'bg-background text-muted-foreground border-input hover:bg-accent hover:text-accent-foreground'
+                      'flex gap-1.5 -mx-4 px-4 sm:mx-0 sm:px-0 pb-0.5',
+                      categoriesExpanded
+                        ? 'flex-wrap'
+                        : 'overflow-x-auto no-scrollbar flex-nowrap'
                     )}
                   >
-                    All categories
+                    <button
+                      onClick={() => setCategoryFilter('all')}
+                      className={cn(
+                        'shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+                        categoryFilter === 'all'
+                          ? 'bg-foreground text-background border-foreground'
+                          : 'bg-background text-muted-foreground border-input hover:bg-accent hover:text-accent-foreground'
+                      )}
+                    >
+                      All categories
+                    </button>
+                    {allCategories.map((cat) => {
+                      const meta = getCategoryMeta(cat);
+                      const active = categoryFilter === cat;
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => setCategoryFilter(cat)}
+                          className="shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors"
+                          style={active
+                            ? { background: meta.tint, color: '#fff', borderColor: meta.tint }
+                            : { background: 'transparent', color: meta.tint, borderColor: `${meta.tint}40` }}
+                        >
+                          {meta.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={() => setCategoriesExpanded((v) => !v)}
+                    aria-label={categoriesExpanded ? 'Show fewer categories' : 'Show all categories'}
+                    aria-expanded={categoriesExpanded}
+                    title={categoriesExpanded ? 'Show fewer categories' : 'Show all categories'}
+                    className="shrink-0 mt-0.5 p-1 rounded-full border border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+                  >
+                    <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', categoriesExpanded && 'rotate-180')} />
                   </button>
-                  {allCategories.map((cat) => {
-                    const meta = getCategoryMeta(cat);
-                    const active = categoryFilter === cat;
-                    return (
-                      <button
-                        key={cat}
-                        onClick={() => setCategoryFilter(cat)}
-                        className="shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors"
-                        style={active
-                          ? { background: meta.tint, color: '#fff', borderColor: meta.tint }
-                          : { background: 'transparent', color: meta.tint, borderColor: `${meta.tint}40` }}
-                      >
-                        {meta.label}
-                      </button>
-                    );
-                  })}
                 </div>
               )}
 
@@ -753,9 +811,21 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                   </DrawerContent>
                 </Drawer>
               )}
+            </div>
+          )}
+        </div>
 
+        {/* No `flex`/display utility directly on TabsContent: Radix hides inactive panels via
+            the `hidden` attribute (implicit `display: none`), and a class-based `display` value
+            has equal CSS specificity but wins as author CSS over that UA default — so an
+            inactive-but-still-mounted panel with `flex` on it stays a real (empty) flex item,
+            silently eating a share of `flex-1` space from whichever tab actually is active. The
+            flex column lives on this inner div instead. */}
+        <TabsContent value="stock" className="mt-4 flex-1 min-h-0">
+          <div className="h-full min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto">
               {isMobile ? (
-                <div className="space-y-5">
+                <div className="space-y-5 pb-4">
                   {isInventoryLoading ? (
                     <div className="space-y-2">
                       {Array.from({ length: 5 }).map((_, i) => (
@@ -882,7 +952,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                             No parts match your filters
                           </TableCell>
                         </TableRow>
-                      ) : filteredStock.map((r) => {
+                      ) : paginatedStock.map((r) => {
                         const available = availableOf(r);
                         const status = coverageOf(r);
                         return (
@@ -932,14 +1002,9 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                       })}
                     </TableBody>
                   </Table>
-                  {filteredStock.length > 0 && (
-                    <div className="px-3 py-2.5 border-t border-border text-xs text-muted-foreground">
-                      Showing {filteredStock.length} of {totalParts} total parts
-                    </div>
-                  )}
                 </div>
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-5 pb-4">
                   {isInventoryLoading ? (
                     <div className="space-y-2">
                       {Array.from({ length: 5 }).map((_, i) => (
@@ -1049,9 +1114,69 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                 </div>
               )}
           </div>
+
+              {!isMobile && filteredStock.length > 0 && (
+                <div className="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      Showing {Math.min((currentPage - 1) * pageSize + 1, filteredStock.length)}–{Math.min(currentPage * pageSize, filteredStock.length)} of {filteredStock.length}
+                    </span>
+                    <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                      <SelectTrigger className="h-7 w-[92px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 / page</SelectItem>
+                        <SelectItem value="25">25 / page</SelectItem>
+                        <SelectItem value="50">50 / page</SelectItem>
+                        <SelectItem value="100">100 / page</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {totalPages > 1 && (
+                    <Pagination className="mx-0 w-auto">
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.max(1, p - 1)); }}
+                            className={cn(currentPage === 1 && 'pointer-events-none opacity-50')}
+                          />
+                        </PaginationItem>
+                        {getPageNumbers().map((page, idx) =>
+                          page === 'ellipsis' ? (
+                            <PaginationItem key={`ellipsis-${idx}`}>
+                              <span className="flex h-9 w-9 items-center justify-center text-muted-foreground">…</span>
+                            </PaginationItem>
+                          ) : (
+                            <PaginationItem key={page}>
+                              <PaginationLink
+                                href="#"
+                                isActive={page === currentPage}
+                                onClick={(e) => { e.preventDefault(); setCurrentPage(page); }}
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          ),
+                        )}
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.min(totalPages, p + 1)); }}
+                            className={cn(currentPage === totalPages && 'pointer-events-none opacity-50')}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  )}
+                </div>
+              )}
+          </div>
         </TabsContent>
 
-        <TabsContent value="builds" className="mt-4">
+        <TabsContent value="builds" className="mt-4 flex-1 min-h-0 overflow-y-auto">
           <BuildsPanel
             orgId={orgId}
             builds={computedBuilds}
@@ -1063,7 +1188,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
           />
         </TabsContent>
 
-        <TabsContent value="alerts" className="mt-4">
+        <TabsContent value="alerts" className="mt-4 flex-1 min-h-0 overflow-y-auto">
           <AlertsPanel
             builds={computedBuilds}
             stock={displayStock}

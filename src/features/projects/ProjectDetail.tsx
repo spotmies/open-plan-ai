@@ -30,6 +30,7 @@ import {
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { TasksSection, ViewControls } from './components/TasksSection';
 import { ImportTasksDialog } from '../task-import/ImportTasksDialog';
+import { ImportIssuesDialog } from '../issue-import/ImportIssuesDialog';
 import { ModulesSection, ModuleViewControls } from './components/ModulesSection';
 import { MilestonesView } from './components/MilestonesView';
 import { IssuesView } from './components/IssuesView';
@@ -635,6 +636,7 @@ export default function ProjectDetail() {
   const [isAddIssueDialogOpen, setIsAddIssueDialogOpen] = useState(false);
   const [isAddTaskDialogOpen, setIsAddTaskDialogOpen] = useState(false);
   const [isImportTasksDialogOpen, setIsImportTasksDialogOpen] = useState(false);
+  const [isImportIssuesDialogOpen, setIsImportIssuesDialogOpen] = useState(false);
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
   const [selectedMemberRoleToAdd, setSelectedMemberRoleToAdd] = useState<ProjectRole>('member');
   const [isAddingProjectMember, setIsAddingProjectMember] = useState(false);
@@ -1774,6 +1776,17 @@ export default function ProjectDetail() {
                   </div>
                   {/* Right: View toggle + Filter */}
                   <div className="flex items-center gap-2 shrink-0">
+                    {!isMobile && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 gap-1.5"
+                        onClick={() => setIsImportIssuesDialogOpen(true)}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Import
+                      </Button>
+                    )}
                     <IssueViewControls
                       viewMode={issueViewMode}
                       onViewModeChange={setIssueViewMode}
@@ -1942,6 +1955,12 @@ export default function ProjectDetail() {
       <ImportTasksDialog
         open={isImportTasksDialogOpen}
         onClose={() => setIsImportTasksDialogOpen(false)}
+        projectId={project.id}
+      />
+
+      <ImportIssuesDialog
+        open={isImportIssuesDialogOpen}
+        onClose={() => setIsImportIssuesDialogOpen(false)}
         projectId={project.id}
       />
 

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  CheckCircle, Truck, Flag, ArrowRight, ClipboardCheck, Plus, Search,
-  Zap, Cpu, Package, Box, Monitor, Shield, Layers, Tag, ChevronLeft,
+  CheckCircle, Truck, Flag, ArrowRight, ClipboardCheck, Plus, Search, ChevronLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,13 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAllocateBuild, useKitBuild, useGenerateShortageOrders } from '@/hooks/useInventory';
-import { getCategoryMeta } from './bomData';
+import { HoverZoomImage, PartThumb } from './BOMShared';
 import { CoveragePill, formatShortDate, type Build } from './inventoryData';
 import { NewBuildDialog, type NewBuildInput } from './NewBuildDialog';
 import { GenerateShortageOrdersDialog } from './GenerateShortageOrdersDialog';
-
-// Maps bomData's BOM_CAT_META.iconName strings to the actual icon component.
-const CATEGORY_ICON_MAP: Record<string, React.ElementType> = { Zap, Cpu, Package, Box, Monitor, Shield, Layers, Tag };
 
 // Fixed accent per build phase — purely visual grouping, matches the design system's build type chips.
 const BUILD_TYPE_TINT: Record<string, string> = { EVT: '#7C3AED', DVT: '#2563EB', PVT: '#16A34A' };
@@ -258,8 +254,6 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
                   const outstanding = Math.max(0, l.required - l.allocated);
                   const shortfall =
                     outstanding > l.available + l.onOrder ? l.available + l.onOrder - outstanding : 0;
-                  const meta = getCategoryMeta(l.cat);
-                  const CategoryIcon = CATEGORY_ICON_MAP[meta.iconName] ?? Tag;
                   return (
                     <button
                       key={l.partId}
@@ -267,12 +261,9 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
                       className="w-full text-left rounded-lg border p-3 active:bg-muted/50 transition-colors"
                     >
                       <div className="flex items-center gap-2 min-w-0 mb-2">
-                        <div
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
-                          style={{ background: `${meta.tint}1a`, color: meta.tint }}
-                        >
-                          <CategoryIcon className="h-3.5 w-3.5" />
-                        </div>
+                        <HoverZoomImage imageUrl={l.imageUrl} enabled={!!l.imageUrl}>
+                          <PartThumb cat={l.cat} size={28} radius={7} imageUrl={l.imageUrl} />
+                        </HoverZoomImage>
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-primary truncate">{l.pn}</div>
                           <div className="text-xs text-muted-foreground truncate">{l.name}</div>
@@ -457,18 +448,13 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
                 const outstanding = Math.max(0, l.required - l.allocated);
                 const shortfall =
                   outstanding > l.available + l.onOrder ? l.available + l.onOrder - outstanding : 0;
-                const meta = getCategoryMeta(l.cat);
-                const CategoryIcon = CATEGORY_ICON_MAP[meta.iconName] ?? Tag;
                 return (
                   <TableRow key={l.partId} className="cursor-pointer" onClick={() => onSelectPart(l.partId)}>
                     <TableCell className="px-3 py-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
-                          style={{ background: `${meta.tint}1a`, color: meta.tint }}
-                        >
-                          <CategoryIcon className="h-3.5 w-3.5" />
-                        </div>
+                        <HoverZoomImage imageUrl={l.imageUrl} enabled={!!l.imageUrl}>
+                          <PartThumb cat={l.cat} size={28} radius={7} imageUrl={l.imageUrl} />
+                        </HoverZoomImage>
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-primary truncate">{l.pn}</div>
                           <div className="text-xs text-muted-foreground truncate">{l.name}</div>

@@ -28,8 +28,13 @@ export function buildMessagePath(
   messages: AssistantMessage[],
   overrides: Record<string, string>,
 ): MessagePath {
+  const safeMessages = messages.filter(
+    (message): message is AssistantMessage =>
+      !!message && typeof message.id === 'string' && typeof message.createdAt === 'string',
+  );
+
   const childrenByParent = new Map<string, AssistantMessage[]>();
-  for (const message of messages) {
+  for (const message of safeMessages) {
     const key = message.parentId ?? ROOT_KEY;
     const siblings = childrenByParent.get(key);
     if (siblings) siblings.push(message);

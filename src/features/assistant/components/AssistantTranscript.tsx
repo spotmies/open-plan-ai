@@ -65,6 +65,7 @@ function reorderCardsAfterText(
     turnOthers = [];
   };
   for (const message of msgs) {
+    if (!message || typeof message.id !== 'string' || typeof message.role !== 'string') continue;
     if (message.role === 'user') {
       flushTurn();
       result.push(message);
@@ -110,7 +111,11 @@ export function AssistantTranscript({
   // persisted on a tool-role row (see the plan's "reuse ai_messages.content" persistence
   // approach). assistant messages with no content are tool-call carriers (the model called
   // a tool without emitting any text first) — nothing to show until the real answer arrives.
-  const visibleMessages = messages.filter(
+  const safeMessages = messages.filter(
+    (m): m is AssistantMessage => !!m && typeof m.id === 'string' && typeof m.role === 'string',
+  );
+
+  const visibleMessages = safeMessages.filter(
     (m) =>
       isPresentCardMessage(m) ||
       isAskUserAnswerMessage(m) ||
@@ -168,6 +173,7 @@ export function AssistantTranscript({
   // required here since tool-result rows are filtered out of the latter.
   function turnHadToolCalls(index: number): boolean {
     for (let i = index - 1; i >= 0; i -= 1) {
+      if (!messages[i]) continue;
       if (messages[i].role === 'user') return false;
       if (messages[i].role === 'tool') return true;
     }
@@ -189,7 +195,7 @@ export function AssistantTranscript({
           };
 
           if (isAskUserAnswerMessage(message)) {
-            const parent = messages.find((m) => m.id === message.parentId);
+            const parent = safeMessages.find((m) => m.id === message.parentId);
             const questions = extractAskUserQuestions(parent);
             const recap = questions ? pairAskUserAnswers(questions, message.content) : null;
             return (
@@ -231,7 +237,7 @@ export function AssistantTranscript({
             );
           }
           const isCompactAnswer =
-            message.role === 'assistant' && turnHadToolCalls(messages.findIndex((m) => m.id === message.id));
+            message.role === 'assistant' && turnHadToolCalls(safeMessages.findIndex((m) => m.id === message.id));
           const proposalsForMessage = message.role === 'assistant' ? proposalsByMessageId?.[message.id] : undefined;
           const hasText = !!message.content?.trim();
           return (
