@@ -1,9 +1,11 @@
 /**
- * ImportTasksDialog — upload a file, watch the background AI job parse and
- * map it onto the task schema, then resolve any flagged rows in a chat with
- * the AI before committing. Purpose-built (not the full cross-entity
- * Assistant panel) per the confirmed design — see the task-import feature
- * plan. Three internal stages: upload -> chat (review + resolve) -> result.
+ * ImportBomDialog — upload a file (Excel/CSV, or a Word/PDF/text/Markdown
+ * parts list), watch the background AI job parse and map it onto the BOM
+ * schema, then resolve any flagged rows in a
+ * chat with the AI before committing. Mirrors
+ * issue-import/ImportIssuesDialog.tsx. Additive: this is a new entry point
+ * alongside the existing "Import from Excel" (client-side) and "Import from
+ * Google Sheets" options — neither of those change.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -13,16 +15,18 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Upload, Paperclip, Send, Loader2, CheckCircle2, AlertTriangle, FileSpreadsheet, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { taskImportService } from './services/taskImport.service';
-import { useTaskImportFlow } from './hooks/useTaskImportFlow';
+import { bomImportService } from './services/bomImport.service';
+import { useBomImportFlow } from './hooks/useBomImportFlow';
 import { ImportProposalCard } from './components/ImportProposalCard';
 import { AssistantQuestionCard } from '@/features/assistant/components/AssistantQuestionCard';
-import { isSupportedImportFile, SUPPORTED_IMPORT_FILE_LABEL, type ImportProposalPreview, type CommitImportResult } from './taskImportData';
+import { isSupportedImportFile, SUPPORTED_IMPORT_FILE_LABEL, type ImportProposalPreview, type CommitImportResult } from './bomImportData';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   projectId: string;
+  /** When set, imported parts attach as sub-components of this existing node instead of at the tree root. */
+  parentNodeId?: string;
 }
 
 interface PendingUserMessage {
@@ -46,32 +50,30 @@ function toFriendlyImportError(errorSummary: string | null | undefined): string 
 
   const normalized = errorSummary.toLowerCase();
 
-  if (normalized.includes('validation failed') || normalized.includes('expected string')) {
-    return 'We couldn’t understand this file as a task list. Try uploading a clearer task document, spreadsheet, or CSV with task names and optional assignee, due date, or priority columns.';
+  if (normalized.includes('no column could be matched to a part number')) {
+    return 'We couldn’t find a Part Number column in this file. Try renaming a column to "Part Number" or "PN".';
   }
 
   if (
-    normalized.includes('not relevant') ||
-    normalized.includes('doesn\'t look like it describes tasks') ||
-    normalized.includes('doesn\'t look like a task list') ||
-    normalized.includes('no actionable tasks') ||
-    normalized.includes('no tasks could be found')
+    normalized.includes('does not appear to contain bill of materials') ||
+    normalized.includes('no parts could be found') ||
+    normalized.includes("doesn't look like a parts list")
   ) {
-    return 'This file doesn’t seem to contain importable tasks. Try a file that clearly lists task names or action items.';
+    return 'This file doesn’t seem to contain BOM/parts data. Try a file that clearly lists parts — names, quantities, and ideally part numbers.';
   }
 
   if (normalized.includes('unsupported file type')) {
-    return `This file type isn’t supported for task import. Please use ${SUPPORTED_IMPORT_FILE_LABEL}.`;
+    return `This file type isn’t supported for BOM import. Please use ${SUPPORTED_IMPORT_FILE_LABEL}.`;
   }
 
-  if (normalized.includes('couldn\'t read') || normalized.includes('could not read')) {
+  if (normalized.includes('couldn\'t read') || normalized.includes('could not read') || normalized.includes('no readable')) {
     return 'We couldn’t read this file properly. Try exporting it again, using a simpler format, or uploading another file.';
   }
 
-  return 'We couldn’t import this file. Please try another file or edit the file so the tasks are clearer, then try again.';
+  return 'We couldn’t import this file. Please try another file or edit the file so the parts list is clearer, then try again.';
 }
 
-export function ImportTasksDialog({ open, onClose, projectId }: Props) {
+export function ImportBomDialog({ open, onClose, projectId, parentNodeId }: Props) {
   const [stage, setStage] = useState<Stage>('upload');
   const [jobId, setJobId] = useState<string | null>(null);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
@@ -88,7 +90,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
   const attachInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const flow = useTaskImportFlow(projectId, jobId);
+  const flow = useBomImportFlow(projectId, jobId);
 
   function reset() {
     setStage('upload');
@@ -115,7 +117,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     setPendingFileName(file.name);
     setUploading(true);
     try {
-      const job = await taskImportService.startImport(projectId, file);
+      const job = await bomImportService.startImport(projectId, file, parentNodeId);
       setJobId(job.jobId);
       setStage('chat');
     } catch (err) {
@@ -144,20 +146,12 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     setSending(true);
     try {
       const sent = await flow.sendMessage(content);
-      // Swap the temp id for the real server id the instant it's known —
-      // otherwise, once the conversation refetch confirms this message, its
-      // id won't match the optimistic bubble's, React treats them as two
-      // different elements, unmounts the old one and mounts a fresh one,
-      // and that remount (plus the entrance animation replaying) is what
-      // shows up as a brief width/layout glitch right as "Sending…" clears.
       if (sent?.messageId) {
         setPendingUserMessages((current) =>
           current.map((message) => (message.id === optimisticId ? { ...message, id: sent.messageId } : message)),
         );
       }
     } catch {
-      // flow.sendMessage already surfaces the failure via flow.liveError —
-      // just undo the optimistic bubble and give the user their draft back.
       setPendingUserMessages((current) => current.filter((message) => message.id !== optimisticId));
       setDraft((current) => current || content);
     } finally {
@@ -199,15 +193,15 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
       // transaction keeps running — both land here even though the import
       // already succeeded or is about to. Poll status for a few seconds
       // before showing a scary error for something that actually worked.
-      let latestStatus: Awaited<ReturnType<typeof taskImportService.getStatus>> | null = null;
+      let latestStatus: Awaited<ReturnType<typeof bomImportService.getStatus>> | null = null;
       for (let attempt = 0; attempt < 5; attempt++) {
-        latestStatus = await taskImportService.getStatus(projectId, jobId!).catch(() => null);
+        latestStatus = await bomImportService.getStatus(projectId, jobId!).catch(() => null);
         if (latestStatus?.status === 'completed' || latestStatus?.status === 'failed') break;
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
       if (latestStatus?.status === 'completed') {
         setStage('result');
-        setResult(null); // exact created/skipped counts aren't recoverable from status alone, but the board already reflects the real outcome
+        setResult(null); // exact created/skipped counts aren't recoverable from status alone, but the tree already reflects the real outcome
       } else {
         setCommitError(err instanceof Error ? err.message : 'Import failed. Please try again.');
       }
@@ -216,14 +210,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     }
   }
 
-  // The latest proposal for this conversation, whatever its current status —
-  // not filtered to 'pending' only. ImportProposalCard itself renders the
-  // right thing for every status (editable review, importing spinner,
-  // success, failure), so once a proposal is committed it keeps showing
-  // here as a persistent "Import successful" confirmation instead of
-  // silently vanishing the moment its status stops being 'pending'.
-  // proposals[0] is the newest — the backend returns them ordered by
-  // createdAt descending (see proposals.repository.ts's listByConversation).
+  // The latest proposal for this conversation, whatever its current status.
   const latestProposal = flow.conversation?.proposals[0] ?? null;
   const confirmedMessages: ChatMessageItem[] = (flow.conversation?.messages ?? [])
     .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -248,12 +235,6 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
       optimistic: true,
     }));
   const messages = [...confirmedMessages, ...optimisticMessages];
-  // Identity+status fingerprint, not just messages.length — an optimistic
-  // "Sending…" bubble resolving into its confirmed twin moves one entry
-  // from optimisticMessages to confirmedMessages without changing the count,
-  // so a length-only dependency below misses it and the view stops tracking
-  // the bottom right as that bubble's height shrinks (the "Sending…" line
-  // disappearing), which yanks older messages back into view.
   const messagesSignature = messages.map((m) => `${m.id}:${'optimistic' in m && m.optimistic ? 1 : 0}`).join(',');
   const hasReviewContent = messages.length > 0 || !!latestProposal || !!flow.liveError || !!commitError;
   const hasChatStarted = messages.length > 0;
@@ -277,9 +258,9 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
-          <DialogTitle className="text-lg">Import Tasks</DialogTitle>
+          <DialogTitle className="text-lg">Import Parts with AI</DialogTitle>
           <DialogDescription className="text-sm">
-            {stage === 'upload' && `Upload a file and AI will map it to tasks — ${SUPPORTED_IMPORT_FILE_LABEL}.`}
+            {stage === 'upload' && `Upload a file and AI will map it to BOM parts — ${SUPPORTED_IMPORT_FILE_LABEL}.`}
             {stage === 'chat' && !isFailed && (
               <span className="flex items-center gap-1.5 truncate">
                 <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
@@ -345,12 +326,12 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                 </div>
               )}
               <p className="text-xs text-muted-foreground text-center">
-                Works best with a Title column (or a document that clearly describes action items). Non-task files — BOMs, change logs, invoices — will be rejected automatically.
+                Works best with a spreadsheet of Part Number, Part Name, Description, Category, and Quantity columns (add a Level column — 0, 1, 2… — for multi-level hierarchies), but a Word, PDF, or Markdown parts list works too. Non-BOM files will be rejected automatically.
               </p>
             </div>
           )}
 
-          {stage === 'chat' && isProcessing && !isFailed && (
+          {stage === 'chat' && isProcessing && (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
               <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
@@ -359,7 +340,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                   : `Reading ${pendingFileName ?? job?.sourceFileName ?? 'your file'}…`}
               </p>
               <p className="text-xs text-muted-foreground max-w-sm">
-                The AI is extracting tasks and preparing the review.
+                The AI is extracting parts and preparing the review.
               </p>
             </div>
           )}
@@ -429,12 +410,6 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
 
               {latestProposal && (
                 <div
-                  // Keyed on a fingerprint of the proposal's actual content
-                  // (not just its id) so every meaningful change — rows
-                  // added, warnings resolved, status flip — remounts this
-                  // block and replays the fade-in instead of the card's
-                  // height snapping instantly between states (e.g. the
-                  // "Import N tasks" button appearing/disappearing).
                   key={`${latestProposal.id}-${(latestProposal.preview as ImportProposalPreview)?.itemCount}-${(latestProposal.preview as ImportProposalPreview)?.cleanCount}-${latestProposal.status}`}
                   className="shrink-0 pt-1 animate-fade-in"
                 >
@@ -505,7 +480,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
               </div>
               <div className="space-y-1.5">
                 <p className="text-base font-medium">
-                  {result ? `${result.created} task${result.created === 1 ? '' : 's'} imported` : 'Import complete'}
+                  {result ? `${result.created} part${result.created === 1 ? '' : 's'} imported` : 'Import complete'}
                 </p>
                 {result && result.skipped > 0 && (
                   <p className="text-sm text-muted-foreground max-w-sm">

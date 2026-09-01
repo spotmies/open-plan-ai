@@ -156,7 +156,9 @@ function formatRelative(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function NotesCard({ nodeId, currentUserId }: { nodeId: string; currentUserId: string | undefined }) {
+function NotesCard({ nodeId, currentUserId, currentUserName, currentUserInitials }: {
+  nodeId: string; currentUserId: string | undefined; currentUserName?: string | null; currentUserInitials?: string | null;
+}) {
   const { data: notes = [], isLoading } = useBomNotes(nodeId);
   const addNote = useAddBomNote(nodeId);
   const updateNote = useUpdateBomNote(nodeId);
@@ -224,8 +226,8 @@ function NotesCard({ nodeId, currentUserId }: { nodeId: string; currentUserId: s
               <div key={note.id} className="group px-4 py-3 hover:bg-muted/20 transition-colors">
                 <div className="flex items-start gap-2.5">
                   <div className={cn(
-                    'w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5',
-                    isOwn ? 'bg-primary' : noteAvatarColor(note.author?.id ?? note.id),
+                    'w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5',
+                    isOwn ? 'bg-primary text-primary-foreground' : `text-white ${noteAvatarColor(note.author?.id ?? note.id)}`,
                   )}>
                     {initials}
                   </div>
@@ -294,8 +296,8 @@ function NotesCard({ nodeId, currentUserId }: { nodeId: string; currentUserId: s
       {/* Compose area */}
       <div className="px-4 py-3 border-t border-border bg-muted/20">
         <div className="flex items-start gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
-            YO
+          <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+            {currentUserInitials ?? currentUserName?.slice(0, 2).toUpperCase() ?? '?'}
           </div>
           <div className="flex-1 min-w-0 space-y-2">
             <textarea
@@ -864,6 +866,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                   <span
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap"
                     style={{ background: 'rgba(245,158,11,0.1)', color: '#D97706', border: '1px solid rgba(245,158,11,0.2)' }}
+                    title={activeRequest.comment ? `Note: ${activeRequest.comment}` : undefined}
                   >
                     Awaiting review by {activeRequest.approvers.map(a => a.name).join(', ')}
                   </span>
@@ -1112,7 +1115,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                 </Card>
 
                 {/* Notes */}
-                <NotesCard nodeId={node.id} currentUserId={user?.id} />
+                <NotesCard nodeId={node.id} currentUserId={user?.id} currentUserName={user?.name} currentUserInitials={user?.initials} />
               </div>
 
               {/* RIGHT */}
@@ -1259,6 +1262,9 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                       <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
                       {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
                       {activeRequest.approvers.map(a => a.name).join(', ')}.
+                      {activeRequest.comment && (
+                        <div className="mt-1 text-foreground/80 break-words">&ldquo;{activeRequest.comment}&rdquo;</div>
+                      )}
                     </div>
                   )}
                   {approvalsLoading ? (

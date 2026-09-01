@@ -823,9 +823,12 @@ export function InventoryView({ orgId }: InventoryViewProps) {
             flex column lives on this inner div instead. */}
         <TabsContent value="stock" className="mt-4 flex-1 min-h-0">
           <div className="h-full min-h-0 flex flex-col">
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          {/* This wrapper only bounds the height — each view branch below owns its own
+            scroll region so the table can keep its header row pinned (`position: sticky`
+            needs the scrolling ancestor to be *inside* the branch, not this shared div). */}
+          <div className="flex-1 min-h-0 overflow-hidden">
               {isMobile ? (
-                <div className="space-y-5 pb-4">
+                <div className="h-full overflow-y-auto space-y-5 pb-4">
                   {isInventoryLoading ? (
                     <div className="space-y-2">
                       {Array.from({ length: 5 }).map((_, i) => (
@@ -906,9 +909,9 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                   })}
                 </div>
               ) : viewMode === 'table' ? (
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader>
+                <div className="border rounded-lg overflow-hidden h-full flex flex-col">
+                  <Table containerClassName="flex-1 min-h-0">
+                    <TableHeader className="sticky top-0 z-20 bg-background [&_th]:bg-background">
                       <TableRow>
                         <TableHead className="h-9 px-3 py-2 w-[120px] text-[11px] font-medium uppercase tracking-wider">Coverage</TableHead>
                         <TableHead className="h-9 px-3 py-2 w-[260px] text-[11px] font-medium uppercase tracking-wider">Part</TableHead>
@@ -1004,7 +1007,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                   </Table>
                 </div>
               ) : (
-                <div className="space-y-5 pb-4">
+                <div className="h-full overflow-y-auto space-y-5 pb-4">
                   {isInventoryLoading ? (
                     <div className="space-y-2">
                       {Array.from({ length: 5 }).map((_, i) => (
@@ -1216,6 +1219,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         stock={displayStock}
         parts={parts}
         partProjects={projectsByPartId}
+        partDemand={demandByPartId}
         onAdjust={handleAdjust}
         onPlaceOrder={handlePlaceOrder}
         initialPartId={dialogPartId}

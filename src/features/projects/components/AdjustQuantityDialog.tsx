@@ -56,6 +56,8 @@ interface PickerPart {
   location: string;
   onHand: number;
   leadTimeDays: number;
+  /** Total quantity this part's project BOMs require — used to prefill the Quantity field. */
+  demandQty: number;
   cat?: BOMCategory;
   projects: string[];
 }
@@ -109,11 +111,13 @@ interface AdjustQuantityDialogProps {
   initialPartId?: string;
   /** Project name(s) each part is used in, keyed by partId — helps disambiguate similarly-named parts in the picker. */
   partProjects?: Map<string, string[]>;
+  /** Total BOM quantity-required per part, keyed by partId — prefills the Quantity field on part select. */
+  partDemand?: Map<string, number>;
 }
 
 const emptyNewPart = { partNumber: '', name: '', description: '', category: '' as BOMCategory | '', manufacturer: '', mpn: '', unit: 'EA' };
 
-export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onAdjust, onPlaceOrder, initialPartId, partProjects }: AdjustQuantityDialogProps) {
+export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onAdjust, onPlaceOrder, initialPartId, partProjects, partDemand }: AdjustQuantityDialogProps) {
   const isMobile = useIsMobile();
   const [selectedRecord, setSelectedRecord] = useState<PickerPart | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
@@ -131,27 +135,62 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   const updatePart = useUpdatePart();
   const { data: knownLocations = [] } = useLocations(orgId);
 
+  const stockPartIds = useMemo(() => new Set(stock.map(r => r.partId)), [stock]);
+
   // Include every part, not just parts that already have a stock row — a part only referenced
   // from a BOM (never received) still needs to be selectable when starting a new transaction.
+  // (The picker list below hides already-stocked parts; this full list still backs the
+  // "Adjust quantity" entry opened from a part's row via initialPartId.)
   const pickerParts = useMemo<PickerPart[]>(() => {
-    const stockPartIds = new Set(stock.map(r => r.partId));
-    const fromStock: PickerPart[] = stock.map(r => ({ partId: r.partId, pn: r.pn, name: r.name, mpn: r.mpn, location: r.location, onHand: r.onHand, leadTimeDays: r.leadTimeDays, cat: r.cat, projects: partProjects?.get(r.partId) ?? [] }));
+    // A part stocked in several locations has one stock row per location. The picker
+    // chooses a *part*, not a stock row, so collapse them to one entry — otherwise the
+    // list carries duplicate partIds, which breaks the `key={r.partId}` list reconciliation
+    // (stale rows survive the search filter) and shows the same part multiple times.
+    // Keep the location holding the most on-hand as the representative row.
+    const byPart = new Map<string, PickerPart>();
+    for (const r of stock) {
+      const existing = byPart.get(r.partId);
+      if (!existing || r.onHand > existing.onHand) {
+        byPart.set(r.partId, { partId: r.partId, pn: r.pn, name: r.name, mpn: r.mpn, location: r.location, onHand: r.onHand, leadTimeDays: r.leadTimeDays, demandQty: partDemand?.get(r.partId) ?? 0, cat: r.cat, projects: partProjects?.get(r.partId) ?? [] });
+      }
+    }
+    const fromStock: PickerPart[] = Array.from(byPart.values());
     const fromPartsOnly: PickerPart[] = parts
       .filter(p => !stockPartIds.has(p.id))
-      .map(p => ({ partId: p.id, pn: p.partNumber, name: p.name, mpn: p.mpn, location: '', onHand: 0, leadTimeDays: p.latestRevision?.leadTimeDays ?? 0, cat: p.category, projects: partProjects?.get(p.id) ?? [] }));
+      .map(p => ({ partId: p.id, pn: p.partNumber, name: p.name, mpn: p.mpn, location: '', onHand: 0, leadTimeDays: p.latestRevision?.leadTimeDays ?? 0, demandQty: partDemand?.get(p.id) ?? 0, cat: p.category, projects: partProjects?.get(p.id) ?? [] }));
     return [...fromStock, ...fromPartsOnly];
-  }, [stock, parts, partProjects]);
+  }, [stock, parts, partProjects, partDemand, stockPartIds]);
+
+  // The picker only offers parts not yet in inventory — a part that already has a stock row
+  // is adjusted from its own row ("Adjust quantity"), not re-added through "New transaction".
+  const selectablePickerParts = useMemo(
+    () => pickerParts.filter(r => !stockPartIds.has(r.partId)),
+    [pickerParts, stockPartIds]
+  );
 
   const [partSearch, setPartSearch] = useState('');
   const filteredPickerParts = useMemo(() => {
     const q = partSearch.trim().toLowerCase();
-    if (!q) return pickerParts;
-    return pickerParts.filter(r =>
+    if (!q) return selectablePickerParts;
+    return selectablePickerParts.filter(r =>
       r.pn.toLowerCase().includes(q) ||
       r.name.toLowerCase().includes(q) ||
       (r.mpn ?? '').toLowerCase().includes(q)
     );
-  }, [pickerParts, partSearch]);
+  }, [selectablePickerParts, partSearch]);
+
+  // When a search turns up nothing, tell the user *why* if it's because the match is an
+  // already-stocked part we deliberately hide, rather than a generic "No parts found".
+  const searchMatchesStockedPart = useMemo(() => {
+    const q = partSearch.trim().toLowerCase();
+    if (!q) return false;
+    return pickerParts.some(r =>
+      stockPartIds.has(r.partId) &&
+      (r.pn.toLowerCase().includes(q) ||
+        r.name.toLowerCase().includes(q) ||
+        (r.mpn ?? '').toLowerCase().includes(q))
+    );
+  }, [pickerParts, stockPartIds, partSearch]);
 
   // Custom categories already in use (created via "Add new part") — mirrors InventoryView's
   // allCategories so they're selectable here too, not just filterable on the inventory page.
@@ -207,6 +246,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     form.setValue('location', match.location, { shouldValidate: true });
     form.setValue('category', match.cat ?? '', { shouldValidate: true });
     form.setValue('leadTimeDays', match.leadTimeDays > 0 ? match.leadTimeDays : 1, { shouldValidate: true });
+    form.setValue('quantity', match.demandQty > 0 ? match.demandQty : 1, { shouldValidate: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialPartId, pickerParts]);
 
@@ -506,7 +546,13 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                                 onValueChange={setPartSearch}
                               />
                               <CommandList>
-                                <CommandEmpty>No parts found.</CommandEmpty>
+                                {filteredPickerParts.length === 0 && (
+                                  <div className="py-6 px-4 text-center text-sm text-muted-foreground">
+                                    {searchMatchesStockedPart
+                                      ? 'That part is already in inventory — adjust its quantity from its row on the Stock tab.'
+                                      : 'No parts found.'}
+                                  </div>
+                                )}
                                 <CommandGroup>
                                   {filteredPickerParts.map((r) => (
                                     <CommandItem
@@ -519,6 +565,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                                         form.setValue('location', r.location, { shouldDirty: true, shouldValidate: true });
                                         form.setValue('category', r.cat ?? '', { shouldDirty: true, shouldValidate: true });
                                         form.setValue('leadTimeDays', r.leadTimeDays > 0 ? r.leadTimeDays : 1, { shouldDirty: true, shouldValidate: true });
+                                        form.setValue('quantity', r.demandQty > 0 ? r.demandQty : 1, { shouldDirty: true, shouldValidate: true });
                                         setPartPickerOpen(false);
                                         setPartSearch('');
                                       }}
@@ -767,6 +814,11 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                             <FormControl>
                               <Input type="number" min={1} {...field} />
                             </FormControl>
+                            {!initialPartId && (
+                              <p className="text-xs text-muted-foreground">
+                                Defaults to this part&apos;s outstanding BOM demand — adjust it for this transaction.
+                              </p>
+                            )}
                             <FormMessage />
                           </FormItem>
                         )}
@@ -783,6 +835,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                             <FormControl>
                               <Input type="number" min={0} step={1} placeholder="Days" {...field} />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">
+                              Defaults to the part&apos;s lead time — override it for this transaction.
+                            </p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -801,6 +856,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                             <FormControl>
                               <Input type="number" min={1} {...field} />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">
+                              Defaults to this part&apos;s outstanding BOM demand.
+                            </p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -831,6 +889,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                             <FormControl>
                               <Input type="number" min={0} step={1} placeholder="Days" {...field} />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">
+                              Defaults to the part&apos;s lead time — override it for this order.
+                            </p>
                             <FormMessage />
                           </FormItem>
                         )}
