@@ -29,14 +29,8 @@ import RequirementImpact from './RequirementImpact';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-
-// ── Project switcher (mock — Requirements has no backend yet, so this is a
-// local, static stand-in for the org's real project list; see requirementsData.ts) ──
-interface ReqProject { id: string; name: string; rev: string; populated: boolean; }
-const REQ_PROJECTS: ReqProject[] = [
-  { id: 'ev', name: 'EV Charging Station', rev: 'Rev C', populated: true },
-  { id: 'shc', name: 'Smart Home Controller', rev: 'Concept', populated: false },
-];
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // ── Group icons ────────────────────────────────────────────────────────────────
 const GROUP_ICONS: Record<ReqGroup, React.ElementType> = {
@@ -76,9 +70,17 @@ const hasActiveFilters = (f: FilterState): boolean =>
 type ViewTab = 'table' | 'map' | 'trace' | 'coverage' | 'readiness';
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function RequirementsView() {
-  const [projectId, setProjectId] = useState('ev');
-  const project = REQ_PROJECTS.find(p => p.id === projectId) ?? REQ_PROJECTS[0];
+interface RequirementsViewProps {
+  /** Currently open requirement detail, controlled via the URL (mirrors BOM's `selectedId`). */
+  selectedKey?: string | null;
+  onSelectedKeyChange?: (key: string | null) => void;
+  /** Reports whether the full-page create/edit editor is open, so the host
+   * (ProjectDetail) can hide its own tab-bar header while it's up — the editor
+   * isn't URL-driven (same reasoning as BOM's "Add Part" sheet), so this is the
+   * only way the host knows. */
+  onEditorOpenChange?: (open: boolean) => void;
+}
+export default function RequirementsView({ selectedKey = null, onSelectedKeyChange, onEditorOpenChange }: RequirementsViewProps) {
   const [view, setView] = useState<ViewTab>('table');
   const [filters, setFilters] = useState<FilterState>(emptyFilters());
   const [sortField, setSortField] = useState<SortField>('tree');
@@ -90,10 +92,19 @@ export default function RequirementsView() {
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [detailKey, setDetailKey] = useState<string | null>(null);
+  const detailKey = selectedKey;
+  const setDetailKey = (key: string | null) => onSelectedKeyChange?.(key);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [impactKey, setImpactKey] = useState<string | null>(null);
+
+  // Editor is a local full-page swap, not URL-driven, so the host only learns
+  // about it through this callback — including resetting it on unmount, so
+  // navigating away mid-edit doesn't leave the host thinking it's still open.
+  useEffect(() => {
+    onEditorOpenChange?.(editorOpen);
+    return () => onEditorOpenChange?.(false);
+  }, [editorOpen, onEditorOpenChange]);
 
   const stats = useMemo(() => reqStats(), []);
 
@@ -164,7 +175,7 @@ export default function RequirementsView() {
     setView('table');
   }, []);
 
-  const openDetail = useCallback((key: string) => setDetailKey(key), []);
+  const openDetail = useCallback((key: string) => onSelectedKeyChange?.(key), [onSelectedKeyChange]);
   const openEditor = useCallback((key?: string) => { setEditKey(key ?? null); setEditorOpen(true); }, []);
 
   if (detailKey) return (
@@ -182,98 +193,13 @@ export default function RequirementsView() {
   const activeFilterCount = filterSet?.size ?? null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'hsl(var(--background))' }}>
+    <div className="flex flex-col px-6 overflow-hidden bg-background" style={{ height: 'calc(100vh - 140px)' }}>
 
-      {/* ── Toolbar ── */}
-      <div style={{ borderBottom: '1px solid hsl(var(--border))', background: 'hsl(var(--card))', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      {/* ── Fixed header zone (no scroll) ─────────────────────────── */}
+      <div className="shrink-0 py-4">
 
-        {/* Page header — title + project selector + rev badge + action buttons */}
-        <div style={{ padding: '12px 20px 10px', display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 10 }}>
-
-            {/* Left: title, project, rev */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-              <ListChecks size={20} color="#3B82F6" />
-              <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1, color: 'hsl(var(--foreground))' }}>Requirements</span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px',
-                    borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted))',
-                    cursor: 'pointer', fontFamily: 'inherit',
-                  }}>
-                    <Monitor size={12} color="hsl(var(--muted-foreground))" />
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'hsl(var(--foreground))' }}>{project.name}</span>
-                    <ChevronDown size={10} color="hsl(var(--muted-foreground))" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-64">
-                  {REQ_PROJECTS.map(p => (
-                    <DropdownMenuItem key={p.id} onClick={() => setProjectId(p.id)}
-                      className="flex items-center gap-2.5 py-2">
-                      <Monitor size={14} className="text-muted-foreground shrink-0" />
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-medium truncate">{p.name}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {p.populated ? `${stats.total} requirements` : 'No requirements yet'}
-                        </span>
-                      </span>
-                      {p.id === projectId && <Check size={14} className="text-primary shrink-0" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <span style={{
-                height: 22, padding: '0 8px', borderRadius: 5,
-                border: '1px solid #3B82F6', color: '#3B82F6',
-                fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center',
-              }}>{project.rev}</span>
-            </div>
-
-            {/* Right: action buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
-              <button style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px',
-                borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-                color: 'hsl(var(--foreground))',
-              }}>
-                <Lock size={13} />
-                Live set
-                <ChevronDown size={10} color="hsl(var(--muted-foreground))" />
-              </button>
-              <button style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px',
-                borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-                color: 'hsl(var(--foreground))',
-              }}>
-                <Download size={13} />
-                Import
-              </button>
-              <button onClick={() => openEditor()} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px',
-                borderRadius: 7, border: 'none', background: '#3B82F6', color: '#fff',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
-              }}>
-                <Plus size={13} />
-                New Requirement
-              </button>
-            </div>
-          </div>
-
-          {/* Subtitle */}
-          <span style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))' }}>
-            Capture, decompose, and trace requirements from stakeholder need to verification.
-          </span>
-        </div>
-
-        {/* Separator */}
-        <div style={{ height: 1, background: 'hsl(var(--border))' }} />
-
-        {project.populated && <>
         {/* Stats tiles row */}
-        <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, padding: '10px 20px' }}>
+        <div className="flex items-stretch gap-2.5 md:gap-3 flex-wrap mb-3">
           <SummaryTile icon={ShieldCheck} label="Verified or validated" value={`${stats.verifiedPct}%`}
             tint="#16A34A" accent />
           <SummaryTile icon={Unlink} label="Orphans" value={stats.orphan} tint="#DC2626"
@@ -286,44 +212,33 @@ export default function RequirementsView() {
             gapKey="suspect" active={filters.gap === 'suspect'} onFilter={g => setFilters({ ...emptyFilters(), gap: g })} />
         </div>
 
-        {/* Separator */}
-        <div style={{ height: 1, background: 'hsl(var(--border))' }} />
-
-        {/* Tab bar + controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 20px' }}>
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 flex-wrap">
 
           <ViewTabs view={view} setView={setView} />
 
           {/* Expand / collapse all — table tree mode only */}
           {showExpandToggle && (
-            <button onClick={() => anyExpanded ? collapseAll() : expandAll()}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, height: 32, padding: '0 10px', borderRadius: 7,
-                border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-                color: 'hsl(var(--muted-foreground))', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-              }}>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[12.5px] text-muted-foreground"
+              onClick={() => anyExpanded ? collapseAll() : expandAll()}>
               {anyExpanded
-                ? <><ChevronsDownUp size={13} /> Collapse all</>
-                : <><ChevronsUpDown size={13} /> Expand all</>}
-            </button>
+                ? <><ChevronsDownUp className="w-3.5 h-3.5" /> Collapse all</>
+                : <><ChevronsUpDown className="w-3.5 h-3.5" /> Expand all</>}
+            </Button>
           )}
 
-          <div style={{ flex: 1 }} />
+          <div className="flex-1" />
 
           {/* Search */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <Search size={13} style={{ position: 'absolute', left: 9, color: 'hsl(var(--muted-foreground))', pointerEvents: 'none' }} />
+          <div className="flex items-center gap-2 bg-muted border border-border rounded-md px-2.5 py-1.5 w-64">
+            <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <input value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })}
-              placeholder="Search key, title, or statement..."
-              style={{
-                paddingLeft: 30, paddingRight: filters.search ? 28 : 10, height: 32, borderRadius: 7,
-                border: '1px solid hsl(var(--border))', background: 'hsl(var(--background))',
-                color: 'hsl(var(--foreground))', fontSize: 13, width: 260, fontFamily: 'inherit', outline: 'none',
-              }} />
+              placeholder="Search key, title, or statement…"
+              className="bg-transparent border-none outline-none text-foreground text-sm w-full placeholder:text-muted-foreground" />
             {filters.search && (
               <button onClick={() => setFilters({ ...filters, search: '' })}
-                style={{ position: 'absolute', right: 7, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                <X size={12} color="hsl(var(--muted-foreground))" />
+                className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -334,23 +249,34 @@ export default function RequirementsView() {
           {/* Filters — table + map views */}
           {(view === 'table' || view === 'map') && (
             <button onClick={() => setFilterDrawerOpen(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, height: 32, padding: '0 12px', borderRadius: 7,
-                border: `1px solid ${activeFilterCount ? 'hsl(var(--foreground))' : 'hsl(var(--border))'}`,
-                background: activeFilterCount ? 'hsl(var(--muted))' : 'hsl(var(--card))',
-                color: activeFilterCount ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-              }}>
-              <SlidersHorizontal size={13} />
-              Filters {activeFilterCount ? `(${activeFilterCount})` : ''}
+              className={cn('inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium border cursor-pointer transition-colors',
+                activeFilterCount ? 'bg-primary/10 text-primary border-primary/30' : 'bg-card text-foreground border-border hover:bg-muted')}>
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Filters
+              {activeFilterCount ? (
+                <span className="min-w-4 h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              ) : null}
             </button>
           )}
+
+          <div className="w-px h-5 bg-border" />
+
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[12.5px]">
+            <Download className="w-3.5 h-3.5" />
+            Import
+          </Button>
+          <Button size="sm" className="h-8 gap-1.5 text-[12.5px]" onClick={() => openEditor()}>
+            <Plus className="w-3.5 h-3.5" />
+            New Requirement
+          </Button>
         </div>
 
         {/* Active filter chips */}
         {hasActiveFilters(filters) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '0 20px 10px' }}>
-            <span style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))' }}>Active:</span>
+          <div className="flex items-center gap-1.5 flex-wrap pt-2.5">
+            <span className="text-[11.5px] text-muted-foreground">Active:</span>
             {filters.type.map(t => <FilterChip key={t} label={REQ_TYPE[t].short} onRemove={() => setFilters({ ...filters, type: filters.type.filter(x => x !== t) })} />)}
             {filters.category.map(c => <FilterChip key={c} label={REQ_CATEGORY[c].label} onRemove={() => setFilters({ ...filters, category: filters.category.filter(x => x !== c) })} />)}
             {filters.status.map(s => <FilterChip key={s} label={REQ_STATUS[s].label} onRemove={() => setFilters({ ...filters, status: filters.status.filter(x => x !== s) })} />)}
@@ -361,19 +287,16 @@ export default function RequirementsView() {
                 onRemove={() => setFilters({ ...filters, gap: null })} />
             )}
             <button onClick={() => setFilters(emptyFilters())}
-              style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', border: 'none', background: 'transparent', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+              className="text-[11.5px] text-muted-foreground hover:text-foreground underline transition-colors">
               Clear all
             </button>
           </div>
         )}
-        </>}
       </div>
 
       {/* ── Body ── */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {!project.populated ? (
-          <RequirementsEmptyState projectName={project.name} />
-        ) : view === 'table' ? (
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0 border-t border-border">
+        {view === 'table' ? (
           <ReqTable rows={rows} expanded={expanded} selected={selected}
             filtersActive={hasActiveFilters(filters)}
             toggleExpand={toggleExpand} toggleSelect={toggleSelect}
@@ -409,82 +332,35 @@ export default function RequirementsView() {
   );
 }
 
-// ── Empty state — project has no requirements yet ──────────────────────────────
-function RequirementsEmptyState({ projectName }: { projectName: string }) {
-  return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center', maxWidth: 380, padding: 24 }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: 12, margin: '0 auto 16px',
-          background: softTint('#3B82F6', 0.10), display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <ListChecks size={22} color="#3B82F6" />
-        </div>
-        <div style={{ fontSize: 16, fontWeight: 600, color: 'hsl(var(--foreground))', marginBottom: 6 }}>
-          No requirements yet
-        </div>
-        <div style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, marginBottom: 18 }}>
-          {projectName} doesn't have any requirements captured. Import from a PRD or spec, or add one manually to start the traceability chain.
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-          <button style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px',
-            borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-            cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-            color: 'hsl(var(--foreground))',
-          }}>
-            <Download size={13} />
-            Import
-          </button>
-          <button style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px',
-            borderRadius: 7, border: 'none', background: '#3B82F6', color: '#fff',
-            cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
-          }}>
-            <Plus size={13} />
-            New Requirement
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Summary tile (large card, reference style) ─────────────────────────────────
 function SummaryTile({ icon: Ic, label, value, tint, gapKey, active, accent, onFilter }:
   {
     icon: React.ElementType; label: string; value: string | number; tint: string;
     gapKey?: string; active?: boolean; accent?: boolean; onFilter?: (k: string | null) => void
   }) {
-  const [hov, setHov] = useState(false);
   const clickable = !!gapKey && !!onFilter;
   return (
     <button
       onClick={() => clickable && onFilter!(active ? null : gapKey!)}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      className={cn(
+        'flex-1 min-w-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border bg-card transition-colors',
+        clickable ? 'cursor-pointer hover:bg-muted' : 'cursor-default',
+      )}
       style={{
-        flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9, padding: '8px 13px', borderRadius: 9,
-        background: active ? softTint(tint, 0.10) : hov && clickable ? 'hsl(var(--muted))' : 'hsl(var(--card))',
-        border: `1px solid ${active ? softTint(tint, 0.35) : 'hsl(var(--border))'}`,
-        cursor: clickable ? 'pointer' : 'default', fontFamily: 'inherit',
-        transition: 'border-color .12s, background .12s'
+        background: active ? softTint(tint, 0.10) : undefined,
+        borderColor: active ? softTint(tint, 0.35) : undefined,
       }}>
-      <span style={{
-        width: 30, height: 30, borderRadius: 8, background: softTint(tint, 0.12),
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-      }}>
-        <Ic size={15} color={tint} />
+      <span
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+        style={{ background: softTint(tint, 0.12) }}>
+        <Ic className="w-4 h-4" style={{ color: tint }} />
       </span>
-      <span style={{ textAlign: 'left', minWidth: 0 }}>
-        <span style={{
-          display: 'block', fontSize: 19, fontWeight: 700,
-          color: accent ? tint : 'hsl(var(--foreground))', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums'
-        }}>
+      <span className="text-left min-w-0">
+        <span className="block text-lg font-bold leading-tight tabular-nums truncate"
+          style={{ color: accent ? tint : undefined }}>
           {value}
         </span>
-        <span style={{ display: 'block', fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {label}
-        </span>
+        <span className="block text-[11px] text-muted-foreground truncate">{label}</span>
       </span>
     </button>
   );
@@ -500,24 +376,17 @@ const VIEW_TABS: { key: ViewTab; icon: React.ElementType; label: string }[] = [
 ];
 function ViewTabs({ view, setView }: { view: ViewTab; setView: (v: ViewTab) => void }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', background: 'hsl(var(--muted))',
-      border: '1px solid hsl(var(--border))', borderRadius: 8, padding: 3, gap: 2
-    }}>
+    <div className="flex items-center bg-muted border border-border rounded-lg p-0.5 gap-0.5">
       {VIEW_TABS.map(v => {
         const Ic = v.icon;
         const active = view === v.key;
         return (
           <button key={v.key} onClick={() => setView(v.key)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', border: 'none',
-              fontFamily: 'inherit', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: active ? 600 : 400,
-              background: active ? 'hsl(var(--card))' : 'transparent',
-              boxShadow: active ? '0 1px 2px rgba(20,24,31,0.10)' : 'none',
-              color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-              transition: 'background .12s, color .12s'
-            }}>
-            <Ic size={13} />{v.label}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border-none cursor-pointer transition-colors',
+              active ? 'bg-card text-foreground shadow-sm' : 'bg-transparent text-muted-foreground hover:text-foreground',
+            )}>
+            <Ic className="w-3.5 h-3.5" />{v.label}
           </button>
         );
       })}
@@ -525,74 +394,44 @@ function ViewTabs({ view, setView }: { view: ViewTab; setView: (v: ViewTab) => v
   );
 }
 
-// ── Sort dropdown (reference style, not <select>) ─────────────────────────────
+// ── Sort dropdown ──────────────────────────────────────────────────────────────
 function SortDropdown({ sortField, setSortField }: { sortField: SortField; setSortField: (s: SortField) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const current = SORT_OPTS.find(o => o.id === sortField) ?? SORT_OPTS[0];
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 5, height: 32, padding: '0 10px', borderRadius: 7,
-          border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-          color: 'hsl(var(--foreground))', fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500
-        }}>
-        <current.icon size={13} />
-        {current.label}
-        <ChevronDown size={11} style={{ marginLeft: 2, color: 'hsl(var(--muted-foreground))' }} />
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', right: 0, width: 186,
-          background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 9,
-          boxShadow: '0 8px 28px rgba(0,0,0,0.14)', zIndex: 30, overflow: 'hidden', padding: 4
-        }}>
-          {SORT_OPTS.map(o => {
-            const OIc = o.icon;
-            const active = sortField === o.id;
-            return (
-              <button key={o.id} onClick={() => { setSortField(o.id); setOpen(false); }}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
-                  border: 'none', fontFamily: 'inherit', cursor: 'pointer', fontSize: 12.5, borderRadius: 6,
-                  background: active ? 'hsl(var(--muted))' : 'transparent',
-                  color: 'hsl(var(--foreground))',
-                  fontWeight: active ? 600 : 400, textAlign: 'left'
-                }}>
-                <OIc size={13} color={active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'} />
-                {o.label}
-                {active && <Check size={12} color="hsl(var(--foreground))" style={{ marginLeft: 'auto' }} />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-card text-foreground text-[12.5px] font-medium cursor-pointer hover:bg-muted transition-colors">
+          <current.icon className="w-3.5 h-3.5" />
+          {current.label}
+          <ChevronDown className="w-2.5 h-2.5 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {SORT_OPTS.map(o => {
+          const OIc = o.icon;
+          const active = sortField === o.id;
+          return (
+            <DropdownMenuItem key={o.id} onClick={() => setSortField(o.id)}
+              className={cn('flex items-center gap-2', active && 'bg-muted')}>
+              <OIc className={cn('w-3.5 h-3.5', active ? 'text-foreground' : 'text-muted-foreground')} />
+              <span className="flex-1">{o.label}</span>
+              {active && <Check className="w-3.5 h-3.5" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 // ── Filter chip ────────────────────────────────────────────────────────────────
 function FilterChip({ label, onRemove, tint }: { label: string; onRemove: () => void; tint?: string }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px 2px 9px', borderRadius: 9999,
-      background: tint ? softTint(tint, 0.10) : 'hsl(var(--card))', border: '1px solid hsl(var(--border))',
-      fontSize: 11.5, color: tint ?? 'hsl(var(--foreground))'
-    }}>
+    <span className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full border border-border bg-card text-[11.5px]"
+      style={{ background: tint ? softTint(tint, 0.10) : undefined, color: tint }}>
       {label}
-      <button onClick={onRemove} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex' }}>
-        <X size={10} />
+      <button onClick={onRemove} className="border-none bg-transparent cursor-pointer p-0 flex items-center opacity-70 hover:opacity-100">
+        <X className="w-2.5 h-2.5" />
       </button>
     </span>
   );

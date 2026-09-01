@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, Settings, Users, Calendar, BarChart3, ListTodo, ChevronsUpDown, Check, Plus, Building2, Loader2, MessageSquare, Plug, Sparkles, Warehouse, ListChecks } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Settings, Users, Calendar, BarChart3, ListTodo, ChevronsUpDown, Check, Plus, Building2, Loader2, MessageSquare, Plug, Sparkles, Warehouse } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { Logo } from '@/components/Logo';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
@@ -38,10 +38,6 @@ const mainNavItems: { title: string; url: string; icon: typeof LayoutDashboard; 
   title: 'Projects',
   url: '/projects',
   icon: FolderKanban
-}, {
-  title: 'Requirements',
-  url: '/requirements',
-  icon: ListChecks
 }, {
   title: 'Calendar',
   url: '/calendar',

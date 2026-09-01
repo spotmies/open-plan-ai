@@ -364,10 +364,10 @@ export interface Activity {
 export type ProjectView = 'kanban' | 'timeline' | 'list' | 'dependencies' | 'milestones' | 'issues';
 
 // NEW: Section-based navigation for project detail
-export type ProjectSection = 'tasks' | 'modules' | 'milestones' | 'issues' | 'bom' | 'eng-changes' | 'gate-reviews' | 'risk';
+export type ProjectSection = 'tasks' | 'modules' | 'milestones' | 'issues' | 'bom' | 'requirements' | 'eng-changes' | 'gate-reviews' | 'risk';
 
 // Configurable tabs on the project detail page — order + visibility are per-project preferences
-export type ProjectTabId = 'bom' | 'eng-changes' | 'tasks' | 'modules' | 'milestones' | 'issues';
+export type ProjectTabId = 'bom' | 'requirements' | 'eng-changes' | 'tasks' | 'modules' | 'milestones' | 'issues';
 export interface ProjectTabConfig {
   id: ProjectTabId;
   visible: boolean;

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Flag, AlertTriangle, Users, Calendar, Search, X, Plus, Filter, User, Clock, LayoutGrid, List, Loader2, MessageCircle, Trash2, Upload, Download, Tag, ChevronDown, FolderOpen } from 'lucide-react';
 import { BOMView } from './components/BOMView';
+import RequirementsView from './components/RequirementsView';
 import { ECOView } from './components/ECOView';
 import { GateView } from './components/GateView';
 import { RiskView } from './components/RiskView';
@@ -541,29 +542,36 @@ export default function ProjectDetail() {
   const { currentOrganization } = useOrganization();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { id, tab: tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
+  const { id, tab: tabParam, partId, reqKey, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
   const isSupportFeatureEnabled = useFeatureTogglesStore((s) => s.enabled.support);
+  // Requirements' "New"/"Edit" editor isn't URL-driven (same reasoning as BOM's
+  // "Add Part" sheet not having its own URL) — RequirementsView reports it up
+  // via this callback so the tab-bar header can hide for it too, same as it
+  // does for partId/ecoId/reqKey below.
+  const [isRequirementsEditorOpen, setIsRequirementsEditorOpen] = useState(false);
 
-  // The /bom/:partId, /eng-changes/:ecoId, /tasks/:taskId, /modules/:moduleId,
-  // /milestones/:milestoneId, and /issues/:issueId routes encode the section as a
-  // literal path segment rather than the generic :tab param, so infer it from which
-  // item id is present.
-  const ALL_SECTIONS: ProjectSection[] = ['bom', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
+  // The /bom/:partId, /requirements/:reqKey, /eng-changes/:ecoId, /tasks/:taskId,
+  // /modules/:moduleId, /milestones/:milestoneId, and /issues/:issueId routes
+  // encode the section as a literal path segment rather than the generic :tab
+  // param, so infer it from which item id is present.
+  const ALL_SECTIONS: ProjectSection[] = ['bom', 'requirements', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
   const section: ProjectSection = partId
     ? 'bom'
-    : ecoId
-      ? 'eng-changes'
-      : taskId
-        ? 'tasks'
-        : moduleId
-          ? 'modules'
-          : milestoneId
-            ? 'milestones'
-            : issueId
-              ? 'issues'
-              : ALL_SECTIONS.includes(tabParam as ProjectSection)
-                ? (tabParam as ProjectSection)
-                : 'bom';
+    : reqKey
+      ? 'requirements'
+      : ecoId
+        ? 'eng-changes'
+        : taskId
+          ? 'tasks'
+          : moduleId
+            ? 'modules'
+            : milestoneId
+              ? 'milestones'
+              : issueId
+                ? 'issues'
+                : ALL_SECTIONS.includes(tabParam as ProjectSection)
+                  ? (tabParam as ProjectSection)
+                  : 'bom';
 
   // Board column definitions are only rendered on their own tab (Tasks status
   // filter / Issues status filter) — gating avoids fetching them on every tab
@@ -718,12 +726,12 @@ export default function ProjectDetail() {
   // If the current section's tab has been hidden by the project's tab config,
   // fall back to the first visible tab instead of rendering an unreachable section.
   useEffect(() => {
-    if (!project || !tabParam || partId || ecoId || taskId || moduleId || milestoneId || issueId) return;
+    if (!project || !tabParam || partId || reqKey || ecoId || taskId || moduleId || milestoneId || issueId) return;
     if (visibleTabs.length === 0) return;
     if (!visibleTabs.some((t) => t.id === tabParam)) {
       navigate(`/projects/${id}/${visibleTabs[0].id}`, { replace: true });
     }
-  }, [project, tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId, visibleTabs, navigate, id]);
+  }, [project, tabParam, partId, reqKey, ecoId, taskId, moduleId, milestoneId, issueId, visibleTabs, navigate, id]);
 
   // Calculate active filter count - moved before early returns
   const activeFilterCount = useMemo(() => {
@@ -1464,15 +1472,16 @@ export default function ProjectDetail() {
 
         {/* Section Tabs - Entity-based navigation */}
         <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
-          {/* Nothing inside this bar renders once a part/ECO detail or mobile module
-              detail is open (both conditional blocks below check the same three
-              flags) — so gate the sticky wrapper itself too. Otherwise it still
-              occupies its padding+border as an empty strip pinned at top:0,
-              overlapping whatever scrolls underneath it (e.g. BOMDetailScreen's
-              own header, which scrolls in its own inner container). */}
-          {!partId && !ecoId && !isMobileModuleDetailOpen && (
+          {/* Nothing inside this bar renders once a part/requirement/ECO detail,
+              the requirements editor, or mobile module detail is open (both
+              conditional blocks below check the same flags) — so gate the sticky
+              wrapper itself too. Otherwise it still occupies its padding+border as
+              an empty strip pinned at top:0, overlapping whatever scrolls
+              underneath it (e.g. BOMDetailScreen's own header, which scrolls in
+              its own inner container). */}
+          {!partId && !reqKey && !isRequirementsEditorOpen && !ecoId && !isMobileModuleDetailOpen && (
           <div ref={setStickyHeaderEl} className="sticky top-0 z-20 bg-background -mx-4 px-4 pt-2.5 pb-2.5 border-b md:pt-0 md:mx-0 md:px-0 md:pb-2.5 will-change-transform">
-            {!partId && !ecoId && !isMobileModuleDetailOpen && (
+            {!partId && !reqKey && !isRequirementsEditorOpen && !ecoId && !isMobileModuleDetailOpen && (
               <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
                 {/* Left Side: Tabs */}
                 <div className="flex-1 md:flex-none w-full md:w-auto py-1 min-w-0 md:mr-auto overflow-x-auto hide-scrollbar">
@@ -1949,6 +1958,15 @@ export default function ProjectDetail() {
                 navigate(`/projects/${id}/bom${newId ? `/${newId}` : ''}`)
               }
               onEcoCreated={(ecoId) => navigate(`/projects/${id}/eng-changes/${ecoId}`)}
+            />
+          </TabsContent>
+          <TabsContent value="requirements" className="mt-0 -mx-4 md:-mx-6 -mb-6 flex flex-col">
+            <RequirementsView
+              selectedKey={reqKey ?? null}
+              onSelectedKeyChange={(newKey) =>
+                navigate(`/projects/${id}/requirements${newKey ? `/${newKey}` : ''}`)
+              }
+              onEditorOpenChange={setIsRequirementsEditorOpen}
             />
           </TabsContent>
           <TabsContent value="eng-changes" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">

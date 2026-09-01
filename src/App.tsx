@@ -55,7 +55,6 @@ const Notifications = lazy(() => import("./features/notifications"));
 const Chat          = lazy(() => import("./features/chat"));
 const Integrations  = lazy(() => import("./features/integrations"));
 const Inventory     = lazy(() => import("./features/inventory"));
-const Requirements  = lazy(() => import("./features/requirements"));
 const SharedConversation = lazy(() => import("./features/assistant/SharedConversation"));
 
 // ── ReactQueryDevtools — dev only, lazy so it is never in the production bundle
@@ -68,7 +67,7 @@ const ReactQueryDevtools = import.meta.env.DEV
   : null;
 
 // Normalizes legacy `/projects/:id?tab=X` links to the canonical `/projects/:id/X` path.
-const PROJECT_SECTIONS = ['bom', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
+const PROJECT_SECTIONS = ['bom', 'requirements', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
 function ProjectLegacyTabRedirect() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -166,6 +165,14 @@ function AppShell() {
             />
             <Route
               path="/projects/:id/bom/:partId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/requirements/:reqKey"
               element={
                 <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
                   <ProjectDetail />
@@ -285,14 +292,6 @@ function AppShell() {
               element={
                 <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
                   <Inventory />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/requirements"
-              element={
-                <Suspense fallback={<AppLayoutSkeleton variant="default" />}>
-                  <Requirements />
                 </Suspense>
               }
             />
