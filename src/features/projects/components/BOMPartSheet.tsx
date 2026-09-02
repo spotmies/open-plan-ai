@@ -649,6 +649,34 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
     return () => { document.body.style.overflow = prev; };
   }, [isMobile, open]);
 
+  // Clear a field's validation message as soon as it becomes valid, instead of
+  // waiting for the next Next/Save click to re-run validation.
+  useEffect(() => {
+    setErrors(prev => {
+      if (Object.keys(prev).length === 0) return prev;
+      const next = { ...prev };
+      let changed = false;
+      const clear = (key: string, valid: boolean) => {
+        if (valid && key in next) { delete next[key]; changed = true; }
+      };
+      clear('pn', isEdit || !!pn.trim());
+      clear('name', !!name.trim());
+      clear('desc', !!desc.trim());
+      clear('category', !!category.trim());
+      clear('owner', !!selectedOwner || !!(isEdit && node?.owner));
+      clear('mfr', !!manufacturer.trim());
+      clear('mpn', !!mpn.trim());
+      clear('qty', !!qty.trim() && parseFloat(qty) <= 1000000);
+      clear('leadTime', !!leadTime.trim() && !isNaN(parseFloat(leadTime)));
+      clear('notes', !(isEdit && versionMode === 'new') || !!changeNotes.trim());
+      suppliers.forEach((s, i) => {
+        clear(`sup_dist_${i}`, !!s.distributor.trim());
+        clear(`sup_price_${i}`, s.calcFromSubparts || (!!s.price.trim() && !isNaN(parseFloat(s.price))));
+      });
+      return changed ? next : prev;
+    });
+  }, [pn, name, desc, category, selectedOwner, manufacturer, mpn, qty, leadTime, changeNotes, versionMode, suppliers, isEdit, node]);
+
   const isDirty = JSON.stringify({
     pn, name, desc, category, status, rev, qty, uom, manufacturer, suppliers,
     leadTime, leadTimeUnit, mpn, ownerId: selectedOwner?.id ?? null, req,

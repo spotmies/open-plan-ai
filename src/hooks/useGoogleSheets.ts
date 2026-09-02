@@ -140,8 +140,15 @@ export function useGoogleSheetsImportCommit(projectId: string | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ rows, deleteNodeIds }: { rows: ImportRowResolution[]; deleteNodeIds?: string[] }) =>
-      googleSheetsService.commitImport(projectId!, rows, deleteNodeIds),
+    mutationFn: ({
+      rows,
+      deleteNodeIds,
+      excludedColumns,
+    }: {
+      rows: ImportRowResolution[];
+      deleteNodeIds?: string[];
+      excludedColumns?: string[];
+    }) => googleSheetsService.commitImport(projectId!, rows, deleteNodeIds, excludedColumns),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: linkStatusKey(projectId) });
       // Broad invalidation — Pull can create/update parts, nodes, and

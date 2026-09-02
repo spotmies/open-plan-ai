@@ -265,7 +265,16 @@ export const googleSheetsService = {
     return apiClient.get<ImportPreview>(ENDPOINTS.GOOGLE_SHEETS.IMPORT_PREVIEW(projectId), { timeout: SHEETS_SYNC_TIMEOUT_MS });
   },
 
-  async commitImport(projectId: string, rows: ImportRowResolution[], deleteNodeIds?: string[]): Promise<ImportCommitResult> {
-    return apiClient.post<ImportCommitResult>(ENDPOINTS.GOOGLE_SHEETS.IMPORT_COMMIT(projectId), { rows, deleteNodeIds }, { timeout: SHEETS_COMMIT_TIMEOUT_MS });
+  async commitImport(
+    projectId: string,
+    rows: ImportRowResolution[],
+    deleteNodeIds?: string[],
+    excludedColumns?: string[],
+  ): Promise<ImportCommitResult> {
+    return apiClient.post<ImportCommitResult>(
+      ENDPOINTS.GOOGLE_SHEETS.IMPORT_COMMIT(projectId),
+      { rows, deleteNodeIds, excludedColumns },
+      { timeout: SHEETS_COMMIT_TIMEOUT_MS },
+    );
   },
 };

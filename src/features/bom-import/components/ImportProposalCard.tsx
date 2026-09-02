@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { AlertCircle, XCircle, CheckCircle2, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import type { ImportProposalPreview, CommitImportResult } from '../issueImportData';
+import type { ImportProposalPreview, CommitImportResult } from '../bomImportData';
 
 interface Props {
   preview: ImportProposalPreview;
@@ -14,16 +14,6 @@ interface Props {
   compact?: boolean;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  defect: 'Defect',
-  risk: 'Risk',
-  supplier: 'Supplier',
-  compliance: 'Compliance',
-  'test-failure': 'Test Failure',
-  'design-change': 'Design Change',
-  other: 'Other',
-};
-
 export function ImportProposalCard({ preview, status, result, onCommit, committing, compact = false }: Props) {
   const [expanded, setExpanded] = useState(!compact);
   // Sourced straight from the server-refetched proposal row — see
@@ -33,17 +23,10 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
   const isSuccess = status === 'executed' || status === 'partially_executed';
   const isFailed = status === 'failed';
 
-  // A row is only ever blocked by a missing title (or an explicit skip) —
-  // everything else (unmatched assignee/module, unrecognized severity/
-  // category) is a note: the row still imports, just without that optional
-  // field set. Rows whose title already exists in the project are a separate
-  // bucket — skipped, but nothing the user needs to "fix".
-  const duplicateCount = preview.duplicateCount ?? preview.rows.filter((r) => r.alreadyImported).length;
   const blockedCount = preview.itemCount - preview.cleanCount;
-  const missingTitleCount = blockedCount - duplicateCount;
-  const allAlreadyImported = duplicateCount > 0 && duplicateCount === preview.itemCount;
   const advisoryCount = preview.rows.filter((r) => r.importable && r.issues.length > 0).length;
   const hasWarnings = advisoryCount > 0;
+  const isMultiLevel = preview.rows.some((r) => r.level > 0);
 
   const showRows = !compact || expanded;
 
@@ -51,7 +34,7 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
     <div className={cn('rounded-xl border bg-card space-y-4', compact ? 'p-4' : 'p-5')}>
       <div className="flex items-center justify-between gap-2">
         <div className={cn('font-semibold', compact ? 'text-[15px]' : 'text-sm')}>
-          {preview.itemCount} issue{preview.itemCount === 1 ? '' : 's'} found
+          {preview.itemCount} part{preview.itemCount === 1 ? '' : 's'} found
         </div>
         {isSuccess ? (
           <Badge variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 py-1">
@@ -63,20 +46,10 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
             <XCircle className="h-3 w-3" />
             Failed
           </Badge>
-        ) : allAlreadyImported ? (
-          <Badge variant="outline" className="gap-1.5 text-muted-foreground py-1">
-            <CheckCircle2 className="h-3 w-3" />
-            Already imported
-          </Badge>
-        ) : missingTitleCount > 0 ? (
+        ) : blockedCount > 0 ? (
           <Badge variant="outline" className="gap-1.5 text-destructive border-destructive/40 py-1">
             <XCircle className="h-3 w-3" />
-            {missingTitleCount} blocked
-          </Badge>
-        ) : duplicateCount > 0 ? (
-          <Badge variant="outline" className="gap-1.5 text-amber-600 border-amber-300 py-1">
-            <AlertCircle className="h-3 w-3" />
-            {duplicateCount} already imported
+            {blockedCount} blocked
           </Badge>
         ) : advisoryCount > 0 ? (
           <Badge variant="outline" className="gap-1.5 text-amber-600 border-amber-300 py-1">
@@ -94,33 +67,38 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
       {showRows ? (
         <div className={cn('overflow-y-auto rounded-lg border divide-y', compact ? 'max-h-40' : 'max-h-72')}>
           {preview.rows.map((row, i) => (
-            <div key={i} className={cn(compact ? 'p-3 text-sm flex flex-col gap-1' : 'p-3.5 text-sm flex flex-col gap-1.5', row.alreadyImported ? 'bg-muted/60' : !row.importable && 'bg-destructive/5')}>
+            <div
+              key={i}
+              style={isMultiLevel ? { paddingLeft: `${12 + row.level * 16}px` } : undefined}
+              className={cn(compact ? 'p-3 text-sm flex flex-col gap-1' : 'p-3.5 text-sm flex flex-col gap-1.5', !row.importable && 'bg-destructive/5')}
+            >
               <div className="flex items-center justify-between gap-3">
-                <span className={cn('font-medium truncate', compact && 'text-[13px]')}>{row.title}</span>
-                {row.severity && (
-                  <Badge variant="secondary" className={cn('shrink-0 capitalize', compact && 'text-[11px] px-2 py-0.5')}>
-                    {row.severity}
+                <span className={cn('font-medium truncate', compact && 'text-[13px]')}>
+                  {row.partNumber} — {row.name}
+                </span>
+                {row.existingPartId ? (
+                  <Badge variant="secondary" className={cn('shrink-0', compact && 'text-[11px] px-2 py-0.5')}>
+                    Existing part
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className={cn('shrink-0 capitalize', compact && 'text-[11px] px-2 py-0.5')}>
+                    {row.category}
                   </Badge>
                 )}
               </div>
               <div className={cn('text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1', compact && 'gap-x-3 text-[11px]')}>
-                {row.category && (
-                  <span>Category: {row.category === 'other' && row.categoryOther ? row.categoryOther : CATEGORY_LABELS[row.category] ?? row.category}</span>
-                )}
-                {row.assigneeName && <span>Assignee: {row.assigneeName}</span>}
-                {row.dueDate && <span>Due: {row.dueDate}</span>}
-                {row.moduleName && <span>Module: {row.moduleName}</span>}
+                <span>Qty: {row.quantity}</span>
+                {row.unitPrice != null && <span>Unit Price: ${row.unitPrice.toFixed(2)}</span>}
+                {row.leadTimeWeeks != null && <span>Lead: {row.leadTimeWeeks}wk</span>}
               </div>
               {row.issues.length > 0 && (
                 <div
                   className={cn(
                     compact ? 'text-[11px] flex items-start gap-1.5 pt-0.5' : 'text-xs flex items-start gap-1.5 pt-0.5',
-                    row.alreadyImported ? 'text-muted-foreground' : row.importable ? 'text-amber-600' : 'text-destructive',
+                    row.importable ? 'text-amber-600' : 'text-destructive',
                   )}
                 >
-                  {row.alreadyImported ? (
-                    <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />
-                  ) : row.importable ? (
+                  {row.importable ? (
                     <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
                   ) : (
                     <XCircle className="h-3 w-3 mt-0.5 shrink-0" />
@@ -139,7 +117,7 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
           className="w-full justify-between text-muted-foreground"
           onClick={() => setExpanded(true)}
         >
-          <span>Expand issue preview</span>
+          <span>Expand part preview</span>
           <ChevronDown className="h-4 w-4" />
         </Button>
       )}
@@ -152,7 +130,7 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
           className="w-full justify-between px-0 text-muted-foreground"
           onClick={() => setExpanded(false)}
         >
-          <span>Hide issue preview</span>
+          <span>Hide part preview</span>
           <ChevronUp className="h-4 w-4" />
         </Button>
       )}
@@ -160,20 +138,16 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
       {isPending && (
         <div className="flex items-center justify-between gap-3 pt-1 animate-fade-in">
           <span className={cn('text-xs text-muted-foreground leading-relaxed', compact && 'text-[11px]')}>
-            {allAlreadyImported
-              ? `All ${preview.itemCount} issue${preview.itemCount === 1 ? '' : 's'} in this file ${preview.itemCount === 1 ? 'is' : 'are'} already in this project — nothing to import.`
-              : missingTitleCount > 0
-                ? `${preview.cleanCount} will be imported now, ${missingTitleCount} blocked until fixed${duplicateCount > 0 ? `, ${duplicateCount} already imported` : ''}`
-                : duplicateCount > 0
-                  ? `${preview.cleanCount} will be imported now, ${duplicateCount} already imported and skipped`
-                  : hasWarnings
-                    ? `Resolve the noted rows before importing all ${preview.itemCount} issue${preview.itemCount === 1 ? '' : 's'}`
-                    : `All ${preview.itemCount} will be imported`}
+            {blockedCount > 0
+              ? `${preview.cleanCount} will be imported now, ${blockedCount} blocked until fixed`
+              : hasWarnings
+                ? `Resolve the noted rows before importing all ${preview.itemCount} part${preview.itemCount === 1 ? '' : 's'}`
+                : `All ${preview.itemCount} will be imported`}
           </span>
-          {!hasWarnings && !allAlreadyImported && (
+          {!hasWarnings && (
             <Button size="sm" onClick={onCommit} disabled={committing || preview.cleanCount === 0} className="shrink-0">
               {committing && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
-              Import {preview.cleanCount} issue{preview.cleanCount === 1 ? '' : 's'}
+              Import {preview.cleanCount} part{preview.cleanCount === 1 ? '' : 's'}
             </Button>
           )}
         </div>
@@ -190,7 +164,7 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
         <div className="flex items-center gap-2 pt-1 rounded-lg bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>
-            {result ? `Import successful — ${result.created} issue${result.created === 1 ? '' : 's'} created` : 'Import successful'}
+            {result ? `Import successful — ${result.created} part${result.created === 1 ? '' : 's'} created` : 'Import successful'}
             {result && result.skipped > 0 ? `, ${result.skipped} skipped` : ''}
           </span>
         </div>

@@ -307,7 +307,7 @@ export function ImportIssuesDialog({ open, onClose, projectId }: Props) {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xlsx,.xls,.csv,.docx,.pdf,.txt"
+                  accept=".xlsx,.xls,.csv,.docx,.pdf,.txt,.md"
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -425,7 +425,7 @@ export function ImportIssuesDialog({ open, onClose, projectId }: Props) {
                 <input
                   ref={attachInputRef}
                   type="file"
-                  accept=".xlsx,.xls,.csv,.docx,.pdf,.txt"
+                  accept=".xlsx,.xls,.csv,.docx,.pdf,.txt,.md"
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -481,7 +481,7 @@ export function ImportIssuesDialog({ open, onClose, projectId }: Props) {
                 </p>
                 {result && result.skipped > 0 && (
                   <p className="text-sm text-muted-foreground max-w-sm">
-                    {result.skipped} row{result.skipped === 1 ? ' was' : 's were'} skipped — they still had unresolved issues.
+                    {result.skipped} row{result.skipped === 1 ? ' was' : 's were'} skipped — already imported or still had unresolved issues.
                   </p>
                 )}
               </div>

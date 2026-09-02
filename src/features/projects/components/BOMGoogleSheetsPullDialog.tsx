@@ -60,6 +60,9 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
   const [bulkUnit, setBulkUnit] = useState<LeadTimeUnit | ''>('');
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set());
   const [deleteChecked, setDeleteChecked] = useState<Set<string>>(new Set());
+  // Unmatched/ambiguous sheet columns the user opted out of importing into
+  // Additional Fields — a column-level choice, applied to every row.
+  const [excludedColumns, setExcludedColumns] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<ImportCommitResult | null>(null);
   // Collapsed by default: nothing in here blocks the import, so it must not
   // push the sections that do block it below the fold.
@@ -73,6 +76,7 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
       setBulkUnit('');
       setSkippedRows(new Set());
       setDeleteChecked(new Set());
+      setExcludedColumns(new Set());
       setResult(null);
       setVerifyOpen(false);
       preview.mutate();
@@ -191,6 +195,15 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
     });
   };
 
+  const toggleExcludedColumn = (column: string) => {
+    setExcludedColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(column)) next.delete(column);
+      else next.add(column);
+      return next;
+    });
+  };
+
   const handleConfirm = async () => {
     const resolutions: ImportRowResolution[] = rowsToImport
       .map((row) => {
@@ -213,7 +226,11 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
       });
 
     try {
-      const res = await commit.mutateAsync({ rows: resolutions, deleteNodeIds: [...deleteChecked] });
+      const res = await commit.mutateAsync({
+        rows: resolutions,
+        deleteNodeIds: [...deleteChecked],
+        excludedColumns: [...excludedColumns],
+      });
       setResult(res);
     } catch {
       // useGoogleSheetsImportCommit's onError already surfaces the toast.
@@ -883,22 +900,82 @@ export default function BOMGoogleSheetsPullDialog({ open, onClose, projectId }: 
                       {unmatchedColsCount}
                     </span>
                   </div>
-                  <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    These columns didn't match a standard BOM field, so by default they're imported into each part's{' '}
+                    <strong className="text-foreground">Additional Fields</strong>. Remove any you'd rather skip
+                    entirely.
+                  </p>
+
+                  <div className="space-y-3">
                     {data.unmatchedColumns.length > 0 && (
-                      <p>
-                        • {data.unmatchedColumns.length} column(s) didn't match a standard BOM field and will be
-                        imported into each part's <strong className="text-foreground">Additional Fields</strong>:{' '}
-                        <strong className="text-foreground">{data.unmatchedColumns.join(', ')}</strong>
-                      </p>
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          Didn't match any field
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {data.unmatchedColumns.map((col) => {
+                            const excluded = excludedColumns.has(col);
+                            return (
+                              <button
+                                key={col}
+                                type="button"
+                                onClick={() => toggleExcludedColumn(col)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                                  excluded
+                                    ? 'border-border/60 bg-muted/40 text-muted-foreground/70 line-through'
+                                    : 'border-purple-200 dark:border-purple-900/50 bg-purple-50/50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 hover:bg-purple-100/70 dark:hover:bg-purple-900/40'
+                                }`}
+                              >
+                                {col}
+                                {excluded ? (
+                                  <span className="not-italic no-underline text-[10.5px]">restore</span>
+                                ) : (
+                                  <X className="w-3 h-3" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                     {data.ambiguousColumns.length > 0 && (
-                      <p>
-                        • {data.ambiguousColumns.length} column(s) could match more than one BOM field, so none was
-                        picked — they go to <strong className="text-foreground">Additional Fields</strong> instead:{' '}
-                        <strong className="text-foreground">{data.ambiguousColumns.join(', ')}</strong>
-                      </p>
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          Could match more than one field
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {data.ambiguousColumns.map((col) => {
+                            const excluded = excludedColumns.has(col);
+                            return (
+                              <button
+                                key={col}
+                                type="button"
+                                onClick={() => toggleExcludedColumn(col)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                                  excluded
+                                    ? 'border-border/60 bg-muted/40 text-muted-foreground/70 line-through'
+                                    : 'border-purple-200 dark:border-purple-900/50 bg-purple-50/50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 hover:bg-purple-100/70 dark:hover:bg-purple-900/40'
+                                }`}
+                              >
+                                {col}
+                                {excluded ? (
+                                  <span className="not-italic no-underline text-[10.5px]">restore</span>
+                                ) : (
+                                  <X className="w-3 h-3" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
+
+                  {excludedColumns.size > 0 && (
+                    <p className="text-xs text-muted-foreground italic">
+                      {excludedColumns.size} column(s) won't be imported.
+                    </p>
+                  )}
                 </div>
               )}
 
