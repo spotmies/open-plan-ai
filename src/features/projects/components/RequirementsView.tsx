@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
-  ChevronRight, ChevronDown, SlidersHorizontal, Search,
+  ChevronRight, ChevronLeft, ChevronDown, ChevronUp, SlidersHorizontal, Search,
   Plus, Download, GitBranch, X, Hash,
   AlertTriangle, Check, ArrowUpDown, Cpu, Zap, Package, Package2,
   Monitor, Shield, Lock, Flag, Activity, FlaskConical, BookOpen,
@@ -8,16 +8,18 @@ import {
   ListChecks, Boxes, Share2, Network, Gauge, Target,
   ListTree, ArrowDownAZ, ShieldCheck, Unlink, PackageX, UserPlus,
   ChevronsDownUp, ChevronsUpDown, CheckCircle, Table2, GitMerge,
-  Maximize2, RefreshCw, Minus,
+  Maximize2, Minimize2, RefreshCw, Minus,
+  FolderTree, FunctionSquare, FolderCheck, FileText, Triangle, FolderKanban,
+  BookMarked, Cable, Ruler, BadgeCheck, Scale, Play, Circle,
 } from 'lucide-react';
 import {
-  REQS, BY_KEY, REQ_ROOTS, REQ_TYPE, REQ_CATEGORY, REQ_STATUS,
-  REQ_VSTATUS, REQ_PRIORITY, REQ_GROUP, REQ_LINKTYPE, GAP_META, REQ_TEAM,
+  REQS, BY_KEY, REQ_ROOTS, REQ_TYPE, REQ_CATEGORY, REQ_STATUS, REQ_STATUS_FLOW,
+  REQ_VSTATUS, REQ_PRIORITY, REQ_GROUP, REQ_VMETHOD, REQ_LINKTYPE, GAP_META, REQ_TEAM,
   flattenTree, matchWithAncestors, descendants, ancestors, coverageBy, worstOffenders,
   reqStats, vDistribution, standardsRollup, gateReadiness, manufacturingReadiness,
   GATES, STANDARDS,
   type Requirement, type ReqType, type ReqCategory, type ReqStatus,
-  type ReqVStatus, type ReqPriority, type ReqGroup,
+  type ReqVStatus, type ReqPriority, type ReqGroup, type ReqVMethod,
 } from './requirementsData';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
@@ -1454,108 +1456,286 @@ function DependencyGraph({ onOpen }: { onOpen: (k: string) => void }) {
   );
 }
 
-// ── Mind-map view ──────────────────────────────────────────────────────────────
+// ── Map view — multi-lens node graph ────────────────────────────────────────
+// A view selector reshapes the same requirement model into different
+// container-grouped layouts (Systems, Requirement Groups, Functions, Tests,
+// Analysis, Risks & Safety, Interfaces, Requirement Hierarchy, Test Planning,
+// Test Execution, Library). Containers collapse to an "N items" summary and
+// expand to a tidy left→right tree of member cards with per-card collapse
+// handles. Pan, wheel-zoom, fit-on-open, drag containers, minimap.
+const MAP_NW = 234, MAP_NH = 112, MAP_HGAP = 58, MAP_VGAP = 20, MAP_PAD = 22, MAP_HEADER = 34;
+const MAP_SPINE_W = 214, MAP_SPINE_H = 100, MAP_SPINE_GAP = 132, MAP_CGAP = 46;
+const MAP_COL_W = 340, MAP_COL_H = 70, MAP_GRID_GAP = 26, MAP_GRID_COLS = 5;
+
+interface MapNode {
+  id: string; kind: 'req' | 'test'; r: Requirement; isRoot?: boolean; contId?: string;
+  children: MapNode[]; _x: number; _y: number; ax: number; ay: number;
+}
+interface MapContainer {
+  id: string; title: string; icon: React.ElementType; count: number; keys: string[];
+  open: boolean; owner?: string; cards: MapNode[]; edges: MapEdge[];
+  x: number; y: number; w: number; h: number;
+}
+interface MapEdge { x1: number; y1: number; x2: number; y2: number; col: string; dash?: boolean; }
+interface MapViewDef {
+  id: string; label: string; icon: React.ElementType; tint: string;
+  engine: 'groups' | 'tree' | 'grid';
+  group?: 'module' | 'tier' | 'category' | 'vmethod' | 'status' | 'vstatus';
+  showTests?: boolean; filter?: 'tested' | 'planned' | 'interface' | 'risk';
+}
+
+const CAT_ICONS: Record<ReqCategory, React.ElementType> = {
+  functional: Boxes, performance: Gauge, interface: Cable, constraint: Ruler, quality: BadgeCheck, regulatory: Scale,
+};
+const VMETHOD_ICONS: Record<string, React.ElementType> = {
+  test: FlaskConical, analysis: Activity, inspection: Search, demonstration: Play,
+};
+const TIER_META: Record<string, { label: string; icon: React.ElementType }> = {
+  stakeholder: { label: 'Stakeholder Requirements', icon: Flag },
+  system: { label: 'System Requirements', icon: Boxes },
+  subsystem: { label: 'Subsystem Requirements', icon: Layers },
+  component: { label: 'Component Requirements', icon: Package },
+};
+
+const MAP_VIEWS: MapViewDef[] = [
+  { id: 'systems',    label: 'Systems',              icon: Boxes,          tint: '#D97706', engine: 'groups', group: 'module' },
+  { id: 'groups',     label: 'Requirement Groups',   icon: FolderTree,     tint: '#2563EB', engine: 'groups', group: 'tier' },
+  { id: 'functions',  label: 'Functions',            icon: FunctionSquare, tint: '#9333EA', engine: 'groups', group: 'category', showTests: true },
+  { id: 'tests',      label: 'Tests',                icon: FolderCheck,    tint: '#16A34A', engine: 'groups', group: 'vmethod', filter: 'tested', showTests: true },
+  { id: 'analysis',   label: 'Analysis',             icon: FileText,       tint: '#646B76', engine: 'groups', group: 'status' },
+  { id: 'risks',      label: 'Risks & Safety',       icon: Triangle,       tint: '#DC2626', engine: 'groups', group: 'module', filter: 'risk' },
+  { id: 'interfaces', label: 'Interfaces',           icon: Boxes,          tint: '#0EA5E9', engine: 'groups', group: 'module', filter: 'interface' },
+  { id: 'hierarchy',  label: 'Requirement Hierarchy',icon: ListTree,       tint: '#2563EB', engine: 'tree' },
+  { id: 'testplan',   label: 'Test Planning',        icon: FolderKanban,   tint: '#84CC16', engine: 'groups', group: 'vmethod', filter: 'planned', showTests: true },
+  { id: 'testexec',   label: 'Test Execution',       icon: FolderCheck,    tint: '#DB2777', engine: 'groups', group: 'vstatus', filter: 'tested', showTests: true },
+  { id: 'library',    label: 'Library View',         icon: BookMarked,     tint: '#646B76', engine: 'grid' },
+];
+
 function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
-  const NW = 244, NH = 108, HGAP = 110, VGAP = 20;
+  const [viewId, setViewId] = useState('systems');
+  const view = MAP_VIEWS.find(v => v.id === viewId) ?? MAP_VIEWS[0];
+  const ViewIcon = view.icon;
 
-  type TreeNode = Requirement & { _x: number; _y: number; children: TreeNode[] };
-
-  const nodes = useMemo<TreeNode[]>(() => {
-    const build = (key: string): TreeNode => {
-      const r = BY_KEY[key];
-      const node: TreeNode = { ...r, _x: 0, _y: 0, children: [] };
-      if (r.childKeys.length) node.children = r.childKeys.map(build);
-      return node;
-    };
-    return REQ_ROOTS.map(build);
-  }, []);
+  const [openContainers, setOpenContainers] = useState<Set<string>>(new Set());
+  const [openCards, setOpenCards] = useState<Set<string>>(new Set());
+  const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({});
+  const [zoom, setZoom] = useState(0.72);
+  const [pan, setPan] = useState({ x: 60, y: 40 });
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [dragC, setDragC] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  type DragState = { type: 'node'; id: string; startX: number; startY: number; ox: number; oy: number; zoom: number; moved: boolean }
-                 | { type: 'pan'; startX: number; startY: number; ox: number; oy: number; moved: boolean };
-  const dragRef = useRef<DragState | null>(null);
+  type MapDragState =
+    | { type: 'cont'; id: string; startX: number; startY: number; ox: number; oy: number; zoom: number; moved: boolean }
+    | { type: 'pan'; startX: number; startY: number; px: number; py: number; moved: boolean };
+  const dragRef = useRef<MapDragState | null>(null);
+  const didFit = useRef(false);
 
-  const [zoom, setZoom] = useState(0.8);
-  const [pan, setPan] = useState({ x: 56, y: 40 });
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(() => {
-    try { return JSON.parse(localStorage.getItem('req_map_pos') || '{}'); } catch { return {}; }
-  });
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try {
-      const saved = localStorage.getItem('req_map_collapsed');
-      if (saved) return JSON.parse(saved);
-    } catch { /**/ }
-    const init: Record<string, boolean> = {};
-    const walk = (list: TreeNode[], depth: number) => list.forEach(n => {
-      if (n.children.length) { if (depth >= 2) init[n.key] = true; walk(n.children, depth + 1); }
+  const posKey = (id: string) => `req_map_off_${id}`;
+
+  // Reset per-view interaction state whenever the lens changes
+  useEffect(() => {
+    let off: Record<string, { x: number; y: number }> = {};
+    try { off = JSON.parse(localStorage.getItem(posKey(viewId)) || '{}'); } catch { /* */ }
+    setOffsets(off);
+    setOpenContainers(new Set());
+    setOpenCards(view.engine === 'tree' ? new Set(REQ_ROOTS) : new Set());
+    didFit.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewId]);
+
+  const bucketize = useCallback((v: MapViewDef): { id: string; title: string; icon: React.ElementType; keys: string[] }[] => {
+    const memberFilter: (r: Requirement) => boolean =
+      v.filter === 'tested' ? (r => r.vstatus !== 'not-verified')
+      : v.filter === 'planned' ? (r => r.vstatus === 'not-verified' || r.vstatus === 'in-progress')
+      : v.filter === 'interface' ? (r => r.category === 'interface')
+      : v.filter === 'risk' ? (r => r.group === 'SAF' || r.category === 'regulatory' || r.priority === 'critical')
+      : () => true;
+
+    const tierOf = (t: ReqType) => (t === 'stakeholder-need' || t === 'stakeholder-req') ? 'stakeholder' : t.replace('-req', '');
+
+    const accessor: (r: Requirement) => string | null =
+      v.group === 'module' ? (r => r.group)
+      : v.group === 'tier' ? (r => tierOf(r.type))
+      : v.group === 'category' ? (r => r.category)
+      : v.group === 'vmethod' ? (r => r.vmethod)
+      : v.group === 'status' ? (r => r.status)
+      : v.group === 'vstatus' ? (r => r.vstatus)
+      : () => null;
+
+    type Meta = { order: string[]; label: (k: string) => string; icon: (k: string) => React.ElementType };
+    const meta: Meta =
+      v.group === 'module' ? { order: Object.keys(REQ_GROUP), label: k => REQ_GROUP[k as ReqGroup].label, icon: k => GROUP_ICONS[k as ReqGroup] }
+      : v.group === 'tier' ? { order: ['stakeholder', 'system', 'subsystem', 'component'], label: k => TIER_META[k].label, icon: k => TIER_META[k].icon }
+      : v.group === 'category' ? { order: Object.keys(REQ_CATEGORY), label: k => REQ_CATEGORY[k as ReqCategory].label, icon: k => CAT_ICONS[k as ReqCategory] }
+      : v.group === 'vmethod' ? { order: Object.keys(REQ_VMETHOD), label: k => REQ_VMETHOD[k as ReqVMethod].label + ' Tests', icon: k => VMETHOD_ICONS[k] }
+      : v.group === 'status' ? { order: REQ_STATUS_FLOW, label: k => REQ_STATUS[k as ReqStatus].label, icon: () => Circle }
+      : { order: ['passed', 'failed', 'in-progress', 'not-verified', 'waived'], label: k => REQ_VSTATUS[k as ReqVStatus].label, icon: () => ClipboardCheck };
+
+    const map: Record<string, string[]> = {};
+    REQS.forEach(r => {
+      if (!memberFilter(r)) return;
+      const b = accessor(r);
+      if (b == null) return;
+      (map[b] ??= []).push(r.key);
     });
-    walk(nodes, 0);
-    return init;
+    return meta.order.filter(k => map[k]?.length).map(k => ({ id: k, title: meta.label(k), icon: meta.icon(k), keys: map[k] }));
+  }, []);
+
+  const buildTree = useCallback((keys: string[], v: MapViewDef): MapNode[] => {
+    const set = new Set(keys);
+    const testOK = (r: Requirement) => !!v.showTests && r.vstatus !== 'not-verified';
+    const make = (key: string): MapNode => {
+      const r = BY_KEY[key];
+      const kids: MapNode[] = (r.childKeys || []).filter(k => set.has(k)).map(make);
+      if (testOK(r)) kids.unshift({ id: 'TC:' + key, kind: 'test', r, children: [], _x: 0, _y: 0, ax: 0, ay: 0 });
+      return { id: key, kind: 'req', r, isRoot: false, children: kids, _x: 0, _y: 0, ax: 0, ay: 0 };
+    };
+    const roots = keys.filter(k => { const p = BY_KEY[k].parent; return !p || !set.has(p); }).map(make);
+    roots.forEach(n => { n.isRoot = true; });
+    return roots;
+  }, []);
+
+  const dominantOwner = (keys: string[]) => {
+    const tally: Record<string, number> = {};
+    keys.forEach(k => { const o = BY_KEY[k].owner; tally[o] = (tally[o] || 0) + 1; });
+    return Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
+  };
+
+  const edgeBetween = (a: MapNode, b: MapNode, col: string): MapEdge => ({
+    x1: a.ax + MAP_NW, y1: a.ay + MAP_NH / 2, x2: b.ax, y2: b.ay + MAP_NH / 2, col,
+    dash: b.kind === 'req' && b.r.coverage.suspect,
   });
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
+  const tintOfNode = (n: MapNode) => n.kind === 'test' ? '#16A34A' : REQ_STATUS[n.r.status].tint;
 
-  useEffect(() => { localStorage.setItem('req_map_collapsed', JSON.stringify(collapsed)); }, [collapsed]);
+  // ── layout: produces absolute geometry for spine, containers, cards, edges ──
+  const L = useMemo(() => {
+    const off = (id: string) => offsets[id] ?? { x: 0, y: 0 };
 
-  // Tidy left-to-right layout — mutates _x/_y on nodes in place
-  const layoutVersion = useMemo(() => {
-    let leafY = 0;
-    const place = (node: TreeNode, depth: number): number => {
-      node._x = depth * (NW + HGAP);
-      const kids = node.children.length && !collapsed[node.key] ? node.children : null;
-      if (!kids) { node._y = leafY; leafY += NH + VGAP; return node._y + NH / 2; }
-      const centers = kids.map(k => place(k, depth + 1));
-      const center = (centers[0] + centers[centers.length - 1]) / 2;
-      node._y = center - NH / 2;
-      return center;
+    if (view.engine === 'grid') {
+      const cards: MapNode[] = REQS.map((r, i) => {
+        const col = i % MAP_GRID_COLS, row = Math.floor(i / MAP_GRID_COLS);
+        return { id: r.key, kind: 'req' as const, r, children: [], _x: 0, _y: 0, ax: col * (MAP_NW + MAP_GRID_GAP), ay: row * (MAP_NH + MAP_GRID_GAP) };
+      });
+      const rows = Math.ceil(REQS.length / MAP_GRID_COLS);
+      return { mode: 'grid' as const, cards, containers: [] as MapContainer[], edges: [] as MapEdge[], spine: null,
+        bounds: { w: MAP_GRID_COLS * (MAP_NW + MAP_GRID_GAP), h: rows * (MAP_NH + MAP_GRID_GAP) } };
+    }
+
+    if (view.engine === 'tree') {
+      const build = (key: string): MapNode => {
+        const r = BY_KEY[key];
+        return { id: key, kind: 'req' as const, r, children: (r.childKeys || []).map(build), _x: 0, _y: 0, ax: 0, ay: 0 };
+      };
+      const roots = REQ_ROOTS.map(build);
+      let leafY = 0;
+      const place = (n: MapNode, d: number): number => {
+        n._x = d * (MAP_NW + MAP_HGAP);
+        const kids = openCards.has(n.id) ? n.children : [];
+        if (!kids.length) { n._y = leafY; leafY += MAP_NH + MAP_VGAP; return n._y + MAP_NH / 2; }
+        const cs = kids.map(k => place(k, d + 1));
+        n._y = (cs[0] + cs[cs.length - 1]) / 2 - MAP_NH / 2;
+        return n._y + MAP_NH / 2;
+      };
+      roots.forEach(r => place(r, 0));
+      const cards: MapNode[] = [], edges: MapEdge[] = [];
+      const walk = (n: MapNode) => {
+        n.ax = n._x; n.ay = n._y; cards.push(n);
+        if (openCards.has(n.id)) n.children.forEach(c => { walk(c); edges.push(edgeBetween(n, c, tintOfNode(c))); });
+      };
+      roots.forEach(walk);
+      const b = cards.reduce((a, n) => ({ w: Math.max(a.w, n.ax + MAP_NW), h: Math.max(a.h, n.ay + MAP_NH) }), { w: 400, h: 200 });
+      return { mode: 'tree' as const, cards, containers: [] as MapContainer[], edges, spine: null, bounds: b };
+    }
+
+    // groups engine
+    const groups = bucketize(view);
+    const containers: MapContainer[] = [];
+    let cy = 0;
+    const colX = MAP_SPINE_W + MAP_SPINE_GAP;
+    groups.forEach(g => {
+      const o = off('C:' + g.id);
+      const open = openContainers.has(g.id);
+      const cont: MapContainer = {
+        id: g.id, title: g.title, icon: g.icon, count: g.keys.length, owner: dominantOwner(g.keys),
+        keys: g.keys, open, cards: [], edges: [], x: 0, y: 0, w: 0, h: 0,
+      };
+      if (!open) {
+        cont.x = colX + o.x; cont.y = cy + o.y; cont.w = MAP_COL_W; cont.h = MAP_COL_H;
+        cy += MAP_COL_H + MAP_HEADER + MAP_CGAP;
+      } else {
+        const roots = buildTree(g.keys, view);
+        let leafY = 0;
+        const place = (n: MapNode, d: number): number => {
+          n._x = d * (MAP_NW + MAP_HGAP);
+          const kids = (n.kind === 'req' && openCards.has(n.id)) ? n.children : [];
+          if (!kids.length) { n._y = leafY; leafY += MAP_NH + MAP_VGAP; return n._y + MAP_NH / 2; }
+          const cs = kids.map(k => place(k, d + 1));
+          n._y = (cs[0] + cs[cs.length - 1]) / 2 - MAP_NH / 2;
+          return n._y + MAP_NH / 2;
+        };
+        roots.forEach(r => place(r, 0));
+        let cw = 0, ch = 0;
+        const collect = (n: MapNode) => {
+          cw = Math.max(cw, n._x + MAP_NW); ch = Math.max(ch, n._y + MAP_NH);
+          if (n.kind === 'req' && openCards.has(n.id)) n.children.forEach(collect);
+        };
+        roots.forEach(collect);
+        cont.w = cw + MAP_PAD * 2; cont.h = ch + MAP_PAD * 2;
+        cont.x = colX + o.x; cont.y = cy + o.y;
+        const ox = cont.x + MAP_PAD, oy = cont.y + MAP_PAD;
+        const walk = (n: MapNode) => {
+          n.ax = ox + n._x; n.ay = oy + n._y; n.contId = g.id; cont.cards.push(n);
+          if (n.kind === 'req' && openCards.has(n.id)) n.children.forEach(c => { walk(c); cont.edges.push(edgeBetween(n, c, tintOfNode(c))); });
+        };
+        roots.forEach(walk);
+        cy += cont.h + MAP_HEADER + MAP_CGAP;
+      }
+      containers.push(cont);
+    });
+    const stackH = Math.max(cy - MAP_CGAP, MAP_SPINE_H);
+    const so = off('SPINE');
+    const spine = {
+      x: 0 + so.x, y: (stackH - MAP_SPINE_H) / 2 + so.y, w: MAP_SPINE_W, h: MAP_SPINE_H,
+      title: view.label, count: groups.reduce((s, g) => s + g.keys.length, 0),
     };
-    nodes.forEach(r => place(r, 0));
-    return Date.now();
-  }, [collapsed, nodes]);
+    const spineEdges: MapEdge[] = containers.map(c => ({
+      x1: spine.x + spine.w, y1: spine.y + spine.h / 2, x2: c.x, y2: c.y + c.h / 2, col: view.tint,
+    }));
+    const cards: MapNode[] = [];
+    containers.forEach(c => c.cards.forEach(n => cards.push(n)));
+    const allEdges = spineEdges.concat(...containers.map(c => c.edges));
+    const bx = Math.max(colX + MAP_COL_W, ...containers.map(c => c.x + c.w), spine.x + spine.w);
+    const by = Math.max(stackH, spine.y + spine.h, ...containers.map(c => c.y + c.h));
+    return { mode: 'groups' as const, spine, containers, cards, edges: allEdges, bounds: { w: bx, h: by } };
+  }, [view, openContainers, openCards, offsets, bucketize, buildTree]);
 
-  // Flat visible nodes + edges derived from tree walk
-  const { visible, edges } = useMemo(() => {
-    const visible: TreeNode[] = [], edges: [TreeNode, TreeNode][] = [];
-    const walk = (node: TreeNode) => {
-      visible.push(node);
-      if (!collapsed[node.key]) node.children.forEach(c => { edges.push([node, c]); walk(c); });
-    };
-    nodes.forEach(walk);
-    return { visible, edges };
-  }, [collapsed, nodes, layoutVersion]);
-
-  const eff = (n: TreeNode) => positions[n.key] ?? { x: n._x, y: n._y };
-  const bounds = visible.reduce((b, n) => {
-    const p = eff(n);
-    return { w: Math.max(b.w, p.x + NW), h: Math.max(b.h, p.y + NH) };
-  }, { w: 600, h: 400 });
-
-  // Global mouse handlers for node drag + canvas pan
+  // ── drag containers / pan canvas ────────────────────────────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current; if (!d) return;
-      if (d.type === 'node') {
+      if (d.type === 'cont') {
         const dx = (e.clientX - d.startX) / d.zoom, dy = (e.clientY - d.startY) / d.zoom;
         if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) > 4) d.moved = true;
-        setPositions(p => ({ ...p, [d.id]: { x: d.ox + dx, y: d.oy + dy } }));
+        setOffsets(o => ({ ...o, [d.id]: { x: d.ox + dx, y: d.oy + dy } }));
       } else {
         d.moved = true;
-        setPan({ x: d.ox + (e.clientX - d.startX), y: d.oy + (e.clientY - d.startY) });
+        setPan({ x: d.px + (e.clientX - d.startX), y: d.py + (e.clientY - d.startY) });
       }
     };
     const onUp = () => {
       const d = dragRef.current; if (!d) return;
-      if (d.type === 'node') {
-        setDragId(null);
-        if (!d.moved) onOpen(d.id);
-        else setPositions(p => { localStorage.setItem('req_map_pos', JSON.stringify(p)); return p; });
+      if (d.type === 'cont') {
+        setDragC(null);
+        setOffsets(o => { localStorage.setItem(posKey(viewId), JSON.stringify(o)); return o; });
       }
       dragRef.current = null;
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [onOpen]);
+  }, [viewId]);
 
   // Wheel zoom toward cursor
   useEffect(() => {
@@ -1565,7 +1745,7 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
       const rect = el.getBoundingClientRect();
       const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
       setZoom(z => {
-        const nz = Math.min(2, Math.max(0.3, z * (e.deltaY < 0 ? 1.12 : 0.89)));
+        const nz = Math.min(2, Math.max(0.25, z * (e.deltaY < 0 ? 1.12 : 0.89)));
         setPan(p => ({ x: cx - ((cx - p.x) / z) * nz, y: cy - ((cy - p.y) / z) * nz }));
         return nz;
       });
@@ -1574,20 +1754,26 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  const startNodeDrag = (e: React.MouseEvent, n: TreeNode) => {
+  const startContDrag = (e: React.MouseEvent, id: string) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    const p = eff(n);
-    dragRef.current = { type: 'node', id: n.key, startX: e.clientX, startY: e.clientY, ox: p.x, oy: p.y, zoom, moved: false };
-    setDragId(n.key);
+    const o = offsets['C:' + id] ?? { x: 0, y: 0 };
+    dragRef.current = { type: 'cont', id: 'C:' + id, startX: e.clientX, startY: e.clientY, ox: o.x, oy: o.y, zoom, moved: false };
+    setDragC(id);
+  };
+  const startSpineDrag = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const o = offsets['SPINE'] ?? { x: 0, y: 0 };
+    dragRef.current = { type: 'cont', id: 'SPINE', startX: e.clientX, startY: e.clientY, ox: o.x, oy: o.y, zoom, moved: false };
   };
   const startPan = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    dragRef.current = { type: 'pan', startX: e.clientX, startY: e.clientY, ox: pan.x, oy: pan.y, moved: false };
+    dragRef.current = { type: 'pan', startX: e.clientX, startY: e.clientY, px: pan.x, py: pan.y, moved: false };
   };
 
   const zoomBy = (f: number) => setZoom(z => {
-    const nz = Math.min(2, Math.max(0.3, z * f));
+    const nz = Math.min(2, Math.max(0.25, z * f));
     const el = containerRef.current;
     if (el) {
       const r = el.getBoundingClientRect();
@@ -1600,20 +1786,35 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
   const fit = useCallback(() => {
     const el = containerRef.current; if (!el) return;
     const r = el.getBoundingClientRect();
-    const nz = Math.min(2, Math.max(0.3, Math.min((r.width - 100) / bounds.w, (r.height - 100) / bounds.h)));
+    const nz = Math.min(1.1, Math.max(0.25, Math.min((r.width - 90) / L.bounds.w, (r.height - 90) / L.bounds.h)));
     setZoom(nz);
-    setPan({ x: (r.width - bounds.w * nz) / 2, y: (r.height - bounds.h * nz) / 2 });
-  }, [bounds]);
+    setPan({ x: (r.width - L.bounds.w * nz) / 2, y: (r.height - L.bounds.h * nz) / 2 });
+  }, [L.bounds]);
 
-  const resetLayout = () => { setPositions({}); localStorage.removeItem('req_map_pos'); };
+  const resetLayout = () => { setOffsets({}); localStorage.removeItem(posKey(viewId)); };
+  const toggleFullscreen = () => setFullscreen(f => !f);
 
-  // Auto-fit on first open when no custom positions exist
-  const didFit = useRef(false);
   useEffect(() => {
-    if (didFit.current || Object.keys(positions).length) { didFit.current = true; return; }
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    const t = setTimeout(fit, 60);
+    return () => { window.removeEventListener('keydown', onKey); clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
+
+  useEffect(() => {
+    if (didFit.current) return;
     const t = setTimeout(() => { fit(); didFit.current = true; }, 60);
     return () => clearTimeout(t);
-  }, [fit]);
+  }, [viewId, L.bounds.w, L.bounds.h, fit]);
+
+  const toggleContainer = (id: string) => setOpenContainers(s => {
+    const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  const toggleCard = (id: string) => setOpenCards(s => {
+    const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
 
   const ctrlBtn: React.CSSProperties = {
     width: 30, height: 30, borderRadius: 7,
@@ -1622,151 +1823,292 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
     color: 'hsl(var(--muted-foreground))', padding: 0,
   };
 
-  const LEGEND: { s: ReqStatus; label: string }[] = [
-    { s: 'draft', label: 'Draft' },
-    { s: 'approved', label: 'Approved' },
-    { s: 'verified', label: 'Verified' },
-    { s: 'validated', label: 'Validated' },
-  ];
+  const ReqCard = (n: MapNode) => {
+    const r = n.r, st = REQ_STATUS[r.status];
+    const isH = hovered === n.id, obsolete = r.status === 'obsolete';
+    const soft = softTint(st.tint, 0.5);
+    const hasKids = n.children.length > 0, isOpen = openCards.has(n.id);
+    return (
+      <div key={n.id}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={() => onOpen(r.key)}
+        onMouseEnter={() => setHovered(n.id)}
+        onMouseLeave={() => setHovered(null)}
+        style={{
+          position: 'absolute', left: n.ax, top: n.ay, width: MAP_NW, minHeight: MAP_NH,
+          background: 'hsl(var(--card))', border: `1px solid ${isH ? soft : 'hsl(var(--border))'}`,
+          borderLeft: `3px solid ${st.tint}`, borderRadius: 10,
+          boxShadow: isH ? '0 6px 16px rgba(20,24,31,0.12)' : '0 1px 3px rgba(20,24,31,0.07)',
+          cursor: 'pointer', zIndex: isH ? 50 : 12, transition: 'box-shadow .12s, border-color .12s',
+          display: 'flex', flexDirection: 'column',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '9px 11px 0' }}>
+          <TypePill type={r.type} />
+          <ReqKeyTag reqKey={r.key} />
+        </div>
+        <div style={{ padding: '5px 11px 0', flex: 1 }}>
+          <div style={{
+            fontSize: 12.5, fontWeight: 600, color: obsolete ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
+            lineHeight: 1.28, textDecoration: obsolete ? 'line-through' : 'none',
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>{r.title}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 11px 9px' }}>
+          <StatusBadge status={r.status} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {(r.coverage.orphan || r.coverage.untested || r.coverage.unimplemented) && <AlertTriangle size={13} color="#D97706" />}
+            <VStatusBadge vstatus={r.vstatus} />
+          </span>
+        </div>
+        {hasKids && (
+          <button
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); toggleCard(n.id); }}
+            title={isOpen ? 'Collapse' : 'Expand'}
+            style={{
+              position: 'absolute', left: MAP_NW - 12, top: MAP_NH / 2 - 12, width: 24, height: 24,
+              borderRadius: '50%', background: 'hsl(var(--card))', border: `1px solid ${soft}`,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: st.tint, zIndex: 30, padding: 0,
+            }}>
+            {isOpen ? <ChevronLeft size={13} color={st.tint} /> : <ChevronRight size={13} color={st.tint} />}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const TestCard = (n: MapNode) => {
+    const r = n.r, tint = '#16A34A', isH = hovered === n.id;
+    return (
+      <div key={n.id}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={() => onOpen(r.key)}
+        onMouseEnter={() => setHovered(n.id)}
+        onMouseLeave={() => setHovered(null)}
+        style={{
+          position: 'absolute', left: n.ax, top: n.ay, width: MAP_NW, minHeight: MAP_NH,
+          background: 'hsl(var(--card))', border: `1px solid ${isH ? softTint(tint, 0.5) : 'hsl(var(--border))'}`,
+          borderLeft: `3px solid ${tint}`, borderRadius: 10,
+          boxShadow: isH ? '0 6px 16px rgba(20,24,31,0.12)' : '0 1px 3px rgba(20,24,31,0.07)',
+          cursor: 'pointer', zIndex: isH ? 50 : 12, transition: 'box-shadow .12s, border-color .12s',
+          display: 'flex', flexDirection: 'column',
+        }}>
+        <div style={{ padding: '9px 11px 0' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 5,
+            fontSize: 11, fontWeight: 600, background: softTint(tint, 0.10), color: tint, border: `1px solid ${softTint(tint, 0.22)}`,
+          }}>
+            <FlaskConical size={11} color={tint} /> Test Case
+          </span>
+        </div>
+        <div style={{ padding: '5px 11px 0', flex: 1 }}>
+          <div style={{
+            fontSize: 12.5, fontWeight: 600, color: 'hsl(var(--foreground))', lineHeight: 1.28,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>{r.title} test</div>
+        </div>
+        <div style={{ padding: '7px 11px 9px' }}><VStatusBadge vstatus={r.vstatus} /></div>
+      </div>
+    );
+  };
 
   return (
     <div
       ref={containerRef}
       onMouseDown={startPan}
       style={{
-        flex: 1, position: 'relative', overflow: 'hidden',
-        background: 'hsl(var(--background))', cursor: 'grab',
+        ...(fullscreen ? { position: 'fixed' as const, inset: 0, zIndex: 1000 } : { flex: 1, position: 'relative' as const }),
+        overflow: 'hidden', background: 'hsl(var(--background))', cursor: 'grab',
         backgroundImage: `radial-gradient(hsl(var(--border)) 1px, transparent 1px)`,
         backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
         backgroundPosition: `${pan.x}px ${pan.y}px`,
       }}
     >
+      {/* View selector — top left */}
+      <div style={{ position: 'absolute', top: 14, left: 16, zIndex: 210 }} onMouseDown={e => e.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button style={{
+              display: 'inline-flex', alignItems: 'center', gap: 9, height: 36, padding: '0 12px',
+              borderRadius: 8, background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))',
+              cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 1px 3px rgba(20,24,31,0.07)',
+            }}>
+              <ViewIcon size={15} color={view.tint} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))' }}>{view.label}</span>
+              <ChevronDown size={14} color="hsl(var(--muted-foreground))" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground px-2 py-1.5">Views</div>
+            {MAP_VIEWS.map(v => {
+              const Ic = v.icon, on = v.id === viewId;
+              return (
+                <DropdownMenuItem key={v.id} onClick={() => setViewId(v.id)} className="flex items-center gap-2.5"
+                  style={{ background: on ? softTint(v.tint, 0.09) : undefined }}>
+                  <Ic size={15} color={v.tint} />
+                  <span className="flex-1" style={{ color: on ? 'hsl(var(--foreground))' : undefined }}>{v.label}</span>
+                  {on && <Check size={14} color={v.tint} />}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {/* Transformed canvas */}
       <div style={{ position: 'absolute', top: 0, left: 0, transformOrigin: '0 0', transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
 
         {/* Edges */}
-        <svg width={bounds.w + 40} height={bounds.h + 40}
+        <svg width={L.bounds.w + 60} height={L.bounds.h + 60}
           style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none' }}>
-          {edges.map(([a, b]) => {
-            const pa = eff(a), pb = eff(b);
-            const x1 = pa.x + NW, y1 = pa.y + NH / 2, x2 = pb.x, y2 = pb.y + NH / 2;
-            const dx = Math.max(40, (x2 - x1) / 2);
-            const suspect = b.coverage.suspect;
-            const col = suspect ? '#DC2626' : REQ_STATUS[b.status].tint;
+          {L.edges.map((ed, i) => {
+            const dx = Math.max(38, (ed.x2 - ed.x1) / 2);
             return (
-              <path key={a.key + '>' + b.key}
-                d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                fill="none" stroke={col} strokeWidth={1.6} strokeOpacity={0.4}
-                strokeDasharray={suspect ? '4 3' : undefined} />
+              <path key={i} d={`M ${ed.x1} ${ed.y1} C ${ed.x1 + dx} ${ed.y1}, ${ed.x2 - dx} ${ed.y2}, ${ed.x2} ${ed.y2}`}
+                fill="none" stroke={ed.col} strokeWidth={1.6} strokeOpacity={0.42}
+                strokeDasharray={ed.dash ? '4 3' : undefined} />
             );
           })}
         </svg>
 
-        {/* Nodes */}
-        {visible.map(n => {
-          const p = eff(n);
-          const st = REQ_STATUS[n.status];
-          const isH = hovered === n.key, isDrag = dragId === n.key;
-          const hasKids = n.children.length > 0;
-          const isCol = !!collapsed[n.key];
-          const borderSoft = softTint(st.tint, 0.45);
-
-          return (
-            <div key={n.key}
-              onMouseDown={e => startNodeDrag(e, n)}
-              onMouseEnter={() => setHovered(n.key)}
-              onMouseLeave={() => setHovered(null)}
-              style={{
-                position: 'absolute', left: p.x, top: p.y, width: NW, minHeight: NH,
-                background: 'hsl(var(--card))',
-                border: `1px solid ${isH || isDrag ? borderSoft : 'hsl(var(--border))'}`,
-                borderLeft: `3px solid ${st.tint}`,
-                borderRadius: 11,
-                boxShadow: isDrag
-                  ? '0 12px 28px rgba(20,24,31,0.18)'
-                  : isH ? '0 6px 16px rgba(20,24,31,0.12)' : '0 1px 3px rgba(20,24,31,0.07)',
-                cursor: isDrag ? 'grabbing' : 'grab',
-                zIndex: isDrag ? 100 : isH ? 50 : 10,
-                transition: isDrag ? 'none' : 'box-shadow .12s, border-color .12s',
-                userSelect: 'none', display: 'flex', flexDirection: 'column',
-              }}>
-
-              {/* Header: type pill + key */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px 0' }}>
-                <TypePill type={n.type} />
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}>
-                  {n.key}
-                </span>
-              </div>
-
-              {/* Title */}
-              <div style={{ padding: '6px 12px 0', flex: 1 }}>
-                <div style={{
-                  fontSize: 12.5, fontWeight: 600, color: 'hsl(var(--foreground))', lineHeight: 1.28,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                }}>{n.title}</div>
-              </div>
-
-              {/* Footer: status + coverage warning + vstatus */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '8px 12px 10px' }}>
-                <StatusBadge status={n.status} />
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                  {(n.coverage.orphan || n.coverage.untested || n.coverage.unimplemented) && (
-                    <AlertTriangle size={13} color="#D97706" />
-                  )}
-                  <VStatusBadge vstatus={n.vstatus} />
-                </span>
-              </div>
-
-              {/* Collapse/expand handle on right edge */}
-              {hasKids && (
-                <button
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => { e.stopPropagation(); setCollapsed(c => ({ ...c, [n.key]: !c[n.key] })); }}
-                  title={isCol ? 'Expand branch' : 'Collapse branch'}
-                  style={{
-                    position: 'absolute', right: -12, top: NH / 2 - 12, width: 24, height: 24,
-                    borderRadius: '50%', background: 'hsl(var(--card))', border: `1px solid ${borderSoft}`,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: st.tint, zIndex: 20, padding: 0,
-                  }}>
-                  {isCol
-                    ? <span style={{ fontSize: 10, fontWeight: 700, color: st.tint }}>{n.children.length}</span>
-                    : <Minus size={13} color={st.tint} />}
-                </button>
-              )}
+        {/* Spine root node (groups mode) */}
+        {L.spine && (
+          <div onMouseDown={startSpineDrag}
+            style={{
+              position: 'absolute', left: L.spine.x, top: L.spine.y, width: L.spine.w, minHeight: L.spine.h,
+              background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderTop: `3px solid ${view.tint}`,
+              borderRadius: 12, boxShadow: '0 2px 8px rgba(20,24,31,0.08)', padding: '14px 16px',
+              display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, cursor: 'grab', zIndex: 15,
+            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span style={{ width: 30, height: 30, borderRadius: 8, background: softTint(view.tint, 0.12), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ViewIcon size={16} color={view.tint} />
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'hsl(var(--foreground))', lineHeight: 1.2 }}>{L.spine.title}</span>
             </div>
+            <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>{L.spine.count} requirements · {L.containers.length} groups</div>
+          </div>
+        )}
+
+        {/* Container shells (groups mode) */}
+        {L.mode === 'groups' && L.containers.map(c => {
+          const tint = view.tint, isDrag = dragC === c.id, soft = softTint(tint, 0.35);
+          const Ic = c.icon;
+          return (
+            <React.Fragment key={c.id}>
+              <div onMouseDown={e => startContDrag(e, c.id)}
+                style={{ position: 'absolute', left: c.x, top: c.y - MAP_HEADER + 4, width: c.w, height: MAP_HEADER, display: 'flex', alignItems: 'center', gap: 8, cursor: 'grab', zIndex: 14 }}>
+                <Ic size={15} color={tint} />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: 'hsl(var(--foreground))' }}>{c.title}</span>
+                <span style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', fontVariantNumeric: 'tabular-nums' }}>{c.count}</span>
+                <span style={{ flex: 1 }} />
+                {c.owner && <OwnerAvatar ownerId={c.owner} size={22} />}
+              </div>
+              <div onMouseDown={e => startContDrag(e, c.id)}
+                style={{
+                  position: 'absolute', left: c.x, top: c.y, width: c.w, height: c.h, borderRadius: 14,
+                  background: softTint(tint, 0.05), border: `1.5px solid ${isDrag ? soft : softTint(tint, 0.28)}`,
+                  boxShadow: isDrag ? '0 14px 30px rgba(20,24,31,0.16)' : 'none', cursor: 'grab', zIndex: 8,
+                  transition: 'background .1s, box-shadow .1s',
+                  display: c.open ? 'block' : 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                {!c.open && <span style={{ fontSize: 15, fontWeight: 600, color: tint }}>{c.count} item{c.count !== 1 ? 's' : ''}</span>}
+                <button onMouseDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); toggleContainer(c.id); }}
+                  title={c.open ? 'Collapse group' : 'Expand group'}
+                  style={{
+                    position: 'absolute', left: c.w / 2 - 13, bottom: -13, width: 26, height: 26, borderRadius: '50%',
+                    background: 'hsl(var(--card))', border: `1px solid ${soft}`, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 16, padding: 0,
+                  }}>
+                  {c.open ? <ChevronUp size={14} color={tint} /> : <ChevronDown size={14} color={tint} />}
+                </button>
+              </div>
+            </React.Fragment>
           );
         })}
+
+        {/* Cards */}
+        {L.cards.map(n => n.kind === 'test' ? TestCard(n) : ReqCard(n))}
       </div>
 
       {/* Floating controls — top right */}
-      <div style={{ position: 'absolute', top: 14, right: 16, display: 'flex', flexDirection: 'column', gap: 6, zIndex: 200 }}>
+      <div style={{ position: 'absolute', top: 14, right: 16, display: 'flex', flexDirection: 'column', gap: 6, zIndex: 200 }} onMouseDown={e => e.stopPropagation()}>
         <button onClick={() => zoomBy(1.15)} title="Zoom in" style={ctrlBtn}><Plus size={15} /></button>
         <div style={{ textAlign: 'center', fontSize: 10.5, color: 'hsl(var(--muted-foreground))', fontVariantNumeric: 'tabular-nums' }}>
           {Math.round(zoom * 100)}%
         </div>
         <button onClick={() => zoomBy(0.87)} title="Zoom out" style={ctrlBtn}><Minus size={15} /></button>
-        <button onClick={fit} title="Fit to screen" style={ctrlBtn}><Maximize2 size={14} /></button>
-        <button onClick={resetLayout} title="Reset node positions" style={ctrlBtn}><RefreshCw size={13} /></button>
+        <button onClick={toggleFullscreen} title={fullscreen ? 'Exit full screen' : 'Full screen'} style={ctrlBtn}>
+          {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+        <button onClick={resetLayout} title="Reset arrangement" style={ctrlBtn}><RefreshCw size={13} /></button>
       </div>
 
-      {/* Legend overlay — bottom left */}
+      {/* Minimap — bottom left */}
+      <ReqMapMinimap L={L} pan={pan} zoom={zoom} tint={view.tint} containerRef={containerRef} setPan={setPan} />
+
+      {/* Legend / hint — next to minimap */}
       <div style={{
-        position: 'absolute', bottom: 14, left: 16,
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '7px 12px', background: 'hsl(var(--card))',
-        border: '1px solid hsl(var(--border))', borderRadius: 8, zIndex: 200,
+        position: 'absolute', bottom: 14, left: 204, display: 'flex', alignItems: 'center', gap: 14,
+        padding: '7px 12px', background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, zIndex: 200,
       }}>
-        {LEGEND.map(({ s, label }) => (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: REQ_STATUS[s].tint, display: 'inline-block', flexShrink: 0 }} />
-            <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>{label}</span>
-          </div>
-        ))}
-        <div style={{ width: 1, height: 14, background: 'hsl(var(--border))' }} />
-        <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Drag nodes · scroll to zoom · click to open</span>
+        {L.mode === 'groups'
+          ? <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}><b style={{ color: view.tint }}>{view.label}</b> · click a group to expand · drag groups to arrange</span>
+          : <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Scroll to zoom · drag to pan · click a card to open</span>}
       </div>
+    </div>
+  );
+}
+
+// ── Minimap — bottom-left overview + viewport rect, click to recenter ──────────
+function ReqMapMinimap({ L, pan, zoom, tint, containerRef, setPan }: {
+  L: { bounds: { w: number; h: number }; spine: { x: number; y: number; w: number; h: number } | null; containers: MapContainer[]; cards: MapNode[] };
+  pan: { x: number; y: number }; zoom: number; tint: string;
+  containerRef: React.RefObject<HTMLDivElement>; setPan: (p: { x: number; y: number }) => void;
+}) {
+  const MW = 176, MH = 116, PADm = 8;
+  const bw = Math.max(L.bounds.w, 100), bh = Math.max(L.bounds.h, 100);
+  const s = Math.min((MW - PADm * 2) / bw, (MH - PADm * 2) / bh);
+  const el = containerRef.current;
+  const rect = el ? el.getBoundingClientRect() : { width: 800, height: 520 };
+  const vx = -pan.x / zoom, vy = -pan.y / zoom, vw = rect.width / zoom, vh = rect.height / zoom;
+  const map = (x: number, y: number) => ({ x: PADm + x * s, y: PADm + y * s });
+
+  const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!el) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const cxContent = (e.clientX - r.left - PADm) / s, cyContent = (e.clientY - r.top - PADm) / s;
+    setPan({ x: rect.width / 2 - cxContent * zoom, y: rect.height / 2 - cyContent * zoom });
+  };
+
+  return (
+    <div onMouseDown={e => e.stopPropagation()} onClick={onClick}
+      style={{
+        position: 'absolute', bottom: 14, left: 16, width: MW, height: MH,
+        background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 10,
+        boxShadow: '0 4px 14px rgba(20,24,31,0.10)', overflow: 'hidden', cursor: 'pointer', zIndex: 200,
+      }}>
+      <svg width={MW} height={MH}>
+        {L.spine && (() => {
+          const p = map(L.spine!.x, L.spine!.y);
+          return <rect x={p.x} y={p.y} width={L.spine!.w * s} height={L.spine!.h * s} rx={2} fill={softTint(tint, 0.35)} stroke={tint} strokeWidth={0.6} />;
+        })()}
+        {L.containers.length
+          ? L.containers.map(c => {
+              const p = map(c.x, c.y);
+              return <rect key={c.id} x={p.x} y={p.y} width={Math.max(3, c.w * s)} height={Math.max(3, c.h * s)} rx={2} fill={softTint(tint, 0.18)} stroke={softTint(tint, 0.5)} strokeWidth={0.6} />;
+            })
+          : L.cards.map(n => {
+              const p = map(n.ax, n.ay);
+              return <rect key={n.id} x={p.x} y={p.y} width={Math.max(2, 234 * s)} height={Math.max(2, 92 * s)} rx={1} fill={softTint(tint, 0.22)} />;
+            })}
+        {(() => {
+          const p = map(vx, vy);
+          return <rect x={p.x} y={p.y} width={vw * s} height={vh * s} fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth={1.2} rx={2} />;
+        })()}
+      </svg>
     </div>
   );
 }

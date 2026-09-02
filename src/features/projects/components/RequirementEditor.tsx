@@ -83,7 +83,9 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
 
   const upd = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm(p => ({ ...p, [k]: v }));
   const preview = previewStatement(form);
-  const ai = useMemo(() => analyzeQuality({ statement:preview, type:form.type, category:form.category, vmethod:form.vmethod as any, vstatus:'not-verified', rationale:form.rationale, parent:null, source:'' }), [preview, form.type, form.category, form.vmethod, form.rationale]);
+  // Live AI quality panel is commented out for now (see below) — commenting this
+  // out too so it doesn't compute on every keystroke for nothing.
+  // const ai = useMemo(() => analyzeQuality({ statement:preview, type:form.type, category:form.category, vmethod:form.vmethod as any, vstatus:'not-verified', rationale:form.rationale, parent:null, source:'' }), [preview, form.type, form.category, form.vmethod, form.rationale]);
 
   const pat = EARS[form.pattern];
 
@@ -199,7 +201,8 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
           </div>
         </div>
 
-        {/* live AI quality panel */}
+        {/* live AI quality panel — commented out for now, not deleted.
+            To bring it back: uncomment this block and the `ai` useMemo above.
         <div className="w-[300px] shrink-0 border-l border-border bg-card overflow-y-auto p-4">
           <div className="flex items-center gap-1.5 mb-3.5">
             <Sparkles className="w-3.5 h-3.5 text-primary" />
@@ -242,6 +245,7 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
             </div>
           )}
         </div>
+        */}
       </div>
     </div>
   );
