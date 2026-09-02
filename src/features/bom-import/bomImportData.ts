@@ -1,9 +1,7 @@
-// Backend<->frontend types for the task import feature. Enum-shaped fields
-// (status, priority) mirror the backend's lowercase-with-underscore
-// convention as-is here — this feature only ever displays them, it doesn't
-// feed them back into a form that needs the frontend's UPPERCASE convention.
+// Backend<->frontend types for the BOM import feature. Mirrors
+// issue-import/issueImportData.ts.
 
-export type TaskImportJobStatus =
+export type BomImportJobStatus =
   | 'queued'
   | 'extracting'
   | 'structuring'
@@ -12,9 +10,9 @@ export type TaskImportJobStatus =
   | 'completed'
   | 'failed';
 
-export interface TaskImportJobStatusDto {
+export interface BomImportJobStatusDto {
   jobId: string;
-  status: TaskImportJobStatus;
+  status: BomImportJobStatus;
   conversationId: string | null;
   extractedRowCount: number | null;
   errorSummary: string | null;
@@ -22,14 +20,17 @@ export interface TaskImportJobStatusDto {
 }
 
 export interface ImportRowPreview {
-  title: string;
-  assigneeName: string | null;
-  priority: 'critical' | 'major' | 'minor' | 'trivial' | null;
-  dueDate: string | null;
-  status: string | null;
-  milestoneName: string | null;
+  partNumber: string;
+  name: string;
+  category: string;
+  quantity: number;
+  unitPrice: number | null;
+  leadTimeWeeks: number | null;
+  /** 0-based hierarchy depth — used to indent the row in the review card. */
+  level: number;
+  existingPartId: string | null;
   issues: string[];
-  /** false only when the row is missing its required title (or was explicitly skipped in chat) — every other issue is informational and still imports. */
+  /** false only when the row is missing a required field (or was explicitly skipped in chat) — every other issue is informational and still imports. */
   importable: boolean;
 }
 
@@ -83,9 +84,11 @@ export interface CommitImportResult {
   created: number;
   skipped: number;
   reasons: string[];
-  taskIds: string[];
+  nodeIds: string[];
 }
 
+// xlsx/csv go through the backend's structured column-mapping extractor;
+// docx/pdf/txt/md go through its AI prose extractor.
 const SUPPORTED_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.docx', '.pdf', '.txt', '.md'];
 
 export function isSupportedImportFile(file: File): boolean {

@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Layers, Search, Filter, List, LayoutGrid, Share2,
   CheckCircle, CheckCircle2, Clock, DollarSign, ChevronRight, ChevronDown, Hash, X, User, Plus, Check, Download, ExternalLink,
-  FileSpreadsheet, PenLine, Trash2, Eye,
+  FileSpreadsheet, PenLine, Trash2, Eye, Sparkles,
   Sheet as SheetIcon, ArrowDownToLine, ArrowUpFromLine, Unlink, ArrowLeftRight, RotateCcw,
   Ruler, Factory, Truck, Tag,
 } from 'lucide-react';
@@ -103,6 +103,7 @@ import { BOMMapView } from './BOMMapView';
 import { BOMPartSheet, BOMPartPayload, DocValue } from './BOMPartSheet';
 import { BOMRejectDialog } from './BOMRejectDialog';
 import { BOMImportSubcomponentsDialog } from './BOMImportSubcomponentsDialog';
+import { ImportBomDialog } from '../../bom-import/ImportBomDialog';
 import { NewBuildDialog, type NewBuildInput } from './NewBuildDialog';
 import { useCreateInventoryBuild, useInventoryBuilds } from '@/hooks/useInventory';
 import type { BuildDef } from './inventoryData';
@@ -1282,6 +1283,7 @@ export function BOMView({
   const [addChoiceOpen, setAddChoiceOpen] = useState(false);
   const [addManualOpen, setAddManualOpen] = useState(false);
   const [addImportOpen, setAddImportOpen] = useState(false);
+  const [addAiImportOpen, setAddAiImportOpen] = useState(false);
   // Google Sheets — link status backs both the Add Part chooser card and the
   // toolbar's manage menu (Pull/Push/relink/disconnect). Only visible once
   // the org has connected from Integrations.
@@ -2024,6 +2026,19 @@ export function BOMView({
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
             </button>
+            <button
+              onClick={() => { setAddChoiceOpen(false); setAddAiImportOpen(true); }}
+              className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors text-left group"
+            >
+              <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-purple-500/10 text-purple-600">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground">Import with AI</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Upload a file, review with AI chat, then commit — supports multi-level hierarchies.</div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+            </button>
             {/* Only shown when Google Sheets is connected at org level but NOT yet linked for this project */}
             {sheetsLinkStatus?.orgConnected && !sheetsLinkStatus?.linked && (
               <button
@@ -2071,6 +2086,15 @@ export function BOMView({
           orgId={orgId}
           rootNodes={rootNodes}
           onImported={expandNodes}
+        />
+      )}
+
+      {/* Add Part — import with AI (top-level, no parent) */}
+      {addAiImportOpen && (
+        <ImportBomDialog
+          open={addAiImportOpen}
+          onClose={() => { setAddAiImportOpen(false); onAddClose?.(); }}
+          projectId={projectId}
         />
       )}
 

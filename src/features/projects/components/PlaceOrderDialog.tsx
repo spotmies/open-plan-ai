@@ -43,7 +43,7 @@ import { Check, ChevronsUpDown, Clock, ShoppingCart, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
-import { LocationCombobox } from './inventoryData';
+import { LocationCombobox, LockedLocationField } from './inventoryData';
 
 const orderSchema = z.object({
   partId: z.string().min(1, 'Select a part'),
@@ -88,9 +88,12 @@ interface PlaceOrderDialogProps {
   onPlaceOrder: (input: PlaceOrderInput) => void;
   /** Preselect a part (e.g. opened from that part's detail sheet) instead of starting on the picker. */
   initialPartId?: string;
+  /** partId → the part's canonical stock location. When the selected part has one, the
+   * destination is locked to it (a part only ever lives in one location — Transfer moves it). */
+  canonicalLocationByPartId?: Map<string, string>;
 }
 
-export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, initialPartId }: PlaceOrderDialogProps) {
+export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, initialPartId, canonicalLocationByPartId }: PlaceOrderDialogProps) {
   const isMobile = useIsMobile();
   const [selectedPart, setSelectedPart] = useState<ApiPartResponse | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
@@ -126,6 +129,15 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
   const orderStatus = form.watch('orderStatus');
   const isFormDirty = form.formState.isDirty;
 
+  // A part that already has stock (or a prior order) is pinned to its canonical location —
+  // Order can't send it somewhere new. Only a never-stocked, never-ordered part is free to pick.
+  const lockedLocation = selectedPart ? canonicalLocationByPartId?.get(selectedPart.id) : undefined;
+
+  useEffect(() => {
+    if (lockedLocation) form.setValue('location', lockedLocation, { shouldValidate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedLocation]);
+
   const resetAndClose = () => {
     form.reset();
     setSelectedPart(null);
@@ -155,7 +167,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       leadTime: data.leadTime,
       supplierRef: data.supplierRef?.trim() || undefined,
       unitCost: data.unitCost === '' || data.unitCost === undefined ? undefined : Number(data.unitCost),
-      location: data.location,
+      location: lockedLocation ?? data.location,
       purpose: data.purpose?.trim() || undefined,
       status: data.orderStatus,
     });
@@ -348,9 +360,13 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Destination location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                      <FormControl>
-                        <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
-                      </FormControl>
+                      {lockedLocation ? (
+                        <LockedLocationField location={lockedLocation} />
+                      ) : (
+                        <FormControl>
+                          <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

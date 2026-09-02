@@ -48,6 +48,7 @@ interface AssistantProposalCardProps {
 function actionVerb(actionKind: AssistantProposal['actionKind'], itemCount: number): string {
   if (actionKind === 'create') return itemCount === 1 ? 'Create' : `Create ${itemCount}`;
   if (actionKind === 'update') return itemCount === 1 ? 'Update' : `Update ${itemCount}`;
+  if (actionKind === 'delete') return itemCount === 1 ? 'Delete' : `Delete ${itemCount}`;
   return `Change ${itemCount}`;
 }
 
@@ -66,15 +67,23 @@ function entityNoun(entityType: string, count: number): string {
 
 function ItemRow({ item, entityType, readOnly }: { item: ProposalItem; entityType: string; readOnly?: boolean }) {
   const navigate = useNavigate();
-  const target = !readOnly && item.kind === 'update' ? ENTITY_DEEP_LINK[item.deepLink.entityType]?.(item.deepLink.projectId, item.deepLink.id) : undefined;
+  // A delete's link is optional (and only useful while the record still
+  // exists) — a create has nothing to link to at all.
+  const deepLink = item.kind === 'create' ? undefined : item.deepLink;
+  const target = !readOnly && deepLink ? ENTITY_DEEP_LINK[deepLink.entityType]?.(deepLink.projectId, deepLink.id) : undefined;
+  const isDelete = item.kind === 'delete';
 
   return (
     <div
-      className={cn('rounded-lg border border-border/60 px-3 py-2', target && 'cursor-pointer hover:bg-muted/40')}
+      className={cn(
+        'rounded-lg border px-3 py-2',
+        isDelete ? 'border-red-300/60 bg-red-50/50 dark:border-red-900/50 dark:bg-red-950/20' : 'border-border/60',
+        target && 'cursor-pointer hover:bg-muted/40',
+      )}
       onClick={target ? () => navigate(target) : undefined}
       role={target ? 'link' : undefined}
     >
-      <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
+      <p className={cn('truncate text-sm font-medium text-foreground', isDelete && 'line-through decoration-red-500/60')}>{item.title}</p>
       {item.kind === 'update' ? (
         <div className="mt-1 space-y-0.5">
           {item.changes.map((change) => (
@@ -138,11 +147,16 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
   const expired = isPending && new Date(proposal.expiresAt).getTime() <= Date.now();
   const terminal = TERMINAL_META[proposal.status];
 
-  // Not yet reviewed (fresh proposal) or the user clicked Edit — show the
-  // fill-in/editable form instead of the read-only card. Only ever true for
-  // a still-pending proposal with a form to prefill from; readOnly (share
-  // view) and terminal/formState-less proposals never enter this branch.
-  const isEditing = isPending && !readOnly && !!proposal.formState && (editingOverride ?? !proposal.reviewedAt);
+  // The user clicked Edit, or it's a fresh create that still needs its form
+  // filled in (a create can open as a blank draft — see proposeTaskChange's
+  // TaskCreateOp comment). An update already carries the specific field(s)
+  // the user asked to change, so it opens as the compact "from → to" card
+  // with Confirm/Edit — no need to re-surface the whole entity form for a
+  // one-field tweak. Only ever true for a still-pending proposal with a form
+  // to prefill from; readOnly (share view) and terminal/formState-less
+  // proposals never enter this branch.
+  const autoOpenForm = !proposal.reviewedAt && preview.actionKind === 'create';
+  const isEditing = isPending && !readOnly && !!proposal.formState && (editingOverride ?? autoOpenForm);
 
   const handleFormSubmit = async (edits: Record<string, unknown>) => {
     await onRevise?.(proposal.id, edits);
@@ -150,7 +164,11 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
   };
 
   const handleFormCancel = () => {
-    if (proposal.reviewedAt) {
+    // Cancelling an explicitly-opened Edit (or a re-edit of an already
+    // reviewed proposal) just drops back to the card. Only cancelling the
+    // auto-opened form of a fresh create — where there's no card to fall
+    // back to yet — dismisses the proposal outright.
+    if (editingOverride || proposal.reviewedAt) {
       setEditingOverride(false);
     } else {
       onReject?.(proposal.id);
@@ -228,6 +246,10 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
               <p className="text-xs text-muted-foreground">Dependent items are not moved.</p>
             )}
 
+            {items.some((i) => i.kind === 'delete') && (
+              <p className="text-xs text-muted-foreground">This can't be undone from here.</p>
+            )}
+
             <div className="space-y-1.5">
               {visibleItems.map((item) => (
                 <ItemRow key={item.index} item={item} entityType={preview.entityType} readOnly={readOnly} />
@@ -281,6 +303,9 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
               <Button
                 size="sm"
                 className="gap-1.5"
+                // A removal is the one proposal whose Confirm should not look
+                // like every other Confirm.
+                variant={preview.actionKind === 'delete' ? 'destructive' : 'default'}
                 disabled={isBusy || expired}
                 aria-label={`Confirm: ${headline.toLowerCase()}`}
                 onClick={() => onConfirm?.(proposal.id)}

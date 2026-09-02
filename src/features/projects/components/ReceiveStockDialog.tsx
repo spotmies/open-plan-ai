@@ -51,7 +51,7 @@ import { Check, ChevronsUpDown, Download, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
-import { LocationCombobox, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
+import { LocationCombobox, LockedLocationField, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
 
 const NO_ORDER_SENTINEL = '__no_order__';
 
@@ -102,9 +102,12 @@ interface ReceiveStockDialogProps {
   onReceive: (input: ReceiveStockInput) => void;
   /** Preselect a part (e.g. opened from that part's detail sheet) instead of starting on the picker. */
   initialPartId?: string;
+  /** partId → the part's canonical stock location. When the selected part has one, the
+   * destination is locked to it (a part only ever lives in one location — Transfer moves it). */
+  canonicalLocationByPartId?: Map<string, string>;
 }
 
-export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onReceive, initialPartId }: ReceiveStockDialogProps) {
+export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onReceive, initialPartId, canonicalLocationByPartId }: ReceiveStockDialogProps) {
   const isMobile = useIsMobile();
   const [selectedPart, setSelectedPart] = useState<ApiPartResponse | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
@@ -142,6 +145,15 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
 
   const trackBy = form.watch('trackBy');
 
+  // A part that already has stock (or a prior order) is pinned to its canonical location —
+  // receiving can't route it somewhere new. Only a never-stocked, never-ordered part is free.
+  const lockedLocation = selectedPart ? canonicalLocationByPartId?.get(selectedPart.id) : undefined;
+
+  useEffect(() => {
+    if (lockedLocation) form.setValue('location', lockedLocation, { shouldValidate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedLocation]);
+
   const openOrdersForPart = selectedPart
     ? orders
         .filter(o => o.partId === selectedPart.id && o.remainingQty > 0 && o.status !== 'planned')
@@ -176,7 +188,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
     if (openOrdersForPart.length > 0 && !form.getValues('orderId')) {
       const defaultOrder = openOrdersForPart[0];
       form.setValue('orderId', defaultOrder.id);
-      form.setValue('location', defaultOrder.location ?? form.getValues('location'));
+      if (!lockedLocation) form.setValue('location', defaultOrder.location ?? form.getValues('location'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPart, openOrdersForPart.length]);
@@ -231,7 +243,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
       pn: selectedPart.partNumber,
       name: selectedPart.name,
       cat: selectedPart.category,
-      location: data.location as StockLocation,
+      location: (lockedLocation ?? data.location) as StockLocation,
       quantity: data.quantity,
       reference: data.reference?.trim() || undefined,
       quarantine: data.quarantine,
@@ -345,9 +357,13 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Destination location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                      <FormControl>
-                        <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
-                      </FormControl>
+                      {lockedLocation ? (
+                        <LockedLocationField location={lockedLocation} />
+                      ) : (
+                        <FormControl>
+                          <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -367,7 +383,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                               const order = openOrdersForPart.find(o => o.id === v);
                               if (order) {
                                 form.setValue('quantity', order.remainingQty, { shouldDirty: true });
-                                form.setValue('location', order.location, { shouldDirty: true });
+                                if (!lockedLocation) form.setValue('location', order.location, { shouldDirty: true });
                               }
                             }
                           }}

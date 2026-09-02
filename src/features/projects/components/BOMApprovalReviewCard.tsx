@@ -62,6 +62,13 @@ export function BOMApprovalReviewCard({ request, partLabel, onApprove, onReject,
         </span>
       </div>
 
+      {request.comment && (
+        <div className="mb-2 px-2.5 py-2 rounded-md bg-muted/50 border border-border text-[11.5px] text-foreground/90 break-words whitespace-pre-wrap">
+          <span className="text-muted-foreground">Note from {request.requestedByName}: </span>
+          {request.comment}
+        </div>
+      )}
+
       {request.approverDecisions.length > 1 && (
         <div className="flex items-center gap-2 flex-wrap mb-2">
           {request.approverDecisions.map(a => (

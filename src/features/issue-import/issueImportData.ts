@@ -33,11 +33,15 @@ export interface ImportRowPreview {
   issues: string[];
   /** false only when the row is missing its required title (or was explicitly skipped in chat) — every other issue is informational and still imports. */
   importable: boolean;
+  /** true when an issue with this title already exists in the project — skipped on commit, not re-created. */
+  alreadyImported: boolean;
 }
 
 export interface ImportProposalPreview {
   itemCount: number;
   cleanCount: number;
+  /** Rows skipped because an issue with the same title already exists — a subset of (itemCount - cleanCount). */
+  duplicateCount: number;
   rows: ImportRowPreview[];
 }
 
@@ -88,11 +92,11 @@ export interface CommitImportResult {
   issueIds: string[];
 }
 
-const SUPPORTED_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.docx', '.pdf', '.txt'];
+const SUPPORTED_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.docx', '.pdf', '.txt', '.md'];
 
 export function isSupportedImportFile(file: File): boolean {
   const lower = file.name.toLowerCase();
   return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-export const SUPPORTED_IMPORT_FILE_LABEL = 'Excel, CSV, Word, PDF, or text file';
+export const SUPPORTED_IMPORT_FILE_LABEL = 'Excel, CSV, Word, PDF, text, or Markdown file';

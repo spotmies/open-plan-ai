@@ -365,39 +365,43 @@ export function BuildsPanel({ orgId, builds, onSelectPart, openBuildId, onOpenBu
       </div>
 
       <div className="flex-1 space-y-4 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h2 className="text-xl font-bold">{selectedBuild.name}</h2>
-          <Badge variant="outline">{selectedBuild.type}</Badge>
-          {selectedBuild.shortLines.length === 0 && (
-            <Badge className="gap-1 border-transparent" style={{ background: 'rgba(22,163,74,0.1)', color: '#16A34A' }}>
-              <CheckCircle className="h-3 w-3" /> Clear to build
-            </Badge>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          BOM {selectedBuild.bomRev} · {selectedBuild.units} units · scrap {selectedBuild.scrapPct}% · linked to{' '}
-          <span className="font-medium text-foreground">{selectedBuild.linkedMilestone}</span>
-          {selectedBuild.assignee && (
-            <>
-              {' '}· Assigned to <span className="font-medium text-foreground">{selectedBuild.assignee.name}</span>
-            </>
-          )}
-        </p>
-
-        <div className="flex items-center justify-between gap-4 flex-wrap rounded-lg border p-3">
-          <div>
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Target build date</div>
-            <div className="text-lg font-bold">{formatShortDate(selectedBuild.targetDate)}</div>
-          </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div className="text-right">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Projected ready</div>
-            <div className="text-lg font-bold" style={{ color: selectedBuild.daysLate > 0 ? '#DC2626' : '#16A34A' }}>
-              {formatShortDate(selectedBuild.projectedDate)}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="space-y-2 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-bold">{selectedBuild.name}</h2>
+              <Badge variant="outline">{selectedBuild.type}</Badge>
+              {selectedBuild.shortLines.length === 0 && (
+                <Badge className="gap-1 border-transparent" style={{ background: 'rgba(22,163,74,0.1)', color: '#16A34A' }}>
+                  <CheckCircle className="h-3 w-3" /> Clear to build
+                </Badge>
+              )}
             </div>
-            {selectedBuild.daysLate > 0 && (
-              <div className="text-xs text-destructive">{selectedBuild.daysLate} days late</div>
-            )}
+            <p className="text-sm text-muted-foreground">
+              BOM {selectedBuild.bomRev} · {selectedBuild.units} units · scrap {selectedBuild.scrapPct}% · linked to{' '}
+              <span className="font-medium text-foreground">{selectedBuild.linkedMilestone}</span>
+              {selectedBuild.assignee && (
+                <>
+                  {' '}· Assigned to <span className="font-medium text-foreground">{selectedBuild.assignee.name}</span>
+                </>
+              )}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4 flex-wrap rounded-lg border p-3 shrink-0">
+            <div>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Target build date</div>
+              <div className="text-lg font-bold">{formatShortDate(selectedBuild.targetDate)}</div>
+            </div>
+            <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Projected ready</div>
+              <div className="text-lg font-bold" style={{ color: selectedBuild.daysLate > 0 ? '#DC2626' : '#16A34A' }}>
+                {formatShortDate(selectedBuild.projectedDate)}
+              </div>
+              {selectedBuild.daysLate > 0 && (
+                <div className="text-xs text-destructive">{selectedBuild.daysLate} days late</div>
+              )}
+            </div>
           </div>
         </div>
 

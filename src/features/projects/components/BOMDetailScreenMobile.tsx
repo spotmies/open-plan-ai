@@ -14,6 +14,9 @@ import {
 import { cn } from '@/lib/utils';
 import { useUIChromeStore } from '@/stores/useUIChromeStore';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { FilePreviewDialog, FilePreviewTarget } from '@/components/FilePreviewDialog';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { BOMNode, BOMRevision, BOMApproval, BOMApprovalRequest, BOMStatus, formatLeadTime } from './bomData';
@@ -21,6 +24,10 @@ import { ReqTag, PartThumb, PartImageThumb } from './BOMShared';
 import { BOMApprovalReviewCard } from './BOMApprovalReviewCard';
 import { useBomNotes, useAddBomNote, useDeleteBomNote } from '@/hooks/useBomNotes';
 import { useBomDocuments, useUploadBomDocument, useDeleteBomDocument, isImageAttachment, BomAttachment } from '@/hooks/useBomDocuments';
+
+// Toggle to bring the "Where Used" card back — mirrors SHOW_WHERE_USED in
+// the desktop BOMDetailScreen.tsx (same reasoning: redundant with Hierarchy).
+const SHOW_WHERE_USED = false;
 
 // ── Small pure helpers ──────────────────────────────────────────────
 function getInitials(name: string | undefined | null): string {
@@ -241,8 +248,8 @@ function NotesSection({ nodeId, currentUserId }: { nodeId: string; currentUserId
             return (
               <div key={note.id} className="flex items-start gap-2.5 px-4 py-3">
                 <div className={cn(
-                  'w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5',
-                  isOwn ? 'bg-primary' : noteAvatarColor(note.author?.id ?? note.id),
+                  'w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5',
+                  isOwn ? 'bg-primary text-primary-foreground' : `text-white ${noteAvatarColor(note.author?.id ?? note.id)}`,
                 )}>
                   {initials}
                 </div>
@@ -397,65 +404,6 @@ function DocumentsSection({ nodeId }: { nodeId: string }) {
   );
 }
 
-// ── Overflow action sheet (bottom sheet — matches MobileBottomNav's hand-rolled pattern) ──
-function PartActionSheet({
-  open, onClose, partLabel, showSendForReview, showNewEco, showDelete,
-  onSendForReview, onNewEco, onDelete,
-}: {
-  open: boolean;
-  onClose: () => void;
-  partLabel: string;
-  showSendForReview: boolean;
-  showNewEco: boolean;
-  showDelete: boolean;
-  onSendForReview: () => void;
-  onNewEco: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <>
-      <div
-        className={cn('fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity', open ? 'opacity-100' : 'opacity-0 pointer-events-none')}
-        onClick={onClose}
-      />
-      <div
-        className={cn(
-          'fixed left-0 right-0 bottom-0 z-50 bg-background border-t border-border rounded-t-2xl shadow-2xl transition-transform duration-300 ease-out',
-          open ? 'translate-y-0' : 'translate-y-full pointer-events-none',
-        )}
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-      >
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
-        </div>
-        <div className="px-4 py-3 border-b border-border">
-          <p className="text-xs font-medium text-muted-foreground truncate">{partLabel}</p>
-        </div>
-        <div className="py-2">
-          {showSendForReview && (
-            <button onClick={onSendForReview} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-muted/50 transition-colors">
-              <Send className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">Send for Review</span>
-            </button>
-          )}
-          {showNewEco && (
-            <button onClick={onNewEco} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-muted/50 transition-colors">
-              <GitMerge className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">New ECO</span>
-            </button>
-          )}
-          {showDelete && (
-            <button onClick={onDelete} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-destructive/10 transition-colors">
-              <Trash2 className="w-4 h-4" style={{ color: '#DC2626' }} />
-              <span className="text-sm font-medium" style={{ color: '#DC2626' }}>Delete Part</span>
-            </button>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 // ── Main component ─────────────────────────────────────────────────
 interface Props {
   node: BOMNode;
@@ -506,7 +454,6 @@ export function BOMDetailScreenMobile({
   currentUserId, onBack, onNavigate, onEditPart, onNewEco, onDeletePart, onSendForReview, onAddSubcomponent, onViewImage,
 }: Props) {
   const [tab, setTab] = useState<'overview' | 'history'>('overview');
-  const [actionsOpen, setActionsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -574,8 +521,55 @@ export function BOMDetailScreenMobile({
             </div>
 
             <div className="p-4">
-              <div className="text-[12.5px] font-mono font-semibold text-primary">{node.pn}</div>
-              <h2 className="text-[19px] font-bold tracking-tight text-foreground leading-snug mt-0.5">{node.name || node.pn}</h2>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-mono font-semibold text-primary">{node.pn}</div>
+                  <h2 className="text-[19px] font-bold tracking-tight text-foreground leading-snug mt-0.5">{node.name || node.pn}</h2>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {canReviseAndResubmit ? (
+                    <button onClick={onEditPart} aria-label="Revise & Resubmit"
+                      className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center shrink-0 active:opacity-90 transition-opacity">
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button onClick={() => isLatest && onEditPart()} disabled={!isLatest} aria-label="Edit Part"
+                      className={cn(
+                        'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors',
+                        isLatest ? 'bg-foreground text-background active:bg-foreground/90' : 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed',
+                      )}>
+                      <SquarePen className="w-4 h-4" />
+                    </button>
+                  )}
+                  {hasOverflowItems && (
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <button aria-label="More part actions"
+                          className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 text-foreground active:bg-muted/70 transition-colors">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        {showOverflowSendForReview && (
+                          <DropdownMenuItem onClick={onSendForReview} className="gap-2">
+                            <Send className="w-3.5 h-3.5 text-muted-foreground" /> Send for Review
+                          </DropdownMenuItem>
+                        )}
+                        {showOverflowNewEco && (
+                          <DropdownMenuItem onClick={onNewEco} className="gap-2">
+                            <GitMerge className="w-3.5 h-3.5 text-muted-foreground" /> New ECO
+                          </DropdownMenuItem>
+                        )}
+                        {showOverflowDelete && (
+                          <DropdownMenuItem onClick={onDeletePart} className="gap-2 text-destructive focus:text-destructive">
+                            <Trash2 className="w-3.5 h-3.5" /> Delete Part
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+              </div>
               <div className="text-xs text-muted-foreground mt-1">
                 BOM {node.levelLabel ?? node.level} · Rev {node.rev}
               </div>
@@ -591,30 +585,6 @@ export function BOMDetailScreenMobile({
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Action row */}
-          <div className="mt-3.5 flex items-center gap-2">
-            {canReviseAndResubmit ? (
-              <button onClick={onEditPart}
-                className="flex-1 h-11 rounded-xl bg-foreground text-background text-sm font-semibold flex items-center justify-center gap-2 active:opacity-90 transition-opacity">
-                <RefreshCw className="w-4 h-4" /> Revise &amp; Resubmit
-              </button>
-            ) : (
-              <button onClick={() => isLatest && onEditPart()} disabled={!isLatest}
-                className={cn(
-                  'flex-1 h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors',
-                  isLatest ? 'bg-foreground text-background active:bg-foreground/90' : 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed',
-                )}>
-                <SquarePen className="w-4 h-4" /> Edit Part
-              </button>
-            )}
-            {hasOverflowItems && (
-              <button onClick={() => setActionsOpen(true)}
-                className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center shrink-0 text-foreground active:bg-muted/70 transition-colors">
-                <MoreHorizontal className="w-5 h-5" />
-              </button>
-            )}
           </div>
         </div>
 
@@ -724,27 +694,31 @@ export function BOMDetailScreenMobile({
               </div>
             </Section>
 
-            <Section label="Where Used">
-              {parentPath.length === 0 ? (
-                <p className="text-xs text-muted-foreground px-4 py-3.5">
-                  This is the top-level assembly — not used inside any other part.
-                </p>
-              ) : (
-                <div className="divide-y divide-border">
-                  {parentPath.map(p => (
-                    <button key={p.id} onClick={() => onNavigate(p.id)}
-                      className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left active:bg-muted/40 transition-colors">
-                      <div className="min-w-0">
-                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-0.5">Used in</div>
-                        <div className="text-sm font-medium text-foreground truncate">{p.name || p.desc}</div>
-                        <div className="text-[11px] font-mono text-primary">{p.pn}</div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </Section>
+            {/* Where Used — hidden per request, same as desktop's SHOW_WHERE_USED
+            in BOMDetailScreen.tsx (kept, not deleted, in case it's wanted back). */}
+            {SHOW_WHERE_USED && (
+              <Section label="Where Used">
+                {parentPath.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-4 py-3.5">
+                    This is the top-level assembly — not used inside any other part.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {parentPath.map(p => (
+                      <button key={p.id} onClick={() => onNavigate(p.id)}
+                        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left active:bg-muted/40 transition-colors">
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-0.5">Used in</div>
+                          <div className="text-sm font-medium text-foreground truncate">{p.name || p.desc}</div>
+                          <div className="text-[11px] font-mono text-primary">{p.pn}</div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            )}
 
             <Section label="Requirements Traceability">
               {node.req.length === 0 ? (
@@ -795,6 +769,9 @@ export function BOMDetailScreenMobile({
                   <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
                   {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
                   {activeRequest.approvers.map(a => a.name).join(', ')}.
+                  {activeRequest.comment && (
+                    <div className="mt-1 text-foreground/80 break-words">&ldquo;{activeRequest.comment}&rdquo;</div>
+                  )}
                 </div>
               )}
               {approvalsLoading ? (
@@ -855,18 +832,6 @@ export function BOMDetailScreenMobile({
 
         <div className="h-6" />
       </div>
-
-      <PartActionSheet
-        open={actionsOpen}
-        onClose={() => setActionsOpen(false)}
-        partLabel={`${node.pn} · ${node.name || node.pn}`}
-        showSendForReview={showOverflowSendForReview}
-        showNewEco={showOverflowNewEco}
-        showDelete={showOverflowDelete}
-        onSendForReview={() => { setActionsOpen(false); onSendForReview(); }}
-        onNewEco={() => { setActionsOpen(false); onNewEco(); }}
-        onDelete={() => { setActionsOpen(false); onDeletePart(); }}
-      />
     </div>
   );
 }
