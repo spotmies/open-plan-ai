@@ -223,15 +223,15 @@ export function ProjectTeamButton({ projectId }: ProjectTeamButtonProps) {
             {projectMembers.length > 0 ? (
               <div className="space-y-2 max-h-52 overflow-y-auto">
                 {projectMembers.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Avatar className="h-7 w-7">
+                  <div key={member.id} className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Avatar className="h-7 w-7 shrink-0 mt-0.5">
                         <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
                         <AvatarFallback className="text-[11px]">
                           {member.initials}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-sm truncate">{member.name}</span>
+                      <span className="text-sm leading-snug truncate">{member.name}</span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {canManageProjectMembers ? (
@@ -329,12 +329,12 @@ export function ProjectTeamButton({ projectId }: ProjectTeamButtonProps) {
                                 }}
                                 className="cursor-pointer"
                               >
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-5 w-5">
+                                <div className="flex items-start gap-2 py-0.5">
+                                  <Avatar className="h-5 w-5 shrink-0 mt-0.5">
                                     <AvatarImage src={resolveFileUrl(member.avatar) ?? member.avatar} alt={member.name} />
                                     <AvatarFallback className="text-[9px]">{member.initials}</AvatarFallback>
                                   </Avatar>
-                                  {member.name}
+                                  <span className="leading-snug">{member.name}</span>
                                 </div>
                               </CommandItem>
                             ))}

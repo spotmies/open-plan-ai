@@ -30,7 +30,7 @@ export const CalendarMeetingCard: React.FC<CalendarMeetingCardProps> = ({
   onReschedule,
 }) => {
   const duration = formatDuration(event.date, event.endDate);
-  const link = event.htmlLink || event.meetingUri;
+  const link = event.meetingUri || event.htmlLink;
 
   return (
     <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 space-y-3">

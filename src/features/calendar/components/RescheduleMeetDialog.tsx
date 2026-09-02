@@ -41,6 +41,13 @@ export function RescheduleMeetDialog({ open, onOpenChange, meeting, teamMembers 
   );
   const { data: meetStatusMap } = useGoogleMeetStatus(statusLookupIds);
 
+  // The organizer is always the meeting creator, so exclude them from the
+  // selectable/invitable team member list — same as ScheduleMeetDialog.
+  const selectableTeamMembers = useMemo(
+    () => teamMembers.filter((m) => m.id !== user?.id),
+    [teamMembers, user?.id]
+  );
+
   // Same platform-email-vs-connected-Google-email split as ScheduleMeetDialog
   // — see resolveGoogleAttendeeEmail there for the full rationale.
   const resolveGoogleAttendeeEmail = (member: TeamMember): string => {
@@ -76,7 +83,7 @@ export function RescheduleMeetDialog({ open, onOpenChange, meeting, teamMembers 
 
       const existingEmails = new Set(meeting.attendeeEmails.map((e) => e.toLowerCase()));
       const nextSelected: Record<string, boolean> = {};
-      teamMembers.forEach((m) => {
+      selectableTeamMembers.forEach((m) => {
         if (m.email && existingEmails.has(m.email.toLowerCase())) {
           nextSelected[m.id] = true;
         }
@@ -84,7 +91,7 @@ export function RescheduleMeetDialog({ open, onOpenChange, meeting, teamMembers 
       setSelectedMembers(nextSelected);
 
       const memberEmails = new Set(
-        teamMembers.filter((m) => m.email).map((m) => m.email.toLowerCase())
+        selectableTeamMembers.filter((m) => m.email).map((m) => m.email.toLowerCase())
       );
       setGuestEmails(meeting.attendeeEmails.filter((e) => !memberEmails.has(e.toLowerCase())));
 
@@ -92,13 +99,13 @@ export function RescheduleMeetDialog({ open, onOpenChange, meeting, teamMembers 
       setGuestInput('');
       setGuestInputError('');
     }
-  }, [open, meeting, teamMembers]);
+  }, [open, meeting, selectableTeamMembers]);
 
   const orgEmails = new Set(
-    teamMembers.filter((m) => selectedMembers[m.id] && m.email).map((m) => m.email.toLowerCase())
+    selectableTeamMembers.filter((m) => selectedMembers[m.id] && m.email).map((m) => m.email.toLowerCase())
   );
 
-  const filteredTeamMembers = teamMembers.filter((m) => {
+  const filteredTeamMembers = selectableTeamMembers.filter((m) => {
     const q = memberSearch.trim().toLowerCase();
     if (!q) return true;
     return m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
@@ -179,7 +186,7 @@ export function RescheduleMeetDialog({ open, onOpenChange, meeting, teamMembers 
       return;
     }
 
-    const selectedTeamMembers = teamMembers.filter((m) => selectedMembers[m.id] && m.email);
+    const selectedTeamMembers = selectableTeamMembers.filter((m) => selectedMembers[m.id] && m.email);
     const memberAttendees = selectedTeamMembers.map((m) => m.email);
     const attendees = Array.from(new Set([...memberAttendees, ...finalGuestEmails]));
 
@@ -329,9 +336,9 @@ export function RescheduleMeetDialog({ open, onOpenChange, meeting, teamMembers 
                 disabled={loading}
               />
             </div>
-            {teamMembers.filter((member) => selectedMembers[member.id]).length > 0 && (
+            {selectableTeamMembers.filter((member) => selectedMembers[member.id]).length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {teamMembers
+                {selectableTeamMembers
                   .filter((member) => selectedMembers[member.id])
                   .map((member) => (
                     <Badge key={member.id} variant="secondary" className="h-6 gap-1 text-xs">
@@ -350,7 +357,7 @@ export function RescheduleMeetDialog({ open, onOpenChange, meeting, teamMembers 
               <div className="space-y-2.5 pr-2">
                 {filteredTeamMembers.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {teamMembers.length === 0 ? 'No team members found.' : 'No matches found.'}
+                    {selectableTeamMembers.length === 0 ? 'No team members found.' : 'No matches found.'}
                   </p>
                 )}
                 {filteredTeamMembers.map((member) => (

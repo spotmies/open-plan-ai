@@ -93,8 +93,9 @@ export function ConversationList({
       );
     }
     return list.sort((a, b) => {
-      if (isSelfConversation(a) !== isSelfConversation(b)) return isSelfConversation(a) ? -1 : 1;
-      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+      const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return timeB - timeA;
     });
   }, [conversations, conversationFilter, searchQuery, activeConversationId, currentUserId]);
 

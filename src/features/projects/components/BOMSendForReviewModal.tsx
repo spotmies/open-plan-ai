@@ -143,16 +143,27 @@ export function BOMSendForReviewModal({ open, projectId, partLabel, hasChildren,
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Note (optional)
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Note (optional)
+              </Label>
+              <span className={cn('text-[10px]', comment.length > 2000 ? 'text-destructive font-medium' : 'text-muted-foreground')}>
+                {comment.length}/2000
+              </span>
+            </div>
             <Textarea
               value={comment}
               onChange={e => setComment(e.target.value)}
               placeholder="Any context for the reviewer…"
               className="text-sm bg-muted border-border resize-none"
               rows={2}
+              maxLength={2000}
             />
+            {comment.length > 2000 && (
+              <p className="text-[11px] text-destructive flex items-center gap-1 mt-1">
+                <AlertCircle className="w-3 h-3" /> Note cannot exceed 2000 characters.
+              </p>
+            )}
           </div>
         </div>
 

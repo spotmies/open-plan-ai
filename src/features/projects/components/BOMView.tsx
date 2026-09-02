@@ -355,7 +355,7 @@ function StatCardSkeleton() {
 
 function ListRowSkeleton({ level = 0 }: { level?: number }) {
   return (
-    <div className="flex items-center px-6 border-b border-border" style={{ minWidth: 1320, height: 46 }}>
+    <div className="flex items-center px-6 border-b border-border" style={{ minWidth: 1270, height: 46 }}>
       <div style={{ flexBasis: 74, flexShrink: 0 }} className="flex items-center">
         <Skeleton className="h-3 w-6" style={{ marginLeft: level * 16 }} />
       </div>
@@ -370,6 +370,7 @@ function ListRowSkeleton({ level = 0 }: { level?: number }) {
       <div style={{ flexBasis: 50, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-8" /></div>
       <div style={{ flexBasis: 140, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-20" /></div>
       <div style={{ flexBasis: 120, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-14" /></div>
+      <div style={{ flexBasis: 120, flexShrink: 0 }} className="px-2 flex justify-center"><Skeleton className="h-3 w-16" /></div>
       <div style={{ flexBasis: 90, flexShrink: 0 }} className="px-2 flex justify-end"><Skeleton className="h-3.5 w-14" /></div>
       <div style={{ flexBasis: 74, flexShrink: 0 }} className="px-2"><Skeleton className="h-3 w-10" /></div>
       <div style={{ flexBasis: 50, flexShrink: 0 }} className="px-2"><Skeleton className="h-5 w-8 rounded" /></div>
@@ -378,7 +379,7 @@ function ListRowSkeleton({ level = 0 }: { level?: number }) {
         <Skeleton className="w-5 h-5 rounded-full shrink-0" />
         <Skeleton className="h-3 w-20" />
       </div>
-      <div style={{ flexBasis: 170, flexShrink: 0 }} className="px-2"><Skeleton className="h-5 w-16 rounded-full" /></div>
+      {/* Supplier — hidden to save horizontal space */}
       <div style={{ flexBasis: 110, flexShrink: 0 }} />
     </div>
   );
@@ -436,7 +437,7 @@ function BOMViewSkeleton() {
       {/* Table skeleton — desktop/tablet only */}
       <div className="hidden md:flex md:flex-col md:flex-1 overflow-hidden">
         {/* Table header — real so column names are visible */}
-        <div className="flex items-center px-6 border-b border-t border-border bg-muted/40" style={{ minWidth: 1320 }}>
+        <div className="flex items-center px-6 border-b border-t border-border bg-muted/40" style={{ minWidth: 1270 }}>
           {HEADERS.map((c, i) => (
             <div key={c.key}
               style={{ flexBasis: c.w ?? 'auto', flexGrow: c.w ? 0 : 1, flexShrink: c.w ? 0 : 1 }}
@@ -447,7 +448,7 @@ function BOMViewSkeleton() {
             </div>
           ))}
         </div>
-        <div className="flex-1 overflow-hidden border-t-0" style={{ minWidth: 1320 }}>
+        <div className="flex-1 overflow-hidden border-t-0" style={{ minWidth: 1270 }}>
           {SKELETON_LEVELS.map((level, i) => <ListRowSkeleton key={i} level={level} />)}
         </div>
       </div>
@@ -816,12 +817,13 @@ const HEADERS = [
   { key: 'uom', label: 'UOM', w: 50 },
   { key: 'mfr', label: 'Manufacturer', w: 140 },
   { key: 'avail', label: 'Available', w: 120 },
+  { key: 'location', label: 'Location', w: 120 },
   { key: 'price', label: 'Unit Price', w: 90 },
   { key: 'lead', label: 'Lead', w: 74 },
   { key: 'rev', label: 'Rev', w: 50 },
   { key: 'status', label: 'Status', w: 92 },
   { key: 'owner', label: 'Owner', w: 140 },
-  { key: 'supplier', label: 'Supplier', w: 170 },
+  // { key: 'supplier', label: 'Supplier', w: 170 },  // hidden to save horizontal space
   { key: 'act', label: 'Action', w: 110 },
 ] as const;
 
@@ -849,13 +851,14 @@ function ListView({
   return (
     <div className="hidden md:block flex-1 overflow-y-auto overflow-x-auto border-t border-border">
       {/* Header */}
-      <div className="flex items-center px-6 border-b border-border bg-background sticky top-0 z-10" style={{ minWidth: 1320 }}>
+      <div className="flex items-center px-6 border-b border-border bg-background sticky top-0 z-10" style={{ minWidth: 1270 }}>
         {HEADERS.map((c, i) => (
           <div key={c.key}
             style={{ flexBasis: c.w ?? 'auto', flexGrow: c.w ? 0 : 1, flexShrink: c.w ? 0 : 1 }}
             className={cn('py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none',
               i === 0 ? 'pl-0 pr-2' : 'px-2',
-              (c.key === 'qty' || c.key === 'price') && 'text-right'
+              (c.key === 'qty' || c.key === 'price') && 'text-right',
+              c.key === 'location' && 'text-center'
             )}>
             {c.label}
           </div>
@@ -863,7 +866,7 @@ function ListView({
       </div>
 
       {/* Rows */}
-      <div style={{ minWidth: 1320 }}>
+      <div style={{ minWidth: 1270 }}>
         {rows.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground">
             <Search className="w-7 h-7 mx-auto mb-3 opacity-30" />
@@ -907,7 +910,7 @@ function ListView({
 
               {/* Part */}
               <div className="flex-1 min-w-0 px-2 flex items-center gap-2.5">
-                <PartImageThumb nodeId={row.id} cat={row.cat} size={32} hoverZoom />
+                <PartImageThumb imageUrl={row.imageUrl} cat={row.cat} size={32} hoverZoom />
                 <div className="flex-1 min-w-0">
                   <span className={cn('text-sm block truncate',
                     row.level === 0 ? 'font-semibold text-foreground' : row.level === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
@@ -934,6 +937,14 @@ function ListView({
                   </span>
                 )}
               </div>
+              {/* Location */}
+              <div style={{ flexBasis: 120, flexShrink: 0 }} className="px-2 text-xs text-center truncate" title={row.location ?? 'This part is not in the inventory'}>
+                {row.location ? (
+                  <span className="text-foreground">{row.location}</span>
+                ) : (
+                  <span className="text-muted-foreground/60 italic">—</span>
+                )}
+              </div>
               {/* Price */}
               <div style={{ flexBasis: 90, flexShrink: 0 }} className="px-2 text-sm text-foreground text-right tabular-nums">{formatCurrency(row.price)}</div>
               {/* Lead */}
@@ -948,10 +959,11 @@ function ListView({
               <div style={{ flexBasis: 140, flexShrink: 0 }} className="px-2 min-w-0 overflow-hidden">
                 <OwnerBadge name={row.owner} />
               </div>
-              {/* Supplier */}
+              {/* Supplier — hidden to save horizontal space
               <div style={{ flexBasis: 170, flexShrink: 0 }} className="px-2 text-xs text-muted-foreground truncate">
                 {row.distributor || <span className="text-[11px]">—</span>}
               </div>
+              */}
               {/* Actions */}
               <div style={{ flexBasis: 110, flexShrink: 0 }} className={cn('flex items-center justify-end gap-1 transition-opacity', isHovered ? 'opacity-100' : 'opacity-0')}>
                 {row.status === 'pending' && canDecideRow(row.id) && (
@@ -997,7 +1009,7 @@ function ListView({
 
       {/* Footer */}
       {rows.length > 0 && (
-        <div className="px-6 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground" style={{ minWidth: 1320 }}>
+        <div className="px-6 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground" style={{ minWidth: 1270 }}>
           <span>Showing {rows.length} of {totalCount} total parts</span>
           <span>Last updated 23-Apr-2026 · Rev C approved by Engineering</span>
         </div>
@@ -1078,7 +1090,7 @@ function MobileListView({
                   ) : null}
                 </span>
 
-                <PartImageThumb nodeId={row.id} cat={row.cat} size={44} radius={12} />
+                <PartImageThumb imageUrl={row.imageUrl} cat={row.cat} size={44} radius={12} />
 
                 <div className="flex-1 min-w-0">
                   <div className="text-[11px] font-bold text-primary truncate leading-tight">{row.pn}</div>
@@ -1186,7 +1198,7 @@ function GridView({ rows, rootNodes, filtersActive, onOpen, totalCount, formatCu
                 >
                   {/* Thumbnail */}
                   <div className="relative p-2.5">
-                    <PartImageThumb nodeId={row.id} cat={row.cat} big />
+                    <PartImageThumb imageUrl={row.imageUrl} cat={row.cat} big />
                     <span className="absolute top-4 left-4 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-card/90"
                       style={{ backdropFilter: 'blur(4px)', color: meta.tint, border: `1px solid ${meta.tint}40` }}>
                       {row.levelLabel ?? `L${row.level}`}

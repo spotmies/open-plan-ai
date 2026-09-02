@@ -470,6 +470,10 @@ export function BOMDetailScreenMobile({
   }, []);
 
   const parentPath = path.slice(0, -1);
+  // Once a request is decided it drops out of `activeRequest` (pending-only) — fall
+  // back to the most recent request so its "requested review ... {comment}" note
+  // keeps showing in Approval History instead of disappearing after the decision.
+  const requestNote = activeRequest ?? lastRequest;
   const showAwaitingBadge = !!activeRequest && !canDecide;
   const showOverflowSendForReview = canSendForReview;
   const showOverflowNewEco = !canReviseAndResubmit;
@@ -651,7 +655,7 @@ export function BOMDetailScreenMobile({
               {children.map(c => (
                 <button key={c.id} onClick={() => onNavigate(c.id)}
                   className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-muted/40 transition-colors">
-                  <PartImageThumb nodeId={c.id} cat={c.cat} size={42} radius={11} />
+                  <PartImageThumb imageUrl={c.imageUrl} cat={c.cat} size={42} radius={11} />
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-mono font-semibold text-primary">{c.pn}</div>
                     <div className="text-sm font-medium text-foreground truncate">{c.name || c.desc}</div>
@@ -762,15 +766,15 @@ export function BOMDetailScreenMobile({
 
             <Section
               label="Approval History"
-              action={approvalsLoading ? <Skeleton className="h-3.5 w-14" /> : <CountBadge>{approvals.length + (activeRequest ? 1 : 0)} action{approvals.length + (activeRequest ? 1 : 0) !== 1 ? 's' : ''}</CountBadge>}
+              action={approvalsLoading ? <Skeleton className="h-3.5 w-14" /> : <CountBadge>{approvals.length + (requestNote ? 1 : 0)} action{approvals.length + (requestNote ? 1 : 0) !== 1 ? 's' : ''}</CountBadge>}
             >
-              {activeRequest && (
+              {requestNote && (
                 <div className="mx-4 mt-3.5 px-2.5 py-2 rounded-md bg-muted/50 border border-border text-[11.5px] text-muted-foreground">
-                  <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
-                  {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
-                  {activeRequest.approvers.map(a => a.name).join(', ')}.
-                  {activeRequest.comment && (
-                    <div className="mt-1 text-foreground/80 break-words">&ldquo;{activeRequest.comment}&rdquo;</div>
+                  <span className="font-medium text-foreground">{requestNote.requestedByName}</span> requested review of{' '}
+                  {requestNote.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
+                  {requestNote.approvers.map(a => a.name).join(', ')}.
+                  {requestNote.comment && (
+                    <div className="mt-1 text-foreground/80 break-words">&ldquo;{requestNote.comment}&rdquo;</div>
                   )}
                 </div>
               )}
@@ -779,7 +783,7 @@ export function BOMDetailScreenMobile({
                   {[0, 1].map(i => <Skeleton key={i} className="h-10 w-full" />)}
                 </div>
               ) : approvals.length === 0 ? (
-                !activeRequest && <p className="text-sm text-muted-foreground px-4 py-3.5">No approval activity yet.</p>
+                !requestNote && <p className="text-sm text-muted-foreground px-4 py-3.5">No approval activity yet.</p>
               ) : (
                 <div className="divide-y divide-border">
                   {approvals.map(a => (

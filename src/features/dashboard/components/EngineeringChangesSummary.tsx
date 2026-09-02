@@ -118,7 +118,7 @@ export function EngineeringChangesSummary({ projects }: EngineeringChangesSummar
               <GitPullRequest className="h-3 w-3" />
               Awaiting your approval
             </span>
-            <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden space-y-1.5">
+            <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden space-y-1.5">
               {awaiting.map((eco) => (
                 <Link
                   key={eco.id}
