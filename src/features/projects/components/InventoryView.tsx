@@ -230,10 +230,34 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         onOrder: onOrderOf(orders, p.id),
         location: latest.location,
         leadTimeDays: 0,
+        createdAt: latest.createdAt,
       });
     }
     return [...fromStock, ...stubs];
   }, [stock, orders, parts]);
+
+  // A part's canonical stock location: the location of its earliest stock row, or — for a
+  // part not yet stocked — its earliest order's destination. Receive and Place order are
+  // pinned to this (a part only ever lives in one location; Transfer moves it). Mirrors
+  // findCanonicalStockLocation() on the backend, which enforces the same rule server-side.
+  const canonicalLocationByPartId = useMemo(() => {
+    const earliestStock = new Map<string, StockRecord>();
+    for (const r of stock) {
+      const cur = earliestStock.get(r.partId);
+      if (!cur || r.createdAt < cur.createdAt) earliestStock.set(r.partId, r);
+    }
+    const earliestOrder = new Map<string, OrderRecord>();
+    for (const o of orders) {
+      const cur = earliestOrder.get(o.partId);
+      if (!cur || o.createdAt < cur.createdAt) earliestOrder.set(o.partId, o);
+    }
+    const map = new Map<string, string>();
+    for (const partId of new Set([...earliestStock.keys(), ...earliestOrder.keys()])) {
+      const loc = earliestStock.get(partId)?.location ?? earliestOrder.get(partId)?.location;
+      if (loc) map.set(partId, loc);
+    }
+    return map;
+  }, [stock, orders]);
 
   // "Want to order" (planned) orders never move the On Order column — that's intentional, they
   // aren't submitted to a supplier yet — but that means a planned order against a part that's
@@ -326,6 +350,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       partId: input.partId,
       location: input.location,
       direction: input.direction,
+      mode: input.mode,
       quantity: input.quantity,
       reasonCode: input.reasonCode,
       note: input.note,
@@ -361,7 +386,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
 
   const handleTransfer = (input: TransferStockInput) => {
     transferStockMutation.mutate(input, {
-      onSuccess: () => toast.success(`Transferred ${input.quantity} unit(s) to ${input.toLocation}`),
+      onSuccess: () => toast.success(`Stock moved from ${input.fromLocation} to ${input.toLocation}`),
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to transfer stock'),
     });
   };
@@ -1211,6 +1236,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         orders={orders}
         onReceive={handleReceive}
         initialPartId={dialogPartId}
+        canonicalLocationByPartId={canonicalLocationByPartId}
       />
       <AdjustQuantityDialog
         isOpen={adjustOpen}
@@ -1223,6 +1249,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         onAdjust={handleAdjust}
         onPlaceOrder={handlePlaceOrder}
         initialPartId={dialogPartId}
+        canonicalLocationByPartId={canonicalLocationByPartId}
       />
       <PlaceOrderDialog
         isOpen={orderOpen}
@@ -1231,6 +1258,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
         parts={stockedParts}
         onPlaceOrder={handlePlaceOrder}
         initialPartId={dialogPartId}
+        canonicalLocationByPartId={canonicalLocationByPartId}
       />
       <IssueStockDialog
         isOpen={issueOpen}

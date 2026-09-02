@@ -22,6 +22,7 @@ export interface ApiStockRecord {
   lotNumber: string | null;
   serialNumber: string | null;
   quarantineQty: number;
+  createdAt: string;
   transactionId?: string;
 }
 
@@ -143,6 +144,7 @@ export function fromApiStock(r: ApiStockRecord): StockRecord {
     serialNumber: r.serialNumber ?? undefined,
     quarantineQty: r.quarantineQty || undefined,
     imageUrl: resolveFileUrl(r.imageUrl) ?? undefined,
+    createdAt: r.createdAt,
   };
 }
 
@@ -243,6 +245,8 @@ export interface AdjustQuantityDto {
   partId: string;
   location: string;
   direction: 'add' | 'remove';
+  /** 'set' overwrites on-hand with `quantity`; 'delta' (default) adds/removes it per `direction`. */
+  mode?: 'delta' | 'set';
   quantity: number;
   reasonCode: string;
   note?: string;
@@ -266,7 +270,6 @@ export interface TransferStockDto {
   partId: string;
   fromLocation: string;
   toLocation: string;
-  quantity: number;
   note?: string;
 }
 
