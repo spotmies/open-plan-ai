@@ -10,6 +10,10 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
 import { useProjectDetail, useProjectModules } from '@/hooks/useProjectDetail';
 import type { ProposalFormState } from '../assistantData';
+import { BomFieldEditor } from './AssistantProposalBomFields';
+import { BOM_FIELD_KEYS, BOM_FIELD_ORDER, BOM_FIELD_LABELS } from '../bomProposalFields';
+import { EcoFieldEditor } from './AssistantProposalEcoFields';
+import { ECO_FIELD_KEYS, ECO_FIELD_ORDER, ECO_FIELD_LABELS } from '../ecoProposalFields';
 
 const TASK_STATUS_OPTIONS = [
   { value: 'todo', label: 'To Do' },
@@ -67,6 +71,22 @@ function FieldEditor({ entityType, projectId, fieldKey, value, onChange }: Field
   const memberOptions = (membersQuery.data ?? []).map((m) => ({ value: m.id, label: m.name }));
   const milestoneOptions = (projectDetailQuery.data?.milestones ?? []).map((m) => ({ value: m.id, label: m.title }));
   const moduleOptions = (modulesQuery.data ?? []).map((m) => ({ value: m.id, label: m.name }));
+
+  // A BOM proposal's form is the whole "Add New Part" form, so most of its
+  // keys need controls nothing else uses (a UOM picker, a supplier table, a
+  // requirement-id chip list). The handful it shares — name, description,
+  // owner — deliberately fall through to the editors below.
+  if (entityType === 'bom_node' && BOM_FIELD_KEYS.has(fieldKey)) {
+    return <BomFieldEditor projectId={projectId} fieldKey={fieldKey} value={value} onChange={onChange} />;
+  }
+
+  // An ECO proposal's form is the whole 5-tab wizard — most of its keys need
+  // ECO-specific controls (a change-class picker, the effectivity type, the
+  // affected-parts / diff-rows / pipeline tables). title/description fall
+  // through; targetDate/ownerId reuse the shared editors below.
+  if (entityType === 'eco' && ECO_FIELD_KEYS.has(fieldKey)) {
+    return <EcoFieldEditor projectId={projectId} fieldKey={fieldKey} value={value} onChange={onChange} />;
+  }
 
   switch (fieldKey) {
     case 'title':
@@ -238,6 +258,8 @@ export function AssistantProposalForm({ entityType, projectId, formState, onSubm
   const [error, setError] = useState<string | null>(null);
 
   const setField = (key: string, value: unknown) => setValues((prev) => ({ ...prev, [key]: value }));
+  const labelFor = (key: string) =>
+    (entityType === 'bom_node' ? BOM_FIELD_LABELS[key] : entityType === 'eco' ? ECO_FIELD_LABELS[key] : undefined) ?? FIELD_LABELS[key] ?? key;
 
   const requiredMissing = formState.mode === 'single'
     ? formState.required.filter((key) => {
@@ -248,7 +270,7 @@ export function AssistantProposalForm({ entityType, projectId, formState, onSubm
 
   const handleSubmit = async () => {
     if (requiredMissing.length > 0) {
-      setError(`${requiredMissing.map((k) => FIELD_LABELS[k] ?? k).join(', ')} ${requiredMissing.length === 1 ? 'is' : 'are'} required.`);
+      setError(`${requiredMissing.map(labelFor).join(', ')} ${requiredMissing.length === 1 ? 'is' : 'are'} required.`);
       return;
     }
     setError(null);
@@ -267,8 +289,12 @@ export function AssistantProposalForm({ entityType, projectId, formState, onSubm
     }
   };
 
+  // A BOM form follows the part form's own tab order (details → sourcing →
+  // traceability → documents), which shares only a few keys with the
+  // task/issue/milestone/module order.
+  const order = entityType === 'bom_node' ? BOM_FIELD_ORDER : entityType === 'eco' ? ECO_FIELD_ORDER : FIELD_ORDER;
   const fieldKeys = formState.mode === 'single'
-    ? FIELD_ORDER.filter((key) => key in (formState.fields ?? {}))
+    ? order.filter((key) => key in (formState.fields ?? {}))
     : [formState.sharedFields?.[0]?.field ?? ''];
 
   return (
@@ -276,7 +302,7 @@ export function AssistantProposalForm({ entityType, projectId, formState, onSubm
       {fieldKeys.map((key) => (
         <div key={key} className="space-y-1">
           <Label className="text-xs font-medium text-muted-foreground">
-            {formState.mode === 'bulk-shared' ? (formState.sharedFields?.[0]?.label ?? key) : (FIELD_LABELS[key] ?? key)}
+            {formState.mode === 'bulk-shared' ? (formState.sharedFields?.[0]?.label ?? key) : labelFor(key)}
             {formState.required.includes(key) && <span className="text-destructive"> *</span>}
           </Label>
           <FieldEditor entityType={entityType} projectId={projectId} fieldKey={key} value={values[key]} onChange={(v) => setField(key, v)} />

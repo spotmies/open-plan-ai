@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Star, PenLine, Bookmark } from 'lucide-react';
+import { ChevronDown, ChevronRight, PenLine, Bookmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type QuickView = 'favourites' | 'drafts' | 'saved';
@@ -9,8 +9,7 @@ interface QuickViewsProps {
   onSelect: (view: QuickView) => void;
 }
 
-const ITEMS: { id: QuickView; label: string; icon: typeof Star }[] = [
-  { id: 'favourites', label: 'Favorites', icon: Star },
+const ITEMS: { id: QuickView; label: string; icon: typeof PenLine }[] = [
   { id: 'drafts', label: 'Drafts', icon: PenLine },
   { id: 'saved', label: 'Saved', icon: Bookmark },
 ];

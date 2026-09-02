@@ -399,7 +399,7 @@ const CalendarPage: React.FC = () => {
     } else if (event.type === 'issue') {
       updateUrlParams({ issue: event.id });
     } else if (event.type === 'meeting') {
-      window.open(event.htmlLink || event.meetingUri, '_blank', 'noopener,noreferrer');
+      window.open(event.meetingUri || event.htmlLink, '_blank', 'noopener,noreferrer');
     }
   };
 

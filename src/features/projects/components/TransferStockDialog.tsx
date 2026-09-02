@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { ArrowLeftRight, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
-import { availableOf, LocationCombobox, type StockRecord } from './inventoryData';
+import { LocationCombobox, type StockRecord } from './inventoryData';
 
 const transferSchema = z
   .object({
@@ -65,16 +65,18 @@ export function TransferStockDialog({ isOpen, onClose, orgId, record, onTransfer
   }, [isOpen, record?.id]);
 
   if (!record) return null;
-  const available = availableOf(record);
+  // A transfer relocates the part's whole stock row — every on-hand unit moves (allocations
+  // and quarantine ride along), so the gate is simply "is there anything on hand".
+  const onHand = record.onHand;
 
   const handleSubmit = (data: TransferFormData) => {
-    if (available <= 0) return;
+    if (onHand <= 0) return;
     if (data.toLocation === record.location) {
       form.setError('toLocation', { message: 'Destination must differ from the current location' });
       return;
     }
-    // A transfer moves the whole available quantity at the source — the user picks a
-    // destination, not an amount. The backend recomputes and moves the exact available qty.
+    // A transfer moves the whole stock row at the source — the user picks a destination,
+    // not an amount.
     onTransfer({
       partId: record.partId,
       fromLocation: record.location,
@@ -116,7 +118,7 @@ export function TransferStockDialog({ isOpen, onClose, orgId, record, onTransfer
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
               <div className="p-4 sm:p-6 space-y-5">
                 <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  {available > 0 ? (
+                  {onHand > 0 ? (
                     <>
                       Relocates this part from <span className="font-medium text-foreground">{record.location}</span> to the
                       destination below. Its <span className="font-medium text-foreground">whole stock row</span> moves —
@@ -124,7 +126,7 @@ export function TransferStockDialog({ isOpen, onClose, orgId, record, onTransfer
                       units all travel with it, and the part keeps a single stock location.
                     </>
                   ) : (
-                    <>No available stock at <span className="font-medium text-foreground">{record.location}</span> to transfer.</>
+                    <>No stock on hand at <span className="font-medium text-foreground">{record.location}</span> to transfer.</>
                   )}
                 </div>
 
@@ -164,7 +166,7 @@ export function TransferStockDialog({ isOpen, onClose, orgId, record, onTransfer
 
             <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:space-x-0 px-4 sm:px-6 py-4 border-t shrink-0">
               <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-              <Button type="submit" className="flex-1" disabled={available <= 0}>Transfer stock</Button>
+              <Button type="submit" className="flex-1" disabled={onHand <= 0}>Transfer stock</Button>
             </DialogFooter>
           </form>
         </Form>

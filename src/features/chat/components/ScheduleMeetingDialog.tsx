@@ -119,6 +119,13 @@ export function ScheduleMeetingDialog({
     const status = meetStatusMap?.[member.id];
     return status?.connected && status.email ? status.email : member.email;
   };
+  // The organizer is always the meeting creator (set server-side from the
+  // authenticated session), so exclude them from the invitable member list —
+  // they shouldn't need to pick themselves as an attendee.
+  const invitableMembers = useMemo(
+    () => conversation.members.filter((m) => m.id !== user?.id),
+    [conversation.members, user?.id]
+  );
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
   const { mutateAsync: createMeetingRecord } = useCreateMeeting();
   const [loading, setLoading] = useState(false);
@@ -153,18 +160,16 @@ export function ScheduleMeetingDialog({
       setDailyMode('everyday');
       setRecurDays([]);
 
-      // Select other members by default (excluding "You")
+      // Select all invitable members by default (the organizer is excluded above).
       const membersMap: Record<string, boolean> = {};
-      conversation.members.forEach((m) => {
-        // Simple heuristic: email contains you@ or name is You or is current member id
-        const isSelf = m.name.toLowerCase() === 'you' || (m.email ?? '').includes('you@');
-        membersMap[m.id] = !isSelf;
+      invitableMembers.forEach((m) => {
+        membersMap[m.id] = true;
       });
       setSelectedMembers(membersMap);
     }
-  }, [open, conversation]);
+  }, [open, conversation, invitableMembers]);
 
-  const hasAttendees = conversation.members.some((m) => selectedMembers[m.id] && m.email);
+  const hasAttendees = invitableMembers.some((m) => selectedMembers[m.id] && m.email);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,7 +197,7 @@ export function ScheduleMeetingDialog({
       return;
     }
 
-    const hasSelectedAttendees = conversation.members.some((m) => selectedMembers[m.id] && m.email);
+    const hasSelectedAttendees = invitableMembers.some((m) => selectedMembers[m.id] && m.email);
     if (!hasSelectedAttendees) {
       toast.error('Please select at least one attendee to schedule this meeting.');
       return;
@@ -211,7 +216,7 @@ export function ScheduleMeetingDialog({
 
       // Platform emails — persisted to our own record and used for in-app
       // matching/notifications (see ScheduleMeetDialog.tsx for the same split).
-      const selectedConvMembers = conversation.members.filter((m) => selectedMembers[m.id] && m.email);
+      const selectedConvMembers = invitableMembers.filter((m) => selectedMembers[m.id] && m.email);
       const attendees = selectedConvMembers.map((m) => m.email);
       // What actually goes on the Google Calendar event — each member's
       // connected Google account when they have one.
@@ -425,7 +430,7 @@ export function ScheduleMeetingDialog({
             </Label>
             <ScrollArea className="h-32 border rounded-lg p-3 bg-muted/20">
               <div className="space-y-2.5">
-                {conversation.members.map((member) => (
+                {invitableMembers.map((member) => (
                   <div key={member.id} className="flex items-center space-x-2">
                     <Checkbox
                       id={`chk-${member.id}`}

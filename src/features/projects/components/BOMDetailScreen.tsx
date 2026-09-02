@@ -31,7 +31,7 @@ import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useAuth } from '@/contexts/AuthContext';
 import { BOMSendForReviewModal } from './BOMSendForReviewModal';
 import { BOMApprovalReviewCard } from './BOMApprovalReviewCard';
-import { uploadBomDocumentFile, addBomDocumentLink, deleteBomDocument, useBomDocuments, isImageAttachment, type BomAttachment } from '@/hooks/useBomDocuments';
+import { uploadBomDocumentFile, addBomDocumentLink, deleteBomDocument, type BomAttachment } from '@/hooks/useBomDocuments';
 import { useCurrency } from '@/hooks/useCurrency';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useBomNotes, useAddBomNote, useUpdateBomNote, useDeleteBomNote } from '@/hooks/useBomNotes';
@@ -479,12 +479,8 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
   const { data: apiRelatedEcos, isLoading: relatedEcosLoading } = useEcosByPart(projectId, originalNode._partId);
   const relatedEcos = useMemo(() => (apiRelatedEcos ?? []).map(fromApiEcoByPart), [apiRelatedEcos]);
 
-  // ── Uploaded documents — pull the product photo (first image attachment) ──
-  const { data: nodeDocs } = useBomDocuments(originalNode.id);
-  const photoUrl = useMemo(() => {
-    const photo = (nodeDocs ?? []).find(isImageAttachment);
-    return photo ? resolveFileUrl(photo.fileUrl) : null;
-  }, [nodeDocs]);
+  // ── Product photo — only the explicitly-set part image, never a Documents-tab fallback ──
+  const photoUrl = useMemo(() => resolveFileUrl(originalNode.imageUrl), [originalNode.imageUrl]);
 
   // ── Revision history from API ──
   const { data: apiRevisions, isLoading: revisionsLoading } = usePartRevisions(originalNode._partId);
@@ -522,6 +518,10 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
   const canDecide = isAssignedApprover || isAdmin;
   const lastRequest = approvalRequests[0];
   const showRejectionBanner = !activeRequest && lastRequest?.status === 'rejected';
+  // Once a request is decided it drops out of `activeRequest` (pending-only) — fall
+  // back to the most recent request so its "requested review ... {comment}" note
+  // keeps showing in Approval History instead of disappearing after the decision.
+  const requestNote = activeRequest ?? lastRequest;
 
   // Point to latest revision whenever the node changes or revisions first load
   useEffect(() => {
@@ -689,8 +689,12 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
       await createApprovalRequest.mutateAsync({ nodeId: originalNode.id, scope, approverIds, comment });
       toast.success(`${originalNode.pn} sent for review`);
     } catch (err) {
+      let description = err instanceof Error ? err.message : undefined;
+      if (description?.includes('at most 2000 character(s)')) {
+        description = 'Note text cannot exceed 2000 characters.';
+      }
       toast.error('Failed to send part for review', {
-        description: err instanceof Error ? err.message : undefined,
+        description,
       });
       throw err;
     }
@@ -1049,7 +1053,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                           className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
                           style={{ borderBottom: i < children.length - 1 ? '1px solid var(--border)' : undefined }}
                         >
-                          <PartImageThumb nodeId={c.id} cat={c.cat} size={34} />
+                          <PartImageThumb imageUrl={c.imageUrl} cat={c.cat} size={34} />
                           <div className="flex-1 min-w-0">
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1252,18 +1256,18 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                     ) : (
                       <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        {approvals.length + (activeRequest ? 1 : 0)} action{approvals.length + (activeRequest ? 1 : 0) !== 1 ? 's' : ''}
+                        {approvals.length + (requestNote ? 1 : 0)} action{approvals.length + (requestNote ? 1 : 0) !== 1 ? 's' : ''}
                       </div>
                     )
                   }
                 >
-                  {activeRequest && (
+                  {requestNote && (
                     <div className="mb-3 px-2.5 py-2 rounded-md bg-muted/50 border border-border text-[11.5px] text-muted-foreground">
-                      <span className="font-medium text-foreground">{activeRequest.requestedByName}</span> requested review of{' '}
-                      {activeRequest.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
-                      {activeRequest.approvers.map(a => a.name).join(', ')}.
-                      {activeRequest.comment && (
-                        <div className="mt-1 text-foreground/80 break-words">&ldquo;{activeRequest.comment}&rdquo;</div>
+                      <span className="font-medium text-foreground">{requestNote.requestedByName}</span> requested review of{' '}
+                      {requestNote.scope === 'subtree' ? 'this part + sub-components' : 'this part'} from{' '}
+                      {requestNote.approvers.map(a => a.name).join(', ')}.
+                      {requestNote.comment && (
+                        <div className="mt-1 text-foreground/80 break-words">&ldquo;{requestNote.comment}&rdquo;</div>
                       )}
                     </div>
                   )}
@@ -1284,7 +1288,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                       ))}
                     </div>
                   ) : approvals.length === 0 ? (
-                    !activeRequest && <p className="text-sm text-muted-foreground">No approval activity yet.</p>
+                    !requestNote && <p className="text-sm text-muted-foreground">No approval activity yet.</p>
                   ) : (
                     <div className="flex flex-col gap-0">
                       {approvals.map((a, i) => {

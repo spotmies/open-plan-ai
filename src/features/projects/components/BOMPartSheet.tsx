@@ -120,6 +120,8 @@ const MOBILE_STEP_LABEL: Record<WizardTabId, string> = {
   details: 'Details', sourcing: 'Sourcing', traceability: 'Traceability', documents: 'Documents',
 };
 
+const DESC_MAX_LEN = 500;
+
 const LETTERS = 'ABCDEFGHIJ';
 const CATEGORIES: BOMCategory[] = [...KNOWN_BOM_CATEGORIES];
 const CAT_ICONS: Record<BOMCategory, React.ElementType> = {
@@ -595,8 +597,12 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
   useEffect(() => {
     if (!open || !isEdit || !node?.id || docsLoading || docsPopulated) return;
 
+    // The product photo is whichever attachment backs the part's explicitly-set imageUrl —
+    // not just any image the user happened to upload as a plain document.
     let photoValue: DocValue | null = null;
-    const photoDoc = existingDocs.find(isImageAttachment);
+    const photoDoc = node.imageUrl
+      ? existingDocs.find(d => isImageAttachment(d) && d.fileUrl === node.imageUrl)
+      : undefined;
     if (photoDoc) {
       const url = resolveFileUrl(photoDoc.fileUrl);
       if (url) {
@@ -606,7 +612,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
     }
 
     let sectionsValue = DEFAULT_TECH_SECTIONS.map(s => ({ ...s, value: [] as DocValue[] }));
-    const nonImageDocs = existingDocs.filter(d => !isImageAttachment(d));
+    const nonImageDocs = existingDocs.filter(d => d.id !== photoDoc?.id);
     if (nonImageDocs.length > 0) {
       const updated = sectionsValue.map(s => ({ ...s, value: [] as DocValue[] }));
       const orphans: DocValue[] = [];
@@ -705,6 +711,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
       if (!isEdit && !pn.trim()) e.pn = 'Part number is required';
       if (!name.trim()) e.name = 'Part name is required';
       if (!desc.trim()) e.desc = 'Description is required';
+      else if (desc.length > DESC_MAX_LEN) e.desc = `Description must be ${DESC_MAX_LEN} characters or less`;
       if (!category.trim()) e.category = !isKnownCategory(category) ? 'Please enter a custom category name' : 'Category is required';
       if (!selectedOwner && !(isEdit && node?.owner)) e.owner = 'Owner is required';
     }
@@ -758,6 +765,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
     if (!isEdit && !pn.trim()) e.pn = 'Part number is required';
     if (!name.trim()) e.name = 'Part name is required';
     if (!desc.trim()) e.desc = 'Description is required';
+    else if (desc.length > DESC_MAX_LEN) e.desc = `Description must be ${DESC_MAX_LEN} characters or less`;
     if (!category.trim()) e.category = !isKnownCategory(category) ? 'Please enter a custom category name' : 'Category is required';
     if (!manufacturer.trim()) e.mfr = 'Manufacturer is required';
     if (!mpn.trim()) e.mpn = 'MPN is required';
@@ -929,9 +937,12 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                   </FL>
 
                   <FL label="Description" required>
-                    <Textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Brief technical description of the part"
-                      className="text-sm bg-muted border-border resize-none" rows={4} />
-                    {errors.desc && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.desc}</p>}
+                    <Textarea value={desc} onChange={e => setDesc(e.target.value.slice(0, DESC_MAX_LEN))} placeholder="Brief technical description of the part"
+                      className="text-sm bg-muted border-border resize-none" rows={4} maxLength={DESC_MAX_LEN} />
+                    <div className="flex items-center justify-between mt-1">
+                      {errors.desc ? <p className="text-[11px] text-destructive flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.desc}</p> : <span />}
+                      <span className={cn('text-[11px]', desc.length >= DESC_MAX_LEN ? 'text-destructive' : 'text-muted-foreground')}>{desc.length}/{DESC_MAX_LEN}</span>
+                    </div>
                   </FL>
 
                   <FL label="Category" required>
@@ -1509,10 +1520,13 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                   </FL>
 
                   <FL label="Description" required>
-                    <Textarea value={desc} onChange={e => setDesc(e.target.value)}
+                    <Textarea value={desc} onChange={e => setDesc(e.target.value.slice(0, DESC_MAX_LEN))}
                       placeholder="Brief technical description of the part"
-                      className="text-sm bg-muted border-border resize-none" rows={4} />
-                    {errors.desc && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.desc}</p>}
+                      className="text-sm bg-muted border-border resize-none" rows={4} maxLength={DESC_MAX_LEN} />
+                    <div className="flex items-center justify-between mt-1">
+                      {errors.desc ? <p className="text-[11px] text-destructive flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.desc}</p> : <span />}
+                      <span className={cn('text-[11px]', desc.length >= DESC_MAX_LEN ? 'text-destructive' : 'text-muted-foreground')}>{desc.length}/{DESC_MAX_LEN}</span>
+                    </div>
                   </FL>
                 </div>
 

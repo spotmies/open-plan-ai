@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BOMCategory, BOMStatus, getCategoryMeta } from './bomData';
 import { Link2 } from 'lucide-react';
-import { useBomDocuments, isImageAttachment } from '@/hooks/useBomDocuments';
 import { resolveFileUrl } from '@/utils/fileUrl';
 
 const CAT_ICONS: Record<BOMCategory, React.ElementType> = {
@@ -157,17 +156,13 @@ export function HoverZoomImage({
   );
 }
 
-// Part thumbnail that fetches the part's uploaded photo (if any) and falls
+// Part thumbnail for the part's explicitly-set product photo (if any) — falls
 // back to the plain category-icon `PartThumb` when no photo exists. Pass
 // `hoverZoom` to show an Amazon-style enlarged preview on hover (List view).
 export function PartImageThumb({
-  nodeId, cat, size = 32, radius = 7, big = false, hoverZoom = false,
-}: { nodeId: string; cat: BOMCategory; size?: number; radius?: number; big?: boolean; hoverZoom?: boolean }) {
-  const { data: docs } = useBomDocuments(nodeId);
-  const imageUrl = useMemo(() => {
-    const photo = (docs ?? []).find(isImageAttachment);
-    return photo ? resolveFileUrl(photo.fileUrl) : null;
-  }, [docs]);
+  imageUrl: rawImageUrl, cat, size = 32, radius = 7, big = false, hoverZoom = false,
+}: { imageUrl?: string | null; cat: BOMCategory; size?: number; radius?: number; big?: boolean; hoverZoom?: boolean }) {
+  const imageUrl = useMemo(() => resolveFileUrl(rawImageUrl), [rawImageUrl]);
 
   return (
     <HoverZoomImage imageUrl={imageUrl} enabled={hoverZoom}>

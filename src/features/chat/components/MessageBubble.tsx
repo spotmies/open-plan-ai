@@ -206,7 +206,7 @@ function MentionHighlightedText({ text, query, isOwn = false, memberNames, curre
               className={cn(
                 'font-semibold rounded px-0.5',
                 isOwn
-                  ? 'bg-amber-300/30 text-amber-100'
+                  ? 'bg-amber-300/30 text-amber-100 dark:bg-amber-500/40 dark:text-amber-950'
                   : 'bg-amber-400/25 text-amber-700 dark:text-amber-400'
               )}
             >
