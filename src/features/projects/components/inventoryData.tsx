@@ -7,6 +7,7 @@
 // CoverageBar) that both real and (formerly) mock data flowed through unchanged.
 
 import { useState, useEffect, useMemo } from 'react';
+import { Lock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -37,6 +38,7 @@ export interface StockRecord {
   serialNumber?: string;
   quarantineQty?: number;
   imageUrl?: string;   // part photo, when the catalog entry has one — falls back to a category icon
+  createdAt: string;   // ISO — when this (part, location) stock row was first created; earliest row = the part's canonical location
 }
 
 export interface OrderRecord {
@@ -126,6 +128,23 @@ export function LocationCombobox({ value, onChange, placeholder = 'Select a loca
         <SelectItem value={CUSTOM_LOCATION_SENTINEL}>Other (custom)…</SelectItem>
       </SelectContent>
     </Select>
+  );
+}
+
+/** Read-only Location field for Receive / Place order. A part's stock location is pinned
+ * to its canonical (first-ever) location — the backend enforces this too — so these flows
+ * show it locked rather than as an editable picker. Use Transfer to move a part elsewhere. */
+export function LockedLocationField({ location }: { location: string }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-sm">
+        <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate">{location}</span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Pinned to this part&apos;s stock location — use Transfer to move it elsewhere.
+      </p>
+    </div>
   );
 }
 
@@ -540,7 +559,7 @@ export function buildFromDef(def: BuildDef, bomLines: BuildBomLine[]): Build {
     const stockLike: StockRecord = {
       id: r.partId, partId: r.partId, pn: r.pn, name: r.name, cat: r.cat,
       onHand: r.onHand, allocated: r.allocated, onOrder: r.onOrder,
-      location: '', leadTimeDays: r.leadTimeDays,
+      location: '', leadTimeDays: r.leadTimeDays, createdAt: '',
     };
     const status = computeCoverage(stockLike, required);
     return {

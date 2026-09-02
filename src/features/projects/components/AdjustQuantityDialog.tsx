@@ -45,7 +45,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory, getCategoryMeta } from './bomData';
-import { LocationCombobox, CategoryCombobox, UnitCombobox, type StockLocation, type StockRecord } from './inventoryData';
+import { LocationCombobox, LockedLocationField, CategoryCombobox, UnitCombobox, type StockLocation, type StockRecord } from './inventoryData';
 import type { PlaceOrderInput } from './PlaceOrderDialog';
 
 interface PickerPart {
@@ -69,7 +69,10 @@ const adjustSchema = z.object({
   stockStatus: z.enum(['in_stock', 'place_order']),
   orderStatus: z.enum(['planned', 'open']),
   direction: z.enum(['add', 'remove']),
-  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  // 'set' — the row-level "Adjust quantity" flow: quantity is the absolute new on-hand
+  // count. 'delta' (default) — "New transaction": quantity is added per direction.
+  mode: z.enum(['delta', 'set']).default('delta'),
+  quantity: z.coerce.number().int().min(0, 'Quantity must be 0 or more'),
   reasonCode: z.string().optional(),
   expectedDate: z.string().optional(),
   leadTimeDays: z.coerce.number().int().min(1, 'Lead time must be at least 1 day'),
@@ -77,6 +80,11 @@ const adjustSchema = z.object({
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   orderNote: z.string().max(500, 'Notes must be less than 500 characters').optional(),
   purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
+}).superRefine((data, ctx) => {
+  // A 'delta' adjustment of 0 is a no-op; a 'set' to 0 (counted, found none) is valid.
+  if (data.mode !== 'set' && data.quantity < 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['quantity'], message: 'Quantity must be at least 1' });
+  }
 });
 
 type AdjustFormData = z.infer<typeof adjustSchema>;
@@ -88,6 +96,8 @@ export interface AdjustQuantityInput {
   cat?: BOMCategory;
   location: StockLocation;
   direction: 'add' | 'remove';
+  /** 'set' overwrites on-hand with `quantity`; 'delta' adds `quantity` per `direction`. */
+  mode: 'delta' | 'set';
   quantity: number;
   reasonCode: string;
   note?: string;
@@ -113,11 +123,15 @@ interface AdjustQuantityDialogProps {
   partProjects?: Map<string, string[]>;
   /** Total BOM quantity-required per part, keyed by partId — prefills the Quantity field on part select. */
   partDemand?: Map<string, number>;
+  /** partId → the part's canonical stock location. When the selected part already has one
+   * (a prior order, or stock elsewhere), the location is locked to it — the first "New
+   * transaction" is what establishes it; after that, Transfer is the only way to move it. */
+  canonicalLocationByPartId?: Map<string, string>;
 }
 
 const emptyNewPart = { partNumber: '', name: '', description: '', category: '' as BOMCategory | '', manufacturer: '', mpn: '', unit: 'EA' };
 
-export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onAdjust, onPlaceOrder, initialPartId, partProjects, partDemand }: AdjustQuantityDialogProps) {
+export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onAdjust, onPlaceOrder, initialPartId, partProjects, partDemand, canonicalLocationByPartId }: AdjustQuantityDialogProps) {
   const isMobile = useIsMobile();
   const [selectedRecord, setSelectedRecord] = useState<PickerPart | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
@@ -208,6 +222,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       stockStatus: 'in_stock',
       orderStatus: 'open',
       direction: 'add',
+      mode: initialPartId ? 'set' : 'delta',
       quantity: 1,
       reasonCode: '',
       expectedDate: '',
@@ -222,6 +237,20 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   const stockStatus = form.watch('stockStatus');
   const orderStatus = form.watch('orderStatus');
 
+  // In the "New transaction" flow, once a part has a canonical location (a prior order, or
+  // stock somewhere) the location is pinned there — the first-ever transaction for a
+  // brand-new part is what sets it. The row-level "Adjust quantity" (initialPartId) acts on
+  // an existing stock row, so it keeps that row's own location and isn't pinned here.
+  const lockedPartId = selectedRecord?.partId ?? createdPart?.id;
+  const lockedLocation = !initialPartId && lockedPartId
+    ? canonicalLocationByPartId?.get(lockedPartId)
+    : undefined;
+
+  useEffect(() => {
+    if (lockedLocation) form.setValue('location', lockedLocation, { shouldValidate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedLocation]);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -232,7 +261,10 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         form.setValue('partId', match.partId, { shouldValidate: true });
         form.setValue('location', match.location, { shouldValidate: true });
         form.setValue('category', match.cat ?? '', { shouldValidate: true });
-        form.setValue('leadTimeDays', match.leadTimeDays > 0 ? match.leadTimeDays : 1, { shouldValidate: true });
+        form.setValue('mode', 'set', { shouldValidate: true });
+        // Prefill with the current on-hand count so an unchanged submit is a no-op —
+        // the user edits it to whatever the true count is.
+        form.setValue('quantity', match.onHand, { shouldValidate: true });
       }
       return;
     }
@@ -412,6 +444,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       }
     }
     const cat = (data.category || part.cat) as BOMCategory | undefined;
+    const location = lockedLocation ?? data.location;
 
     if (data.stockStatus === 'place_order') {
       onPlaceOrder({
@@ -422,7 +455,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         quantity: data.quantity,
         expectedDate: data.expectedDate?.trim() || undefined,
         leadTime: data.leadTimeDays,
-        location: data.location,
+        location,
         supplierRef: data.note?.trim() || undefined,
         note: data.orderNote?.trim() || undefined,
         description: data.description?.trim() || undefined,
@@ -433,14 +466,18 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       onAdjust({
         partId: part.partId,
         ...(selectedRecord ? {} : { pn: part.pn, name: part.name, cat }),
-        location: data.location as StockLocation,
+        location: location as StockLocation,
         direction: data.direction,
+        // Row-level "Adjust quantity" sets the absolute on-hand count; "New transaction" adds a delta.
+        mode: initialPartId ? 'set' : 'delta',
         quantity: data.quantity,
         reasonCode: data.reasonCode as string,
         note: data.note?.trim() || undefined,
         description: data.description?.trim() || undefined,
-        image: image ?? undefined,
-        leadTimeDays: data.leadTimeDays,
+        // Lead time and image are only collected in the "New transaction" flow —
+        // the row-level "Adjust quantity" dialog omits both fields.
+        image: initialPartId ? undefined : image ?? undefined,
+        leadTimeDays: initialPartId ? undefined : data.leadTimeDays,
       });
     }
     resetAndClose();
@@ -475,7 +512,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
             <DialogDescription>
               {stockStatus === 'place_order'
                 ? (orderStatus === 'planned' ? 'Flags a future purchase need, not yet on order' : 'Creates a tracked purchase order')
-                : 'Writes one immutable ledger entry'}
+                : initialPartId
+                  ? 'Sets the on-hand count — logs the change as one ledger entry'
+                  : 'Writes one immutable ledger entry'}
             </DialogDescription>
           </div>
           <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none">
@@ -711,9 +750,13 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                      <FormControl>
-                        <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
-                      </FormControl>
+                      {lockedLocation ? (
+                        <LockedLocationField location={lockedLocation} />
+                      ) : (
+                        <FormControl>
+                          <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -810,21 +853,24 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                         name="quantity"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              {initialPartId ? 'New on-hand count' : 'Quantity'} <span className="text-destructive" aria-hidden="true">*</span>
+                            </FormLabel>
                             <FormControl>
-                              <Input type="number" min={1} {...field} />
+                              <Input type="number" min={initialPartId ? 0 : 1} {...field} />
                             </FormControl>
-                            {!initialPartId && (
-                              <p className="text-xs text-muted-foreground">
-                                Defaults to this part&apos;s outstanding BOM demand — adjust it for this transaction.
-                              </p>
-                            )}
+                            <p className="text-xs text-muted-foreground">
+                              {initialPartId
+                                ? "The corrected on-hand quantity for this location — this replaces the current count, it isn't added to it."
+                                : "Defaults to this part's outstanding BOM demand — adjust it for this transaction."}
+                            </p>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
 
+                    {!initialPartId && (
                     <div className="grid grid-cols-1 gap-4">
                       <FormField
                         control={form.control}
@@ -843,6 +889,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                         )}
                       />
                     </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -986,6 +1033,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                 />
                 )}
 
+                {!initialPartId && (
                 <div className="space-y-2">
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Image <span className="normal-case font-normal">optional</span>
@@ -1061,6 +1109,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     </div>
                   )}
                 </div>
+                )}
               </div>
             </div>
 
