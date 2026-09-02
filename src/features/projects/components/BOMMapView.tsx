@@ -275,7 +275,7 @@ export function BOMMapView({ nodes, onOpen, pred, filtersActive }: Props) {
               }}
             >
               <div style={{ display: 'flex', gap: 10, padding: '10px 12px 0' }}>
-                <PartImageThumb nodeId={n.id} cat={n.cat} size={38} radius={8} />
+                <PartImageThumb imageUrl={n.imageUrl} cat={n.cat} size={38} radius={8} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 10.5, fontWeight: 500, color: '#2563EB', fontFamily: 'var(--font-mono, monospace)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {n.pn}

@@ -61,6 +61,13 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
     const status = meetStatusMap?.[member.id];
     return status?.connected && status.email ? status.email : member.email;
   };
+  // The organizer is always the meeting creator (set server-side from the
+  // authenticated session), so exclude them from the selectable/invitable
+  // team member list — they shouldn't need to pick themselves as an attendee.
+  const selectableTeamMembers = useMemo(
+    () => teamMembers.filter((m) => m.id !== user?.id),
+    [teamMembers, user?.id]
+  );
   const { ensureFreshToken } = useEnsureGoogleMeetToken();
   const { mutateAsync: createMeetingRecord } = useCreateMeeting();
   const [loading, setLoading] = useState(false);
@@ -99,10 +106,10 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
   }, [open, initialDate]);
 
   const orgEmails = new Set(
-    teamMembers.filter((m) => selectedMembers[m.id] && m.email).map((m) => m.email.toLowerCase())
+    selectableTeamMembers.filter((m) => selectedMembers[m.id] && m.email).map((m) => m.email.toLowerCase())
   );
 
-  const filteredTeamMembers = teamMembers.filter((m) => {
+  const filteredTeamMembers = selectableTeamMembers.filter((m) => {
     const q = memberSearch.trim().toLowerCase();
     if (!q) return true;
     return m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
@@ -181,7 +188,7 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
       return;
     }
 
-    const selectedTeamMembers = teamMembers.filter((m) => selectedMembers[m.id] && m.email);
+    const selectedTeamMembers = selectableTeamMembers.filter((m) => selectedMembers[m.id] && m.email);
     // What we persist to our own `meetings` row and use for in-app matching
     // (getOrgMeetings, notifications) — always the platform account email,
     // since that's how our own user records are keyed.
@@ -342,9 +349,9 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
                 disabled={loading}
               />
             </div>
-            {teamMembers.filter((member) => selectedMembers[member.id]).length > 0 && (
+            {selectableTeamMembers.filter((member) => selectedMembers[member.id]).length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {teamMembers
+                {selectableTeamMembers
                   .filter((member) => selectedMembers[member.id])
                   .map((member) => (
                     <Badge key={member.id} variant="secondary" className="h-6 gap-1 text-xs">
@@ -363,7 +370,7 @@ export function ScheduleMeetDialog({ open, onOpenChange, teamMembers, initialDat
               <div className="space-y-2.5 pr-2">
                 {filteredTeamMembers.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {teamMembers.length === 0 ? 'No team members found.' : 'No matches found.'}
+                    {selectableTeamMembers.length === 0 ? 'No team members found.' : 'No matches found.'}
                   </p>
                 )}
                 {filteredTeamMembers.map((member) => (

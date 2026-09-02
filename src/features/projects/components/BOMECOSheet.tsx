@@ -54,15 +54,18 @@ function FSelect<T extends string>({
   labels: Record<string, string>;
 }) {
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value as T)}
-      className="w-full bg-muted/40 border border-border rounded-md text-foreground text-[13px] px-3 py-2 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
-    >
-      {options.map(o => (
-        <option key={o} value={o} className="bg-card">{labels[o] ?? o}</option>
-      ))}
-    </select>
+    <div className="relative">
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value as T)}
+        className="w-full bg-muted/40 border border-border rounded-md text-foreground text-[13px] pl-3 pr-8 py-2 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
+      >
+        {options.map(o => (
+          <option key={o} value={o} className="bg-card">{labels[o] ?? o}</option>
+        ))}
+      </select>
+      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+    </div>
   );
 }
 
@@ -98,9 +101,11 @@ export function BOMECOSheet({
   const meta = getCategoryMeta(node.cat);
 
   const [activeTab, setActiveTab] = useState<TabId>('part');
+  const [maxTabReached, setMaxTabReached] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // ── Part Details editable state (pre-filled from node) ──
+  const [partName, setPartName] = useState(node.name ?? '');
   const [desc, setDesc] = useState(node.desc ?? '');
   const [status, setStatus] = useState<BOMStatus>(node.status ?? 'pending');
   const [mpn, setMpn] = useState(node.mpn ?? '');
@@ -121,6 +126,7 @@ export function BOMECOSheet({
   // retain values from whichever part was last edited instead of the current one.
   useEffect(() => {
     if (!open) return;
+    setPartName(node.name ?? '');
     setDesc(node.desc ?? '');
     setStatus(node.status ?? 'pending');
     setMpn(node.mpn ?? '');
@@ -135,6 +141,7 @@ export function BOMECOSheet({
     setRevTo('');
     setErrors({});
     setActiveTab('part');
+    setMaxTabReached(0);
   }, [open, node.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Impact tab state ──
@@ -168,19 +175,16 @@ export function BOMECOSheet({
   const changedFields = useMemo(() => {
     const rows: { param: string; from: string; to: string; label: ChangeLabel }[] = [];
     const check = (param: string, orig: string, cur: string) => {
-      if (orig !== cur && cur.trim() !== '') {
+      if (orig !== cur) {
         const fromN = parseFloat(orig), toN = parseFloat(cur);
         const label: ChangeLabel =
           !isNaN(fromN) && !isNaN(toN)
             ? toN > fromN ? 'INCREASED' : 'DECREASED'
             : 'MODIFIED';
-        rows.push({ param, from: orig || '—', to: cur, label });
+        rows.push({ param, from: orig || '—', to: cur || '—', label });
       }
     };
-    // Parameter names here must match BOM_PARAM_OPTIONS in ECOWizard.tsx — the
-    // backend's mapDiffRowsToRevisionFields() matches on these exact labels to
-    // route the change to the right bom_parts/bom_nodes column instead of
-    // dumping it into customFields.
+    check('Part Name',      node.name ?? '',                                    partName);
     check('Description',   node.desc ?? '',                                    desc);
     check('Manufacturer',  node.manufacturer ?? '',                            manufacturer);
     check('MPN',            node.mpn ?? '',                                     mpn);
@@ -190,7 +194,7 @@ export function BOMECOSheet({
     check('Quantity',       node.qty != null ? String(node.qty) : '',           qty);
     check('Unit of Measure', node.uom ?? 'EA',                                  uom);
     return rows;
-  }, [node, desc, manufacturer, mpn, distributor, price, leadTime, qty, uom]);
+  }, [node, partName, desc, manufacturer, mpn, distributor, price, leadTime, qty, uom]);
 
   const assignApprover = (idx: number, memberId: string) => {
     const member = projectMembers.find(m => m.id === memberId);
@@ -208,13 +212,72 @@ export function BOMECOSheet({
     return reasonOk && !!p.approverId;
   });
 
-  const canSubmit = ecoTitle.trim() && pipeline.length >= 1 && pipelineValid;
+  const canSubmit =
+    ecoTitle.trim().length > 0 &&
+    partName.trim().length > 0 &&
+    revTo.trim().length > 0 &&
+    desc.trim().length > 0 &&
+    manufacturer.trim().length > 0 &&
+    mpn.trim().length > 0 &&
+    distributor.trim().length > 0 &&
+    price.trim().length > 0 && !isNaN(Number(price)) && Number(price) >= 0 &&
+    leadTime.trim().length > 0 && !isNaN(Number(leadTime)) && Number(leadTime) >= 0 &&
+    qty.trim().length > 0 && !isNaN(Number(qty)) && Number(qty) > 0 &&
+    changedFields.length >= 1 &&
+    pipeline.length >= 1 &&
+    pipelineValid;
+
+  const isTabValid = useMemo(() => {
+    if (activeTab === 'part') {
+      return (
+        ecoTitle.trim().length > 0 &&
+        partName.trim().length > 0 &&
+        revTo.trim().length > 0 &&
+        desc.trim().length > 0 &&
+        manufacturer.trim().length > 0 &&
+        mpn.trim().length > 0 &&
+        distributor.trim().length > 0 &&
+        price.trim().length > 0 && !isNaN(Number(price)) && Number(price) >= 0 &&
+        leadTime.trim().length > 0 && !isNaN(Number(leadTime)) && Number(leadTime) >= 0 &&
+        qty.trim().length > 0 && !isNaN(Number(qty)) && Number(qty) > 0 &&
+        changedFields.length >= 1
+      );
+    }
+    if (activeTab === 'impact') {
+      return impactArea !== 'other' || impactAreaOther.trim().length > 0;
+    }
+    if (activeTab === 'reason') {
+      return (
+        (changeType !== 'OTHER' || changeTypeOther.trim().length > 0) &&
+        (reasonCode !== 'OTHER' || reasonCodeOther.trim().length > 0)
+      );
+    }
+    return true;
+  }, [
+    activeTab, ecoTitle, partName, revTo, desc, manufacturer, mpn, distributor,
+    price, leadTime, qty, changedFields, impactArea, impactAreaOther,
+    changeType, changeTypeOther, reasonCode, reasonCodeOther,
+  ]);
 
   const validateTab = (tab: TabId): boolean => {
     const e: Record<string, string> = {};
     if (tab === 'part') {
       if (!ecoTitle.trim()) e.title = 'ECO title is required';
+      if (!partName.trim()) e.name = 'Part Name is required';
       if (!revTo.trim()) e.revTo = 'Rev To is required';
+      if (!desc.trim()) e.desc = 'Description is required';
+      if (!manufacturer.trim()) e.manufacturer = 'Manufacturer is required';
+      if (!mpn.trim()) e.mpn = 'Manufacturer PN (MPN) is required';
+      if (!distributor.trim()) e.distributor = 'Supplier / Distributor is required';
+      if (!price.trim() || isNaN(Number(price)) || Number(price) < 0) {
+        e.price = 'Unit Price is required and must be 0 or greater';
+      }
+      if (!leadTime.trim() || isNaN(Number(leadTime)) || Number(leadTime) < 0) {
+        e.leadTime = 'Lead Time is required and must be 0 or greater';
+      }
+      if (!qty.trim() || isNaN(Number(qty)) || Number(qty) <= 0) {
+        e.qty = 'Quantity is required and must be a positive number';
+      }
       if (changedFields.length === 0) e.changes = 'Change at least one BOM field to proceed';
     }
     if (tab === 'impact' && impactArea === 'other' && !impactAreaOther.trim()) {
@@ -232,10 +295,26 @@ export function BOMECOSheet({
     return Object.keys(e).length === 0;
   };
 
+  const handleTabChange = (targetTab: TabId) => {
+    const currentIndex = TABS.indexOf(activeTab);
+    const targetIndex = TABS.indexOf(targetTab);
+
+    if (targetIndex > currentIndex) {
+      for (let i = currentIndex; i < targetIndex; i++) {
+        if (!validateTab(TABS[i])) return;
+      }
+    }
+    setErrors({});
+    setActiveTab(targetTab);
+    setMaxTabReached(m => Math.max(m, targetIndex));
+  };
+
   const handleNext = () => {
     if (!validateTab(activeTab)) return;
     setErrors({});
-    setActiveTab(TABS[TABS.indexOf(activeTab) + 1]);
+    const nextIndex = TABS.indexOf(activeTab) + 1;
+    setActiveTab(TABS[nextIndex]);
+    setMaxTabReached(m => Math.max(m, nextIndex));
   };
 
   // ── Submit ──
@@ -321,18 +400,25 @@ export function BOMECOSheet({
         </DialogHeader>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as TabId)} className="flex flex-col flex-1 overflow-hidden">
+        <Tabs value={activeTab} onValueChange={v => handleTabChange(v as TabId)} className="flex flex-col flex-1 overflow-hidden">
           <div className="px-7 pt-3 pb-0 border-b border-border shrink-0">
             <TabsList className="bg-transparent h-auto p-0 gap-0 w-full justify-start rounded-none">
-              {TABS.map(t => (
-                <TabsTrigger
-                  key={t}
-                  value={t}
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:bg-transparent text-muted-foreground text-[13px] font-medium px-4 py-2 capitalize"
-                >
-                  {TAB_LABEL[t]}
-                </TabsTrigger>
-              ))}
+              {TABS.map((t, i) => {
+                const locked = i > maxTabReached;
+                return (
+                  <TabsTrigger
+                    key={t}
+                    value={t}
+                    disabled={locked}
+                    className={cn(
+                      "rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:bg-transparent text-muted-foreground text-[13px] font-medium px-4 py-2 capitalize transition-opacity",
+                      locked && "opacity-40 cursor-not-allowed"
+                    )}
+                  >
+                    {TAB_LABEL[t]}
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
           </div>
 
@@ -387,7 +473,7 @@ export function BOMECOSheet({
                       {meta.label}
                     </span>
                     <span className="text-[12px] text-muted-foreground">
-                      Part&nbsp;<span className="font-mono font-semibold text-foreground">{node.pn}</span>
+                      Part Number&nbsp;<span className="font-mono font-semibold text-foreground">{node.pn}</span>
                       &nbsp;· BOM Level {node.level}
                     </span>
                   </div>
@@ -399,65 +485,88 @@ export function BOMECOSheet({
                     </div>
                   )}
 
-                  {/* Description */}
-                  <FL label="Description">
+                  {/* Part Name (Mandatory) */}
+                  <FL label="Part Name" required>
+                    <FInput
+                      value={partName}
+                      onChange={e => { setPartName(e.target.value); if (errors.name) setErrors(({ name: _n, ...rest }) => rest); }}
+                      placeholder="Part Name"
+                      className={cn(errors.name && 'border-destructive')}
+                    />
+                    {errors.name && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.name}</p>}
+                  </FL>
+
+                  {/* Description (Mandatory) */}
+                  <FL label="Description" required>
                     <Textarea
                       value={desc}
-                      onChange={e => setDesc(e.target.value)}
+                      onChange={e => { setDesc(e.target.value); if (errors.desc) setErrors(({ desc: _d, ...rest }) => rest); }}
                       placeholder="Brief technical description of the part"
-                      className="text-sm bg-muted border-border resize-none"
+                      className={cn('text-sm bg-muted border-border resize-none', errors.desc && 'border-destructive')}
                       rows={3}
                     />
+                    {errors.desc && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.desc}</p>}
                   </FL>
 
                   {/* Sourcing grid */}
                   <div className="grid grid-cols-3 gap-x-5 gap-y-4">
-                    <FL label="Manufacturer" className="col-span-3">
+                    <FL label="Manufacturer" required className="col-span-3">
                       <FInput
                         value={manufacturer}
-                        onChange={e => setManufacturer(e.target.value)}
+                        onChange={e => { setManufacturer(e.target.value); if (errors.manufacturer) setErrors(({ manufacturer: _m, ...rest }) => rest); }}
                         placeholder="e.g. Texas Instruments"
+                        className={cn(errors.manufacturer && 'border-destructive')}
                       />
+                      {errors.manufacturer && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.manufacturer}</p>}
                     </FL>
-                    <FL label="Manufacturer PN (MPN)">
+                    <FL label="Manufacturer PN (MPN)" required>
                       <FInput
                         value={mpn}
-                        onChange={e => setMpn(e.target.value)}
+                        onChange={e => { setMpn(e.target.value); if (errors.mpn) setErrors(({ mpn: _mpn, ...rest }) => rest); }}
                         placeholder="e.g. TI-A4B2"
-                        className="font-mono"
+                        className={cn('font-mono', errors.mpn && 'border-destructive')}
                       />
+                      {errors.mpn && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.mpn}</p>}
                     </FL>
-                    <FL label="Supplier / Distributor">
+                    <FL label="Supplier / Distributor" required>
                       <FInput
                         value={distributor}
-                        onChange={e => setDistributor(e.target.value)}
+                        onChange={e => { setDistributor(e.target.value); if (errors.distributor) setErrors(({ distributor: _dist, ...rest }) => rest); }}
                         placeholder="e.g. Digi-Key"
+                        className={cn(errors.distributor && 'border-destructive')}
                       />
+                      {errors.distributor && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.distributor}</p>}
                     </FL>
-                    <FL label="Unit Price ($)">
+                    <FL label="Unit Price ($)" required>
                       <FInput
                         value={price}
-                        onChange={e => setPrice(e.target.value)}
+                        onChange={e => { setPrice(e.target.value); if (errors.price) setErrors(({ price: _p, ...rest }) => rest); }}
                         type="number"
                         step="0.01"
                         placeholder="0.00"
+                        className={cn(errors.price && 'border-destructive')}
                       />
+                      {errors.price && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.price}</p>}
                     </FL>
-                    <FL label="Lead Time (days)">
+                    <FL label="Lead Time (days)" required>
                       <FInput
                         value={leadTime}
-                        onChange={e => setLeadTime(e.target.value)}
+                        onChange={e => { setLeadTime(e.target.value); if (errors.leadTime) setErrors(({ leadTime: _l, ...rest }) => rest); }}
                         type="number"
                         placeholder="14"
+                        className={cn(errors.leadTime && 'border-destructive')}
                       />
+                      {errors.leadTime && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.leadTime}</p>}
                     </FL>
-                    <FL label="Quantity">
+                    <FL label="Quantity" required>
                       <FInput
                         value={qty}
-                        onChange={e => setQty(e.target.value)}
+                        onChange={e => { setQty(e.target.value); if (errors.qty) setErrors(({ qty: _q, ...rest }) => rest); }}
                         type="number"
                         placeholder="1"
+                        className={cn(errors.qty && 'border-destructive')}
                       />
+                      {errors.qty && <p className="text-[11px] text-destructive flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" />{errors.qty}</p>}
                     </FL>
                     <FL label="Unit of Measure (UOM)" className="col-span-3">
                       <div className="flex flex-wrap gap-1.5 pt-0.5">
@@ -685,6 +794,7 @@ export function BOMECOSheet({
                                 style={{ fontSize: 13, fontWeight: 600, padding: '1px 6px', width: 160, borderColor: p.stage.trim() ? undefined : '#F59E0B88' }}
                               />
                             ) : p.stage}
+                            <span className="text-destructive font-semibold ml-0.5">*</span>
                             {moved && (
                               <span
                                 className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
@@ -694,17 +804,20 @@ export function BOMECOSheet({
                               </span>
                             )}
                           </div>
-                          <select
-                            value={p.approverId ?? ''}
-                            onChange={e => assignApprover(idx, e.target.value)}
-                            className="mt-0.5 w-full max-w-[240px] bg-muted/40 border rounded-md text-foreground text-[11px] px-2 py-1 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
-                            style={{ borderColor: p.approverId ? 'hsl(var(--border))' : '#F59E0B88' }}
-                          >
-                            <option value="" disabled className="bg-card">Select approver…</option>
-                            {projectMembers.map(m => (
-                              <option key={m.id} value={m.id} className="bg-card">{m.name} · {m.role}</option>
-                            ))}
-                          </select>
+                          <div className="relative mt-0.5 w-full max-w-[240px]">
+                            <select
+                              value={p.approverId ?? ''}
+                              onChange={e => assignApprover(idx, e.target.value)}
+                              className="w-full bg-muted/40 border rounded-md text-foreground text-[11px] pl-2 pr-7 py-1 outline-none focus:border-primary/40 cursor-pointer appearance-none font-[inherit]"
+                              style={{ borderColor: p.approverId ? 'hsl(var(--border))' : '#F59E0B88' }}
+                            >
+                              <option value="" disabled className="bg-card">Select approver *</option>
+                              {projectMembers.map(m => (
+                                <option key={m.id} value={m.id} className="bg-card">{m.name} · {m.role}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className="w-3 h-3 text-muted-foreground pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                          </div>
                         </div>
                         <button
                           onClick={() => setPipeline(pl => pl.map((x, i) => i === idx ? { ...x, optional: !x.optional } : x))}
@@ -750,7 +863,7 @@ export function BOMECOSheet({
                             style={{ color: '#F59E0B' }}
                           >
                             <AlertCircle className="w-3 h-3" />
-                            {p.optional ? 'Why optional' : 'Why reordered'} — justification required
+                            {p.optional ? 'Why optional' : 'Why reordered'} <span className="text-destructive ml-0.5">*</span> — justification required
                           </div>
                           <input
                             value={p.justification ?? ''}
@@ -836,7 +949,8 @@ export function BOMECOSheet({
             {activeTab !== 'approval' ? (
               <button
                 onClick={handleNext}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors font-[inherit]"
+                disabled={!isTabValid}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-[inherit]"
               >
                 Next <ChevronRight className="w-4 h-4" />
               </button>

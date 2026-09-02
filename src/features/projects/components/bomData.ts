@@ -58,6 +58,7 @@ export interface BOMNode {
   price: number;
   leadTime: number;   // days — mirrors backend leadTimeDays 1:1, no unit conversion
   mpn: string;
+  imageUrl: string | null;  // explicitly-set product photo — mirrors backend parts.imageUrl 1:1; never a Documents-tab fallback
   suppliers: SupplierEntry[];
   owner: string;
   ownerId?: string;
@@ -66,6 +67,7 @@ export interface BOMNode {
   customFields: CustomFieldEntry[];
   revHistory: BOMRevision[];
   available: number | null;  // sum of on-hand-allocated-quarantine across inventory locations; null = part not in inventory
+  location: string | null;   // inventory stock location(s) for this part; null = part not in inventory
   children?: BOMNode[];
   _x?: number;
   _y?: number;
@@ -172,6 +174,7 @@ export interface ApiPartResponse {
   customFields: ApiCustomFieldEntry[] | null;
   latestRevision: ApiRevisionResponse | null;
   available: number | null;
+  inventoryLocation: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -344,6 +347,7 @@ export function fromApiNode(node: ApiNodeResponse, depth = 0): BOMNode {
     price:        parseFloat(rev?.price ?? '0'),
     leadTime:     rev?.leadTimeDays ?? 0,
     mpn:          node.part.mpn ?? '',
+    imageUrl:     node.part.imageUrl ?? null,
     suppliers:    rev?.suppliers?.map(s => ({ ...s, price: String(s.price) })) ?? [],
     owner:        node.owner?.name ?? '',
     ownerId:      node.owner?.id,
@@ -352,6 +356,7 @@ export function fromApiNode(node: ApiNodeResponse, depth = 0): BOMNode {
     customFields: parseCustomFields(node.part.customFields),
     revHistory:   [],  // loaded on demand via usePartRevisions
     available:    node.part.available,
+    location:     node.part.inventoryLocation ?? null,
     children:     node.children?.map(c => fromApiNode(c, depth + 1)),
     _partId:      node.part.id,
   };

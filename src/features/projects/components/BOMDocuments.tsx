@@ -273,19 +273,21 @@ export function BOMDocuments({ nodeId }: { nodeId: string }) {
         </div>
       ) : (
         <div>
-          {/* Uploading indicator */}
-          {uploadingFile && <UploadingRow fileName={uploadingFile} />}
-
-          {/* Attachment list */}
-          {attachments.map(doc => (
-            <AttachmentRow
-              key={doc.id}
-              doc={doc}
-              onDelete={() => handleDelete(doc)}
-              deleting={deletingId === doc.id}
-              onPreview={setPreviewing}
-            />
-          ))}
+          {/* Uploading indicator + attachment list — capped to ~6 visible rows, scrolls beyond that */}
+          {(uploadingFile || attachments.length > 0) && (
+            <div className="max-h-[366px] overflow-y-auto">
+              {uploadingFile && <UploadingRow fileName={uploadingFile} />}
+              {attachments.map(doc => (
+                <AttachmentRow
+                  key={doc.id}
+                  doc={doc}
+                  onDelete={() => handleDelete(doc)}
+                  deleting={deletingId === doc.id}
+                  onPreview={setPreviewing}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Empty state */}
           {!uploadingFile && attachments.length === 0 && (
