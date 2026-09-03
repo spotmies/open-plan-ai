@@ -90,13 +90,14 @@ export const REQ_LINKTYPE: Record<string, { label: string; dir: 'up' | 'down' | 
   depends_on:       { label: 'Depends on',       dir: 'side' },
   depended_on_by:   { label: 'Depended on by',   dir: 'side' },
   conflicts_with:   { label: 'Conflicts with',   dir: 'side' },
+  flagged_by_eco:   { label: 'Flagged by ECO',   dir: 'side' },
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ReqTarget { value: number; tolerance: string; unit: string; }
 export interface ReqLink {
   type: string; target: string; status: 'valid' | 'suspect';
-  external?: boolean; kind?: 'part' | 'test'; result?: ReqVStatus;
+  external?: boolean; kind?: 'part' | 'test' | 'eco'; result?: ReqVStatus;
   /** Backend requirement_links row id — present only for links that are real,
    * independently deletable rows (depends_on/conflicts_with/extra derives_from).
    * Absent for links synthesized from the tree itself (the primary parent
@@ -195,6 +196,11 @@ export interface ApiRequirementAllocationForRebuild {
   requirementId: string; nodeId: string; partNumber: string; partName: string;
 }
 
+/** Minimal shape adapted from `ApiAffectedRequirementLink` (src/hooks/useECOs.ts). */
+export interface ApiEcoSuspectForRebuild {
+  requirementId: string; ecoId: string; ecoNum: string; ecoStatus: string;
+}
+
 /**
  * Rebuilds `REQS`/`BY_KEY`/`REQ_ROOTS` in place from a live API response.
  * `vmethod`/`vstatus` default to placeholders since Test & Verification
@@ -204,11 +210,15 @@ export interface ApiRequirementAllocationForRebuild {
  * rather than silently treating "not fetched yet" as "known to be empty".
  * `allocations` (the third param) is the project-wide BOM↔requirement
  * allocation list (bom_requirement_links) — same omit-vs-empty distinction.
+ * `ecoSuspects` (the fourth param) is the project-wide "requirements with an
+ * in-flight ECO" list (eco_affected_requirements, pre-filtered server-side to
+ * non-closed/cancelled ECOs) — same omit-vs-empty distinction again.
  */
 export function rebuildRequirementsFromApi(
   items: ApiRequirementForRebuild[],
   links?: ApiRequirementLinkForRebuild[],
   allocations?: ApiRequirementAllocationForRebuild[],
+  ecoSuspects?: ApiEcoSuspectForRebuild[],
 ): void {
   const idToKey: Record<string, string> = {};
   items.forEach(item => { idToKey[item.id] = item.key; });
@@ -279,6 +289,9 @@ export function rebuildRequirementsFromApi(
   const allocByReqId: Record<string, string[]> = {};
   (allocations ?? []).forEach(a => { (allocByReqId[a.requirementId] ??= []).push(a.partNumber); });
 
+  const ecoSuspectsByReqId: Record<string, ApiEcoSuspectForRebuild[]> = {};
+  (ecoSuspects ?? []).forEach(s => { (ecoSuspectsByReqId[s.requirementId] ??= []).push(s); });
+
   REQS.forEach(r => {
     const links: ReqLink[] = [];
     if (r.parent && BY_KEY[r.parent]) links.push({ type:'derives_from', target:r.parent, status:'valid' });
@@ -288,6 +301,8 @@ export function rebuildRequirementsFromApi(
     const alloc = r._id ? allocByReqId[r._id] ?? [] : [];
     alloc.forEach(partNumber => links.push({ type:'allocated_to', target:partNumber, status:'valid', kind:'part' }));
     r.alloc = alloc;
+    const ecoLinks = r._id ? ecoSuspectsByReqId[r._id] ?? [] : [];
+    ecoLinks.forEach(s => links.push({ type:'flagged_by_eco', target:s.ecoNum, status:'suspect', kind:'eco', external:true }));
     r.links = links;
     const hasSource = r.type === 'stakeholder-need' || links.some(l => l.type === 'derives_from' || l.type === 'traces_to_source');
     const needsImpl = r.type === 'subsystem-req' || r.type === 'component-req';

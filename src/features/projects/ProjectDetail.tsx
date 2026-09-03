@@ -1968,6 +1968,7 @@ export default function ProjectDetail() {
                 navigate(`/projects/${id}/requirements${newKey ? `/${newKey}` : ''}`)
               }
               onEditorOpenChange={setIsRequirementsEditorOpen}
+              onEcoCreated={(ecoId) => navigate(`/projects/${id}/eng-changes/${ecoId}`)}
             />
           </TabsContent>
           <TabsContent value="eng-changes" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">

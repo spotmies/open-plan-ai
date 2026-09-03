@@ -24,6 +24,7 @@ import {
 } from './requirementsData';
 import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@/hooks/useRequirements';
 import { useRequirementAllocations } from '@/hooks/useBom';
+import { useECOAffectedRequirements } from '@/hooks/useECOs';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, Donut, StatTile, CoverageBar, ScoreRing, softTint,
@@ -85,8 +86,11 @@ interface RequirementsViewProps {
    * isn't URL-driven (same reasoning as BOM's "Add Part" sheet), so this is the
    * only way the host knows. */
   onEditorOpenChange?: (open: boolean) => void;
+  /** Fired when "Raise ECO" (from the Impact drawer) creates a real ECO —
+   * mirrors BOM's onEcoCreated so the host can navigate to it. */
+  onEcoCreated?: (ecoId: string) => void;
 }
-export default function RequirementsView({ projectId, selectedKey = null, onSelectedKeyChange, onEditorOpenChange }: RequirementsViewProps) {
+export default function RequirementsView({ projectId, selectedKey = null, onSelectedKeyChange, onEditorOpenChange, onEcoCreated }: RequirementsViewProps) {
   // Live data — rebuilds the module-level REQS/BY_KEY index (requirementsData.ts)
   // from the real backend in place, synchronously during render. Every helper
   // and every other Requirements file reads that same shared index, so this is
@@ -95,6 +99,7 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   const { data: apiTree, isLoading: treeLoading, isError: treeError } = useRequirementTree(projectId);
   const { data: apiLinks } = useRequirementLinks(projectId);
   const { data: apiAllocations } = useRequirementAllocations(projectId);
+  const { data: apiEcoSuspects } = useECOAffectedRequirements(projectId);
   // REQS/BY_KEY/REQ_ROOTS are mutated in place, not replaced — plain object
   // identity never changes, so nothing here can appear in a useMemo dependency
   // array to signal "the data changed." Rebuilding unconditionally every render
@@ -107,14 +112,17 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   // component and in CoverageDashboard/ReadinessView/TraceabilityView/
   // RequirementsMapView.
   if (apiTree) {
-    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations);
+    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations, apiEcoSuspects);
   }
-  // apiTree, apiLinks and apiAllocations are three independent React Query
-  // results, each stable (unchanged reference) until its own data actually
-  // changes — combined into one memoized value so every dependency array
-  // below only has one thing to list, and still only changes reference when
-  // any input really does.
-  const dataVersion = useMemo(() => ({ apiTree, apiLinks, apiAllocations }), [apiTree, apiLinks, apiAllocations]);
+  // apiTree, apiLinks, apiAllocations and apiEcoSuspects are four independent
+  // React Query results, each stable (unchanged reference) until its own data
+  // actually changes — combined into one memoized value so every dependency
+  // array below only has one thing to list, and still only changes reference
+  // when any input really does.
+  const dataVersion = useMemo(
+    () => ({ apiTree, apiLinks, apiAllocations, apiEcoSuspects }),
+    [apiTree, apiLinks, apiAllocations, apiEcoSuspects],
+  );
   const groups = apiGroups ?? [];
 
   const [view, setView] = useState<ViewTab>('table');
@@ -235,7 +243,7 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
           drawer's state gets set on click but nothing appears until the
           user navigates away to a return path that does render it. */}
       {impactKey && (
-        <RequirementImpact reqKey={impactKey} onClose={() => setImpactKey(null)} onOpen={openDetail} />
+        <RequirementImpact reqKey={impactKey} projectId={projectId} onClose={() => setImpactKey(null)} onOpen={openDetail} onEcoCreated={onEcoCreated} />
       )}
     </>
   );
@@ -397,7 +405,7 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
 
       {/* ── Impact drawer ── */}
       {impactKey && (
-        <RequirementImpact reqKey={impactKey} onClose={() => setImpactKey(null)} onOpen={openDetail} />
+        <RequirementImpact reqKey={impactKey} projectId={projectId} onClose={() => setImpactKey(null)} onOpen={openDetail} onEcoCreated={onEcoCreated} />
       )}
     </div>
   );

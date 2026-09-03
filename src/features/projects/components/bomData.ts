@@ -195,6 +195,7 @@ export interface ApiRequirementAllocation {
   linkId: string;
   requirementId: string;
   nodeId: string;
+  partId: string;
   partNumber: string;
   partName: string;
 }

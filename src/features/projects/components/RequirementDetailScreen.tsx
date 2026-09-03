@@ -388,9 +388,9 @@ function LinkGroup({ title, icon:Ic, links, onNavigate, onDelete, tint }: { titl
               style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', borderRadius:9, border:`1px solid ${isSuspect ? softTint('#DC2626',0.35) : 'hsl(var(--border))'}`, background: isSuspect ? softTint('#DC2626',0.04) : 'hsl(var(--card))', cursor: target && !l.external ? 'pointer' : 'default', transition:'background .1s' }}
               onMouseEnter={e=>{ if(target&&!l.external) e.currentTarget.style.background='hsl(var(--muted))'; }}
               onMouseLeave={e=>{ e.currentTarget.style.background=isSuspect?softTint('#DC2626',0.04):'hsl(var(--card))'; }}>
-              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, fontWeight:600, color: l.kind==='part'?'#D97706':l.kind==='test'?'#9333EA':'#3B82F6', width:90, flexShrink:0 }}>{l.target}</span>
+              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, fontWeight:600, color: l.kind==='part'?'#D97706':l.kind==='test'?'#9333EA':l.kind==='eco'?'#DC2626':'#3B82F6', width:90, flexShrink:0 }}>{l.target}</span>
               <span style={{ color:'hsl(var(--muted-foreground))', flex:'0 0 100px', fontSize:11, fontWeight:500 }}>{REQ_LINKTYPE[l.type]?.label ?? l.type}</span>
-              <span style={{ flex:1, fontSize:12.5, color:'hsl(var(--foreground))', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{target ? target.title : l.kind==='part' ? 'BOM part / assembly' : l.kind==='test' ? 'Test case' : 'External source'}</span>
+              <span style={{ flex:1, fontSize:12.5, color:'hsl(var(--foreground))', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{target ? target.title : l.kind==='part' ? 'BOM part / assembly' : l.kind==='test' ? 'Test case' : l.kind==='eco' ? 'Engineering change order' : 'External source'}</span>
               {isSuspect && <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10.5, fontWeight:700, color:'#DC2626', flexShrink:0 }}><AlertTriangle size={11} color="#DC2626"/>suspect</span>}
               {l._linkId && (
                 <button onClick={e => { e.stopPropagation(); onDelete(l._linkId!); }}
