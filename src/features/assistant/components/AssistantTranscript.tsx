@@ -29,6 +29,14 @@ interface AssistantTranscriptProps {
   onSelectVersion?: (parentId: string | null, messageId: string) => void;
   streamingText: string;
   isStreaming: boolean;
+  /**
+   * The gap between ai:done and its refetch landing the final assistant-text
+   * row (see useAssistantConversation). While true the streamed answer stays
+   * frozen on screen and the in-progress turn's card rows keep rendering
+   * *below* it — same as mid-stream — so the card never visibly reorders
+   * above→below the text when the persisted transcript catches up.
+   */
+  finalizing?: boolean;
   toolStatus: ToolStatusEntry[];
   pendingQuestions: AskUserQuestion[] | null;
   onAnswer: (answers: Array<{ header: string; selected: string[] }>) => void;
@@ -49,9 +57,21 @@ interface AssistantTranscriptProps {
   withHeaderOffset?: boolean;
 }
 
-// Groups a run of messages between `user` rows and moves any present_card
-// rows (and proposal-bearing, textless assistant rows) to the end of that
-// run, preserving relative order within each half.
+// A row that renders as a card and belongs *after* the turn's prose: a
+// present_card result, or a textless assistant row that only exists to carry
+// a propose_* proposal (its own sentence, when it has one, is a separate row).
+function isTurnCardRow(
+  message: AssistantMessage,
+  proposalsByMessageId?: Record<string, AssistantProposal[]>,
+): boolean {
+  const isTextlessProposalCarrier =
+    message.role === 'assistant' && !message.content?.trim() && !!proposalsByMessageId?.[message.id]?.length;
+  return isPresentCardMessage(message) || isTextlessProposalCarrier;
+}
+
+// Groups a run of messages between `user` rows and moves any card rows (see
+// isTurnCardRow) to the end of that run, preserving relative order within
+// each half.
 function reorderCardsAfterText(
   msgs: AssistantMessage[],
   proposalsByMessageId?: Record<string, AssistantProposal[]>,
@@ -71,8 +91,7 @@ function reorderCardsAfterText(
       result.push(message);
       continue;
     }
-    const isTextlessProposalCarrier = message.role === 'assistant' && !message.content?.trim() && !!proposalsByMessageId?.[message.id]?.length;
-    if (isPresentCardMessage(message) || isTextlessProposalCarrier) turnCards.push(message);
+    if (isTurnCardRow(message, proposalsByMessageId)) turnCards.push(message);
     else turnOthers.push(message);
   }
   flushTurn();
@@ -86,6 +105,7 @@ export function AssistantTranscript({
   onSelectVersion,
   streamingText,
   isStreaming,
+  finalizing = false,
   toolStatus,
   pendingQuestions,
   onAnswer,
@@ -134,7 +154,36 @@ export function AssistantTranscript({
   // live-streaming render below), so reorder for display only, per turn
   // (a run of messages between user messages), without touching the
   // underlying chronological array used elsewhere in this component.
-  const orderedMessages = reorderCardsAfterText(visibleMessages, proposalsByMessageId);
+  const orderedAll = reorderCardsAfterText(visibleMessages, proposalsByMessageId);
+
+  // While the turn is still streaming (or finalizing — the post-ai:done
+  // refetch gap), its card row is persisted and ordered *before* its closing
+  // sentence has landed as a row. Rendering it now, up in the ordered list,
+  // then flipping it below the text once ai:done's refetch lands is exactly
+  // the reorder flicker we're killing. Hold the in-progress turn's trailing
+  // card rows out of the list and render them right after the streamed-text
+  // bubble instead, so the on-screen order (text, then card) never changes.
+  let orderedMessages = orderedAll;
+  let deferredTurnCards: AssistantMessage[] = [];
+  if (isStreaming || finalizing) {
+    let cut = orderedAll.length;
+    while (cut > 0 && isTurnCardRow(orderedAll[cut - 1], proposalsByMessageId)) cut -= 1;
+    orderedMessages = orderedAll.slice(0, cut);
+    deferredTurnCards = orderedAll.slice(cut);
+  }
+
+  // Has the in-progress turn's final assistant-text row already landed in the
+  // persisted list? (Walk back to the last user row; any assistant row with
+  // text after it is that answer.) If so the finalizing freeze is stale —
+  // render straight from the list and don't also draw the frozen bubble, or
+  // the answer shows twice.
+  const lastUserIdx = visibleMessages.map((m) => m.role).lastIndexOf('user');
+  const currentTurnHasAssistantText = visibleMessages
+    .slice(lastUserIdx + 1)
+    .some((m) => m.role === 'assistant' && !!m.content?.trim());
+  const showStreamedBubble =
+    (isStreaming || finalizing) && !!streamingText && !(finalizing && currentTurnHasAssistantText);
+
   // Once the REST refetch triggered by ai:card lands (which can happen mid-turn,
   // well before ai:done clears liveCard), the same card starts appearing in
   // visibleMessages too. Stop showing the transient liveCard once the persisted
@@ -180,6 +229,91 @@ export function AssistantTranscript({
     return false;
   }
 
+  const renderMessage = (message: AssistantMessage) => {
+    const setMessageRef = (el: HTMLDivElement | null) => {
+      if (el) messageElRefs.current.set(message.id, el);
+      else messageElRefs.current.delete(message.id);
+    };
+
+    if (isAskUserAnswerMessage(message)) {
+      const parent = safeMessages.find((m) => m.id === message.parentId);
+      const questions = extractAskUserQuestions(parent);
+      const recap = questions ? pairAskUserAnswers(questions, message.content) : null;
+      return (
+        <div key={message.id} ref={setMessageRef}>
+          {recap ? (
+            <AssistantQuestionRecap recap={recap} />
+          ) : (
+            <p className="text-xs italic text-muted-foreground">{message.content}</p>
+          )}
+        </div>
+      );
+    }
+
+    if (isProposalEventMessage(message)) {
+      return (
+        <div key={message.id} ref={setMessageRef}>
+          <AssistantEventLine message={message} />
+        </div>
+      );
+    }
+
+    if (isPresentCardMessage(message)) {
+      let parsedCard: AssistantCard | null = null;
+      try {
+        parsedCard = message.content ? (JSON.parse(message.content) as AssistantCard) : null;
+      } catch {
+        parsedCard = null;
+      }
+      if (!parsedCard) return null;
+      return (
+        <div key={message.id} ref={setMessageRef}>
+          <AssistantCardMessage
+            card={parsedCard}
+            createdAt={message.createdAt}
+            onFollowUp={onSendMessage}
+            readOnly={readOnly}
+          />
+        </div>
+      );
+    }
+    const isCompactAnswer =
+      message.role === 'assistant' && turnHadToolCalls(safeMessages.findIndex((m) => m.id === message.id));
+    const proposalsForMessage = message.role === 'assistant' ? proposalsByMessageId?.[message.id] : undefined;
+    const hasText = !!message.content?.trim();
+    return (
+      <div key={message.id} ref={setMessageRef} className="space-y-2">
+        {hasText && (
+          <AssistantMessageBubble
+            id={message.id}
+            parentId={message.parentId}
+            role={message.role as 'user' | 'assistant'}
+            content={message.content ?? ''}
+            attachments={message.attachments}
+            versionInfo={messageVersions?.[message.id]}
+            onEdit={onEditMessage}
+            onSelectVersion={onSelectVersion}
+            disabled={isStreaming}
+            variant={isCompactAnswer ? 'compact' : 'bubble'}
+          />
+        )}
+        {proposalsForMessage?.map((proposal) => (
+          <AssistantProposalCard
+            key={proposal.id}
+            proposal={proposal}
+            readOnly={readOnly}
+            onConfirm={onConfirmProposal}
+            onReject={onRejectProposal}
+            onRevise={onReviseProposal}
+            isConfirming={confirmingProposalId === proposal.id}
+            isRejecting={rejectingProposalId === proposal.id}
+            isRevising={revisingProposalId === proposal.id}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <ScrollArea className="flex-1 min-h-0">
       <div
@@ -188,94 +322,11 @@ export function AssistantTranscript({
           withHeaderOffset ? 'pt-16 md:pt-20' : 'pt-4 md:pt-6',
         )}
       >
-        {orderedMessages.map((message) => {
-          const setMessageRef = (el: HTMLDivElement | null) => {
-            if (el) messageElRefs.current.set(message.id, el);
-            else messageElRefs.current.delete(message.id);
-          };
-
-          if (isAskUserAnswerMessage(message)) {
-            const parent = safeMessages.find((m) => m.id === message.parentId);
-            const questions = extractAskUserQuestions(parent);
-            const recap = questions ? pairAskUserAnswers(questions, message.content) : null;
-            return (
-              <div key={message.id} ref={setMessageRef}>
-                {recap ? (
-                  <AssistantQuestionRecap recap={recap} />
-                ) : (
-                  <p className="text-xs italic text-muted-foreground">{message.content}</p>
-                )}
-              </div>
-            );
-          }
-
-          if (isProposalEventMessage(message)) {
-            return (
-              <div key={message.id} ref={setMessageRef}>
-                <AssistantEventLine message={message} />
-              </div>
-            );
-          }
-
-          if (isPresentCardMessage(message)) {
-            let parsedCard: AssistantCard | null = null;
-            try {
-              parsedCard = message.content ? (JSON.parse(message.content) as AssistantCard) : null;
-            } catch {
-              parsedCard = null;
-            }
-            if (!parsedCard) return null;
-            return (
-              <div key={message.id} ref={setMessageRef}>
-                <AssistantCardMessage
-                  card={parsedCard}
-                  createdAt={message.createdAt}
-                  onFollowUp={onSendMessage}
-                  readOnly={readOnly}
-                />
-              </div>
-            );
-          }
-          const isCompactAnswer =
-            message.role === 'assistant' && turnHadToolCalls(safeMessages.findIndex((m) => m.id === message.id));
-          const proposalsForMessage = message.role === 'assistant' ? proposalsByMessageId?.[message.id] : undefined;
-          const hasText = !!message.content?.trim();
-          return (
-            <div key={message.id} ref={setMessageRef} className="space-y-2">
-              {hasText && (
-                <AssistantMessageBubble
-                  id={message.id}
-                  parentId={message.parentId}
-                  role={message.role as 'user' | 'assistant'}
-                  content={message.content ?? ''}
-                  attachments={message.attachments}
-                  versionInfo={messageVersions?.[message.id]}
-                  onEdit={onEditMessage}
-                  onSelectVersion={onSelectVersion}
-                  disabled={isStreaming}
-                  variant={isCompactAnswer ? 'compact' : 'bubble'}
-                />
-              )}
-              {proposalsForMessage?.map((proposal) => (
-                <AssistantProposalCard
-                  key={proposal.id}
-                  proposal={proposal}
-                  readOnly={readOnly}
-                  onConfirm={onConfirmProposal}
-                  onReject={onRejectProposal}
-                  onRevise={onReviseProposal}
-                  isConfirming={confirmingProposalId === proposal.id}
-                  isRejecting={rejectingProposalId === proposal.id}
-                  isRevising={revisingProposalId === proposal.id}
-                />
-              ))}
-            </div>
-          );
-        })}
+        {orderedMessages.map(renderMessage)}
 
         {isStreaming && !streamingText && <AssistantStatusLine toolStatus={toolStatus} />}
 
-        {isStreaming && streamingText && (
+        {showStreamedBubble && (
           <AssistantMessageBubble
             role="assistant"
             content={streamingText}
@@ -283,7 +334,12 @@ export function AssistantTranscript({
           />
         )}
 
-        {liveCard && !lastVisibleIsCard && (
+        {/* The in-progress turn's card rows, held back from the ordered list
+            above so they always render below the streamed text (see
+            deferredTurnCards) — never a reorder when ai:done's refetch lands. */}
+        {deferredTurnCards.map(renderMessage)}
+
+        {liveCard && !lastVisibleIsCard && deferredTurnCards.length === 0 && (
           <AssistantCardMessage card={liveCard} createdAt={null} onFollowUp={onSendMessage} readOnly={readOnly} />
         )}
 
