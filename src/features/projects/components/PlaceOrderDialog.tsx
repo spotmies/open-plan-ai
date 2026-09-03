@@ -184,13 +184,13 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       <DialogContent
         hideClose
         className={cn(
-          'p-0 flex flex-col gap-0',
+          'p-0 flex flex-col gap-0 overflow-hidden',
           isMobile
             ? 'inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0 data-[state=open]:!slide-in-from-left-0 data-[state=open]:!slide-in-from-top-0 data-[state=closed]:!slide-out-to-left-0 data-[state=closed]:!slide-out-to-top-0'
-            : 'max-w-lg'
+            : 'max-w-3xl max-h-[90vh]'
         )}
       >
-        <DialogHeader className="px-4 sm:px-6 py-3.5 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
+        <DialogHeader className="px-4 sm:px-6 py-4 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <ShoppingCart className="h-4 w-4" />
           </div>
@@ -206,13 +206,13 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
-            <div className="overflow-y-auto flex-1">
-              <div className="p-4 sm:p-6 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5 items-start">
                 <FormField
                   control={form.control}
                   name="partId"
                   render={() => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                       <Popover open={partPickerOpen} onOpenChange={setPartPickerOpen}>
                         <PopoverTrigger asChild>
@@ -275,7 +275,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   control={form.control}
                   name="orderStatus"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Order status</FormLabel>
                       <FormControl>
                         <ToggleGroup
@@ -310,7 +310,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   )}
                 />
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="quantity"
@@ -358,7 +358,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   control={form.control}
                   name="location"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Destination location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                       {lockedLocation ? (
                         <LockedLocationField location={lockedLocation} />
@@ -372,7 +372,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   )}
                 />
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="supplierRef"
@@ -406,7 +406,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                   control={form.control}
                   name="purpose"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Purpose</FormLabel>
                       <FormControl>
                         <Textarea

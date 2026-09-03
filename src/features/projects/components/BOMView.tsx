@@ -9,8 +9,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
-import { useBomTree, useCreateBomNode, useDecideApprovalRequest, useDeleteBomNode, useAddRequirement, useProjectApprovalRequests } from '@/hooks/useBom';
+import { useBomTree, useCreateBomNode, useDeleteBomNode, useAddRequirement, useProjectApprovalRequests } from '@/hooks/useBom';
 import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useAuth } from '@/contexts/AuthContext';
@@ -88,6 +89,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { cn } from '@/lib/utils';
 import {
   BOMNode, BOMFilters, BOMStatus, EMPTY_FILTERS,
@@ -101,7 +103,6 @@ import { BOMStatusPill, ReqTag, PartImageThumb } from './BOMShared';
 import { BOMDetailScreen, AddSubcomponentDialog } from './BOMDetailScreen';
 import { BOMMapView } from './BOMMapView';
 import { BOMPartSheet, BOMPartPayload, DocValue } from './BOMPartSheet';
-import { BOMRejectDialog } from './BOMRejectDialog';
 import { BOMImportSubcomponentsDialog } from './BOMImportSubcomponentsDialog';
 import { ImportBomDialog } from '../../bom-import/ImportBomDialog';
 import { NewBuildDialog, type NewBuildInput } from './NewBuildDialog';
@@ -539,7 +540,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
   open: boolean; filters: BOMFilters;
   setFilters: React.Dispatch<React.SetStateAction<BOMFilters>>;
   onClose: () => void;
-  facets: { units: string[]; manufacturers: string[]; suppliers: string[]; owners: string[]; categories: string[] };
+  facets: { units: string[]; manufacturers: string[]; suppliers: string[]; owners: string[]; categories: string[]; mpns: string[] };
   currencySymbol: string;
 }) {
   const [draft, setDraft] = useState<BOMFilters>({ ...filters });
@@ -596,7 +597,7 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
     draft.categories.length +
     (draft.priceMin || draft.priceMax ? 1 : 0) +
     (draft.leadOp !== 'any' && draft.leadValue ? 1 : 0) +
-    (draft.mpn ? 1 : 0);
+    draft.mpns.length;
 
   return (
     <>
@@ -680,10 +681,10 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
 
           <Section title="Lead Time" icon={Clock} count={draft.leadOp !== 'any' && draft.leadValue ? 1 : 0}>
             <div className="flex bg-muted border border-border rounded-lg p-0.5 gap-0.5 mb-2.5">
-              {([['any', 'Any'], ['lt', 'Less than'], ['gt', 'Greater than'], ['eq', 'Exactly']] as const).map(([id, label]) => (
-                <button key={id} onClick={() => set('leadOp', id)}
+              {([['lt', 'Less than'], ['gt', 'Greater than'], ['eq', 'Exactly']] as const).map(([id, label]) => (
+                <button key={id} onClick={() => set('leadOp', draft.leadOp === id ? 'any' : id)}
                   className={cn('flex-1 py-1.5 rounded-md text-[10.5px] font-medium cursor-pointer border-none transition-colors whitespace-nowrap',
-                    draft.leadOp === id ? 'bg-foreground text-background' : 'bg-transparent text-muted-foreground hover:text-foreground')}>
+                    draft.leadOp === id ? 'bg-primary/10 text-primary' : 'bg-transparent text-muted-foreground hover:text-foreground')}>
                   {label}
                 </button>
               ))}
@@ -786,15 +787,14 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
             </div>
           </Section>
 
-          <Section title="Manufacturer Part Number (MPN)" icon={Hash} count={draft.mpn ? 1 : 0}>
-            <div className="flex items-center gap-2 bg-muted border border-border rounded-md px-2.5 py-1.5">
-              <Hash className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <input
-                value={draft.mpn} onChange={e => set('mpn', e.target.value)}
-                placeholder="e.g. INF-4A29C"
-                className="bg-transparent border-none outline-none text-foreground text-xs w-full font-mono"
-              />
-            </div>
+          <Section title="Manufacturer Part Number (MPN)" icon={Hash} count={draft.mpns.length}>
+            <MultiSelect
+              options={facets.mpns.map(m => ({ label: m, value: m }))}
+              selected={draft.mpns}
+              onChange={v => set('mpns', v)}
+              placeholder="Select MPN…"
+              contentClassName="z-[70]"
+            />
           </Section>
         </div>
 
@@ -829,7 +829,7 @@ const HEADERS = [
 
 function ListView({
   rows, expanded, toggle, filtersActive, onOpen, onAddSub, onDeleteRequest, totalCount, formatCurrency,
-  canDecideRow, onApprove, onReject, approvingId,
+  canDecideRow,
 }: {
   rows: BOMNode[];
   expanded: Record<string, boolean>;
@@ -841,9 +841,6 @@ function ListView({
   totalCount: number;
   formatCurrency: (n: number) => string;
   canDecideRow: (nodeId: string) => boolean;
-  onApprove: (node: BOMNode) => void;
-  onReject: (node: BOMNode) => void;
-  approvingId: string | null;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const rowH = 46;
@@ -855,12 +852,20 @@ function ListView({
         {HEADERS.map((c, i) => (
           <div key={c.key}
             style={{ flexBasis: c.w ?? 'auto', flexGrow: c.w ? 0 : 1, flexShrink: c.w ? 0 : 1 }}
-            className={cn('py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none',
+            className={cn('py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none text-left',
               i === 0 ? 'pl-0 pr-2' : 'px-2',
+              c.key === 'level' && 'flex items-center',
               (c.key === 'qty' || c.key === 'price') && 'text-right',
               c.key === 'location' && 'text-center'
             )}>
-            {c.label}
+            {c.key === 'level' ? (
+              <>
+                <span className="inline-flex items-center p-0.5" aria-hidden="true" style={{ visibility: 'hidden' }}>
+                  <ChevronDown className="w-3 h-3" />
+                </span>
+                <span className="ml-0.5">{c.label}</span>
+              </>
+            ) : c.label}
           </div>
         ))}
       </div>
@@ -901,7 +906,7 @@ function ListView({
                     </span>
                   ) : <span className="w-3 inline-block" />}
                 </span>
-                <span className={cn('text-xs font-semibold ml-0.5 tabular-nums',
+                <span className={cn('text-xs font-semibold ml-0.5 tabular-nums text-left',
                   row.level === 0 ? 'text-foreground' : row.level === 1 ? 'text-muted-foreground' : 'text-muted-foreground/60'
                 )}>
                   {row.levelLabel ?? row.level}
@@ -912,11 +917,16 @@ function ListView({
               <div className="flex-1 min-w-0 px-2 flex items-center gap-2.5">
                 <PartImageThumb imageUrl={row.imageUrl} cat={row.cat} size={32} hoverZoom />
                 <div className="flex-1 min-w-0">
-                  <span className={cn('text-sm block truncate',
-                    row.level === 0 ? 'font-semibold text-foreground' : row.level === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
-                  )}>
-                    {row.name || row.desc}
-                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className={cn('text-sm block truncate text-left',
+                        row.level === 0 ? 'font-semibold text-foreground' : row.level === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
+                      )}>
+                        {row.name || row.desc}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-sm break-words">{row.name || row.desc}</TooltipContent>
+                  </Tooltip>
                   <span className="text-xs font-medium font-mono block truncate text-muted-foreground">{row.pn}</span>
                 </div>
               </div>
@@ -969,18 +979,16 @@ function ListView({
                 {row.status === 'pending' && canDecideRow(row.id) && (
                   <>
                     <button
-                      onClick={e => { e.stopPropagation(); onApprove(row); }}
-                      disabled={approvingId === row.id}
-                      title="Approve part"
-                      className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                      onClick={e => { e.stopPropagation(); onOpen(row.id); }}
+                      title="Review part"
+                      className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:bg-muted transition-colors"
                     >
                       <Check className="w-3.5 h-3.5" style={{ color: '#16A34A' }} />
                     </button>
                     <button
-                      onClick={e => { e.stopPropagation(); onReject(row); }}
-                      disabled={approvingId === row.id}
-                      title="Reject part"
-                      className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                      onClick={e => { e.stopPropagation(); onOpen(row.id); }}
+                      title="Review part"
+                      className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:bg-muted transition-colors"
                     >
                       <X className="w-3.5 h-3.5" style={{ color: '#DC2626' }} />
                     </button>
@@ -1316,7 +1324,6 @@ export function BOMView({
     prevAddOpen.current = addOpen;
   }, [addOpen]);
   const [search, setSearch] = useState('');
-  const [rejectTarget, setRejectTarget] = useState<BOMNode | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BOMNode | null>(null);
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem('bom_view') as ViewMode) ?? 'list');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -1346,7 +1353,6 @@ export function BOMView({
   const createPart = useCreatePart(orgId);
   const updatePart = useUpdatePart();
   const createNode = useCreateBomNode(projectId);
-  const decideApprovalRequest = useDecideApprovalRequest(projectId);
   const deleteBomNode = useDeleteBomNode(projectId);
   const addRequirement = useAddRequirement(projectId);
   const { data: pendingApprovalRequests = [] } = useProjectApprovalRequests(projectId, 'pending');
@@ -1396,34 +1402,6 @@ export function BOMView({
     if (!user) return false;
     return req.approvers.some(a => a.id === user.id);
   }, [isAdmin, user, pendingRequestByNodeId]);
-
-  const handleApprove = async (node: BOMNode) => {
-    const active = pendingRequestByNodeId.get(node.id);
-    if (!active) { toast.error('This part has not been sent for review yet.'); return; }
-    try {
-      await decideApprovalRequest.mutateAsync({ requestId: active.id, nodeId: node.id, decision: 'approved' });
-      toast.success(`${node.pn} approved`);
-    } catch (err) {
-      toast.error('Failed to approve part', {
-        description: err instanceof Error ? err.message : undefined,
-      });
-    }
-  };
-
-  const handleRejectConfirm = async (reason: string, comment?: string) => {
-    if (!rejectTarget) return;
-    const active = pendingRequestByNodeId.get(rejectTarget.id);
-    if (!active) { toast.error('This part has not been sent for review yet.'); return; }
-    try {
-      await decideApprovalRequest.mutateAsync({ requestId: active.id, nodeId: rejectTarget.id, decision: 'rejected', reason, comment });
-      toast.success(`${rejectTarget.pn} rejected`);
-    } catch (err) {
-      toast.error('Failed to reject part', {
-        description: err instanceof Error ? err.message : undefined,
-      });
-      throw err;
-    }
-  };
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
@@ -1607,6 +1585,7 @@ export function BOMView({
     suppliers: [...new Set(allNodes.map(n => n.distributor))].sort(),
     owners: [...new Set(allNodes.map(n => n.owner))].sort(),
     categories: [...new Set(allNodes.map(n => n.cat))].sort(),
+    mpns: [...new Set(allNodes.map(n => n.mpn))].filter(Boolean).sort(),
   }), [allNodes]);
 
   const activeCount =
@@ -1615,7 +1594,7 @@ export function BOMView({
     filters.categories.length +
     (filters.priceMin || filters.priceMax ? 1 : 0) +
     (filters.leadOp !== 'any' && filters.leadValue ? 1 : 0) +
-    (filters.mpn ? 1 : 0);
+    filters.mpns.length;
 
   const pred = useCallback((row: BOMNode) => {
     const q = search.toLowerCase();
@@ -1628,7 +1607,7 @@ export function BOMView({
     if (filters.owners.length && !filters.owners.includes(row.owner)) return false;
     if (filters.categories.length && !filters.categories.includes(row.cat)) return false;
     if (filters.bomType !== 'all' && bomTypeOf(row) !== filters.bomType) return false;
-    if (filters.mpn && !row.mpn.toLowerCase().includes(filters.mpn.toLowerCase())) return false;
+    if (filters.mpns.length && !filters.mpns.includes(row.mpn)) return false;
     const pMin = parseFloat(filters.priceMin), pMax = parseFloat(filters.priceMax);
     if (!isNaN(pMin) && row.price < pMin) return false;
     if (!isNaN(pMax) && row.price > pMax) return false;
@@ -1967,9 +1946,6 @@ export function BOMView({
             totalCount={totalCount}
             formatCurrency={formatCurrency}
             canDecideRow={canDecideRow}
-            onApprove={handleApprove}
-            onReject={setRejectTarget}
-            approvingId={decideApprovalRequest.isPending ? decideApprovalRequest.variables?.nodeId ?? null : null}
           />
           <MobileListView
             rows={listRows}
@@ -2025,7 +2001,7 @@ export function BOMView({
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
             </button>
-            <button
+            {/* <button
               onClick={() => { setAddChoiceOpen(false); setAddImportOpen(true); }}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors text-left group"
             >
@@ -2037,7 +2013,7 @@ export function BOMView({
                 <div className="text-xs text-muted-foreground mt-0.5">Bulk-add multiple parts at once from a spreadsheet.</div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
-            </button>
+            </button> */}
             <button
               onClick={() => { setAddChoiceOpen(false); setAddAiImportOpen(true); }}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors text-left group"
@@ -2046,7 +2022,7 @@ export function BOMView({
                 <Sparkles className="w-4 h-4" />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-foreground">Import with AI</div>
+                <div className="text-sm font-medium text-foreground">Import </div>
                 <div className="text-xs text-muted-foreground mt-0.5">Upload a file, review with AI chat, then commit — supports multi-level hierarchies.</div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
@@ -2169,14 +2145,6 @@ export function BOMView({
           onImported={expandNodes}
         />
       )}
-
-      {/* Reject confirmation (mandatory reason) */}
-      <BOMRejectDialog
-        open={!!rejectTarget}
-        partLabel={rejectTarget?.pn}
-        onClose={() => setRejectTarget(null)}
-        onConfirm={handleRejectConfirm}
-      />
 
       {/* Delete confirmation (warns about cascading sub-component deletion) */}
       <ConfirmationDialog

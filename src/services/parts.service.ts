@@ -45,9 +45,14 @@ export interface CreateRevisionDto {
   status: BOMStatus;
   price?: number;
   leadTimeDays?: number;
+  quantity?: number;
   ecoId?: string;
+  name?: string;
   description?: string;
   category?: BOMCategory;
+  manufacturer?: string;
+  distributor?: string;
+  mpn?: string;
   suppliers?: SupplierEntry[];
 }
 

@@ -265,7 +265,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
           'p-0 flex flex-col gap-0 overflow-hidden',
           isMobile
             ? 'inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0 data-[state=open]:!slide-in-from-left-0 data-[state=open]:!slide-in-from-top-0 data-[state=closed]:!slide-out-to-left-0 data-[state=closed]:!slide-out-to-top-0'
-            : 'max-w-lg max-h-[90vh]'
+            : 'max-w-3xl max-h-[90vh]'
         )}
       >
         <DialogHeader className="px-4 sm:px-6 py-4 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
@@ -285,12 +285,12 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-              <div className="p-4 sm:p-6 space-y-5">
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5 items-start">
                 <FormField
                   control={form.control}
                   name="partId"
                   render={() => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
 
                       <Popover open={partPickerOpen} onOpenChange={setPartPickerOpen}>
@@ -305,7 +305,9 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                                 !selectedPart && 'text-muted-foreground'
                               )}
                             >
-                              {selectedPart ? `${selectedPart.partNumber} — ${selectedPart.name}` : 'Select a part...'}
+                              <span className="min-w-0 truncate">
+                                {selectedPart ? `${selectedPart.partNumber} — ${selectedPart.name}` : 'Select a part...'}
+                              </span>
                               <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                           </FormControl>
@@ -355,7 +357,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                   control={form.control}
                   name="location"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Destination location <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                       {lockedLocation ? (
                         <LockedLocationField location={lockedLocation} />
@@ -374,7 +376,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                     control={form.control}
                     name="orderId"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="sm:col-span-2">
                         <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Apply to order <span className="normal-case font-normal">optional</span></FormLabel>
                         <Select
                           onValueChange={(v) => {
@@ -428,7 +430,21 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                   )}
                 />
 
-                <div className="grid grid-cols-1 gap-4">
+                <FormField
+                  control={form.control}
+                  name="reference"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reference <span className="normal-case font-normal">(expected receipt / PO)</span></FormLabel>
+                      <FormControl>
+                        <Input placeholder="ER-…" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 gap-4 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="trackBy"
@@ -509,23 +525,9 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
 
                 <FormField
                   control={form.control}
-                  name="reference"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reference <span className="normal-case font-normal">(expected receipt / PO)</span></FormLabel>
-                      <FormControl>
-                        <Input placeholder="ER-…" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
                   name="quarantine"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 sm:col-span-2">
                       <div className="space-y-0.5">
                         <FormLabel className="text-sm font-medium">Route to quarantine / inspection</FormLabel>
                         <p className="text-xs text-muted-foreground">Held out of available stock until inspected.</p>
@@ -541,7 +543,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                   control={form.control}
                   name="note"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Note <span className="normal-case font-normal">optional</span></FormLabel>
                       <FormControl>
                         <Textarea placeholder="Optional note..." className="min-h-[70px] resize-none" {...field} />
