@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryClient';
 import { bomService, type CreateNodeDto, type UpdateNodeDto } from '@/services/bom.service';
-import { fromApiApproval, fromApiApprovalRequest, type BOMApprovalRequestScope } from '@/features/projects/components/bomData';
+import { fromApiApproval, fromApiApprovalRequest, type BOMApprovalRequestScope, type ApiRequirementAllocation } from '@/features/projects/components/bomData';
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
 
@@ -100,6 +100,7 @@ export function useAddRequirement(projectId: string) {
       bomService.addRequirement(nodeId, requirementId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.bom.tree(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.bom.requirementAllocations(projectId) });
     },
   });
 }
@@ -110,7 +111,18 @@ export function useRemoveRequirement(projectId: string) {
     mutationFn: (linkId: string) => bomService.removeRequirement(linkId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.bom.tree(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.bom.requirementAllocations(projectId) });
     },
+  });
+}
+
+export function useRequirementAllocations(projectId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.bom.requirementAllocations(projectId ?? ''),
+    queryFn: () =>
+      apiClient.get<ApiRequirementAllocation[]>(ENDPOINTS.BOM.REQUIREMENT_ALLOCATIONS(projectId!)),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
   });
 }
 

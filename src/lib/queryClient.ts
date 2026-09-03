@@ -174,6 +174,7 @@ export const queryKeys = {
     projectApprovalRequests: (projectId: string, status?: string) => ['bom', 'project-approval-requests', projectId, status ?? 'all'] as const,
     notes:      (nodeId: string)    => ['bom', 'notes', nodeId] as const,
     costTrend:  (projectId: string, granularity: string) => ['bom', 'cost-trend', projectId, granularity] as const,
+    requirementAllocations: (projectId: string) => ['bom', 'requirement-allocations', projectId] as const,
   },
 
   // Parts catalog

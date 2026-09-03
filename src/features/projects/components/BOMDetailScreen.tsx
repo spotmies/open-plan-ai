@@ -653,12 +653,21 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
     }
     queryClient.invalidateQueries({ queryKey: ['bom-documents', originalNode.id] });
 
-    // Sync requirement traceability links
-    const toAdd = payload.req.filter(r => !originalNode.req.includes(r));
-    const toRemove = (originalNode._reqLinks ?? []).filter(l => !payload.req.includes(l.requirementId));
+    // Sync requirement traceability links. payload.req holds the desired set of real
+    // requirement UUIDs; legacy (pre-FK, unmatched) links are removed only when the
+    // user explicitly deleted their chip, tracked separately since they have no id
+    // to diff against payload.req.
+    const toAdd = payload.req.filter(id => !originalNode.reqIds.includes(id));
+    const toRemoveReal = (originalNode._reqLinks ?? []).filter(
+      l => l.requirementId && !payload.req.includes(l.requirementId),
+    );
+    const toRemoveLegacy = (originalNode._reqLinks ?? []).filter(
+      l => !l.requirementId && (payload.removedLegacyLinkIds ?? []).includes(l.id),
+    );
     await Promise.all([
       ...toAdd.map(requirementId => addRequirement.mutateAsync({ nodeId: originalNode.id, requirementId })),
-      ...toRemove.map(link => removeRequirement.mutateAsync(link.id)),
+      ...toRemoveReal.map(link => removeRequirement.mutateAsync(link.id)),
+      ...toRemoveLegacy.map(link => removeRequirement.mutateAsync(link.id)),
     ]);
 
     if (originalNode.status === 'rejected' && lastRequest) {

@@ -51,7 +51,8 @@ export interface BOMNode {
   supplier: string;
   rev: string;
   status: BOMStatus;
-  req: string[];
+  req: string[];       // display labels — resolved requirement key, or legacy free-typed text for old unmatched links
+  reqIds: string[];    // real requirement UUIDs currently linked — the set to diff against on save
   cat: BOMCategory;
   manufacturer: string;
   distributor: string;
@@ -182,8 +183,20 @@ export interface ApiPartResponse {
 export interface ApiReqLinkResponse {
   id: string;
   nodeId: string;
-  requirementId: string;
+  requirementId: string | null;
+  requirement: { id: string; key: string; title: string; type: string } | null;
+  // Free-typed label from before the real FK existed — set only on old,
+  // unmatched rows that don't resolve to a real requirement.
+  legacyLabel: string | null;
   createdAt: string;
+}
+
+export interface ApiRequirementAllocation {
+  linkId: string;
+  requirementId: string;
+  nodeId: string;
+  partNumber: string;
+  partName: string;
 }
 
 export interface ApiNodeResponse {
@@ -339,7 +352,8 @@ export function fromApiNode(node: ApiNodeResponse, depth = 0): BOMNode {
     supplier:     node.part.manufacturer ?? '',
     rev:          rev?.rev ?? 'A',
     status:       node.status,
-    req:          node.requirements.map(r => r.requirementId),
+    req:          node.requirements.map(r => r.requirement?.key ?? r.legacyLabel ?? '(unlinked)'),
+    reqIds:       node.requirements.filter(r => r.requirementId).map(r => r.requirementId!),
     _reqLinks:    node.requirements,
     cat:          node.part.category,
     manufacturer: node.part.manufacturer ?? '',

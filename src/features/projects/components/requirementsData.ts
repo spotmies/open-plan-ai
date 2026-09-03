@@ -190,19 +190,25 @@ export interface ApiRequirementLinkForRebuild {
   id: string; fromId: string; toId: string; linkType: string; status: string;
 }
 
+/** Minimal shape adapted from `ApiRequirementAllocation` (src/hooks/useBom.ts / bomData.ts). */
+export interface ApiRequirementAllocationForRebuild {
+  requirementId: string; nodeId: string; partNumber: string; partName: string;
+}
+
 /**
  * Rebuilds `REQS`/`BY_KEY`/`REQ_ROOTS` in place from a live API response.
- * `alloc` has no backend source yet (BOM linkage is a later phase) so it's
- * always empty — coverage's `unimplemented` flag reflects that honestly.
  * `vmethod`/`vstatus` default to placeholders since Test & Verification
  * doesn't exist on the backend yet. `links` (the second param) is the
  * project-wide requirement_links list — omit it to leave depends_on/
  * conflicts_with/extra derives_from out of the rebuilt links entirely,
  * rather than silently treating "not fetched yet" as "known to be empty".
+ * `allocations` (the third param) is the project-wide BOM↔requirement
+ * allocation list (bom_requirement_links) — same omit-vs-empty distinction.
  */
 export function rebuildRequirementsFromApi(
   items: ApiRequirementForRebuild[],
   links?: ApiRequirementLinkForRebuild[],
+  allocations?: ApiRequirementAllocationForRebuild[],
 ): void {
   const idToKey: Record<string, string> = {};
   items.forEach(item => { idToKey[item.id] = item.key; });
@@ -270,16 +276,25 @@ export function rebuildRequirementsFromApi(
     }
   });
 
+  const allocByReqId: Record<string, string[]> = {};
+  (allocations ?? []).forEach(a => { (allocByReqId[a.requirementId] ??= []).push(a.partNumber); });
+
   REQS.forEach(r => {
     const links: ReqLink[] = [];
     if (r.parent && BY_KEY[r.parent]) links.push({ type:'derives_from', target:r.parent, status:'valid' });
     else if (r.type !== 'stakeholder-need' && r.source) links.push({ type:'traces_to_source', target:r.source, status:'valid', external:true });
     r.childKeys.forEach(c => links.push({ type:'refined_by', target:c, status:'valid' }));
     (extraLinksByKey[r.key] ?? []).forEach(l => links.push(l));
+    const alloc = r._id ? allocByReqId[r._id] ?? [] : [];
+    alloc.forEach(partNumber => links.push({ type:'allocated_to', target:partNumber, status:'valid', kind:'part' }));
+    r.alloc = alloc;
     r.links = links;
     const hasSource = r.type === 'stakeholder-need' || links.some(l => l.type === 'derives_from' || l.type === 'traces_to_source');
     const needsImpl = r.type === 'subsystem-req' || r.type === 'component-req';
-    r.coverage = { orphan:!hasSource, untested:true, unimplemented:needsImpl, suspect: links.some(l => l.status === 'suspect') };
+    // Before allocations have loaded (undefined), default unimplemented to true
+    // for the tiers that need it rather than flashing "fully covered".
+    const unimplemented = needsImpl && (allocations === undefined || alloc.length === 0);
+    r.coverage = { orphan:!hasSource, untested:true, unimplemented, suspect: links.some(l => l.status === 'suspect') };
     r.hasGap = r.coverage.orphan || r.coverage.untested || r.coverage.unimplemented || r.coverage.suspect;
   });
 

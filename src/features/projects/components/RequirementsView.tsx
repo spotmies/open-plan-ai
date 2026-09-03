@@ -23,6 +23,7 @@ import {
   type ReqVStatus, type ReqPriority, type ReqGroup, type ReqVMethod,
 } from './requirementsData';
 import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@/hooks/useRequirements';
+import { useRequirementAllocations } from '@/hooks/useBom';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, Donut, StatTile, CoverageBar, ScoreRing, softTint,
@@ -93,6 +94,7 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   const { data: apiGroups, isLoading: groupsLoading } = useRequirementGroups(projectId);
   const { data: apiTree, isLoading: treeLoading, isError: treeError } = useRequirementTree(projectId);
   const { data: apiLinks } = useRequirementLinks(projectId);
+  const { data: apiAllocations } = useRequirementAllocations(projectId);
   // REQS/BY_KEY/REQ_ROOTS are mutated in place, not replaced — plain object
   // identity never changes, so nothing here can appear in a useMemo dependency
   // array to signal "the data changed." Rebuilding unconditionally every render
@@ -105,13 +107,14 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   // component and in CoverageDashboard/ReadinessView/TraceabilityView/
   // RequirementsMapView.
   if (apiTree) {
-    rebuildRequirementsFromApi(apiTree, apiLinks);
+    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations);
   }
-  // apiTree and apiLinks are two independent React Query results, each stable
-  // (unchanged reference) until its own data actually changes — combined into
-  // one memoized value so every dependency array below only has one thing to
-  // list, and still only changes reference when either input really does.
-  const dataVersion = useMemo(() => ({ apiTree, apiLinks }), [apiTree, apiLinks]);
+  // apiTree, apiLinks and apiAllocations are three independent React Query
+  // results, each stable (unchanged reference) until its own data actually
+  // changes — combined into one memoized value so every dependency array
+  // below only has one thing to list, and still only changes reference when
+  // any input really does.
+  const dataVersion = useMemo(() => ({ apiTree, apiLinks, apiAllocations }), [apiTree, apiLinks, apiAllocations]);
   const groups = apiGroups ?? [];
 
   const [view, setView] = useState<ViewTab>('table');
