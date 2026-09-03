@@ -23,15 +23,24 @@ export default function RequirementDetailScreen({ reqKey, onClose, onEdit, onImp
   const [tab, setTab] = useState<'overview'|'trace'|'verify'>('overview');
   const [activityOpen, setActivityOpen] = useState(true);
 
-  if (!r) return (
+  // Hooks must run unconditionally (before the `if (!r) return` below) — with
+  // the old static mock this branch was effectively dead code (BY_KEY never
+  // lost an entry), so the violation never fired at runtime. With live data,
+  // BY_KEY is rebuilt from scratch on every fetch/mutation, so `r` can
+  // transiently be undefined (e.g. right after a delete). Depending on `r`
+  // itself rather than `reqKey` also fixes a staleness bug: rebuilds create a
+  // fresh object per requirement, so keying off the stable `reqKey` string
+  // would have kept showing the AI score/acceptance criteria from before the
+  // most recent edit.
+  const ai = useMemo(() => (r ? analyzeQuality(r) : null), [r]);
+  const criteria = useMemo(() => (r ? synthCriteria(r) : []), [r]);
+
+  if (!r || !ai) return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', alignItems:'center', justifyContent:'center', gap:12 }}>
       <span style={{ fontSize:15, color:'hsl(var(--muted-foreground))' }}>Requirement not found: {reqKey}</span>
       <button onClick={onClose} style={{ padding:'6px 16px', borderRadius:8, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', cursor:'pointer', fontFamily:'inherit', color:'hsl(var(--foreground))' }}>Back</button>
     </div>
   );
-
-  const ai = useMemo(() => analyzeQuality(r), [reqKey]);
-  const criteria = useMemo(() => synthCriteria(r), [reqKey]);
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:'hsl(var(--background))' }}>
