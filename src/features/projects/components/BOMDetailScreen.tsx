@@ -557,10 +557,18 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
     // The latest revision always mirrors the current part master (source of
     // truth for ongoing edits); older revisions show their own snapshot when
     // one was captured, falling back to current for pre-snapshot rows.
+    name: isLatest ? originalNode.name : ((activeRev as BOMRevision).name ?? originalNode.name),
     desc: isLatest ? originalNode.desc : ((activeRev as BOMRevision).description ?? originalNode.desc),
     cat: isLatest ? originalNode.cat : ((activeRev as BOMRevision).category ?? originalNode.cat),
+    manufacturer: isLatest ? originalNode.manufacturer : ((activeRev as BOMRevision).manufacturer ?? originalNode.manufacturer),
+    distributor: isLatest ? originalNode.distributor : ((activeRev as BOMRevision).distributor ?? originalNode.distributor),
+    mpn: isLatest ? originalNode.mpn : ((activeRev as BOMRevision).mpn ?? originalNode.mpn),
     price: activeRev.price,
     leadTime: activeRev.leadTime,
+    // Quantity lives on the BOM node, not the part — same treatment as
+    // price/leadTime: fall back to the live node value for revisions that
+    // predate this snapshot column.
+    qty: isLatest ? originalNode.qty : ((activeRev as BOMRevision).quantity ?? originalNode.qty),
     // Use the active revision's supplier list when available so the edit form
     // reflects the correct per-revision sourcing data; fall back to the part-level data.
     suppliers: (activeRev as BOMRevision).suppliers?.length
@@ -610,6 +618,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
     // photo's URL can ride along in the same updatePart call below.
     const { photoUrl } = await saveBomDocs(originalNode.id, payload);
     if (payload.versionMode === 'new') {
+      await updateNode.mutateAsync({ nodeId: originalNode.id, dto: { quantity: payload.qty, unit: payload.uom } });
       await createRev.mutateAsync({
         partId: originalNode._partId,
         dto: {
@@ -618,34 +627,66 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
           status: payload.status,
           price: payload.price,
           leadTimeDays: payload.leadTime,
+          quantity: payload.qty,
+          name: payload.name,
           description: payload.desc,
           category: payload.category,
+          manufacturer: payload.manufacturer || undefined,
+          distributor: payload.distributor || undefined,
+          mpn: payload.mpn || undefined,
           suppliers: payload.suppliers?.length ? payload.suppliers.map(s => ({ ...s, price: parseFloat(s.price) || 0 })) : undefined,
         },
       });
-      if (photoUrl !== undefined) {
-        await updatePart.mutateAsync({ partId: originalNode._partId, dto: { imageUrl: photoUrl } });
-      }
+      await updatePart.mutateAsync({
+        partId: originalNode._partId,
+        dto: {
+          name: payload.name,
+          description: payload.desc,
+          category: payload.category,
+          manufacturer: payload.manufacturer || undefined,
+          distributor: payload.distributor || undefined,
+          mpn: payload.mpn || undefined,
+          ...(photoUrl !== undefined ? { imageUrl: photoUrl } : {}),
+        },
+      });
     } else {
       // Revisions are append-only on the backend — there is no endpoint to
-      // patch price/leadTime on an existing row. "Update in place" therefore
-      // means inserting a new revision row under the *same* rev label, which
-      // becomes the new latest revision without bumping the visible rev letter.
-      const priceChanged = payload.price !== activeRev.price;
-      const leadTimeChanged = payload.leadTime !== activeRev.leadTime;
+      // patch a field on an existing row. "Update in place" therefore means
+      // inserting a new revision row under the *same* rev label whenever any
+      // snapshotted field changes, which becomes the new latest revision
+      // without bumping the visible rev letter. Without this, a field left
+      // out of the new snapshot (e.g. no price/leadTime change) would fall
+      // back to reading the shared bom_parts row when this revision is later
+      // viewed as non-latest — showing whatever a *future* edit set instead
+      // of what was true when this revision was current.
+      const snapshotChanged =
+        payload.price !== activeRev.price ||
+        payload.leadTime !== activeRev.leadTime ||
+        payload.qty !== ((activeRev as BOMRevision).quantity ?? payload.qty) ||
+        payload.name !== (activeRev as BOMRevision).name ||
+        payload.desc !== activeRev.description ||
+        payload.category !== activeRev.category ||
+        (payload.manufacturer || null) !== (activeRev as BOMRevision).manufacturer ||
+        (payload.distributor || null) !== (activeRev as BOMRevision).distributor ||
+        (payload.mpn || null) !== (activeRev as BOMRevision).mpn;
       await Promise.all([
         updateNode.mutateAsync({ nodeId: originalNode.id, dto: { quantity: payload.qty, unit: payload.uom } }),
         updatePart.mutateAsync({ partId: originalNode._partId, dto: { name: payload.name, description: payload.desc, category: payload.category, manufacturer: payload.manufacturer || undefined, distributor: payload.distributor || undefined, mpn: payload.mpn || undefined, customFields: payload.customFields, ...(photoUrl !== undefined ? { imageUrl: photoUrl } : {}) } }),
-        ...(priceChanged || leadTimeChanged ? [createRev.mutateAsync({
+        ...(snapshotChanged ? [createRev.mutateAsync({
           partId: originalNode._partId,
           dto: {
             rev: activeRev.rev,
-            changes: payload.changeNotes || 'Updated price / lead time',
+            changes: payload.changeNotes || 'Updated part details',
             status: payload.status,
             price: payload.price,
             leadTimeDays: payload.leadTime,
+            quantity: payload.qty,
+            name: payload.name,
             description: payload.desc,
             category: payload.category,
+            manufacturer: payload.manufacturer || undefined,
+            distributor: payload.distributor || undefined,
+            mpn: payload.mpn || undefined,
             suppliers: payload.suppliers?.length ? payload.suppliers.map(s => ({ ...s, price: parseFloat(s.price) || 0 })) : undefined,
           },
         })] : []),

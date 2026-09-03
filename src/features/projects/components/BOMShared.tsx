@@ -207,10 +207,11 @@ export function BOMStatusPill({ status }: { status: BOMStatus }) {
 export function ReqTag({ label }: { label: string }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium cursor-pointer whitespace-nowrap transition-colors bg-muted text-foreground border border-border hover:bg-accent"
+      title={label}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors bg-muted text-foreground border border-border hover:bg-accent max-w-[160px]"
     >
-      <Link2 style={{ width: 10, height: 10 }} />
-      {label}
+      <Link2 style={{ width: 10, height: 10 }} className="shrink-0" />
+      <span className="truncate min-w-0">{label}</span>
     </span>
   );
 }

@@ -26,9 +26,15 @@ export interface BOMRevision {
   status: BOMStatus;
   price: number;
   leadTime: number;   // days — mirrors backend leadTimeDays 1:1, no unit conversion
+  quantity: number | null; // snapshot of the owning node's quantity at revision creation time
   ecoId: string | null;
-  description: string | null;  // snapshot of the part's description at revision creation time
-  category: BOMCategory | null; // snapshot of the part's category at revision creation time
+  // Snapshots of the part's fields as they stood at revision creation time
+  name: string | null;
+  description: string | null;
+  category: BOMCategory | null;
+  manufacturer: string | null;
+  distributor: string | null;
+  mpn: string | null;
   suppliers: SupplierEntry[];
   customFields: CustomFieldEntry[];
 }
@@ -89,7 +95,7 @@ export const EMPTY_FILTERS = {
   categories: [] as string[],
   owners: [] as string[],
   bomType: 'all' as 'all' | 'top' | 'catalog',
-  mpn: '',
+  mpns: [] as string[],
 };
 export type BOMFilters = typeof EMPTY_FILTERS;
 
@@ -146,9 +152,14 @@ export interface ApiRevisionResponse {
   status: BOMStatus;
   price: string | null;
   leadTimeDays: number | null;
+  quantity: number | null;
   ecoId: string | null;
+  name: string | null;
   description: string | null;
   category: string | null;
+  manufacturer: string | null;
+  distributor: string | null;
+  mpn: string | null;
   suppliers: Array<{ distributor: string; price: number; calcFromSubparts: boolean }> | null;
   customFields: ApiCustomFieldEntry[] | null;
   createdAt: string;
@@ -398,9 +409,14 @@ export function fromApiRevision(r: ApiRevisionResponse): BOMRevision {
     status:    r.status,
     price:     parseFloat(r.price ?? '0'),
     leadTime:  r.leadTimeDays ?? 0,
+    quantity:  r.quantity ?? null,
     ecoId:     r.ecoId ?? null,
+    name:      r.name ?? null,
     description: r.description ?? null,
     category:  r.category ?? null,
+    manufacturer: r.manufacturer ?? null,
+    distributor: r.distributor ?? null,
+    mpn:       r.mpn ?? null,
     suppliers: r.suppliers?.map(s => ({ ...s, price: String(s.price) })) ?? [],
     customFields: parseCustomFields(r.customFields),
   };

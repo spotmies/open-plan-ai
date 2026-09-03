@@ -367,10 +367,22 @@ export function InventoryView({ orgId }: InventoryViewProps) {
           { source: 'response', leadTimeDays: result.leadTimeDays },
         ]);
         toast.success('Adjustment posted');
-        if (input.image && result.transactionId) {
-          attachmentsService
-            .upload({ entityId: result.transactionId, entityType: 'inventory_transaction', file: input.image })
-            .catch(() => toast.error('Adjustment saved, but the image failed to upload'));
+        if (input.images?.length && result.transactionId) {
+          const transactionId = result.transactionId;
+          Promise.allSettled(
+            input.images.map((file) =>
+              attachmentsService.upload({ entityId: transactionId, entityType: 'inventory_transaction', file }),
+            ),
+          ).then((results) => {
+            const failed = results.filter((r) => r.status === 'rejected').length;
+            if (failed > 0) {
+              toast.error(
+                failed === input.images!.length
+                  ? 'Adjustment saved, but the images failed to upload'
+                  : `Adjustment saved, but ${failed} of ${input.images!.length} images failed to upload`,
+              );
+            }
+          });
         }
       },
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to post adjustment'),
@@ -600,7 +612,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
             `/inventory` being a `noPadding` route (App.tsx) — a `position: sticky` block here
             would work fine visually but was dropped in favor of this simpler layout, since it
             avoids CSS sticky's "floor" being pinned to the scroll ancestor's own padding edge. */}
-        <div className="shrink-0 space-y-4 md:space-y-6 pb-4">
+        <div className="shrink-0 space-y-4 md:space-y-6 pb-2">
           <div className={cn(isMobile ? undefined : 'flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between')}>
             <TabsList className={cn(isMobile && 'w-full grid grid-cols-3 sticky top-0 z-10 bg-background')}>
               <TabsTrigger value="stock">Stock</TabsTrigger>
@@ -846,7 +858,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
             inactive-but-still-mounted panel with `flex` on it stays a real (empty) flex item,
             silently eating a share of `flex-1` space from whichever tab actually is active. The
             flex column lives on this inner div instead. */}
-        <TabsContent value="stock" className="mt-4 flex-1 min-h-0">
+        <TabsContent value="stock" className="mt-1 flex-1 min-h-0">
           <div className="h-full min-h-0 flex flex-col">
           {/* This wrapper only bounds the height — each view branch below owns its own
             scroll region so the table can keep its header row pinned (`position: sticky`

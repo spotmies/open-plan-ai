@@ -117,6 +117,16 @@ export const ENDPOINTS = {
       `/projects/${projectId}/bom-imports/${jobId}/messages/attachments`,
     COMMIT: (projectId: string, jobId: string) => `/projects/${projectId}/bom-imports/${jobId}/commit`,
   },
+  // ECO Import (file upload -> AI structuring -> chat resolve -> bulk create)
+  ECO_IMPORTS: {
+    START: (projectId: string) => `/projects/${projectId}/eco-imports`,
+    STATUS: (projectId: string, jobId: string) => `/projects/${projectId}/eco-imports/${jobId}`,
+    CONVERSATION: (projectId: string, jobId: string) => `/projects/${projectId}/eco-imports/${jobId}/conversation`,
+    MESSAGES: (projectId: string, jobId: string) => `/projects/${projectId}/eco-imports/${jobId}/messages`,
+    MESSAGE_ATTACHMENTS: (projectId: string, jobId: string) =>
+      `/projects/${projectId}/eco-imports/${jobId}/messages/attachments`,
+    COMMIT: (projectId: string, jobId: string) => `/projects/${projectId}/eco-imports/${jobId}/commit`,
+  },
   // Hardware Modules
   MODULES: {
     LIST: (projectId: string) => `/projects/${projectId}/hardware-modules`,

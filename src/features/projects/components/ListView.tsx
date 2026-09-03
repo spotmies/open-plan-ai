@@ -356,18 +356,25 @@ export function ListView({ tasks, allTasks: allTasksProp, milestones = [], modul
                   </TableCell>
                   <TableCell>
                     {task.assignees && task.assignees.length > 0 ? (
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={resolveFileUrl(task.assignees[0].avatar) ?? task.assignees[0].avatar} alt={task.assignees[0].name} />
-                          <AvatarFallback className="text-[10px]">
-                            {task.assignees[0].initials}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm">
-                          {task.assignees[0].name}
-                          {task.assignees.length > 1 && ` +${task.assignees.length - 1}`}
-                        </span>
-                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-2 w-fit cursor-default">
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage src={resolveFileUrl(task.assignees[0].avatar) ?? task.assignees[0].avatar} alt={task.assignees[0].name} />
+                              <AvatarFallback className="text-[10px]">
+                                {task.assignees[0].initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">
+                              {task.assignees[0].name}
+                              {task.assignees.length > 1 && ` +${task.assignees.length - 1}`}
+                            </span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {task.assignees.map((a) => a.name).join(', ')}
+                        </TooltipContent>
+                      </Tooltip>
                     ) : (
                       <span className="text-muted-foreground text-sm">Unassigned</span>
                     )}

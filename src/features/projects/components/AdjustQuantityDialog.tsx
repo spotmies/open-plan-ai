@@ -75,8 +75,14 @@ const adjustSchema = z.object({
   quantity: z.coerce.number().int().min(0, 'Quantity must be 0 or more'),
   reasonCode: z.string().optional(),
   expectedDate: z.string().optional(),
-  leadTimeDays: z.coerce.number().int().min(1, 'Lead time must be at least 1 day'),
-  note: z.string().max(300, 'Note must be less than 300 characters').optional(),
+  // Optional — left blank when the part's BOM revision defines no lead time. Only a typed
+  // value is validated (must be a whole number ≥ 1); an empty field is allowed.
+  leadTimeDays: z.union([
+    z.literal(''),
+    z.coerce.number().int().min(1, 'Lead time must be at least 1 day'),
+  ]).optional(),
+  note: z.string().max(500, 'Note must be less than 500 characters').optional(),
+  supplierRef: z.string().max(300, 'Supplier / PO ref must be less than 300 characters').optional(),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   orderNote: z.string().max(500, 'Notes must be less than 500 characters').optional(),
   purpose: z.string().max(500, 'Purpose must be less than 500 characters').optional(),
@@ -99,12 +105,12 @@ export interface AdjustQuantityInput {
   /** 'set' overwrites on-hand with `quantity`; 'delta' adds `quantity` per `direction`. */
   mode: 'delta' | 'set';
   quantity: number;
-  reasonCode: string;
+  reasonCode?: string;
   note?: string;
   description?: string;
   lotNumber?: string;
   serialNumber?: string;
-  image?: File;
+  images?: File[];
   leadTimeDays?: number;
 }
 
@@ -142,8 +148,11 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   const [triedSubmit, setTriedSubmit] = useState(false);
   const [newPart, setNewPart] = useState(emptyNewPart);
   const [createdPart, setCreatedPart] = useState<{ id: string; partNumber: string; name: string; category: BOMCategory } | null>(null);
-  const [image, setImage] = useState<File | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [images, setImages] = useState<File[]>([]);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+  // Mirror of imagePreviewUrls for the unmount cleanup — an effect with [] deps
+  // can't read current state otherwise.
+  const imagePreviewUrlsRef = useRef<string[]>([]);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -229,8 +238,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       quantity: 1,
       reasonCode: '',
       expectedDate: '',
-      leadTimeDays: 1,
+      leadTimeDays: '',
       note: '',
+      supplierRef: '',
       description: '',
       orderNote: '',
       purpose: '',
@@ -280,38 +290,41 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     setSelectedRecord(match);
     form.setValue('location', match.location, { shouldValidate: true });
     form.setValue('category', match.cat ?? '', { shouldValidate: true });
-    form.setValue('leadTimeDays', match.leadTimeDays > 0 ? match.leadTimeDays : 1, { shouldValidate: true });
+    // Prefill from the part's BOM lead time; leave blank when the BOM defines none.
+    form.setValue('leadTimeDays', match.leadTimeDays > 0 ? match.leadTimeDays : '', { shouldValidate: true });
     form.setValue('quantity', match.demandQty > 0 ? match.demandQty : 1, { shouldValidate: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialPartId, pickerParts]);
 
-  const isFormDirty = form.formState.isDirty || showAddPart || !!image;
+  const isFormDirty = form.formState.isDirty || showAddPart || images.length > 0;
 
-  const applyImageFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
-      return;
+  const applyImageFiles = (files: File[]) => {
+    const valid = files.filter((f) => f.type.startsWith('image/'));
+    if (valid.length < files.length) {
+      toast.error(valid.length === 0 ? 'Please select an image file' : 'Some files were skipped — only images can be attached');
     }
-    setImage(file);
-    setImagePreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
+    if (valid.length === 0) return;
+    setImages((prev) => [...prev, ...valid]);
+    setImagePreviewUrls((prev) => {
+      const next = [...prev, ...valid.map((f) => URL.createObjectURL(f))];
+      imagePreviewUrlsRef.current = next;
+      return next;
     });
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (!file) return;
-    applyImageFile(file);
+    if (files.length === 0) return;
+    applyImageFiles(files);
   };
 
   const handleImageDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDraggingImage(false);
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    applyImageFile(file);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length === 0) return;
+    applyImageFiles(files);
   };
 
   const handleCloseCamera = () => {
@@ -322,11 +335,28 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   };
 
   const handleOpenCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error(
+        window.isSecureContext
+          ? 'This browser does not support camera capture — use "Browse files" instead.'
+          : 'Camera capture needs a secure (HTTPS) connection — use "Browse files" instead.',
+      );
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       setCameraStream(stream);
-    } catch {
-      toast.error('Camera access was denied or unavailable');
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : '';
+      const message =
+        name === 'NotAllowedError'
+          ? 'Camera permission was blocked. Allow camera access for this site in your browser settings, then try again.'
+          : name === 'NotFoundError' || name === 'OverconstrainedError'
+            ? 'No camera was found on this device — use "Browse files" instead.'
+            : name === 'NotReadableError'
+              ? 'The camera is already in use by another app or tab. Close it and try again.'
+              : 'Camera access was denied or unavailable';
+      toast.error(message);
     }
   };
 
@@ -341,7 +371,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
       if (!blob) return;
-      applyImageFile(new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      applyImageFiles([new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' })]);
       handleCloseCamera();
     }, 'image/jpeg', 0.92);
   };
@@ -364,19 +394,30 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     };
   }, []);
 
-  const handleRemoveImage = () => {
-    setImage(null);
-    setImagePreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
+  const handleRemoveImage = (index: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== index));
+    setImagePreviewUrls((prev) => {
+      const removed = prev[index];
+      if (removed) URL.revokeObjectURL(removed);
+      const next = prev.filter((_, i) => i !== index);
+      imagePreviewUrlsRef.current = next;
+      return next;
+    });
+  };
+
+  const clearImages = () => {
+    setImages([]);
+    setImagePreviewUrls((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url));
+      imagePreviewUrlsRef.current = [];
+      return [];
     });
   };
 
   useEffect(() => {
     return () => {
-      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+      imagePreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const resetAndClose = () => {
@@ -386,7 +427,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     setTriedSubmit(false);
     setNewPart(emptyNewPart);
     setCreatedPart(null);
-    handleRemoveImage();
+    clearImages();
     handleCloseCamera();
     onClose();
   };
@@ -421,8 +462,12 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       setShowAddPart(false);
       setNewPart(emptyNewPart);
       toast.success(`Part ${created.partNumber} created`);
-    } catch {
-      toast.error('Failed to create part');
+    } catch (err) {
+      // apiClient surfaces the backend's error.message (e.g. "Part number 'CMP-0405-IMU'
+      // already exists") on the thrown Error — show that instead of a generic failure.
+      const reason =
+        err instanceof Error && err.message ? err.message : 'Failed to create part';
+      toast.error(reason);
     }
   };
 
@@ -449,6 +494,8 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     }
     const cat = (data.category || part.cat) as BOMCategory | undefined;
     const location = lockedLocation ?? data.location;
+    // Blank lead time (BOM defined none, user left it empty) is passed through as undefined.
+    const leadTimeDays = typeof data.leadTimeDays === 'number' ? data.leadTimeDays : undefined;
 
     if (data.stockStatus === 'place_order') {
       onPlaceOrder({
@@ -458,9 +505,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         cat: cat as BOMCategory,
         quantity: data.quantity,
         expectedDate: data.expectedDate?.trim() || undefined,
-        leadTime: data.leadTimeDays,
+        leadTime: leadTimeDays,
         location,
-        supplierRef: data.note?.trim() || undefined,
+        supplierRef: data.supplierRef?.trim() || undefined,
         note: data.orderNote?.trim() || undefined,
         description: data.description?.trim() || undefined,
         purpose: data.purpose?.trim() || undefined,
@@ -475,13 +522,13 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         // Row-level "Adjust quantity" sets the absolute on-hand count; "New transaction" adds a delta.
         mode: initialPartId ? 'set' : 'delta',
         quantity: data.quantity,
-        reasonCode: data.reasonCode as string,
+        reasonCode: data.reasonCode?.trim() || undefined,
         note: data.note?.trim() || undefined,
         description: data.description?.trim() || undefined,
-        // Lead time and image are only collected in the "New transaction" flow —
+        // Lead time and images are only collected in the "New transaction" flow —
         // the row-level "Adjust quantity" dialog omits both fields.
-        image: initialPartId ? undefined : image ?? undefined,
-        leadTimeDays: initialPartId ? undefined : data.leadTimeDays,
+        images: initialPartId || images.length === 0 ? undefined : images,
+        leadTimeDays: initialPartId ? undefined : leadTimeDays,
       });
     }
     resetAndClose();
@@ -491,8 +538,22 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   // without this, a blocked submit looks like the button did nothing.
   const handleInvalid = (errors: FieldErrors<AdjustFormData>) => {
     setTriedSubmit(true);
-    const firstMessage = Object.values(errors)[0]?.message;
-    toast.error(typeof firstMessage === 'string' ? firstMessage : 'Fill in all required fields before submitting');
+    // Surface every failing field, not just Object.values(errors)[0] — with more than one
+    // error the arbitrary "first" one (schema order) often names a field the user isn't
+    // looking at, contradicting the inline messages (e.g. toast says Note, the red text
+    // under the cursor says Description).
+    const messages = Array.from(new Set(
+      Object.values(errors)
+        .map(e => (e && typeof e.message === 'string' ? e.message : null))
+        .filter((m): m is string => !!m)
+    ));
+    if (messages.length === 0) {
+      toast.error('Fill in all required fields before submitting');
+    } else if (messages.length === 1) {
+      toast.error(messages[0]);
+    } else {
+      toast.error('Fix the highlighted fields', { description: messages.join('\n') });
+    }
   };
 
   return (
@@ -515,13 +576,19 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
               : <Pencil className="h-4 w-4" />}
           </div>
           <div className="text-left flex-1 min-w-0">
-            <DialogTitle>{initialPartId ? 'Adjust quantity' : 'New transaction'}</DialogTitle>
+            <DialogTitle>
+              {initialPartId
+                ? 'Adjust quantity'
+                : stockStatus === 'place_order'
+                  ? (orderStatus === 'planned' ? 'Plan a future order' : 'Place a purchase order')
+                  : 'Add stock on hand'}
+            </DialogTitle>
             <DialogDescription>
               {stockStatus === 'place_order'
-                ? (orderStatus === 'planned' ? 'Flags a future purchase need, not yet on order' : 'Creates a tracked purchase order')
+                ? (orderStatus === 'planned' ? 'Note parts you plan to order later' : 'Order parts from a supplier and track them')
                 : initialPartId
-                  ? 'Sets the on-hand count — logs the change as one ledger entry'
-                  : 'Writes one immutable ledger entry'}
+                  ? 'Set the correct on-hand count for this part'
+                  : 'Record parts you already have in inventory'}
             </DialogDescription>
           </div>
           <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none">
@@ -580,11 +647,13 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                                   !selectedRecord && !createdPart && 'text-muted-foreground'
                                 )}
                               >
-                                {selectedRecord
-                                  ? `${selectedRecord.pn} — ${selectedRecord.name}`
-                                  : createdPart
-                                    ? `${createdPart.partNumber} — ${createdPart.name}`
-                                    : 'Select a part...'}
+                                <span className="min-w-0 truncate">
+                                  {selectedRecord
+                                    ? `${selectedRecord.pn} — ${selectedRecord.name}`
+                                    : createdPart
+                                      ? `${createdPart.partNumber} — ${createdPart.name}`
+                                      : 'Select a part...'}
+                                </span>
                                 <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
                               </Button>
                             </FormControl>
@@ -615,7 +684,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                                         form.setValue('partId', r.partId, { shouldDirty: true, shouldValidate: true });
                                         form.setValue('location', r.location, { shouldDirty: true, shouldValidate: true });
                                         form.setValue('category', r.cat ?? '', { shouldDirty: true, shouldValidate: true });
-                                        form.setValue('leadTimeDays', r.leadTimeDays > 0 ? r.leadTimeDays : 1, { shouldDirty: true, shouldValidate: true });
+                                        form.setValue('leadTimeDays', r.leadTimeDays > 0 ? r.leadTimeDays : '', { shouldDirty: true, shouldValidate: true });
                                         form.setValue('quantity', r.demandQty > 0 ? r.demandQty : 1, { shouldDirty: true, shouldValidate: true });
                                         setPartPickerOpen(false);
                                         setPartSearch('');
@@ -677,7 +746,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                               <Label className="text-xs">Part Number *</Label>
                               <Input
                                 value={newPart.partNumber}
-                                onChange={(e) => setNewPart(prev => ({ ...prev, partNumber: e.target.value }))}
+                                onChange={(e) => setNewPart(prev => ({ ...prev, partNumber: e.target.value.toUpperCase() }))}
                                 placeholder="e.g. EV-PWR-099"
                               />
                             </div>
@@ -746,7 +815,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                           <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Category <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                         </div>
                         <FormControl>
-                          <CategoryCombobox value={field.value} onChange={field.onChange} placeholder="Select a part first..." extraCategories={extraCategories} />
+                          <CategoryCombobox value={field.value} onChange={field.onChange} placeholder="Select a category..." extraCategories={extraCategories} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -802,37 +871,39 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   name="stockStatus"
                   render={({ field }) => (
                     <FormItem className="sm:col-span-2 space-y-1.5">
-                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock status</FormLabel>
+                      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Do you have this part?</FormLabel>
+                          <p className="text-xs text-muted-foreground">
+                            {stockStatus === 'place_order'
+                              ? "You don't have it yet — this creates a purchase order to track."
+                              : 'You already have this part — it gets added to inventory now.'}
+                          </p>
+                        </div>
                         <FormControl>
                           <ToggleGroup
                             type="single"
                             value={field.value}
                             onValueChange={(v) => v && field.onChange(v)}
-                            className="gap-1"
+                            className="grid w-full shrink-0 grid-cols-2 gap-1 sm:w-[20rem]"
                           >
                             <ToggleGroupItem
                               value="in_stock"
                               variant="outline"
-                              className="h-8 gap-1.5 px-3 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                              className="h-8 w-full gap-1.5 px-2 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
                             >
-                              <Boxes className="h-3.5 w-3.5" /> Have stock
+                              <Boxes className="h-3.5 w-3.5" /> Have it on hand
                             </ToggleGroupItem>
                             <ToggleGroupItem
                               value="place_order"
                               variant="outline"
-                              className="h-8 gap-1.5 px-3 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                              className="h-8 w-full gap-1.5 px-2 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
                             >
-                              <ShoppingCart className="h-3.5 w-3.5" /> Need to order
+                              <ShoppingCart className="h-3.5 w-3.5" /> Need to order it
                             </ToggleGroupItem>
                           </ToggleGroup>
                         </FormControl>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {stockStatus === 'place_order'
-                          ? "Don't have it on hand — place a purchase order instead."
-                          : 'Already have this part in hand — log the ledger entry directly.'}
-                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -844,36 +915,40 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                   control={form.control}
                   name="orderStatus"
                   render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Order status</FormLabel>
-                      <FormControl>
-                        <ToggleGroup
-                          type="single"
-                          value={field.value}
-                          onValueChange={(v) => v && field.onChange(v)}
-                          className="grid grid-cols-2 gap-1"
-                        >
-                          <ToggleGroupItem
-                            value="open"
-                            variant="outline"
-                            className="h-8 gap-1.5 px-2 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                    <FormItem className="sm:col-span-2 space-y-1.5">
+                      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Has it been ordered yet?</FormLabel>
+                          <p className="text-xs text-muted-foreground">
+                            {orderStatus === 'planned'
+                              ? "Not sent to a supplier yet — won't count as incoming stock."
+                              : 'Sent to a supplier — counts as incoming stock.'}
+                          </p>
+                        </div>
+                        <FormControl>
+                          <ToggleGroup
+                            type="single"
+                            value={field.value}
+                            onValueChange={(v) => v && field.onChange(v)}
+                            className="grid w-full shrink-0 grid-cols-2 gap-1 sm:w-[20rem]"
                           >
-                            <ShoppingCart className="h-3.5 w-3.5" /> Already ordered
-                          </ToggleGroupItem>
-                          <ToggleGroupItem
-                            value="planned"
-                            variant="outline"
-                            className="h-8 gap-1.5 px-2 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
-                          >
-                            <Clock className="h-3.5 w-3.5" /> Want to order
-                          </ToggleGroupItem>
-                        </ToggleGroup>
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">
-                        {orderStatus === 'planned'
-                          ? "Not submitted to a supplier yet — won't count toward on-order totals until marked ordered."
-                          : 'Already submitted to a supplier — counts toward on-order/incoming totals.'}
-                      </p>
+                            <ToggleGroupItem
+                              value="open"
+                              variant="outline"
+                              className="h-8 w-full gap-1.5 px-2 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                            >
+                              <ShoppingCart className="h-3.5 w-3.5" /> Order placed
+                            </ToggleGroupItem>
+                            <ToggleGroupItem
+                              value="planned"
+                              variant="outline"
+                              className="h-8 w-full gap-1.5 px-2 text-xs border-input data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:border-primary"
+                            >
+                              <Clock className="h-3.5 w-3.5" /> Not ordered yet
+                            </ToggleGroupItem>
+                          </ToggleGroup>
+                        </FormControl>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -889,7 +964,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                              {initialPartId ? 'New on-hand count' : 'Quantity'} <span className="text-destructive" aria-hidden="true">*</span>
+                              {initialPartId ? 'New on-hand count' : 'Quantity on hand'} <span className="text-destructive" aria-hidden="true">*</span>
                             </FormLabel>
                             <FormControl>
                               <Input type="number" min={initialPartId ? 0 : 1} {...field} />
@@ -912,9 +987,9 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                         name="leadTimeDays"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time (days)</FormLabel>
                             <FormControl>
-                              <Input type="number" min={0} step={1} placeholder="Days" {...field} />
+                              <Input type="number" min={1} step={1} placeholder="e.g. 7" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -930,7 +1005,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                       name="quantity"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
+                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity to order <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                           <FormControl>
                             <Input type="number" min={1} {...field} />
                           </FormControl>
@@ -944,7 +1019,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                       name="expectedDate"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected date</FormLabel>
+                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expected delivery date</FormLabel>
                           <FormControl>
                             <Input type="date" {...field} />
                           </FormControl>
@@ -953,43 +1028,59 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                       )}
                     />
 
-                    <div className="grid grid-cols-1 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="leadTimeDays"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
-                            <FormControl>
-                              <Input type="number" min={0} step={1} placeholder="Days" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                    <FormField
+                      control={form.control}
+                      name="leadTimeDays"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Lead time (days)</FormLabel>
+                          <FormControl>
+                            <Input type="number" min={1} step={1} placeholder="e.g. 7" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </>
                 )}
 
-                <FormField
-                  control={form.control}
-                  name="note"
-                  render={({ field }) => (
-                    <FormItem className="sm:col-span-2">
-                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        {stockStatus === 'place_order' ? 'Supplier / PO ref' : 'Note'}
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder={stockStatus === 'place_order' ? 'PO-…' : 'Optional note...'}
-                          className="min-h-[70px] resize-none"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {stockStatus === 'place_order' ? (
+                  <FormField
+                    control={form.control}
+                    name="supplierRef"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Supplier or PO number
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. PO-1234, or Acme Corp" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name="note"
+                    render={({ field }) => (
+                      <FormItem className="sm:col-span-2">
+                        <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Note
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Optional note..."
+                            className="min-h-[70px] resize-none"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 {stockStatus === 'place_order' && (
                   <FormField
@@ -998,11 +1089,11 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     render={({ field }) => (
                       <FormItem className="sm:col-span-2">
                         <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Purpose
+                          Reason for ordering
                         </FormLabel>
                         <FormControl>
                           <Textarea
-                            placeholder="Why is this being ordered?"
+                            placeholder="What is this order for?"
                             className="min-h-[70px] resize-none"
                             {...field}
                           />
@@ -1020,11 +1111,11 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     render={({ field }) => (
                       <FormItem className="sm:col-span-2">
                         <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Notes
+                          Additional notes
                         </FormLabel>
                         <FormControl>
                           <Textarea
-                            placeholder="Optional notes..."
+                            placeholder="Anything else worth recording..."
                             className="min-h-[70px] resize-none"
                             {...field}
                           />
@@ -1038,7 +1129,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                 {!initialPartId && (
                 <div className="space-y-2 sm:col-span-2">
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Image
+                    Images
                   </Label>
                   {cameraStream ? (
                     <div className="space-y-2">
@@ -1059,54 +1150,65 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                         </Button>
                       </div>
                     </div>
-                  ) : imagePreviewUrl ? (
-                    <div className="relative w-fit">
-                      <img
-                        src={imagePreviewUrl}
-                        alt="Attached"
-                        className="h-24 w-24 rounded-md object-cover border"
-                      />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow"
-                        onClick={handleRemoveImage}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
                   ) : (
-                    <div
-                      onDragOver={(e) => { e.preventDefault(); setIsDraggingImage(true); }}
-                      onDragLeave={() => setIsDraggingImage(false)}
-                      onDrop={handleImageDrop}
-                      className={cn(
-                        'flex flex-col items-center justify-center gap-2 rounded-md border border-dashed px-4 py-6 text-center transition-colors',
-                        isDraggingImage ? 'border-primary bg-primary/5' : 'border-input'
+                    <div className="space-y-3">
+                      {imagePreviewUrls.length > 0 && (
+                        <div className="flex flex-wrap gap-3">
+                          {imagePreviewUrls.map((url, i) => (
+                            <div key={url} className="relative w-fit">
+                              <img
+                                src={url}
+                                alt={`Attached ${i + 1}`}
+                                className="h-24 w-24 rounded-md object-cover border"
+                              />
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="icon"
+                                className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow"
+                                onClick={() => handleRemoveImage(i)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
                       )}
-                    >
-                      <ImagePlus className="h-5 w-5 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Drag & drop an image here</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors">
-                          <Upload className="h-3.5 w-3.5" />
-                          Browse files
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={handleImageSelect}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={handleOpenCamera}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
-                        >
-                          <Camera className="h-3.5 w-3.5" />
-                          Take photo
-                        </button>
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); setIsDraggingImage(true); }}
+                        onDragLeave={() => setIsDraggingImage(false)}
+                        onDrop={handleImageDrop}
+                        className={cn(
+                          'flex flex-col items-center justify-center gap-2 rounded-md border border-dashed text-center transition-colors',
+                          imagePreviewUrls.length > 0 ? 'px-4 py-4' : 'px-4 py-6',
+                          isDraggingImage ? 'border-primary bg-primary/5' : 'border-input'
+                        )}
+                      >
+                        <ImagePlus className="h-5 w-5 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">
+                          {imagePreviewUrls.length > 0 ? 'Drag & drop to add more images' : 'Drag & drop images here'}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors">
+                            <Upload className="h-3.5 w-3.5" />
+                            Browse files
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={handleImageSelect}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleOpenCamera}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                          >
+                            <Camera className="h-3.5 w-3.5" />
+                            Take photo
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1123,8 +1225,8 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                 <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
                 <Button type="submit" className="flex-1">
                   {stockStatus === 'place_order'
-                    ? (orderStatus === 'planned' ? 'Flag as needed' : 'Place order')
-                    : 'Save transaction'}
+                    ? (orderStatus === 'planned' ? 'Save planned order' : 'Place order')
+                    : initialPartId ? 'Save adjustment' : 'Add to inventory'}
                 </Button>
               </div>
             </DialogFooter>

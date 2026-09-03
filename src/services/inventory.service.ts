@@ -179,10 +179,13 @@ export function fromApiTransaction(r: ApiStockTransaction): StockTransaction {
     direction: r.direction ?? undefined,
     qty: r.qty,
     location: r.location,
-    reference: r.reference ?? undefined,
-    reasonCode: r.reasonCode ?? undefined,
-    note: r.note ?? undefined,
-    description: r.description ?? undefined,
+    // Normalise empty strings to undefined — older writes (and the Adjust dialog, which
+    // has no reason-code field) persisted `reason_code = ''`, which then shadowed the
+    // note/description in the Movements ledger because `?? ` only falls through on null.
+    reference: r.reference?.trim() || undefined,
+    reasonCode: r.reasonCode?.trim() || undefined,
+    note: r.note?.trim() || undefined,
+    description: r.description?.trim() || undefined,
     quarantine: r.quarantine,
     buildId: r.buildId ?? undefined,
     lotNumber: r.lotNumber ?? undefined,
@@ -248,7 +251,7 @@ export interface AdjustQuantityDto {
   /** 'set' overwrites on-hand with `quantity`; 'delta' (default) adds/removes it per `direction`. */
   mode?: 'delta' | 'set';
   quantity: number;
-  reasonCode: string;
+  reasonCode?: string;
   note?: string;
   description?: string;
   lotNumber?: string;

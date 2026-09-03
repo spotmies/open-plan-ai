@@ -1356,16 +1356,25 @@ export function IssuesView({
                       </TableCell>
                       <TableCell>
                         {issue.assignees && issue.assignees.length > 0 ? (
-                          <div className="flex -space-x-2 overflow-hidden">
-                            {issue.assignees.map((assignee) => (
-                              <Avatar key={assignee.id} className="inline-block h-6 w-6 ring-2 ring-background">
-                                <AvatarImage src={resolveFileUrl(assignee.avatar) ?? assignee.avatar} alt={assignee.name} />
-                                <AvatarFallback className="text-[10px]">
-                                  {assignee.initials}
-                                </AvatarFallback>
-                              </Avatar>
-                            ))}
-                          </div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2 w-fit cursor-default">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarImage src={resolveFileUrl(issue.assignees[0].avatar) ?? issue.assignees[0].avatar} alt={issue.assignees[0].name} />
+                                  <AvatarFallback className="text-[10px]">
+                                    {issue.assignees[0].initials}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="text-sm">
+                                  {issue.assignees[0].name}
+                                  {issue.assignees.length > 1 && ` +${issue.assignees.length - 1}`}
+                                </span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              {issue.assignees.map((a) => a.name).join(', ')}
+                            </TooltipContent>
+                          </Tooltip>
                         ) : (
                           <span className="text-muted-foreground text-sm">Unassigned</span>
                         )}

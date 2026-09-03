@@ -22,9 +22,10 @@ export interface MultiSelectProps {
   selected: string[]
   onChange: (values: string[]) => void
   placeholder?: string
+  contentClassName?: string
 }
 
-export function MultiSelect({ options, selected, onChange, placeholder = "Select..." }: MultiSelectProps) {
+export function MultiSelect({ options, selected, onChange, placeholder = "Select...", contentClassName }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false)
 
   const handleSelect = (value: string) => {
@@ -63,7 +64,7 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-0" align="start">
+      <PopoverContent className={cn("w-[200px] p-0", contentClassName)} align="start">
         <Command onKeyDown={handleKeyDown}>
           <CommandInput placeholder="Search..." />
           <CommandList>

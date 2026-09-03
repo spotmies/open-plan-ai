@@ -367,7 +367,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                 createdAt: c.createdAt || new Date().toISOString(),
             }));
             setEditedIssue(prev => (prev && prev.id === issue.id ? { ...prev, comments: mappedComments } : prev));
-        }).catch(() => {});
+        }).catch(() => { });
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [issue?.id, mode]);
@@ -393,7 +393,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                 };
             });
             setEditedIssue(prev => (prev && prev.id === issue.id ? { ...prev, attachments: mapped } : prev));
-        }).catch(() => {});
+        }).catch(() => { });
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [issue?.id, mode]);
@@ -945,7 +945,7 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                             <PopoverContent className="p-0 w-[260px]" align="start">
                                 <Command>
                                     <CommandInput placeholder="Search members..." />
-                                    
+
                                     {(editedIssue.assignees || []).length > 0 && (
                                         <div className="p-2 border-b">
                                             <p className="text-xs font-medium text-muted-foreground px-2 mb-1">Assigned</p>
@@ -1057,471 +1057,478 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                         <Label className="text-xs text-muted-foreground uppercase tracking-wider font-medium -mb-2">Details</Label>
                     )}
                     <div className={cn(isMobileLayout && 'border rounded-xl p-4')}>
-                    {/* Metadata Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-start">
-                        {/* Status */}
-                        <div className="space-y-1.5">
-                            <Label className={cn(
-                                'text-xs text-muted-foreground flex items-center gap-1.5',
-                                isMobileLayout && 'uppercase tracking-wider font-medium'
-                            )}>
-                                {!isMobileLayout && <AlertCircle className="h-3 w-3" />}
-                                Bucket {!isMobileLayout && <span className="text-destructive" aria-hidden="true">*</span>}
-                            </Label>
-                            <Select
-                                value={editedIssue.status}
-                                onValueChange={(value) => handleFieldChange('status', value as IssueStatus)}
-                                disabled={!canEditIssueFields}
-                            >
-                                <SelectTrigger
-                                    className={cn(isMobileLayout ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default' : 'h-9', isMobileLayout && !canEditIssue && 'opacity-60')}
-                                    aria-required="true"
-                                    title={canEditIssueFields ? undefined : (statusOptions.find(s => s.value === editedIssue.status)?.label ?? editedIssue.status)}
-                                >
-                                    <SelectValue>
-                                        <div className={cn('flex items-center gap-2 min-w-0', isMobileLayout && 'font-bold text-sm text-foreground')}>
-                                            <div
-                                                className="w-2 h-2 rounded-full flex-shrink-0"
-                                                style={{ backgroundColor: statusOptions.find(s => s.value === editedIssue.status)?.color ?? '#6b7280' }}
-                                            />
-                                            <span className="truncate">
-                                                {statusOptions.find(s => s.value === editedIssue.status)?.label ?? editedIssue.status}
-                                            </span>
-                                        </div>
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {statusOptions.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: option.color }} />
-                                                {option.label}
-                                            </div>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Reported Date */}
-                        <div className="space-y-1.5">
-                            <Label className={cn(
-                                'text-xs text-muted-foreground flex items-center gap-1.5',
-                                isMobileLayout && 'uppercase tracking-wider font-medium'
-                            )}>
-                                {!isMobileLayout && <CalendarIcon className="h-3 w-3" />}
-                                Reported
-                            </Label>
-                            <div className={cn(
-                                'text-sm flex items-center',
-                                isMobileLayout ? 'font-bold text-foreground' : 'py-2 px-3 h-9 border rounded-md bg-muted/20 text-muted-foreground'
-                            )}>
-                                {format(new Date(editedIssue.reportedAt || (editedIssue as any).createdAt || new Date()), isMobileLayout ? 'MMM d' : 'PPP')}
-                            </div>
-                        </div>
-
-                        {/* Due Date */}
-                        <div className="space-y-1.5">
-                            <Label className={cn(
-                                'text-xs text-muted-foreground flex items-center gap-1.5',
-                                isMobileLayout && 'uppercase tracking-wider font-medium'
-                            )}>
-                                {!isMobileLayout && <CalendarIcon className="h-3 w-3" />}
-                                Due Date
-                            </Label>
-                            <Popover open={isDueDatePopoverOpen} onOpenChange={(open) => canEditIssueFields && setIsDueDatePopoverOpen(open)}>
-                                <PopoverTrigger asChild>
-                                    <Button
-                                        variant={isMobileLayout ? 'ghost' : 'outline'}
-                                        disabled={!canEditIssueFields}
-                                        title={canEditIssueFields ? undefined : editLockTitle}
-                                        className={cn(
-                                            isMobileLayout
-                                                ? 'h-auto w-auto p-0 justify-start text-left font-bold text-sm text-foreground hover:bg-transparent disabled:opacity-100 disabled:pointer-events-none'
-                                                : 'w-full justify-start text-left font-normal h-9 px-3',
-                                            !editedIssue.dueDate && 'text-muted-foreground',
-                                            isMobileLayout && !canEditIssue && 'opacity-60'
-                                        )}
-                                    >
-                                        {editedIssue.dueDate
-                                            ? format(new Date(editedIssue.dueDate), isMobileLayout ? 'MMM d' : 'PPP')
-                                            : 'Set date'}
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
-                                    <Calendar
-                                        mode="single"
-                                        selected={editedIssue.dueDate ? parseISO(editedIssue.dueDate) : undefined}
-                                        onSelect={(date) => {
-                                            if (date) {
-                                                // Use local date string YYYY-MM-DD to avoid timezone shifts
-                                                // Adjust for timezone offset to ensure we get the correct local YYYY-MM-DD
-                                                // or just use format from date-fns which uses local time
-                                                handleFieldChange('dueDate', format(date, 'yyyy-MM-dd'));
-                                            } else {
-                                                handleFieldChange('dueDate', undefined);
-                                            }
-                                            setIsDueDatePopoverOpen(false);
-                                        }}
-                                        disabled={(date) => date < startOfDay(new Date())}
-                                        initialFocus
-                                        className="p-3 pointer-events-auto"
-                                    />
-                                </PopoverContent>
-                            </Popover>
-                        </div>
-
-                        {/* Reported By */}
-                        <div className="space-y-1.5">
-                            <Label className={cn(
-                                'text-xs text-muted-foreground flex items-center gap-1.5',
-                                isMobileLayout && 'uppercase tracking-wider font-medium'
-                            )}>
-                                {!isMobileLayout && <User className="h-3 w-3" />}
-                                Reported By
-                            </Label>
-                            <div className={cn(
-                                'flex items-center gap-2',
-                                isMobileLayout ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
-                            )}>
-                                <Avatar className="h-5 w-5 shrink-0">
-                                    <AvatarImage src={resolveFileUrl(editedIssue.reportedBy.avatar) ?? editedIssue.reportedBy.avatar} alt={editedIssue.reportedBy.name} />
-                                    <AvatarFallback className="text-[9px]">
-                                        {editedIssue.reportedBy.initials}
-                                    </AvatarFallback>
-                                </Avatar>
-                                <TooltipProvider delayDuration={150}>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <span className={cn('text-sm truncate min-w-0 flex-1', isMobileLayout && 'font-bold text-foreground')}>{editedIssue.reportedBy.name}</span>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            {editedIssue.reportedBy.name}
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
-                            </div>
-                        </div>
-
-                        {/* Modified By */}
-                        {editedIssue.updatedBy && (
+                        {/* Metadata Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-start">
+                            {/* Status */}
                             <div className="space-y-1.5">
                                 <Label className={cn(
                                     'text-xs text-muted-foreground flex items-center gap-1.5',
                                     isMobileLayout && 'uppercase tracking-wider font-medium'
                                 )}>
-                                    {!isMobileLayout && <Pencil className="h-3 w-3" />}
-                                    Modified By
-                                    <HoverCard openDelay={150} closeDelay={100}>
-                                        <HoverCardTrigger asChild>
-                                            <Info className="h-3 w-3 cursor-help" />
-                                        </HoverCardTrigger>
-                                        <HoverCardContent
-                                            side="bottom"
-                                            align="start"
-                                            sideOffset={8}
-                                            className="w-[280px] p-3 text-xs space-y-2 max-h-[240px] overflow-y-auto"
-                                        >
-                                            {editedIssue.changeHistory && editedIssue.changeHistory.length > 0 ? (
-                                                editedIssue.changeHistory.map((entry, idx) => (
-                                                    <div key={idx} className={idx > 0 ? 'pt-2 border-t border-border/50' : ''}>
-                                                        <p className="font-medium">{entry.userName}</p>
-                                                        {formatModifiedFields(entry.fields) && (
-                                                            <p>Changed: {formatModifiedFields(entry.fields)}</p>
-                                                        )}
-                                                        <p className="text-muted-foreground">{format(parseISO(entry.at), 'MMM d, yyyy • h:mm a')}</p>
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <div>
-                                                    <p className="font-medium">{editedIssue.updatedBy.name}</p>
-                                                    {editedIssue.updatedAt && (
-                                                        <p className="text-muted-foreground">{format(parseISO(editedIssue.updatedAt), 'MMM d, yyyy • h:mm a')}</p>
-                                                    )}
+                                    {!isMobileLayout && <AlertCircle className="h-3 w-3" />}
+                                    Bucket {!isMobileLayout && <span className="text-destructive" aria-hidden="true">*</span>}
+                                </Label>
+                                <Select
+                                    value={editedIssue.status}
+                                    onValueChange={(value) => handleFieldChange('status', value as IssueStatus)}
+                                    disabled={!canEditIssueFields}
+                                >
+                                    <SelectTrigger
+                                        className={cn(isMobileLayout ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default' : 'h-9', isMobileLayout && !canEditIssue && 'opacity-60')}
+                                        aria-required="true"
+                                        title={canEditIssueFields ? undefined : (statusOptions.find(s => s.value === editedIssue.status)?.label ?? editedIssue.status)}
+                                    >
+                                        <SelectValue>
+                                            <div className={cn('flex items-center gap-2 min-w-0', isMobileLayout && 'font-bold text-sm text-foreground')}>
+                                                <div
+                                                    className="w-2 h-2 rounded-full flex-shrink-0"
+                                                    style={{ backgroundColor: statusOptions.find(s => s.value === editedIssue.status)?.color ?? '#6b7280' }}
+                                                />
+                                                <span className="truncate">
+                                                    {statusOptions.find(s => s.value === editedIssue.status)?.label ?? editedIssue.status}
+                                                </span>
+                                            </div>
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {statusOptions.map((option) => (
+                                            <SelectItem key={option.value} value={option.value}>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: option.color }} />
+                                                    {option.label}
                                                 </div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Reported Date */}
+                            <div className="space-y-1.5">
+                                <Label className={cn(
+                                    'text-xs text-muted-foreground flex items-center gap-1.5',
+                                    isMobileLayout && 'uppercase tracking-wider font-medium'
+                                )}>
+                                    {!isMobileLayout && <CalendarIcon className="h-3 w-3" />}
+                                    Reported
+                                </Label>
+                                <div className={cn(
+                                    'text-sm flex items-center',
+                                    isMobileLayout ? 'font-bold text-foreground' : 'py-2 px-3 h-9 border rounded-md bg-muted/20 text-muted-foreground'
+                                )}>
+                                    {format(new Date(editedIssue.reportedAt || (editedIssue as any).createdAt || new Date()), isMobileLayout ? 'MMM d' : 'PPP')}
+                                </div>
+                            </div>
+
+                            {/* Due Date */}
+                            <div className="space-y-1.5">
+                                <Label className={cn(
+                                    'text-xs text-muted-foreground flex items-center gap-1.5',
+                                    isMobileLayout && 'uppercase tracking-wider font-medium'
+                                )}>
+                                    {!isMobileLayout && <CalendarIcon className="h-3 w-3" />}
+                                    Due Date
+                                </Label>
+                                <Popover open={isDueDatePopoverOpen} onOpenChange={(open) => canEditIssueFields && setIsDueDatePopoverOpen(open)}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant={isMobileLayout ? 'ghost' : 'outline'}
+                                            disabled={!canEditIssueFields}
+                                            title={canEditIssueFields ? undefined : editLockTitle}
+                                            className={cn(
+                                                isMobileLayout
+                                                    ? 'h-auto w-auto p-0 justify-start text-left font-bold text-sm text-foreground hover:bg-transparent disabled:opacity-100 disabled:pointer-events-none'
+                                                    : 'w-full justify-start text-left font-normal h-9 px-3',
+                                                !editedIssue.dueDate && 'text-muted-foreground',
+                                                isMobileLayout && !canEditIssue && 'opacity-60'
                                             )}
-                                        </HoverCardContent>
-                                    </HoverCard>
+                                        >
+                                            {editedIssue.dueDate
+                                                ? format(new Date(editedIssue.dueDate), isMobileLayout ? 'MMM d' : 'PPP')
+                                                : 'Set date'}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                        <Calendar
+                                            mode="single"
+                                            selected={editedIssue.dueDate ? parseISO(editedIssue.dueDate) : undefined}
+                                            onSelect={(date) => {
+                                                if (date) {
+                                                    // Use local date string YYYY-MM-DD to avoid timezone shifts
+                                                    // Adjust for timezone offset to ensure we get the correct local YYYY-MM-DD
+                                                    // or just use format from date-fns which uses local time
+                                                    handleFieldChange('dueDate', format(date, 'yyyy-MM-dd'));
+                                                } else {
+                                                    handleFieldChange('dueDate', undefined);
+                                                }
+                                                setIsDueDatePopoverOpen(false);
+                                            }}
+                                            disabled={(date) => date < startOfDay(new Date())}
+                                            initialFocus
+                                            className="p-3 pointer-events-auto"
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                            {/* Reported By */}
+                            <div className="space-y-1.5">
+                                <Label className={cn(
+                                    'text-xs text-muted-foreground flex items-center gap-1.5',
+                                    isMobileLayout && 'uppercase tracking-wider font-medium'
+                                )}>
+                                    {!isMobileLayout && <User className="h-3 w-3" />}
+                                    Reported By
                                 </Label>
                                 <div className={cn(
                                     'flex items-center gap-2',
                                     isMobileLayout ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
                                 )}>
                                     <Avatar className="h-5 w-5 shrink-0">
+                                        <AvatarImage src={resolveFileUrl(editedIssue.reportedBy.avatar) ?? editedIssue.reportedBy.avatar} alt={editedIssue.reportedBy.name} />
                                         <AvatarFallback className="text-[9px]">
-                                            {editedIssue.updatedBy.initials}
+                                            {editedIssue.reportedBy.initials}
                                         </AvatarFallback>
                                     </Avatar>
                                     <TooltipProvider delayDuration={150}>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <span className={cn('text-sm truncate min-w-0 flex-1', isMobileLayout && 'font-bold text-foreground')}>{editedIssue.updatedBy.name}</span>
+                                                <span className={cn('text-sm truncate min-w-0 flex-1', isMobileLayout && 'font-bold text-foreground')}>{editedIssue.reportedBy.name}</span>
                                             </TooltipTrigger>
                                             <TooltipContent side="top" className="text-xs">
-                                                {editedIssue.updatedBy.name}
+                                                {editedIssue.reportedBy.name}
                                             </TooltipContent>
                                         </Tooltip>
                                     </TooltipProvider>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Project — only shown when explicitly provided (e.g. My Day, which aggregates issues across projects) */}
-                        {projectName && (
+                            {/* Modified By */}
+                            {editedIssue.updatedBy && (
+                                <div className="space-y-1.5">
+                                    <Label className={cn(
+                                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                                        isMobileLayout && 'uppercase tracking-wider font-medium'
+                                    )}>
+                                        {!isMobileLayout && <Pencil className="h-3 w-3" />}
+                                        Modified By
+                                        <HoverCard openDelay={150} closeDelay={100}>
+                                            <HoverCardTrigger asChild>
+                                                <Info className="h-3 w-3 cursor-help" />
+                                            </HoverCardTrigger>
+                                            <HoverCardContent
+                                                side="bottom"
+                                                align="start"
+                                                sideOffset={8}
+                                                className="w-[280px] p-3 text-xs space-y-2 max-h-[240px] overflow-y-auto"
+                                            >
+                                                {editedIssue.changeHistory && editedIssue.changeHistory.length > 0 ? (
+                                                    editedIssue.changeHistory.map((entry, idx) => (
+                                                        <div key={idx} className={idx > 0 ? 'pt-2 border-t border-border/50' : ''}>
+                                                            <p className="font-medium">{entry.userName}</p>
+                                                            {formatModifiedFields(entry.fields) && (
+                                                                <p>Changed: {formatModifiedFields(entry.fields)}</p>
+                                                            )}
+                                                            <p className="text-muted-foreground">{format(parseISO(entry.at), 'MMM d, yyyy • h:mm a')}</p>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <div>
+                                                        <p className="font-medium">{editedIssue.updatedBy.name}</p>
+                                                        {editedIssue.updatedAt && (
+                                                            <p className="text-muted-foreground">{format(parseISO(editedIssue.updatedAt), 'MMM d, yyyy • h:mm a')}</p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </HoverCardContent>
+                                        </HoverCard>
+                                    </Label>
+                                    <div className={cn(
+                                        'flex items-center gap-2',
+                                        isMobileLayout ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
+                                    )}>
+                                        <Avatar className="h-5 w-5 shrink-0">
+                                            <AvatarFallback className="text-[9px]">
+                                                {editedIssue.updatedBy.initials}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <TooltipProvider delayDuration={150}>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <span className={cn('text-sm truncate min-w-0 flex-1', isMobileLayout && 'font-bold text-foreground')}>{editedIssue.updatedBy.name}</span>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top" className="text-xs">
+                                                    {editedIssue.updatedBy.name}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Project — only shown when explicitly provided (e.g. My Day, which aggregates issues across projects) */}
+                            {projectName && (
+                                <div className="space-y-1.5">
+                                    <Label className={cn(
+                                        'text-xs text-muted-foreground flex items-center gap-1.5',
+                                        isMobileLayout && 'uppercase tracking-wider font-medium'
+                                    )}>
+                                        {!isMobileLayout && <FolderKanban className="h-3 w-3" />}
+                                        Project
+                                    </Label>
+                                    <div className={cn(
+                                        'flex items-center gap-2',
+                                        isMobileLayout ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
+                                    )}>
+                                        <span className={cn('text-sm truncate', isMobileLayout && 'font-bold text-foreground')}>{projectName}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Priority */}
                             <div className="space-y-1.5">
                                 <Label className={cn(
                                     'text-xs text-muted-foreground flex items-center gap-1.5',
                                     isMobileLayout && 'uppercase tracking-wider font-medium'
                                 )}>
-                                    {!isMobileLayout && <FolderKanban className="h-3 w-3" />}
-                                    Project
+                                    {!isMobileLayout && <AlertTriangle className="h-3 w-3" />}
+                                    Priority {!isMobileLayout && <span className="text-destructive" aria-hidden="true">*</span>}
                                 </Label>
-                                <div className={cn(
-                                    'flex items-center gap-2',
-                                    isMobileLayout ? '' : 'h-9 px-3 rounded-md border border-input bg-muted/20'
+                                <Select
+                                    value={editedIssue.severity}
+                                    onValueChange={(value) => handleFieldChange('severity', value as IssueSeverity)}
+                                    disabled={!canEditIssueFields}
+                                >
+                                    <SelectTrigger
+                                        className={cn(isMobileLayout ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default' : 'h-9', isMobileLayout && !canEditIssue && 'opacity-60')}
+                                        aria-required="true"
+                                        title={canEditIssueFields ? undefined : editLockTitle}
+                                    >
+                                        <SelectValue>
+                                            <Badge className={cn('text-xs gap-1', ISSUE_SEVERITY_DISPLAY[editedIssue.severity].color)}>
+                                                {(() => {
+                                                    const SeverityIcon = ISSUE_SEVERITY_DISPLAY[editedIssue.severity].icon;
+                                                    return <SeverityIcon className="h-3 w-3" />;
+                                                })()}
+                                                {ISSUE_SEVERITY_DISPLAY[editedIssue.severity].label}
+                                            </Badge>
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {ISSUE_SEVERITY_OPTIONS.map((option) => (
+                                            <SelectItem key={option.value} value={option.value}>
+                                                <Badge className={cn('text-xs gap-1', option.color)}>
+                                                    <option.icon className="h-3 w-3" />
+                                                    {option.label}
+                                                </Badge>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Category */}
+                            <div className="space-y-1.5">
+                                <Label className={cn(
+                                    'text-xs text-muted-foreground flex items-center gap-1.5',
+                                    isMobileLayout && 'uppercase tracking-wider font-medium'
                                 )}>
-                                    <span className={cn('text-sm truncate', isMobileLayout && 'font-bold text-foreground')}>{projectName}</span>
+                                    {!isMobileLayout && <Tag className="h-3 w-3" />}
+                                    Category {!isMobileLayout && <span className="text-destructive" aria-hidden="true">*</span>}
+                                </Label>
+                                <Select
+                                    value={editedIssue.category}
+                                    onValueChange={(value) => {
+                                        handleFieldChange('category', value as IssueCategory);
+                                        if (value !== 'other') handleFieldChange('categoryOther', undefined);
+                                    }}
+                                    disabled={!canEditIssueFields}
+                                >
+                                    <SelectTrigger
+                                        className={cn(isMobileLayout ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default' : 'h-9', isMobileLayout && !canEditIssue && 'opacity-60')}
+                                        aria-required="true"
+                                        title={canEditIssueFields ? undefined : editLockTitle}
+                                    >
+                                        <SelectValue placeholder="All Categories">
+                                            {(() => {
+                                                const cat = categoryOptions.find(c => c.value === editedIssue.category);
+                                                if (!cat) return undefined;
+                                                const Icon = cat.icon;
+                                                return (
+                                                    <div className={cn('flex items-center gap-2', isMobileLayout && 'font-bold text-sm text-foreground')}>
+                                                        {!isMobileLayout && <Icon className="h-4 w-4" />}
+                                                        {cat.label}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {categoryOptions.map((option) => (
+                                            <SelectItem key={option.value} value={option.value}>
+                                                <div className="flex items-center gap-2">
+                                                    <option.icon className="h-4 w-4" />
+                                                    {option.label}
+                                                </div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {editedIssue.category === 'other' && (
+                                    <Input
+                                        value={editedIssue.categoryOther || ''}
+                                        onChange={(e) => handleFieldChange('categoryOther', e.target.value)}
+                                        placeholder="Describe the category…"
+                                        disabled={!canEditIssueFields}
+                                        className={cn(
+                                            'h-9',
+                                            !editedIssue.categoryOther?.trim() && 'border-destructive',
+                                            isMobileLayout && 'disabled:opacity-100 disabled:cursor-default',
+                                            isMobileLayout && !canEditIssue && 'opacity-60'
+                                        )}
+                                        aria-required="true"
+                                    />
+                                )}
+                            </div>
+
+                            {/* Tags (Span 2 columns) */}
+                            <div className="space-y-1.5 md:col-span-2">
+                                <Label className={cn(
+                                    'text-xs text-muted-foreground flex items-center gap-1.5',
+                                    isMobileLayout && 'uppercase tracking-wider font-medium'
+                                )}>
+                                    {!isMobileLayout && <Tag className="h-3 w-3" />}
+                                    Tags
+                                </Label>
+                                <div
+                                    className={cn(
+                                        'min-h-9 flex w-full flex-wrap items-center gap-2 text-sm cursor-pointer transition-colors',
+                                        isMobileLayout ? '' : 'rounded-md border border-input bg-transparent px-3 py-1.5 hover:border-primary/50'
+                                    )}
+                                    onClick={() => !isMobileFieldsLocked && setIsTagPopoverOpen(true)}
+                                >
+                                    {(editedIssue.tags || []).map((tag) => (
+                                        <Badge
+                                            key={tag}
+                                            className="text-xs font-normal pl-2 pr-1 gap-1 text-white border-transparent hover:opacity-90"
+                                            style={{ backgroundColor: getTagColor(tag) }}
+                                        >
+                                            {tag}
+                                            {!isMobileFieldsLocked && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleFieldChange('tags', (editedIssue.tags || []).filter(t => t !== tag));
+                                                    }}
+                                                    className="hover:bg-black/10 rounded-full p-0.5 transition-colors"
+                                                >
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            )}
+                                        </Badge>
+                                    ))}
+
+                                    {!isMobileFieldsLocked && (
+                                        // Stop clicks from bubbling to the container's onClick above —
+                                        // PopoverContent is portaled in the DOM but stays a React-tree
+                                        // descendant of that div, so without this, selecting a tag (or
+                                        // re-clicking "+") would bubble up and force the popover back open
+                                        // right after it closes.
+                                        <div onClick={(e) => e.stopPropagation()}>
+                                        <Popover
+                                            open={isTagPopoverOpen}
+                                            onOpenChange={(open) => {
+                                                setIsTagPopoverOpen(open);
+                                                if (!open) setTagSearch('');
+                                            }}
+                                        >
+                                            <PopoverTrigger asChild>
+                                                <button className="h-6 w-6 rounded-full border border-dashed text-muted-foreground hover:border-primary hover:text-primary flex items-center justify-center transition-colors">
+                                                    <Plus className="h-3 w-3" />
+                                                </button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="p-0 w-[240px] flex flex-col overflow-hidden" align="start">
+                                                <Command>
+                                                    <CommandInput
+                                                        ref={tagSearchInputRef}
+                                                        placeholder="Search tags..."
+                                                        value={tagSearch}
+                                                        onValueChange={setTagSearch}
+                                                    />
+                                                    <CommandList className="max-h-[180px] overflow-y-auto">
+                                                        <CommandEmpty className="py-3 text-center text-sm text-muted-foreground">
+                                                            No matching tags.
+                                                        </CommandEmpty>
+                                                        {projectTags
+                                                            .filter(item => !(editedIssue.tags || []).some(t => t.toLowerCase() === item.name.toLowerCase()))
+                                                            .map((item) => (
+                                                                <CommandItem
+                                                                    key={item.id}
+                                                                    value={item.name}
+                                                                    onSelect={() => {
+                                                                        handleFieldChange('tags', [...(editedIssue.tags || []), item.name]);
+                                                                        setIsTagPopoverOpen(false);
+                                                                        setTagSearch('');
+                                                                    }}
+                                                                    className="cursor-pointer flex items-center gap-2 group/tag"
+                                                                >
+                                                                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                                                    <span className="flex-1 truncate">{item.name}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Delete tag ${item.name}`}
+                                                                        title="Delete tag from this project"
+                                                                        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover/tag:opacity-100"
+                                                                        onClick={(e) => requestTagDelete(e, item.name)}
+                                                                    >
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    </button>
+                                                                </CommandItem>
+                                                            ))}
+                                                    </CommandList>
+                                                </Command>
+                                                {/* Persistent "Create new tag" footer — always visible */}
+                                                <div className="border-t p-1.5">
+                                                    <button
+                                                        className={cn(
+                                                            "w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded transition-colors",
+                                                            tagSearch.trim() &&
+                                                                !projectTags.some(t => t.name.toLowerCase() === tagSearch.trim().toLowerCase())
+                                                                ? "text-primary hover:bg-primary/10 cursor-pointer"
+                                                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                                                        )}
+                                                        onClick={async () => {
+                                                            const name = tagSearch.trim();
+                                                            if (!name) {
+                                                                tagSearchInputRef.current?.focus();
+                                                                return;
+                                                            }
+                                                            if (projectTags.some(t => t.name.toLowerCase() === name.toLowerCase())) return;
+                                                            setTagSearch('');
+                                                            setIsTagPopoverOpen(false);
+                                                            try {
+                                                                const tag = await createTagMutation.mutateAsync({ name });
+                                                                handleFieldChange('tags', [...(editedIssue.tags || []), tag.name]);
+                                                            } catch {
+                                                                handleFieldChange('tags', [...(editedIssue.tags || []), name]);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Plus className="h-3 w-3 shrink-0" />
+                                                        {tagSearch.trim() &&
+                                                            !projectTags.some(t => t.name.toLowerCase() === tagSearch.trim().toLowerCase())
+                                                            ? <span>Create <strong>"{tagSearch.trim()}"</strong></span>
+                                                            : <span>Create new tag…</span>
+                                                        }
+                                                    </button>
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        )}
-
-                        {/* Priority */}
-                        <div className="space-y-1.5">
-                            <Label className={cn(
-                                'text-xs text-muted-foreground flex items-center gap-1.5',
-                                isMobileLayout && 'uppercase tracking-wider font-medium'
-                            )}>
-                                {!isMobileLayout && <AlertTriangle className="h-3 w-3" />}
-                                Priority {!isMobileLayout && <span className="text-destructive" aria-hidden="true">*</span>}
-                            </Label>
-                            <Select
-                                value={editedIssue.severity}
-                                onValueChange={(value) => handleFieldChange('severity', value as IssueSeverity)}
-                                disabled={!canEditIssueFields}
-                            >
-                                <SelectTrigger
-                                    className={cn(isMobileLayout ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default' : 'h-9', isMobileLayout && !canEditIssue && 'opacity-60')}
-                                    aria-required="true"
-                                    title={canEditIssueFields ? undefined : editLockTitle}
-                                >
-                                    <SelectValue>
-                                        <Badge className={cn('text-xs gap-1', ISSUE_SEVERITY_DISPLAY[editedIssue.severity].color)}>
-                                            {(() => {
-                                                const SeverityIcon = ISSUE_SEVERITY_DISPLAY[editedIssue.severity].icon;
-                                                return <SeverityIcon className="h-3 w-3" />;
-                                            })()}
-                                            {ISSUE_SEVERITY_DISPLAY[editedIssue.severity].label}
-                                        </Badge>
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {ISSUE_SEVERITY_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                            <Badge className={cn('text-xs gap-1', option.color)}>
-                                                <option.icon className="h-3 w-3" />
-                                                {option.label}
-                                            </Badge>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
                         </div>
-
-                        {/* Category */}
-                        <div className="space-y-1.5">
-                            <Label className={cn(
-                                'text-xs text-muted-foreground flex items-center gap-1.5',
-                                isMobileLayout && 'uppercase tracking-wider font-medium'
-                            )}>
-                                {!isMobileLayout && <Tag className="h-3 w-3" />}
-                                Category {!isMobileLayout && <span className="text-destructive" aria-hidden="true">*</span>}
-                            </Label>
-                            <Select
-                                value={editedIssue.category}
-                                onValueChange={(value) => {
-                                    handleFieldChange('category', value as IssueCategory);
-                                    if (value !== 'other') handleFieldChange('categoryOther', undefined);
-                                }}
-                                disabled={!canEditIssueFields}
-                            >
-                                <SelectTrigger
-                                    className={cn(isMobileLayout ? 'h-auto w-auto border-0 p-0 shadow-none bg-transparent focus:ring-0 focus-visible:ring-0 [&>svg]:hidden disabled:opacity-100 disabled:cursor-default' : 'h-9', isMobileLayout && !canEditIssue && 'opacity-60')}
-                                    aria-required="true"
-                                    title={canEditIssueFields ? undefined : editLockTitle}
-                                >
-                                    <SelectValue placeholder="All Categories">
-                                        {(() => {
-                                            const cat = categoryOptions.find(c => c.value === editedIssue.category);
-                                            if (!cat) return undefined;
-                                            const Icon = cat.icon;
-                                            return (
-                                                <div className={cn('flex items-center gap-2', isMobileLayout && 'font-bold text-sm text-foreground')}>
-                                                    {!isMobileLayout && <Icon className="h-4 w-4" />}
-                                                    {cat.label}
-                                                </div>
-                                            );
-                                        })()}
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {categoryOptions.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                            <div className="flex items-center gap-2">
-                                                <option.icon className="h-4 w-4" />
-                                                {option.label}
-                                            </div>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            {editedIssue.category === 'other' && (
-                                <Input
-                                    value={editedIssue.categoryOther || ''}
-                                    onChange={(e) => handleFieldChange('categoryOther', e.target.value)}
-                                    placeholder="Describe the category…"
-                                    disabled={!canEditIssueFields}
-                                    className={cn(
-                                        'h-9',
-                                        !editedIssue.categoryOther?.trim() && 'border-destructive',
-                                        isMobileLayout && 'disabled:opacity-100 disabled:cursor-default',
-                                        isMobileLayout && !canEditIssue && 'opacity-60'
-                                    )}
-                                    aria-required="true"
-                                />
-                            )}
-                        </div>
-
-                        {/* Tags (Span 2 columns) */}
-                        <div className="space-y-1.5 md:col-span-2">
-                            <Label className={cn(
-                                'text-xs text-muted-foreground flex items-center gap-1.5',
-                                isMobileLayout && 'uppercase tracking-wider font-medium'
-                            )}>
-                                {!isMobileLayout && <Tag className="h-3 w-3" />}
-                                Tags
-                            </Label>
-                            <div
-                                className={cn(
-                                    'min-h-9 flex w-full flex-wrap items-center gap-2 text-sm cursor-pointer transition-colors',
-                                    isMobileLayout ? '' : 'rounded-md border border-input bg-transparent px-3 py-1.5 hover:border-primary/50'
-                                )}
-                                onClick={() => !isMobileFieldsLocked && setIsTagPopoverOpen(true)}
-                            >
-                                {(editedIssue.tags || []).map((tag) => (
-                                    <Badge
-                                        key={tag}
-                                        className="text-xs font-normal pl-2 pr-1 gap-1 text-white border-transparent hover:opacity-90"
-                                        style={{ backgroundColor: getTagColor(tag) }}
-                                    >
-                                        {tag}
-                                        {!isMobileFieldsLocked && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleFieldChange('tags', (editedIssue.tags || []).filter(t => t !== tag));
-                                                }}
-                                                className="hover:bg-black/10 rounded-full p-0.5 transition-colors"
-                                            >
-                                                <X className="h-3 w-3" />
-                                            </button>
-                                        )}
-                                    </Badge>
-                                ))}
-
-                                {!isMobileFieldsLocked && (
-                                <Popover
-                                    open={isTagPopoverOpen}
-                                    onOpenChange={(open) => {
-                                        setIsTagPopoverOpen(open);
-                                        if (!open) setTagSearch('');
-                                    }}
-                                >
-                                    <PopoverTrigger asChild>
-                                        <button className="h-6 w-6 rounded-full border border-dashed text-muted-foreground hover:border-primary hover:text-primary flex items-center justify-center transition-colors">
-                                            <Plus className="h-3 w-3" />
-                                        </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="p-0 w-[240px] flex flex-col overflow-hidden" align="start">
-                                        <Command>
-                                            <CommandInput
-                                                ref={tagSearchInputRef}
-                                                placeholder="Search tags..."
-                                                value={tagSearch}
-                                                onValueChange={setTagSearch}
-                                            />
-                                            <CommandList className="max-h-[180px] overflow-y-auto">
-                                                <CommandEmpty className="py-3 text-center text-sm text-muted-foreground">
-                                                    No matching tags.
-                                                </CommandEmpty>
-                                                {projectTags
-                                                    .filter(item => !(editedIssue.tags || []).some(t => t.toLowerCase() === item.name.toLowerCase()))
-                                                    .map((item) => (
-                                                        <CommandItem
-                                                            key={item.id}
-                                                            value={item.name}
-                                                            onSelect={() => {
-                                                                handleFieldChange('tags', [...(editedIssue.tags || []), item.name]);
-                                                                setIsTagPopoverOpen(false);
-                                                                setTagSearch('');
-                                                            }}
-                                                            className="cursor-pointer flex items-center gap-2 group/tag"
-                                                        >
-                                                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                                                            <span className="flex-1 truncate">{item.name}</span>
-                                                            <button
-                                                                type="button"
-                                                                aria-label={`Delete tag ${item.name}`}
-                                                                title="Delete tag from this project"
-                                                                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover/tag:opacity-100"
-                                                                onClick={(e) => requestTagDelete(e, item.name)}
-                                                            >
-                                                                <Trash2 className="h-3.5 w-3.5" />
-                                                            </button>
-                                                        </CommandItem>
-                                                    ))}
-                                            </CommandList>
-                                        </Command>
-                                        {/* Persistent "Create new tag" footer — always visible */}
-                                        <div className="border-t p-1.5">
-                                            <button
-                                                className={cn(
-                                                    "w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded transition-colors",
-                                                    tagSearch.trim() &&
-                                                    !projectTags.some(t => t.name.toLowerCase() === tagSearch.trim().toLowerCase())
-                                                        ? "text-primary hover:bg-primary/10 cursor-pointer"
-                                                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                                                )}
-                                                onClick={async () => {
-                                                    const name = tagSearch.trim();
-                                                    if (!name) {
-                                                        tagSearchInputRef.current?.focus();
-                                                        return;
-                                                    }
-                                                    if (projectTags.some(t => t.name.toLowerCase() === name.toLowerCase())) return;
-                                                    setTagSearch('');
-                                                    setIsTagPopoverOpen(false);
-                                                    try {
-                                                        const tag = await createTagMutation.mutateAsync({ name });
-                                                        handleFieldChange('tags', [...(editedIssue.tags || []), tag.name]);
-                                                    } catch {
-                                                        handleFieldChange('tags', [...(editedIssue.tags || []), name]);
-                                                    }
-                                                }}
-                                            >
-                                                <Plus className="h-3 w-3 shrink-0" />
-                                                {tagSearch.trim() &&
-                                                !projectTags.some(t => t.name.toLowerCase() === tagSearch.trim().toLowerCase())
-                                                    ? <span>Create <strong>"{tagSearch.trim()}"</strong></span>
-                                                    : <span>Create new tag…</span>
-                                                }
-                                            </button>
-                                        </div>
-                                    </PopoverContent>
-                                </Popover>
-                                )}
-                            </div>
-                        </div>
-                    </div>
                     </div>
 
                     {/* Support-portal submitter contact — shown only for issues raised via a public support link */}
@@ -1632,77 +1639,77 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
 
                         <div className="space-y-2">
                             {!isMobileFieldsLocked && (
-                            <div className="flex items-center gap-2 mb-4">
-                                <Input
-                                    placeholder="Add checklist item..."
-                                    value={newChecklistItem}
-                                    onChange={(e) => setNewChecklistItem(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddChecklistItem()}
-                                    className="flex-1"
-                                />
-                                <Button size="sm" onClick={handleAddChecklistItem}>
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                            </div>
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Input
+                                        placeholder="Add checklist item..."
+                                        value={newChecklistItem}
+                                        onChange={(e) => setNewChecklistItem(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddChecklistItem()}
+                                        className="flex-1"
+                                    />
+                                    <Button size="sm" onClick={handleAddChecklistItem}>
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                </div>
                             )}
 
                             <div className={cn(isMobileLayout && checklist.length > 0 && 'border rounded-xl divide-y')}>
-                            {checklist.map((item) => (
-                                <div key={item.id} className={cn('flex items-start gap-3 group', isMobileLayout && 'px-3 py-2.5')}>
-                                    <Checkbox
-                                        checked={item.completed}
-                                        onCheckedChange={() => handleToggleChecklistItem(item.id)}
-                                        disabled={isMobileFieldsLocked}
-                                        className={cn('mt-0.5', isMobileLayout && 'h-5 w-5 rounded-md data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 disabled:opacity-100 disabled:cursor-default')}
-                                    />
-                                    {editingChecklistId === item.id ? (
-                                        <div className="flex-1 flex items-center gap-2">
-                                            <Input
-                                                autoFocus
-                                                value={editingChecklistValue}
-                                                onChange={(e) => setEditingChecklistValue(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') handleSaveEditChecklist();
-                                                    if (e.key === 'Escape') handleCancelEditChecklist();
-                                                }}
-                                                className="h-8"
-                                            />
-                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSaveEditChecklist}>
-                                                <Check className="h-4 w-4 text-green-600" />
-                                            </Button>
-                                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancelEditChecklist}>
-                                                <X className="h-4 w-4 text-muted-foreground" />
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <span className={cn('flex-1 text-sm pt-0.5', item.completed && 'line-through text-muted-foreground')}>
-                                                {item.text}
-                                            </span>
-                                            {!isMobileFieldsLocked && (
-                                            <div className={cn('flex items-center gap-1 mt-0.5', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-6 w-6"
-                                                    onClick={() => handleStartEditChecklist(item)}
-                                                >
-                                                    <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                {checklist.map((item) => (
+                                    <div key={item.id} className={cn('flex items-start gap-3 group', isMobileLayout && 'px-3 py-2.5')}>
+                                        <Checkbox
+                                            checked={item.completed}
+                                            onCheckedChange={() => handleToggleChecklistItem(item.id)}
+                                            disabled={isMobileFieldsLocked}
+                                            className={cn('mt-0.5', isMobileLayout && 'h-5 w-5 rounded-md data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 disabled:opacity-100 disabled:cursor-default')}
+                                        />
+                                        {editingChecklistId === item.id ? (
+                                            <div className="flex-1 flex items-center gap-2">
+                                                <Input
+                                                    autoFocus
+                                                    value={editingChecklistValue}
+                                                    onChange={(e) => setEditingChecklistValue(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') handleSaveEditChecklist();
+                                                        if (e.key === 'Escape') handleCancelEditChecklist();
+                                                    }}
+                                                    className="h-8"
+                                                />
+                                                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSaveEditChecklist}>
+                                                    <Check className="h-4 w-4 text-green-600" />
                                                 </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-6 w-6"
-                                                    onClick={() => handleRemoveChecklistItem(item.id)}
-                                                >
-                                                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCancelEditChecklist}>
+                                                    <X className="h-4 w-4 text-muted-foreground" />
                                                 </Button>
                                             </div>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            ))}
+                                        ) : (
+                                            <>
+                                                <span className={cn('flex-1 text-sm pt-0.5', item.completed && 'line-through text-muted-foreground')}>
+                                                    {item.text}
+                                                </span>
+                                                {!isMobileFieldsLocked && (
+                                                    <div className={cn('flex items-center gap-1 mt-0.5', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6"
+                                                            onClick={() => handleStartEditChecklist(item)}
+                                                        >
+                                                            <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6"
+                                                            onClick={() => handleRemoveChecklistItem(item.id)}
+                                                        >
+                                                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </section>
@@ -1804,17 +1811,17 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                                                 <Copy className="h-4 w-4" />
                                             </Button>
                                             {!isMobileFieldsLocked && (
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-7 w-7"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleRemoveAttachment(attachment.id);
-                                                }}
-                                            >
-                                                <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                                            </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-7 w-7"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleRemoveAttachment(attachment.id);
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                </Button>
                                             )}
                                         </div>
                                     </div>
@@ -1861,32 +1868,32 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                             )}
 
                             {!isMobileFieldsLocked && (
-                            <div className="flex items-center justify-center w-full">
-                                <label
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={handleDrop}
-                                    className={cn(
-                                    "flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
-                                    isDragging ? "border-primary bg-primary/10" : "bg-muted/20 hover:bg-muted/40",
-                                    isUploading && "opacity-50 pointer-events-none"
-                                )}>
-                                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                        <div className="flex items-center gap-2 text-muted-foreground">
-                                            {isUploading ? (
-                                                <Loader2 className="h-5 w-5 animate-spin" />
-                                            ) : (
-                                                <Upload className="h-5 w-5" />
-                                            )}
-                                            <span className="text-sm font-medium">
-                                                {isUploading ? 'Uploading...' : 'Add Attachment'}
-                                            </span>
+                                <div className="flex items-center justify-center w-full">
+                                    <label
+                                        onDragOver={handleDragOver}
+                                        onDragLeave={handleDragLeave}
+                                        onDrop={handleDrop}
+                                        className={cn(
+                                            "flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
+                                            isDragging ? "border-primary bg-primary/10" : "bg-muted/20 hover:bg-muted/40",
+                                            isUploading && "opacity-50 pointer-events-none"
+                                        )}>
+                                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                {isUploading ? (
+                                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                                ) : (
+                                                    <Upload className="h-5 w-5" />
+                                                )}
+                                                <span className="text-sm font-medium">
+                                                    {isUploading ? 'Uploading...' : 'Add Attachment'}
+                                                </span>
+                                            </div>
+                                            {!isUploading && <p className="text-xs text-muted-foreground mt-1">or drag and drop, or paste image</p>}
                                         </div>
-                                        {!isUploading && <p className="text-xs text-muted-foreground mt-1">or drag and drop, or paste image</p>}
-                                    </div>
-                                    <input type="file" className="hidden" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,video/*" onChange={handleFileUpload} disabled={isUploading} />
-                                </label>
-                            </div>
+                                        <input type="file" className="hidden" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,video/*" onChange={handleFileUpload} disabled={isUploading} />
+                                    </label>
+                                </div>
                             )}
                         </div>
                     </section>
@@ -1951,19 +1958,19 @@ export const IssueDetailContent = forwardRef<IssueDetailContentHandle, IssueDeta
                                             <p className="text-xs text-muted-foreground truncate">{vl.url}</p>
                                         </div>
                                         {!isMobileFieldsLocked && (
-                                        <div className={cn('flex items-center gap-1', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-7 w-7"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleRemoveVideoLink(vl.id);
-                                                }}
-                                            >
-                                                <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                                            </Button>
-                                        </div>
+                                            <div className={cn('flex items-center gap-1', isMobileLayout ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-7 w-7"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleRemoveVideoLink(vl.id);
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                </Button>
+                                            </div>
                                         )}
                                     </div>
                                 );
