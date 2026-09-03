@@ -187,6 +187,20 @@ export const queryKeys = {
     revisions: (partId: string) => ['parts', 'revisions', partId] as const,
   },
 
+  // Requirements
+  requirementGroups: {
+    all:  ['requirementGroups'] as const,
+    list: (projectId: string) => ['requirementGroups', 'list', projectId] as const,
+  },
+  requirements: {
+    all:  ['requirements'] as const,
+    tree: (projectId: string) => ['requirements', 'tree', projectId] as const,
+  },
+  requirementLinks: {
+    all:  ['requirementLinks'] as const,
+    list: (requirementId: string) => ['requirementLinks', 'list', requirementId] as const,
+  },
+
   // Engineering Changes (ECO)
   ecos: {
     all:      ['ecos'] as const,

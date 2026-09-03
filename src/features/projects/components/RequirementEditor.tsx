@@ -1,29 +1,35 @@
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import {
   ArrowLeft, Sparkles, Check, X, Zap, Activity, ToggleRight, ShieldAlert,
   GitBranch, PenLine, Infinity as InfinityIcon, ChevronDown,
 } from 'lucide-react';
 import {
-  BY_KEY, REQ_TYPE, REQ_CATEGORY, REQ_STATUS, REQ_PRIORITY,
+  REQS, BY_KEY, REQ_TYPE, REQ_CATEGORY, REQ_STATUS, REQ_PRIORITY,
   REQ_TEAM, EARS, analyzeQuality,
   type ReqType, type ReqCategory, type ReqStatus, type ReqPriority,
 } from './requirementsData';
 import { ScoreRing, softTint } from './RequirementsShared';
+import { useCreateRequirement, useUpdateRequirement, type ApiRequirementGroup } from '@/hooks/useRequirements';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface FormState {
   pattern: string; subject: string; response: string; trigger: string;
   state: string; feature: string; condition: string; free: string;
+  title: string;
   type: ReqType; category: ReqCategory; priority: ReqPriority; status: ReqStatus;
   vmethod: string; owner: string; rationale: string;
   targetValue: string; targetTolerance: string; targetUnit: string;
+  groupId: string; parentId: string;
 }
 
-const defaultForm = (): FormState => ({
+const defaultForm = (defaultGroupId: string): FormState => ({
   pattern:'ubiquitous', subject:'system', response:'', trigger:'', state:'', feature:'', condition:'', free:'',
+  title:'',
   type:'system-req', category:'functional', priority:'medium', status:'draft', vmethod:'test',
   owner: REQ_TEAM[0].id, rationale:'', targetValue:'', targetTolerance:'', targetUnit:'',
+  groupId: defaultGroupId, parentId:'',
 });
 
 const PATTERN_ICONS: Record<string, React.ElementType> = {
@@ -63,21 +69,24 @@ function highlightEARS(text: string): React.ReactNode {
 }
 
 // ── Editor entry point ────────────────────────────────────────────────────────
-export default function RequirementEditor({ reqKey, onClose, onSaved }:
-  { reqKey: string|null; onClose: () => void; onSaved: () => void }) {
+export default function RequirementEditor({ reqKey, projectId, groups, onClose, onSaved }:
+  { reqKey: string|null; projectId: string; groups: ApiRequirementGroup[]; onClose: () => void; onSaved: () => void }) {
 
   const existing = reqKey ? BY_KEY[reqKey] : null;
   const [form, setForm] = useState<FormState>(() => {
-    if (!existing) return defaultForm();
+    if (!existing) return defaultForm(groups[0]?.id ?? '');
     return {
       pattern:'free', subject:'system', response:'', trigger:'', state:'', feature:'', condition:'',
       free: existing.statement,
+      title: existing.title,
       type: existing.type, category: existing.category, priority: existing.priority,
       status: existing.status, vmethod: existing.vmethod, owner: existing.owner,
       rationale: existing.rationale,
       targetValue: existing.target?.value.toString() ?? '',
       targetTolerance: existing.target?.tolerance ?? '',
       targetUnit: existing.target?.unit ?? '',
+      groupId: existing._groupId ?? groups[0]?.id ?? '',
+      parentId: existing.parent ? (BY_KEY[existing.parent]?._id ?? '') : '',
     };
   });
 
@@ -89,6 +98,69 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
 
   const pat = EARS[form.pattern];
 
+  // Parent options: any requirement with a strictly lower tier than the chosen
+  // type — mirrors the backend's own tier-validation rule (see
+  // requirements.service.ts's REQUIREMENT_TIER map). Not filtered by group —
+  // cross-group parenting is normal (e.g. a system-req in SYS parenting a
+  // subsystem-req in PWR), matching the original data's own structure.
+  const parentOptions = useMemo(() => {
+    const tier = REQ_TYPE[form.type].tier;
+    return REQS
+      .filter(r => REQ_TYPE[r.type].tier < tier && r._id && r._id !== existing?._id)
+      .map(r => ({ value: r._id as string, label: `${r.key} — ${r.title}` }));
+  }, [form.type, existing?._id]);
+
+  const createMutation = useCreateRequirement(projectId);
+  const updateMutation = useUpdateRequirement(projectId);
+  const saving = createMutation.isPending || updateMutation.isPending;
+
+  const handleSave = async () => {
+    const statement = (preview || form.free).trim();
+    if (!form.title.trim()) { toast.error('Title is required'); return; }
+    if (!statement) { toast.error('Statement is required'); return; }
+    if (!form.groupId) { toast.error('Select a group'); return; }
+
+    const target = form.targetValue.trim()
+      ? { value: Number(form.targetValue), tolerance: form.targetTolerance || undefined, unit: form.targetUnit || undefined }
+      : null;
+
+    try {
+      if (existing?._id) {
+        await updateMutation.mutateAsync({
+          requirementId: existing._id,
+          payload: {
+            groupId: form.groupId,
+            parentId: form.parentId || null,
+            category: form.category,
+            priority: form.priority,
+            status: form.status,
+            title: form.title,
+            statement,
+            rationale: form.rationale || undefined,
+            target,
+          },
+        });
+        toast.success('Requirement updated');
+      } else {
+        await createMutation.mutateAsync({
+          groupId: form.groupId,
+          parentId: form.parentId || null,
+          type: form.type.replace(/-/g, '_'),
+          category: form.category,
+          priority: form.priority,
+          title: form.title,
+          statement,
+          rationale: form.rationale || undefined,
+          target,
+        });
+        toast.success('Requirement created');
+      }
+      onSaved();
+    } catch {
+      toast.error(existing ? 'Failed to update requirement' : 'Failed to create requirement');
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-background">
       {/* header */}
@@ -98,8 +170,8 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
         </Button>
         <span className="text-base font-bold text-foreground">{existing ? `Edit ${existing.key}` : 'New Requirement'}</span>
         <div className="flex-1" />
-        <Button size="sm" className="h-8 gap-1.5 text-[12.5px]" onClick={onSaved}>
-          <Check className="w-3.5 h-3.5" /> {existing ? 'Save changes' : 'Create'}
+        <Button size="sm" className="h-8 gap-1.5 text-[12.5px]" onClick={handleSave} disabled={saving}>
+          <Check className="w-3.5 h-3.5" /> {saving ? 'Saving…' : existing ? 'Save changes' : 'Create'}
         </Button>
       </div>
 
@@ -133,6 +205,9 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
 
             {/* 2. Statement fields */}
             <EditorCard num="2" title="Statement fields" icon={PenLine}>
+              <Field label="Title" required hint="Short label shown in lists">
+                <EdInput value={form.title} onChange={v => upd('title',v)} placeholder="e.g. Rated DC output power"/>
+              </Field>
               <Field label="Subject" required hint="The entity that shall do something">
                 <EdInput value={form.subject} onChange={v => upd('subject',v)} placeholder="e.g. charging station"/>
               </Field>
@@ -189,6 +264,14 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
                 </Field>
                 <Field label="Owner">
                   <EdSelect value={form.owner} onChange={v => upd('owner', v)} options={REQ_TEAM.map(m => ({ value:m.id, label:m.name }))}/>
+                </Field>
+                <Field label="Group">
+                  <EdSelect value={form.groupId} onChange={v => upd('groupId', v)}
+                    options={groups.map(g => ({ value:g.id, label:g.label }))}/>
+                </Field>
+                <Field label="Parent" hint="optional">
+                  <EdSelect value={form.parentId} onChange={v => upd('parentId', v)}
+                    options={[{ value:'', label:'— None (top-level) —' }, ...parentOptions]}/>
                 </Field>
               </div>
               <div className="mt-3">

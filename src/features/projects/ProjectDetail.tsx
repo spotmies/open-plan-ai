@@ -1962,6 +1962,7 @@ export default function ProjectDetail() {
           </TabsContent>
           <TabsContent value="requirements" className="mt-0 -mx-4 md:-mx-6 -mb-6 flex flex-col">
             <RequirementsView
+              projectId={project.id}
               selectedKey={reqKey ?? null}
               onSelectedKeyChange={(newKey) =>
                 navigate(`/projects/${id}/requirements${newKey ? `/${newKey}` : ''}`)

@@ -264,6 +264,27 @@ export const ENDPOINTS = {
     FAVOURITE_TOGGLE: (id: string) => `/conversations/${id}/favourite`,
     HIDE: (id: string) => `/conversations/${id}/hide`,
   },
+  // Requirement groups (project-scoped taxonomy)
+  REQUIREMENT_GROUPS: {
+    LIST:   (projectId: string) => `/projects/${projectId}/requirement-groups`,
+    CREATE: (projectId: string) => `/projects/${projectId}/requirement-groups`,
+    UPDATE: (groupId: string) => `/requirement-groups/${groupId}`,
+    DELETE: (groupId: string) => `/requirement-groups/${groupId}`,
+  },
+  // Requirements
+  REQUIREMENTS: {
+    TREE:   (projectId: string) => `/projects/${projectId}/requirements`,
+    CREATE: (projectId: string) => `/projects/${projectId}/requirements`,
+    BY_ID:  (requirementId: string) => `/requirements/${requirementId}`,
+    UPDATE: (requirementId: string) => `/requirements/${requirementId}`,
+    DELETE: (requirementId: string) => `/requirements/${requirementId}`,
+    LINKS:  (requirementId: string) => `/requirements/${requirementId}/links`,
+  },
+  // Requirement links (requirement <-> requirement graph edges)
+  REQUIREMENT_LINKS: {
+    UPDATE: (linkId: string) => `/requirement-links/${linkId}`,
+    DELETE: (linkId: string) => `/requirement-links/${linkId}`,
+  },
   // Engineering Changes (ECO)
   ECOS: {
     LIST:     (projectId: string) => `/projects/${projectId}/ecos`,

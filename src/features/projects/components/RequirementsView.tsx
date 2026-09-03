@@ -17,10 +17,12 @@ import {
   REQ_VSTATUS, REQ_PRIORITY, REQ_GROUP, REQ_VMETHOD, REQ_LINKTYPE, GAP_META, REQ_TEAM,
   flattenTree, matchWithAncestors, descendants, ancestors, coverageBy, worstOffenders,
   reqStats, vDistribution, standardsRollup, gateReadiness, manufacturingReadiness,
+  rebuildRequirementsFromApi,
   GATES, STANDARDS,
   type Requirement, type ReqType, type ReqCategory, type ReqStatus,
   type ReqVStatus, type ReqPriority, type ReqGroup, type ReqVMethod,
 } from './requirementsData';
+import { useRequirementGroups, useRequirementTree } from '@/hooks/useRequirements';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, Donut, StatTile, CoverageBar, ScoreRing, softTint,
@@ -73,6 +75,7 @@ type ViewTab = 'table' | 'map' | 'trace' | 'coverage' | 'readiness';
 
 // ── Main component ────────────────────────────────────────────────────────────
 interface RequirementsViewProps {
+  projectId: string;
   /** Currently open requirement detail, controlled via the URL (mirrors BOM's `selectedId`). */
   selectedKey?: string | null;
   onSelectedKeyChange?: (key: string | null) => void;
@@ -82,7 +85,31 @@ interface RequirementsViewProps {
    * only way the host knows. */
   onEditorOpenChange?: (open: boolean) => void;
 }
-export default function RequirementsView({ selectedKey = null, onSelectedKeyChange, onEditorOpenChange }: RequirementsViewProps) {
+export default function RequirementsView({ projectId, selectedKey = null, onSelectedKeyChange, onEditorOpenChange }: RequirementsViewProps) {
+  // Live data — rebuilds the module-level REQS/BY_KEY index (requirementsData.ts)
+  // from the real backend in place, synchronously during render. Every helper
+  // and every other Requirements file reads that same shared index, so this is
+  // the only place that needs to know about the API.
+  const { data: apiGroups, isLoading: groupsLoading } = useRequirementGroups(projectId);
+  const { data: apiTree, isLoading: treeLoading, isError: treeError } = useRequirementTree(projectId);
+  // REQS/BY_KEY/REQ_ROOTS are mutated in place, not replaced — plain object
+  // identity never changes, so nothing here can appear in a useMemo dependency
+  // array to signal "the data changed." Rebuilding unconditionally every render
+  // (cheap — O(requirement count), and idempotent for a given apiTree) keeps
+  // them in sync without a ref-based guard: a ref mutated as a render-time
+  // "already handled this apiTree" flag is unsafe under StrictMode's double
+  // render, which invokes the function twice per commit and silently drops a
+  // conditional setState made only on the first invocation. `apiTree` itself
+  // (a stable reference from React Query, unchanged unless the data actually
+  // changed) is used below as the dependency for every memo that reads
+  // REQS-derived data — in this component and in CoverageDashboard/
+  // ReadinessView/TraceabilityView/RequirementsMapView.
+  if (apiTree) {
+    rebuildRequirementsFromApi(apiTree);
+  }
+  const dataVersion = apiTree;
+  const groups = apiGroups ?? [];
+
   const [view, setView] = useState<ViewTab>('table');
   const [filters, setFilters] = useState<FilterState>(emptyFilters());
   const [sortField, setSortField] = useState<SortField>('tree');
@@ -108,7 +135,7 @@ export default function RequirementsView({ selectedKey = null, onSelectedKeyChan
     return () => onEditorOpenChange?.(false);
   }, [editorOpen, onEditorOpenChange]);
 
-  const stats = useMemo(() => reqStats(), []);
+  const stats = useMemo(() => reqStats(), [dataVersion]);
 
   const filterSet = useMemo((): Set<string> | null => {
     if (!hasActiveFilters(filters)) return null;
@@ -127,7 +154,7 @@ export default function RequirementsView({ selectedKey = null, onSelectedKeyChan
         !r.statement.toLowerCase().includes(txt)) return false;
       return true;
     });
-  }, [filters]);
+  }, [filters, dataVersion]);
 
   const rows = useMemo(() => {
     const filtersActive = hasActiveFilters(filters);
@@ -148,7 +175,7 @@ export default function RequirementsView({ selectedKey = null, onSelectedKeyChan
       });
     }
     return flattenTree(expanded, filterSet ?? undefined);
-  }, [expanded, filterSet, sortField, filters]);
+  }, [expanded, filterSet, sortField, filters, dataVersion]);
 
   // Expand / collapse all
   const expandAll = useCallback(() => setExpanded({}), []);
@@ -159,7 +186,7 @@ export default function RequirementsView({ selectedKey = null, onSelectedKeyChan
   }, []);
   const anyExpanded = useMemo(
     () => REQS.some(r => r.childKeys.length > 0 && expanded[r.key] !== false),
-    [expanded],
+    [expanded, dataVersion],
   );
 
   const toggleExpand = useCallback((key: string) =>
@@ -186,13 +213,28 @@ export default function RequirementsView({ selectedKey = null, onSelectedKeyChan
       onImpact={key => setImpactKey(key)} onNavigate={openDetail} />
   );
   if (editorOpen) return (
-    <RequirementEditor reqKey={editKey}
+    <RequirementEditor reqKey={editKey} projectId={projectId} groups={groups}
       onClose={() => { setEditorOpen(false); setEditKey(null); }}
       onSaved={() => { setEditorOpen(false); setEditKey(null); }} />
   );
 
   const showExpandToggle = view === 'table' && !hasActiveFilters(filters) && sortField === 'tree';
   const activeFilterCount = filterSet?.size ?? null;
+
+  if ((treeLoading || groupsLoading) && !apiTree) {
+    return (
+      <div className="flex items-center justify-center text-sm text-muted-foreground" style={{ height: 'calc(100vh - 140px)' }}>
+        Loading requirements…
+      </div>
+    );
+  }
+  if (treeError) {
+    return (
+      <div className="flex items-center justify-center text-sm text-destructive" style={{ height: 'calc(100vh - 140px)' }}>
+        Failed to load requirements.
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col px-6 overflow-hidden bg-background" style={{ height: 'calc(100vh - 140px)' }}>
@@ -306,13 +348,13 @@ export default function RequirementsView({ selectedKey = null, onSelectedKeyChan
             onOpen={openDetail} onEdit={k => openEditor(k)} onImpact={k => setImpactKey(k)}
             onClearFilters={() => setFilters(emptyFilters())} />
         ) : view === 'map' ? (
-          <RequirementsMapView onOpen={openDetail} />
+          <RequirementsMapView onOpen={openDetail} dataVersion={dataVersion} />
         ) : view === 'trace' ? (
-          <TraceabilityView onOpen={openDetail} onDrill={drillToTable} />
+          <TraceabilityView onOpen={openDetail} onDrill={drillToTable} dataVersion={dataVersion} />
         ) : view === 'coverage' ? (
-          <CoverageDashboard stats={stats} onDrill={drillToTable} onOpen={openDetail} />
+          <CoverageDashboard stats={stats} onDrill={drillToTable} onOpen={openDetail} dataVersion={dataVersion} />
         ) : (
-          <ReadinessView />
+          <ReadinessView dataVersion={dataVersion} />
         )}
       </div>
 
@@ -803,13 +845,13 @@ function DrawerChip({ label, tint, active, onClick }: { label: string; tint: str
 }
 
 // ── Coverage dashboard ─────────────────────────────────────────────────────────
-function CoverageDashboard({ stats, onDrill, onOpen }:
-  { stats: ReturnType<typeof reqStats>; onDrill: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void; onOpen: (k: string) => void }) {
-  const vd = useMemo(() => vDistribution(), []);
+function CoverageDashboard({ stats, onDrill, onOpen, dataVersion }:
+  { stats: ReturnType<typeof reqStats>; onDrill: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void; onOpen: (k: string) => void; dataVersion: unknown }) {
+  const vd = useMemo(() => vDistribution(), [dataVersion]);
   const TYPE_ORDER: ReqType[] = ['stakeholder-need', 'stakeholder-req', 'system-req', 'subsystem-req', 'component-req'];
-  const byTier = useMemo(() => coverageBy(r => r.type, TYPE_ORDER), []);
-  const byGroup = useMemo(() => coverageBy(r => r.group).sort((a, b) => b.total - a.total), []);
-  const worst = useMemo(() => worstOffenders(7), []);
+  const byTier = useMemo(() => coverageBy(r => r.type, TYPE_ORDER), [dataVersion]);
+  const byGroup = useMemo(() => coverageBy(r => r.group).sort((a, b) => b.total - a.total), [dataVersion]);
+  const worst = useMemo(() => worstOffenders(7), [dataVersion]);
 
   const vSegments = [
     { value: vd.passed, tint: REQ_VSTATUS.passed.tint, label: 'Passed' },
@@ -945,10 +987,10 @@ function CoverageDashboard({ stats, onDrill, onOpen }:
 }
 
 // ── Readiness view ─────────────────────────────────────────────────────────────
-function ReadinessView() {
-  const gate = useMemo(() => gateReadiness(), []);
-  const mfr = useMemo(() => manufacturingReadiness(), []);
-  const stds = useMemo(() => standardsRollup(), []);
+function ReadinessView({ dataVersion }: { dataVersion: unknown }) {
+  const gate = useMemo(() => gateReadiness(), [dataVersion]);
+  const mfr = useMemo(() => manufacturingReadiness(), [dataVersion]);
+  const stds = useMemo(() => standardsRollup(), [dataVersion]);
 
   const statusColor = (s: string) => s === 'compliant' || s === 'ready' ? '#16A34A' : s === 'in-progress' || s === 'at-risk' ? '#D97706' : '#DC2626';
   const statusLabel = (s: string) => s === 'compliant' ? 'Compliant' : s === 'in-progress' ? 'In Progress' : s === 'ready' ? 'Ready' : s === 'at-risk' ? 'At Risk' : 'Blocked';
@@ -1140,7 +1182,7 @@ function MatrixCell({ state, title }: { state: 'ok' | 'warn' | 'bad' | 'na'; tit
 }
 
 // ── Traceability view ──────────────────────────────────────────────────────────
-function TraceabilityView({ onOpen }: { onOpen: (k: string) => void; onDrill?: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void }) {
+function TraceabilityView({ onOpen, dataVersion }: { onOpen: (k: string) => void; onDrill?: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void; dataVersion: unknown }) {
   const [mode, setMode] = useState<'matrix' | 'graph'>('matrix');
   return (
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -1172,17 +1214,17 @@ function TraceabilityView({ onOpen }: { onOpen: (k: string) => void; onDrill?: (
             : 'Decomposition graph bridging requirements to allocated BOM parts. Hover to trace a path.'}
         </span>
       </div>
-      {mode === 'matrix' ? <TraceMatrix onOpen={onOpen} /> : <DependencyGraph onOpen={onOpen} />}
+      {mode === 'matrix' ? <TraceMatrix onOpen={onOpen} dataVersion={dataVersion} /> : <DependencyGraph onOpen={onOpen} dataVersion={dataVersion} />}
     </div>
   );
 }
 
-function TraceMatrix({ onOpen }: { onOpen: (k: string) => void }) {
+function TraceMatrix({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
   const groups = useMemo(() =>
     (Object.keys(REQ_GROUP) as ReqGroup[])
       .map(g => ({ g, rows: REQS.filter(r => r.group === g) }))
       .filter(x => x.rows.length > 0),
-  []);
+  [dataVersion]);
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -1190,7 +1232,7 @@ function TraceMatrix({ onOpen }: { onOpen: (k: string) => void }) {
     const rel = REQS.filter(r => cellState(r, col.key) !== 'na');
     const ok  = rel.filter(r => cellState(r, col.key) === 'ok').length;
     return rel.length ? Math.round((ok / rel.length) * 100) : 0;
-  }), []);
+  }), [dataVersion]);
 
   const NAME_W = 320, COL_W = 92;
 
@@ -1280,8 +1322,8 @@ function TraceMatrix({ onOpen }: { onOpen: (k: string) => void }) {
   );
 }
 
-function DependencyGraph({ onOpen }: { onOpen: (k: string) => void }) {
-  const FOCUS_OPTS = useMemo(() => REQS.filter(r => r.type === 'system-req' || r.type === 'stakeholder-req'), []);
+function DependencyGraph({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
+  const FOCUS_OPTS = useMemo(() => REQS.filter(r => r.type === 'system-req' || r.type === 'stakeholder-req'), [dataVersion]);
   const [focus, setFocus] = useState('SYS-001');
   const [hover, setHover] = useState<string | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
@@ -1334,7 +1376,7 @@ function DependencyGraph({ onOpen }: { onOpen: (k: string) => void }) {
     });
 
     return { nodes: Object.keys(pos).map(k => ({ key: k, ...pos[k] })), edges: edgeList, svgW, svgH };
-  }, [focus, fr]);
+  }, [focus, fr, dataVersion]);
 
   const edgePath = (e: GraphEdge) => {
     const a = nodes.find(n => n.key === e.from), b = nodes.find(n => n.key === e.to);
@@ -1511,7 +1553,7 @@ const MAP_VIEWS: MapViewDef[] = [
   { id: 'library',    label: 'Library View',         icon: BookMarked,     tint: '#646B76', engine: 'grid' },
 ];
 
-function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
+function RequirementsMapView({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
   const [viewId, setViewId] = useState('systems');
   const view = MAP_VIEWS.find(v => v.id === viewId) ?? MAP_VIEWS[0];
   const ViewIcon = view.icon;
@@ -1581,7 +1623,7 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
       (map[b] ??= []).push(r.key);
     });
     return meta.order.filter(k => map[k]?.length).map(k => ({ id: k, title: meta.label(k), icon: meta.icon(k), keys: map[k] }));
-  }, []);
+  }, [dataVersion]);
 
   const buildTree = useCallback((keys: string[], v: MapViewDef): MapNode[] => {
     const set = new Set(keys);
@@ -1595,7 +1637,7 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
     const roots = keys.filter(k => { const p = BY_KEY[k].parent; return !p || !set.has(p); }).map(make);
     roots.forEach(n => { n.isRoot = true; });
     return roots;
-  }, []);
+  }, [dataVersion]);
 
   const dominantOwner = (keys: string[]) => {
     const tally: Record<string, number> = {};
