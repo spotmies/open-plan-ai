@@ -52,6 +52,7 @@ import { useProjectRealtime } from '@/hooks/useProjectRealtime';
 import { useOrganizationMembers, useProjectMembers } from '@/hooks/useProjectTeam';
 import { useProjectPermissions } from '@/hooks/useProjectPermissions';
 import { useProjectTaskColumns } from '@/hooks/useProjectTaskColumns';
+import { useProjectTags } from '@/hooks/useProjectTags';
 import { buildTaskStatusOptions } from './utils/taskStatusOptions';
 import { useIssueColumns } from '@/hooks/useIssueColumns';
 import { DEFAULT_ISSUE_COLUMNS, type ProjectIssueColumn } from '@/services/issueColumns.service';
@@ -756,25 +757,17 @@ export default function ProjectDetail() {
     return Array.from(members.values());
   }, [project?.tasks]);
 
-  // Get unique tags from tasks - moved before early returns
-  const allTags = useMemo(() => {
-    if (!project?.tasks) return [];
-    const tags = new Set<string>();
-    project.tasks.forEach(task => {
-      task.tags?.forEach(tag => tags.add(tag));
-    });
-    return Array.from(tags);
-  }, [project?.tasks]);
-
-  // Get unique tags from issues
-  const allIssueTags = useMemo(() => {
-    if (!project?.issues) return [];
-    const tags = new Set<string>();
-    project.issues.forEach(issue => {
-      issue.tags?.forEach(tag => tags.add(tag));
-    });
-    return Array.from(tags);
-  }, [project?.issues]);
+  // Tag filter options come from the project-wide tag registry (same source
+  // as the Create Task/Issue tag pickers) rather than scanning loaded
+  // tasks/issues — otherwise a tag with no current usage, or one only used
+  // on the other entity type, silently disappears from the filter list.
+  const { data: projectTagsRegistry = [] } = useProjectTags(id);
+  const allProjectTagNames = useMemo(
+    () => projectTagsRegistry.map((t) => t.name).sort((a, b) => a.localeCompare(b)),
+    [projectTagsRegistry]
+  );
+  const allTags = allProjectTagNames;
+  const allIssueTags = allProjectTagNames;
 
   // Map database modules to frontend Module type
   const modules: Module[] = useMemo(() => {

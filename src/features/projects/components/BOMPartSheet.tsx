@@ -1251,9 +1251,9 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {req.map(r => (
-                          <span key={r} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border bg-muted text-foreground border-border">
-                            {r}
-                            <button onClick={() => removeReq(r)} className="opacity-60 hover:opacity-100 transition-opacity">
+                          <span key={r} title={r} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border bg-muted text-foreground border-border max-w-[220px]">
+                            <span className="truncate min-w-0">{r}</span>
+                            <button onClick={() => removeReq(r)} className="opacity-60 hover:opacity-100 transition-opacity shrink-0">
                               <X className="w-3 h-3" />
                             </button>
                           </span>
@@ -1900,9 +1900,9 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {req.map(r => (
-                        <span key={r} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border bg-muted text-foreground border-border">
-                          {r}
-                          <button onClick={() => removeReq(r)} className="opacity-60 hover:opacity-100 transition-opacity">
+                        <span key={r} title={r} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border bg-muted text-foreground border-border max-w-[220px]">
+                          <span className="truncate min-w-0">{r}</span>
+                          <button onClick={() => removeReq(r)} className="opacity-60 hover:opacity-100 transition-opacity shrink-0">
                             <X className="w-3 h-3" />
                           </button>
                         </span>

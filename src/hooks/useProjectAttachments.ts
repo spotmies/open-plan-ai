@@ -25,6 +25,26 @@ export function useEntityAttachments(entityId: string | undefined, entityType: s
 }
 
 /**
+ * Query attachments for several entities of the same type in one hook.
+ * Returns a Map keyed by entityId. Used by the inventory Movements ledger, where
+ * each adjustment transaction may carry its own uploaded photos and there's no
+ * batch endpoint server-side.
+ */
+export function useEntityAttachmentsBatch(entityType: string, entityIds: string[]) {
+  const ids = [...new Set(entityIds)].sort();
+  return useQuery({
+    queryKey: ['entity-attachments-batch', entityType, ids],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        ids.map(async (id) => [id, await attachmentsService.getByEntity(id, entityType)] as const),
+      );
+      return new Map<string, AttachmentRecord[]>(entries);
+    },
+    enabled: ids.length > 0,
+  });
+}
+
+/**
  * Create attachment mutation (uploads file and creates DB record in one call)
  */
 export function useCreateAttachment() {

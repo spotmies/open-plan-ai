@@ -297,7 +297,7 @@ export function MilestonesView({
           }
 
           return (
-            <div className="w-full overflow-x-auto pb-4">
+            <div className="w-full overflow-x-auto overflow-y-visible pb-4">
               <div className="inline-flex gap-4 min-w-full" style={{ width: 'max-content' }}>
                 {orderedColumns.map((column) => {
                   const columnMilestones = sortedMilestones.filter(
@@ -305,8 +305,8 @@ export function MilestonesView({
                   );
 
                   return (
-                    <div key={column.key} className="w-[300px] flex-shrink-0">
-                      <div className="sticky bg-background z-10 pb-3 space-y-3" style={{ top: stickyOffset }}>
+                    <div key={column.key} className="w-[300px] flex-shrink-0 flex flex-col">
+                      <div className="sticky top-0 bg-background z-10 pb-3 space-y-3">
                         <div className="flex items-center gap-2 px-1">
                           <div className={cn('w-2 h-2 rounded-full', column.color)} />
                           <h3 className="font-medium text-sm">{column.label}</h3>

@@ -158,7 +158,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
           'p-0 flex flex-col gap-0 overflow-hidden',
           isMobile
             ? 'inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0 data-[state=open]:!slide-in-from-left-0 data-[state=open]:!slide-in-from-top-0 data-[state=closed]:!slide-out-to-left-0 data-[state=closed]:!slide-out-to-top-0'
-            : 'max-w-lg max-h-[90vh]'
+            : 'max-w-3xl max-h-[90vh]'
         )}
       >
         <DialogHeader className="px-4 sm:px-6 py-4 pr-10 border-b shrink-0 flex-row items-start gap-3 space-y-0">
@@ -177,10 +177,10 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
-            <div className="overflow-y-auto flex-1">
-              <div className="p-4 sm:p-6 space-y-5">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5 items-start">
                 {lockedProjectId ? (
-                  <FormItem>
+                  <FormItem className="sm:col-span-2">
                     <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Project</FormLabel>
                     <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
                       <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -192,7 +192,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
                     control={form.control}
                     name="projectId"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="sm:col-span-2">
                         <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Project <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
@@ -216,7 +216,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
                   control={form.control}
                   name="name"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Build name <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                       <FormControl>
                         <Input placeholder="e.g. MP1 Build" {...field} />
@@ -226,7 +226,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
                   )}
                 />
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="type"
@@ -265,7 +265,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="bomRev"
@@ -327,7 +327,7 @@ export function NewBuildDialog({ isOpen, onClose, onAddBuild, projects, lockedPr
                   control={form.control}
                   name="assigneeId"
                   render={() => (
-                    <FormItem>
+                    <FormItem className="sm:col-span-2">
                       <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Assigned to <span className="text-destructive" aria-hidden="true">*</span></FormLabel>
                       <Popover open={isAssigneePopoverOpen} onOpenChange={setIsAssigneePopoverOpen}>
                         <PopoverTrigger asChild>

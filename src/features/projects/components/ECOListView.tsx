@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
   GitMerge, GitBranch, Clock, ClipboardCheck,
-  Boxes, Calendar, ChevronLeft, ChevronRight, CheckCircle, Download, Loader2, Plus,
+  Boxes, Calendar, ChevronLeft, ChevronRight, CheckCircle, Download, Loader2, Plus, Upload,
 } from 'lucide-react';
+import { ImportEcoDialog } from '@/features/eco-import/ImportEcoDialog';
 import {
   ECOListItem, MAIN_STATUSES, ECO_TYPE_LABEL, REASON_LABEL,
   MODULE_COLORS,
@@ -343,6 +344,7 @@ export function ECOListView({
   const [page, setPage] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
+  const [importOpen, setImportOpen] = useState(false);
 
   const exportDetailedCsv = useExportEcoDetailedCsv(projectId);
   const [exportingAll, setExportingAll] = useState(false);
@@ -420,14 +422,26 @@ export function ECOListView({
         <p className="text-[13px] text-muted-foreground max-w-[360px] mb-8 leading-relaxed">
           Create your first Engineering Change Order to start tracking part updates, revisions, and approval workflows.
         </p>
-        {onNewEco && (
+        <div className="flex items-center gap-2.5">
+          {onNewEco && (
+            <button
+              onClick={onNewEco}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-md text-[13px] font-semibold bg-primary hover:bg-primary/90 text-primary-foreground transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              New Change Order
+            </button>
+          )}
           <button
-            onClick={onNewEco}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-md text-[13px] font-semibold bg-primary hover:bg-primary/90 text-primary-foreground transition-colors shadow-sm"
+            onClick={() => setImportOpen(true)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-md text-[13px] font-semibold bg-card text-foreground border border-border hover:bg-accent/50 transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            New Change Order
+            <Upload className="w-4 h-4" />
+            Import with AI
           </button>
+        </div>
+        {importOpen && (
+          <ImportEcoDialog open={importOpen} onClose={() => setImportOpen(false)} projectId={projectId} />
         )}
       </div>
     );
@@ -479,6 +493,14 @@ export function ECOListView({
                       ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       : <Download className="w-3.5 h-3.5" />}
                     Export
+                  </button>
+                  <button
+                    onClick={() => setImportOpen(true)}
+                    title="Import engineering changes with AI"
+                    className="h-7 shrink-0 flex items-center gap-1.5 px-2.5 rounded-md text-[12px] font-medium bg-card text-foreground border border-border hover:bg-accent/50 transition-colors font-[inherit]"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Import
                   </button>
                 </div>
                 {isMobile && onNewEco && (
@@ -560,6 +582,9 @@ export function ECOListView({
       </div>
 
       {toast && <Toast message={toast} />}
+      {importOpen && (
+        <ImportEcoDialog open={importOpen} onClose={() => setImportOpen(false)} projectId={projectId} />
+      )}
     </div>
   );
 }
