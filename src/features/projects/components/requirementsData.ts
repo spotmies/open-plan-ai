@@ -88,6 +88,7 @@ export const REQ_LINKTYPE: Record<string, { label: string; dir: 'up' | 'down' | 
   validates:        { label: 'Validated by',     dir: 'down' },
   allocated_to:     { label: 'Allocated to',     dir: 'down' },
   depends_on:       { label: 'Depends on',       dir: 'side' },
+  depended_on_by:   { label: 'Depended on by',   dir: 'side' },
   conflicts_with:   { label: 'Conflicts with',   dir: 'side' },
 };
 
@@ -96,6 +97,11 @@ export interface ReqTarget { value: number; tolerance: string; unit: string; }
 export interface ReqLink {
   type: string; target: string; status: 'valid' | 'suspect';
   external?: boolean; kind?: 'part' | 'test'; result?: ReqVStatus;
+  /** Backend requirement_links row id — present only for links that are real,
+   * independently deletable rows (depends_on/conflicts_with/extra derives_from).
+   * Absent for links synthesized from the tree itself (the primary parent
+   * derives_from, refined_by, traces_to_source) — those aren't separate rows. */
+  _linkId?: string;
 }
 export interface ReqCoverage {
   orphan: boolean; untested: boolean; unimplemented: boolean; suspect: boolean;
@@ -179,15 +185,25 @@ export interface ApiRequirementForRebuild {
   targetUnit: string | null; ownerId: string | null; version: string; updatedAt: string;
 }
 
+/** Minimal shape adapted from `ApiRequirementLink` (src/hooks/useRequirements.ts). */
+export interface ApiRequirementLinkForRebuild {
+  id: string; fromId: string; toId: string; linkType: string; status: string;
+}
+
 /**
  * Rebuilds `REQS`/`BY_KEY`/`REQ_ROOTS` in place from a live API response.
- * `depends`/`conflicts`/`alloc` have no backend source yet (requirement_links'
- * project-wide listing and BOM linkage are both later phases) so they're always
- * empty here — links/coverage below reflect that honestly rather than faking it.
- * `vmethod`/`vstatus` default to placeholders since Test & Verification doesn't
- * exist on the backend yet.
+ * `alloc` has no backend source yet (BOM linkage is a later phase) so it's
+ * always empty — coverage's `unimplemented` flag reflects that honestly.
+ * `vmethod`/`vstatus` default to placeholders since Test & Verification
+ * doesn't exist on the backend yet. `links` (the second param) is the
+ * project-wide requirement_links list — omit it to leave depends_on/
+ * conflicts_with/extra derives_from out of the rebuilt links entirely,
+ * rather than silently treating "not fetched yet" as "known to be empty".
  */
-export function rebuildRequirementsFromApi(items: ApiRequirementForRebuild[]): void {
+export function rebuildRequirementsFromApi(
+  items: ApiRequirementForRebuild[],
+  links?: ApiRequirementLinkForRebuild[],
+): void {
   const idToKey: Record<string, string> = {};
   items.forEach(item => { idToKey[item.id] = item.key; });
 
@@ -225,16 +241,46 @@ export function rebuildRequirementsFromApi(items: ApiRequirementForRebuild[]): v
   REQS.forEach(r => { if (r.parent) (children[r.parent] = children[r.parent] ?? []).push(r.key); });
   REQS.forEach(r => { r.childKeys = children[r.key] ?? []; });
 
+  // requirement_links, keyed by the *from* requirement's key. depends/conflicts
+  // stay plain string[] (matching the Requirement interface) for whatever else
+  // might read them; the richer per-link status lives only in r.links below.
+  REQS.forEach(r => { r.depends = []; r.conflicts = []; });
+  const byId: Record<string, Requirement> = {};
+  REQS.forEach(r => { if (r._id) byId[r._id] = r; });
+  const extraLinksByKey: Record<string, ReqLink[]> = {};
+  (links ?? []).forEach(link => {
+    const from = byId[link.fromId];
+    const to = byId[link.toId];
+    if (!from || !to) return;
+    const status: ReqLink['status'] = link.status === 'suspect' ? 'suspect' : 'valid';
+    if (link.linkType === 'depends_on') from.depends.push(to.key);
+    if (link.linkType === 'conflicts_with') from.conflicts.push(to.key);
+    (extraLinksByKey[from.key] ??= []).push({ type: link.linkType, target: to.key, status, _linkId: link.id });
+    // Same edge, visible from the other side too — otherwise a peer link
+    // (depends_on/conflicts_with) only ever shows up on the requirement it
+    // was created *from*, and the other end has no way to know it's linked
+    // at all. derives_from's inverse isn't added here: it's already covered
+    // by the childKeys-derived refined_by link whenever the two are actually
+    // parent/child, and an extra derives_from link not on the primary tree
+    // doesn't have a natural single inverse label the way depends/conflicts do.
+    if (link.linkType === 'depends_on') {
+      (extraLinksByKey[to.key] ??= []).push({ type: 'depended_on_by', target: from.key, status, _linkId: link.id });
+    } else if (link.linkType === 'conflicts_with') {
+      (extraLinksByKey[to.key] ??= []).push({ type: 'conflicts_with', target: from.key, status, _linkId: link.id });
+    }
+  });
+
   REQS.forEach(r => {
     const links: ReqLink[] = [];
     if (r.parent && BY_KEY[r.parent]) links.push({ type:'derives_from', target:r.parent, status:'valid' });
     else if (r.type !== 'stakeholder-need' && r.source) links.push({ type:'traces_to_source', target:r.source, status:'valid', external:true });
     r.childKeys.forEach(c => links.push({ type:'refined_by', target:c, status:'valid' }));
+    (extraLinksByKey[r.key] ?? []).forEach(l => links.push(l));
     r.links = links;
     const hasSource = r.type === 'stakeholder-need' || links.some(l => l.type === 'derives_from' || l.type === 'traces_to_source');
     const needsImpl = r.type === 'subsystem-req' || r.type === 'component-req';
-    r.coverage = { orphan:!hasSource, untested:true, unimplemented:needsImpl, suspect:false };
-    r.hasGap = r.coverage.orphan || r.coverage.untested || r.coverage.unimplemented;
+    r.coverage = { orphan:!hasSource, untested:true, unimplemented:needsImpl, suspect: links.some(l => l.status === 'suspect') };
+    r.hasGap = r.coverage.orphan || r.coverage.untested || r.coverage.unimplemented || r.coverage.suspect;
   });
 
   REQ_ROOTS.length = 0;

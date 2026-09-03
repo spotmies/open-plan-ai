@@ -22,7 +22,7 @@ import {
   type Requirement, type ReqType, type ReqCategory, type ReqStatus,
   type ReqVStatus, type ReqPriority, type ReqGroup, type ReqVMethod,
 } from './requirementsData';
-import { useRequirementGroups, useRequirementTree } from '@/hooks/useRequirements';
+import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@/hooks/useRequirements';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, Donut, StatTile, CoverageBar, ScoreRing, softTint,
@@ -92,22 +92,26 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   // the only place that needs to know about the API.
   const { data: apiGroups, isLoading: groupsLoading } = useRequirementGroups(projectId);
   const { data: apiTree, isLoading: treeLoading, isError: treeError } = useRequirementTree(projectId);
+  const { data: apiLinks } = useRequirementLinks(projectId);
   // REQS/BY_KEY/REQ_ROOTS are mutated in place, not replaced — plain object
   // identity never changes, so nothing here can appear in a useMemo dependency
   // array to signal "the data changed." Rebuilding unconditionally every render
-  // (cheap — O(requirement count), and idempotent for a given apiTree) keeps
-  // them in sync without a ref-based guard: a ref mutated as a render-time
-  // "already handled this apiTree" flag is unsafe under StrictMode's double
-  // render, which invokes the function twice per commit and silently drops a
-  // conditional setState made only on the first invocation. `apiTree` itself
-  // (a stable reference from React Query, unchanged unless the data actually
-  // changed) is used below as the dependency for every memo that reads
-  // REQS-derived data — in this component and in CoverageDashboard/
-  // ReadinessView/TraceabilityView/RequirementsMapView.
+  // (cheap — O(requirement count), and idempotent for given inputs) keeps them
+  // in sync without a ref-based guard: a ref mutated as a render-time "already
+  // handled this" flag is unsafe under StrictMode's double render, which
+  // invokes the function twice per commit and silently drops a conditional
+  // setState made only on the first invocation. `dataVersion` (below) is used
+  // as the dependency for every memo that reads REQS-derived data — in this
+  // component and in CoverageDashboard/ReadinessView/TraceabilityView/
+  // RequirementsMapView.
   if (apiTree) {
-    rebuildRequirementsFromApi(apiTree);
+    rebuildRequirementsFromApi(apiTree, apiLinks);
   }
-  const dataVersion = apiTree;
+  // apiTree and apiLinks are two independent React Query results, each stable
+  // (unchanged reference) until its own data actually changes — combined into
+  // one memoized value so every dependency array below only has one thing to
+  // list, and still only changes reference when either input really does.
+  const dataVersion = useMemo(() => ({ apiTree, apiLinks }), [apiTree, apiLinks]);
   const groups = apiGroups ?? [];
 
   const [view, setView] = useState<ViewTab>('table');
@@ -220,7 +224,7 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
 
   if (detailKey) return (
     <>
-      <RequirementDetailScreen reqKey={detailKey} onClose={() => setDetailKey(null)}
+      <RequirementDetailScreen reqKey={detailKey} projectId={projectId} onClose={() => setDetailKey(null)}
         onEdit={key => { setDetailKey(null); openEditor(key); }}
         onImpact={key => setImpactKey(key)} onNavigate={openDetail} />
       {/* Rendered here too (not just in the main-view return below) — the

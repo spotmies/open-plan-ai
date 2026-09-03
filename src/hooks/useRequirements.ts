@@ -44,6 +44,30 @@ export interface ApiRequirementTreeItem {
   depth: number;
 }
 
+export interface LinkedRequirementSummary {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+}
+
+export type RequirementLinkType = 'derives_from' | 'depends_on' | 'conflicts_with';
+export type RequirementLinkStatus = 'valid' | 'suspect';
+
+// Project-wide listing — both endpoints returned symmetrically, since there's
+// no single anchor requirement to compute a direction/"other" from.
+export interface ApiRequirementLink {
+  id: string;
+  fromId: string;
+  toId: string;
+  linkType: RequirementLinkType;
+  status: RequirementLinkStatus;
+  createdBy: string | null;
+  createdAt: string;
+  from: LinkedRequirementSummary;
+  to: LinkedRequirementSummary;
+}
+
 export interface RequirementTargetPayload {
   value: number;
   tolerance?: string;
@@ -131,6 +155,49 @@ export function useDeleteRequirement(projectId: string) {
       apiClient.delete<void>(ENDPOINTS.REQUIREMENTS.DELETE(requirementId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.requirements.tree(projectId) });
+    },
+  });
+}
+
+// ─── Requirement links ─────────────────────────────────────────────────────────
+
+export function useRequirementLinks(projectId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.requirementLinks.projectList(projectId ?? ''),
+    queryFn: () => apiClient.get<ApiRequirementLink[]>(ENDPOINTS.REQUIREMENT_LINKS.PROJECT_LIST(projectId!)),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateRequirementLink(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fromId, toId, linkType }: { fromId: string; toId: string; linkType: RequirementLinkType }) =>
+      apiClient.post<ApiRequirementLink>(ENDPOINTS.REQUIREMENTS.LINKS(fromId), { toId, linkType }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.requirementLinks.projectList(projectId) });
+    },
+  });
+}
+
+export function useUpdateRequirementLinkStatus(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ linkId, status }: { linkId: string; status: RequirementLinkStatus }) =>
+      apiClient.patch<ApiRequirementLink>(ENDPOINTS.REQUIREMENT_LINKS.UPDATE(linkId), { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.requirementLinks.projectList(projectId) });
+    },
+  });
+}
+
+export function useDeleteRequirementLink(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (linkId: string) => apiClient.delete<void>(ENDPOINTS.REQUIREMENT_LINKS.DELETE(linkId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.requirementLinks.projectList(projectId) });
     },
   });
 }

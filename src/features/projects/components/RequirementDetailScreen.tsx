@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import {
-  ArrowLeft, PenLine, GitPullRequest, ChevronRight, Check, X,
+  ArrowLeft, PenLine, GitPullRequest, ChevronRight, Check, X, Plus,
   Unlink, PackageX, FlaskConical, AlertTriangle, Send, ChevronDown,
   Activity, Sparkles, GitBranch, ClipboardCheck, BookOpen, MessageSquare,
   Link2, GitMerge, ArrowUpRight, ArrowDownRight, ArrowRight as ArrowRightIcon,
 } from 'lucide-react';
 import {
-  BY_KEY, REQ_TYPE, REQ_STATUS, REQ_STATUS_FLOW, REQ_VSTATUS, REQ_CATEGORY,
+  REQS, BY_KEY, REQ_TYPE, REQ_STATUS, REQ_STATUS_FLOW, REQ_VSTATUS, REQ_CATEGORY,
   REQ_PRIORITY, REQ_LINKTYPE, GAP_META, ownerOf, synthCriteria, analyzeQuality,
   type Requirement, type ReqStatus,
 } from './requirementsData';
@@ -14,10 +15,14 @@ import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, ScoreRing, softTint,
 } from './RequirementsShared';
+import {
+  useCreateRequirementLink, useDeleteRequirementLink,
+  type RequirementLinkType,
+} from '@/hooks/useRequirements';
 
 // ── Entry point ────────────────────────────────────────────────────────────────
-export default function RequirementDetailScreen({ reqKey, onClose, onEdit, onImpact, onNavigate }:
-  { reqKey: string; onClose: () => void; onEdit: (k:string) => void; onImpact: (k:string) => void; onNavigate: (k:string) => void }) {
+export default function RequirementDetailScreen({ reqKey, projectId, onClose, onEdit, onImpact, onNavigate }:
+  { reqKey: string; projectId: string; onClose: () => void; onEdit: (k:string) => void; onImpact: (k:string) => void; onNavigate: (k:string) => void }) {
 
   const r = BY_KEY[reqKey];
   const [tab, setTab] = useState<'overview'|'trace'|'verify'>('overview');
@@ -112,7 +117,7 @@ export default function RequirementDetailScreen({ reqKey, onClose, onEdit, onImp
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px' }}>
           {tab === 'overview' && <OverviewTab r={r} ai={ai} criteria={criteria} onNavigate={onNavigate}/>}
-          {tab === 'trace'    && <TraceTab    r={r} onNavigate={onNavigate}/>}
+          {tab === 'trace'    && <TraceTab    r={r} projectId={projectId} onNavigate={onNavigate}/>}
           {tab === 'verify'   && <VerifyTab   r={r}/>}
         </div>
         {activityOpen && <ActivityPanel reqKey={r.key}/>}
@@ -290,21 +295,80 @@ function GapBadge({ type }: { type: keyof typeof GAP_META }) {
 }
 
 // ── Trace tab ─────────────────────────────────────────────────────────────────
-function TraceTab({ r, onNavigate }: { r: Requirement; onNavigate:(k:string)=>void }) {
+function TraceTab({ r, projectId, onNavigate }: { r: Requirement; projectId: string; onNavigate:(k:string)=>void }) {
   const upstream   = r.links.filter(l => REQ_LINKTYPE[l.type]?.dir === 'up');
   const downstream = r.links.filter(l => REQ_LINKTYPE[l.type]?.dir === 'down');
   const peer       = r.links.filter(l => REQ_LINKTYPE[l.type]?.dir === 'side');
 
+  const [addOpen, setAddOpen] = useState(false);
+  const createLink = useCreateRequirementLink(projectId);
+  const deleteLink = useDeleteRequirementLink(projectId);
+
+  const handleDelete = (linkId: string) => {
+    deleteLink.mutate(linkId, {
+      onSuccess: () => toast.success('Link removed'),
+      onError: () => toast.error('Failed to remove link'),
+    });
+  };
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-      <LinkGroup title="Upstream" icon={ArrowUpRight} links={upstream} onNavigate={onNavigate} tint="#9333EA"/>
-      <LinkGroup title="Downstream" icon={ArrowDownRight} links={downstream} onNavigate={onNavigate} tint="#2563EB"/>
-      <LinkGroup title="Peer" icon={ArrowRightIcon} links={peer} onNavigate={onNavigate} tint="#64748B"/>
+      <div style={{ display:'flex', justifyContent:'flex-end' }}>
+        <button onClick={() => setAddOpen(true)} style={{ display:'inline-flex', alignItems:'center', gap:6, height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:500 }}>
+          <Plus size={13}/>Add link
+        </button>
+      </div>
+      {addOpen && (
+        <AddLinkForm r={r} onClose={() => setAddOpen(false)}
+          pending={createLink.isPending}
+          onCreate={(toKey, linkType) => {
+            const target = BY_KEY[toKey];
+            if (!r._id || !target?._id) { toast.error('This requirement is still syncing — try again in a moment'); return; }
+            createLink.mutate({ fromId: r._id, toId: target._id, linkType }, {
+              onSuccess: () => { toast.success('Link created'); setAddOpen(false); },
+              onError: () => toast.error('Failed to create link — it may already exist'),
+            });
+          }} />
+      )}
+      <LinkGroup title="Upstream" icon={ArrowUpRight} links={upstream} onNavigate={onNavigate} onDelete={handleDelete} tint="#9333EA"/>
+      <LinkGroup title="Downstream" icon={ArrowDownRight} links={downstream} onNavigate={onNavigate} onDelete={handleDelete} tint="#2563EB"/>
+      <LinkGroup title="Peer" icon={ArrowRightIcon} links={peer} onNavigate={onNavigate} onDelete={handleDelete} tint="#64748B"/>
     </div>
   );
 }
 
-function LinkGroup({ title, icon:Ic, links, onNavigate, tint }: { title:string; icon:React.ElementType; links:Requirement['links']; onNavigate:(k:string)=>void; tint:string }) {
+function AddLinkForm({ r, onClose, onCreate, pending }: { r: Requirement; onClose: () => void; onCreate: (toKey: string, linkType: RequirementLinkType) => void; pending: boolean }) {
+  const options = useMemo(() => REQS.filter(o => o.key !== r.key && o._id), [r.key]);
+  const [toKey, setToKey] = useState(options[0]?.key ?? '');
+  const [linkType, setLinkType] = useState<RequirementLinkType>('depends_on');
+
+  const selStyle: React.CSSProperties = { flex:1, height:32, borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:'0 8px' };
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10, padding:14, borderRadius:10, border:'1px solid hsl(var(--border))', background:'hsl(var(--muted)/0.4)' }}>
+      <div style={{ display:'flex', gap:8 }}>
+        <select value={linkType} onChange={e => setLinkType(e.target.value as RequirementLinkType)} style={{ ...selStyle, flex:'0 0 160px' }}>
+          <option value="derives_from">Derives from</option>
+          <option value="depends_on">Depends on</option>
+          <option value="conflicts_with">Conflicts with</option>
+        </select>
+        <select value={toKey} onChange={e => setToKey(e.target.value)} style={selStyle}>
+          {options.length === 0 && <option value="">No other requirements yet</option>}
+          {options.map(o => <option key={o.key} value={o.key}>{o.key} — {o.title}</option>)}
+        </select>
+      </div>
+      <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+        <button onClick={onClose} style={{ height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5 }}>Cancel</button>
+        <button onClick={() => toKey && onCreate(toKey, linkType)} disabled={!toKey || pending}
+          style={{ height:30, padding:'0 12px', borderRadius:7, border:'none', background: !toKey || pending ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))', color:'hsl(var(--primary-foreground))', cursor: !toKey || pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
+          {pending ? 'Linking…' : 'Create link'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LinkGroup({ title, icon:Ic, links, onNavigate, onDelete, tint }: { title:string; icon:React.ElementType; links:Requirement['links']; onNavigate:(k:string)=>void; onDelete:(linkId:string)=>void; tint:string }) {
   if (!links.length) return null;
   return (
     <div>
@@ -328,6 +392,13 @@ function LinkGroup({ title, icon:Ic, links, onNavigate, tint }: { title:string; 
               <span style={{ color:'hsl(var(--muted-foreground))', flex:'0 0 100px', fontSize:11, fontWeight:500 }}>{REQ_LINKTYPE[l.type]?.label ?? l.type}</span>
               <span style={{ flex:1, fontSize:12.5, color:'hsl(var(--foreground))', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{target ? target.title : l.kind==='part' ? 'BOM part / assembly' : l.kind==='test' ? 'Test case' : 'External source'}</span>
               {isSuspect && <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10.5, fontWeight:700, color:'#DC2626', flexShrink:0 }}><AlertTriangle size={11} color="#DC2626"/>suspect</span>}
+              {l._linkId && (
+                <button onClick={e => { e.stopPropagation(); onDelete(l._linkId!); }}
+                  style={{ width:22, height:22, borderRadius:6, border:'none', background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}
+                  onMouseEnter={e=>(e.currentTarget.style.background='hsl(var(--destructive)/0.12)')} onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                  <X size={12} color="hsl(var(--muted-foreground))"/>
+                </button>
+              )}
               {target && !l.external && <ChevronRight size={13} color="hsl(var(--muted-foreground))"/>}
             </div>
           );

@@ -282,6 +282,7 @@ export const ENDPOINTS = {
   },
   // Requirement links (requirement <-> requirement graph edges)
   REQUIREMENT_LINKS: {
+    PROJECT_LIST: (projectId: string) => `/projects/${projectId}/requirement-links`,
     UPDATE: (linkId: string) => `/requirement-links/${linkId}`,
     DELETE: (linkId: string) => `/requirement-links/${linkId}`,
   },
