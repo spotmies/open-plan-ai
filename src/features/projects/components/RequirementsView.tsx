@@ -135,6 +135,17 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
     return () => onEditorOpenChange?.(false);
   }, [editorOpen, onEditorOpenChange]);
 
+  // The Impact drawer is opened from the detail screen but its own open state
+  // (impactKey) isn't tied to the URL the way detailKey is — so browser back
+  // (or any other URL-driven navigation away from the detail view) changes
+  // detailKey without touching impactKey, leaving the drawer floating open
+  // over whatever view comes back into view. Close it whenever detailKey
+  // changes (including closing to null) so it can never outlive the detail
+  // screen it was opened from.
+  useEffect(() => {
+    setImpactKey(null);
+  }, [detailKey]);
+
   const stats = useMemo(() => reqStats(), [dataVersion]);
 
   const filterSet = useMemo((): Set<string> | null => {
@@ -208,9 +219,18 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   const openEditor = useCallback((key?: string) => { setEditKey(key ?? null); setEditorOpen(true); }, []);
 
   if (detailKey) return (
-    <RequirementDetailScreen reqKey={detailKey} onClose={() => setDetailKey(null)}
-      onEdit={key => { setDetailKey(null); openEditor(key); }}
-      onImpact={key => setImpactKey(key)} onNavigate={openDetail} />
+    <>
+      <RequirementDetailScreen reqKey={detailKey} onClose={() => setDetailKey(null)}
+        onEdit={key => { setDetailKey(null); openEditor(key); }}
+        onImpact={key => setImpactKey(key)} onNavigate={openDetail} />
+      {/* Rendered here too (not just in the main-view return below) — the
+          Impact button lives on the detail screen, so without this the
+          drawer's state gets set on click but nothing appears until the
+          user navigates away to a return path that does render it. */}
+      {impactKey && (
+        <RequirementImpact reqKey={impactKey} onClose={() => setImpactKey(null)} onOpen={openDetail} />
+      )}
+    </>
   );
   if (editorOpen) return (
     <RequirementEditor reqKey={editKey} projectId={projectId} groups={groups}
@@ -733,9 +753,12 @@ function FilterDrawer({ filters, setFilters, onClose }: { filters: FilterState; 
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 80 }} />
+      {/* z-index above the Map view's fullscreen mode (1000) and floating
+          toolbar/minimap (up to 210) — see the matching note in
+          RequirementImpact.tsx. */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 2000 }} />
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '94vw', zIndex: 81,
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '94vw', zIndex: 2001,
         background: 'hsl(var(--card))', borderLeft: '1px solid hsl(var(--border))',
         display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(0,0,0,0.15)'
       }}>
