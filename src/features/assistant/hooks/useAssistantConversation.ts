@@ -48,6 +48,13 @@ export function useAssistantConversation(conversationId: string | null) {
   const queryClient = useQueryClient();
   const [streamingText, setStreamingText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  // True for the brief window between ai:done and the refetch it triggers
+  // actually landing the turn's final assistant-text row. During it the
+  // streamed answer + tool status stay frozen on screen (isStreaming is
+  // already false) so the answer never blinks out — and any present_card
+  // never visibly reorders from above→below the text — while the persisted
+  // transcript catches up. See the onDone handler and the effect below.
+  const [finalizing, setFinalizing] = useState(false);
   const [toolStatus, setToolStatus] = useState<ToolStatusEntry[]>([]);
   const [liveQuestion, setLiveQuestion] = useState<AskUserQuestion[] | null>(null);
   const [liveCard, setLiveCard] = useState<AssistantCard | null>(null);
@@ -82,12 +89,36 @@ export function useAssistantConversation(conversationId: string | null) {
   const caughtUp = (query.data?.messages.length ?? 0) > sentMessageCountRef.current;
   const editCaughtUp = (query.data?.messages.length ?? 0) > editCountRef.current;
 
+  // Message count from the last landed fetch — read during render so
+  // finalizeStartCountRef can snapshot it the instant ai:done fires, before
+  // the refetch it triggers has changed anything.
+  const persistedMessageCount = query.data?.messages.length ?? 0;
+  const persistedMessageCountRef = useRef(0);
+  persistedMessageCountRef.current = persistedMessageCount;
+  const finalizeStartCountRef = useRef(0);
+
   useEffect(() => {
     if (optimisticMessage && caughtUp) {
       setOptimisticMessage(null);
       setOptimisticAttachments(null);
     }
   }, [optimisticMessage, caughtUp]);
+
+  // After ai:done we deliberately don't clear streamingText / toolStatus (see
+  // the onDone handler) — we hold them until the refetch it fired actually
+  // lands the turn's final assistant-text row. The model emits present_card
+  // *before* its closing sentence, so at ai:done the persisted transcript has
+  // the card row but not the text row; clearing then would blank the answer
+  // and let the card slide up for the length of that round-trip. Message
+  // count growing past its ai:done value is the "the row is here now" signal.
+  useEffect(() => {
+    if (!finalizing) return;
+    if (persistedMessageCount > finalizeStartCountRef.current) {
+      setFinalizing(false);
+      setStreamingText('');
+      setToolStatus([]);
+    }
+  }, [finalizing, persistedMessageCount]);
 
   useEffect(() => {
     if (editingMessage && editCaughtUp) setEditingMessage(null);
@@ -125,6 +156,7 @@ export function useAssistantConversation(conversationId: string | null) {
     // this in-memory state that leaked across the switch.
     setStreamingText('');
     setIsStreaming(false);
+    setFinalizing(false);
     setToolStatus([]);
     setLiveQuestion(null);
     setLiveCard(null);
@@ -190,9 +222,18 @@ export function useAssistantConversation(conversationId: string | null) {
       }),
       aiAssistantTransport.onDone(() => {
         setIsStreaming(false);
-        setStreamingText('');
-        setToolStatus([]);
         setLiveCard(null);
+        setLiveQuestion(null);
+        // Don't clear streamingText / toolStatus here. The model wrote
+        // present_card before its closing sentence, so right now the
+        // persisted transcript is one refetch behind — it has the card row
+        // but not the final assistant-text row. Clearing now would blank the
+        // answer and let the card jump above→below where the text will land,
+        // for the whole length of the invalidate() round-trip below (the
+        // flicker). Freeze the streamed render instead; the finalizing effect
+        // above clears streamingText / toolStatus once the row actually lands.
+        finalizeStartCountRef.current = persistedMessageCountRef.current;
+        setFinalizing(true);
         invalidate();
       }),
       aiAssistantTransport.onStopped(() => {
@@ -201,6 +242,7 @@ export function useAssistantConversation(conversationId: string | null) {
         // mainly just refetches to pick up whatever partial answer the
         // server persisted before it stopped.
         setIsStreaming(false);
+        setFinalizing(false);
         setStreamingText('');
         setToolStatus([]);
         setLiveCard(null);
@@ -208,6 +250,7 @@ export function useAssistantConversation(conversationId: string | null) {
       }),
       aiAssistantTransport.onError((_code, message) => {
         setIsStreaming(false);
+        setFinalizing(false);
         toast.error(message || 'The assistant hit an error answering that.');
         invalidate();
       }),
@@ -231,6 +274,7 @@ export function useAssistantConversation(conversationId: string | null) {
     onSuccess: () => {
       stoppedRef.current = false;
       setIsStreaming(true);
+      setFinalizing(false);
       setStreamingText('');
       setToolStatus([]);
       setLiveQuestion(null);
@@ -255,6 +299,7 @@ export function useAssistantConversation(conversationId: string | null) {
     onSuccess: () => {
       stoppedRef.current = false;
       setIsStreaming(true);
+      setFinalizing(false);
       setStreamingText('');
       setToolStatus([]);
       setLiveQuestion(null);
@@ -275,6 +320,7 @@ export function useAssistantConversation(conversationId: string | null) {
       setLiveQuestion(null);
       setLiveCard(null);
       setIsStreaming(true);
+      setFinalizing(false);
       setStreamingText('');
       setToolStatus([]);
       invalidate();
@@ -353,6 +399,7 @@ export function useAssistantConversation(conversationId: string | null) {
     // up cancelling the *new* turn instead of the one being replaced.
     stoppedRef.current = true;
     setIsStreaming(false);
+    setFinalizing(false);
     setStreamingText('');
     setToolStatus([]);
     try {
@@ -414,6 +461,7 @@ export function useAssistantConversation(conversationId: string | null) {
     isLoading: query.isLoading,
     streamingText,
     isStreaming,
+    finalizing,
     toolStatus,
     pendingQuestions,
     liveCard,
