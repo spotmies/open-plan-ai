@@ -103,7 +103,15 @@ export interface ReqLink {
    * Absent for links synthesized from the tree itself (the primary parent
    * derives_from, refined_by, traces_to_source) — those aren't separate rows. */
   _linkId?: string;
+  /** Live Inventory snapshot for `kind:'part'` links only — present when the
+   * allocated part has a real `inventory_stock` row for the project's org.
+   * Absent (not zero) means "never stocked", not "zero on hand". */
+  qty?: AllocatedPartStock;
 }
+/** Aggregated across every location for one part — see `rebuildRequirementsFromApi`'s
+ * `stockByPartId` param. `available` mirrors Inventory's own `availableOf()`
+ * (onHand - allocated - quarantineQty) so the two features never disagree. */
+export interface AllocatedPartStock { onHand: number; allocated: number; available: number; }
 export interface ReqCoverage {
   orphan: boolean; untested: boolean; unimplemented: boolean; suspect: boolean;
 }
@@ -193,7 +201,7 @@ export interface ApiRequirementLinkForRebuild {
 
 /** Minimal shape adapted from `ApiRequirementAllocation` (src/hooks/useBom.ts / bomData.ts). */
 export interface ApiRequirementAllocationForRebuild {
-  requirementId: string; nodeId: string; partNumber: string; partName: string;
+  requirementId: string; nodeId: string; partId: string; partNumber: string; partName: string;
 }
 
 /** Minimal shape adapted from `ApiAffectedRequirementLink` (src/hooks/useECOs.ts). */
@@ -213,12 +221,18 @@ export interface ApiEcoSuspectForRebuild {
  * `ecoSuspects` (the fourth param) is the project-wide "requirements with an
  * in-flight ECO" list (eco_affected_requirements, pre-filtered server-side to
  * non-closed/cancelled ECOs) — same omit-vs-empty distinction again.
+ * `stockByPartId` (the fifth param) is the org's live Inventory stock,
+ * pre-aggregated across locations and keyed by `bom_parts.id` — enriches each
+ * `allocated_to` link with on-hand/allocated/available instead of just
+ * "linked: yes/no". Omit while Inventory hasn't loaded yet; a part simply
+ * absent from the map (vs. present with zeros) means it was never stocked.
  */
 export function rebuildRequirementsFromApi(
   items: ApiRequirementForRebuild[],
   links?: ApiRequirementLinkForRebuild[],
   allocations?: ApiRequirementAllocationForRebuild[],
   ecoSuspects?: ApiEcoSuspectForRebuild[],
+  stockByPartId?: Map<string, AllocatedPartStock>,
 ): void {
   const idToKey: Record<string, string> = {};
   items.forEach(item => { idToKey[item.id] = item.key; });
@@ -286,8 +300,8 @@ export function rebuildRequirementsFromApi(
     }
   });
 
-  const allocByReqId: Record<string, string[]> = {};
-  (allocations ?? []).forEach(a => { (allocByReqId[a.requirementId] ??= []).push(a.partNumber); });
+  const allocByReqId: Record<string, ApiRequirementAllocationForRebuild[]> = {};
+  (allocations ?? []).forEach(a => { (allocByReqId[a.requirementId] ??= []).push(a); });
 
   const ecoSuspectsByReqId: Record<string, ApiEcoSuspectForRebuild[]> = {};
   (ecoSuspects ?? []).forEach(s => { (ecoSuspectsByReqId[s.requirementId] ??= []).push(s); });
@@ -299,8 +313,11 @@ export function rebuildRequirementsFromApi(
     r.childKeys.forEach(c => links.push({ type:'refined_by', target:c, status:'valid' }));
     (extraLinksByKey[r.key] ?? []).forEach(l => links.push(l));
     const alloc = r._id ? allocByReqId[r._id] ?? [] : [];
-    alloc.forEach(partNumber => links.push({ type:'allocated_to', target:partNumber, status:'valid', kind:'part' }));
-    r.alloc = alloc;
+    alloc.forEach(a => links.push({
+      type:'allocated_to', target:a.partNumber, status:'valid', kind:'part',
+      qty: stockByPartId?.get(a.partId),
+    }));
+    r.alloc = alloc.map(a => a.partNumber);
     const ecoLinks = r._id ? ecoSuspectsByReqId[r._id] ?? [] : [];
     ecoLinks.forEach(s => links.push({ type:'flagged_by_eco', target:s.ecoNum, status:'suspect', kind:'eco', external:true }));
     r.links = links;

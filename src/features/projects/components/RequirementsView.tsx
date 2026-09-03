@@ -21,10 +21,12 @@ import {
   GATES, STANDARDS,
   type Requirement, type ReqType, type ReqCategory, type ReqStatus,
   type ReqVStatus, type ReqPriority, type ReqGroup, type ReqVMethod,
+  type AllocatedPartStock,
 } from './requirementsData';
 import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@/hooks/useRequirements';
 import { useRequirementAllocations } from '@/hooks/useBom';
 import { useECOAffectedRequirements } from '@/hooks/useECOs';
+import { useInventoryStock } from '@/hooks/useInventory';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, Donut, StatTile, CoverageBar, ScoreRing, softTint,
@@ -78,6 +80,9 @@ type ViewTab = 'table' | 'map' | 'trace' | 'coverage' | 'readiness';
 // ── Main component ────────────────────────────────────────────────────────────
 interface RequirementsViewProps {
   projectId: string;
+  /** Org id — used only to fetch live Inventory stock for the "allocated to"
+   * traceability links (mirrors BOM's `orgId`). */
+  orgId: string;
   /** Currently open requirement detail, controlled via the URL (mirrors BOM's `selectedId`). */
   selectedKey?: string | null;
   onSelectedKeyChange?: (key: string | null) => void;
@@ -90,7 +95,7 @@ interface RequirementsViewProps {
    * mirrors BOM's onEcoCreated so the host can navigate to it. */
   onEcoCreated?: (ecoId: string) => void;
 }
-export default function RequirementsView({ projectId, selectedKey = null, onSelectedKeyChange, onEditorOpenChange, onEcoCreated }: RequirementsViewProps) {
+export default function RequirementsView({ projectId, orgId, selectedKey = null, onSelectedKeyChange, onEditorOpenChange, onEcoCreated }: RequirementsViewProps) {
   // Live data — rebuilds the module-level REQS/BY_KEY index (requirementsData.ts)
   // from the real backend in place, synchronously during render. Every helper
   // and every other Requirements file reads that same shared index, so this is
@@ -100,6 +105,24 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   const { data: apiLinks } = useRequirementLinks(projectId);
   const { data: apiAllocations } = useRequirementAllocations(projectId);
   const { data: apiEcoSuspects } = useECOAffectedRequirements(projectId);
+  const { data: stockRows } = useInventoryStock(orgId);
+  // Inventory stock is org-wide (not project-scoped — see project_inventory
+  // memory), aggregated here across every location for the one figure a
+  // requirement's traceability chain actually needs: is this allocated part
+  // in stock, and how much of it is actually free. Mirrors Inventory's own
+  // `availableOf()` so the two features never disagree.
+  const stockByPartId = useMemo(() => {
+    const map = new Map<string, AllocatedPartStock>();
+    (stockRows ?? []).forEach(s => {
+      const prev = map.get(s.partId) ?? { onHand: 0, allocated: 0, available: 0 };
+      map.set(s.partId, {
+        onHand: prev.onHand + s.onHand,
+        allocated: prev.allocated + s.allocated,
+        available: prev.available + (s.onHand - s.allocated - (s.quarantineQty ?? 0)),
+      });
+    });
+    return map;
+  }, [stockRows]);
   // REQS/BY_KEY/REQ_ROOTS are mutated in place, not replaced — plain object
   // identity never changes, so nothing here can appear in a useMemo dependency
   // array to signal "the data changed." Rebuilding unconditionally every render
@@ -112,16 +135,16 @@ export default function RequirementsView({ projectId, selectedKey = null, onSele
   // component and in CoverageDashboard/ReadinessView/TraceabilityView/
   // RequirementsMapView.
   if (apiTree) {
-    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations, apiEcoSuspects);
+    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId);
   }
-  // apiTree, apiLinks, apiAllocations and apiEcoSuspects are four independent
-  // React Query results, each stable (unchanged reference) until its own data
-  // actually changes — combined into one memoized value so every dependency
-  // array below only has one thing to list, and still only changes reference
-  // when any input really does.
+  // apiTree, apiLinks, apiAllocations, apiEcoSuspects and stockByPartId are
+  // independent React Query-derived values, each stable (unchanged reference)
+  // until its own data actually changes — combined into one memoized value so
+  // every dependency array below only has one thing to list, and still only
+  // changes reference when any input really does.
   const dataVersion = useMemo(
-    () => ({ apiTree, apiLinks, apiAllocations, apiEcoSuspects }),
-    [apiTree, apiLinks, apiAllocations, apiEcoSuspects],
+    () => ({ apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId }),
+    [apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId],
   );
   const groups = apiGroups ?? [];
 
