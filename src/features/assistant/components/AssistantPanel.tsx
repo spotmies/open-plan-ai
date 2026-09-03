@@ -73,6 +73,7 @@ export function AssistantPanel({
     messageVersions,
     streamingText,
     isStreaming,
+    finalizing,
     toolStatus,
     pendingQuestions,
     liveCard,
@@ -524,6 +525,7 @@ export function AssistantPanel({
             onSelectVersion={selectMessageVersion}
             streamingText={streamingText}
             isStreaming={effectivelyStreaming}
+            finalizing={finalizing}
             toolStatus={toolStatus}
             pendingQuestions={pendingQuestions}
             onAnswer={answerQuestion}

@@ -1,6 +1,7 @@
 import { act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWrapper, renderHook } from '@/test/utils';
+import { createWrapper, renderHook, waitFor } from '@/test/utils';
+import { assistantService } from '@/services/assistant.service';
 import { useAssistantConversation } from './useAssistantConversation';
 
 // A fake transport that records the latest handler registered for each ai:*
@@ -57,6 +58,7 @@ vi.mock('@/services/assistant.service', () => ({
       messages: [],
       proposals: [],
     }),
+    sendMessage: vi.fn().mockResolvedValue({ id: 'm-new' }),
   },
 }));
 
@@ -104,5 +106,89 @@ describe('useAssistantConversation — per-thread isolation', () => {
 
     expect(result.current.isStreaming).toBe(true);
     expect(result.current.streamingText).toBe('still thinking');
+  });
+});
+
+describe('useAssistantConversation — finalizing (post-ai:done refetch gap)', () => {
+  const conv = (messages: unknown[]) => ({
+    id: 'x',
+    title: null,
+    scope: 'all_projects',
+    projectId: null,
+    status: 'active',
+    focusEntities: null,
+    pinned: false,
+    pinnedAt: null,
+    shareId: null,
+    sharedAt: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    pendingQuestions: null,
+    messages,
+    proposals: [],
+  });
+  const userRow = { id: 'u1', parentId: null, role: 'user', content: 'status?', createdAt: '2026-01-01T00:00:00Z' };
+  const cardRow = { id: 't1', parentId: 'u1', role: 'tool', content: '{"type":"status"}', createdAt: '2026-01-01T00:00:01Z' };
+  const answerRow = { id: 'a1', parentId: 't1', role: 'assistant', content: 'Done.', createdAt: '2026-01-01T00:00:02Z' };
+
+  beforeEach(() => {
+    resetHandlers();
+    vi.clearAllMocks();
+  });
+
+  it('holds the streamed answer + tool status after ai:done until the final row lands', async () => {
+    const getConversation = vi.mocked(assistantService.getConversation);
+    getConversation.mockResolvedValue(conv([userRow, cardRow]));
+
+    const { result } = renderHook(() => useAssistantConversation('conv-a'), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+
+    act(() => {
+      emit('toolCall', 'query_project_data');
+      emit('token', "There's 1 module.");
+      emit('card', { type: 'status' });
+    });
+
+    act(() => {
+      emit('done');
+    });
+
+    // isStreaming is off, but the answer stays frozen on screen (finalizing)
+    // so it never blinks out while the ai:done refetch is in flight.
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.finalizing).toBe(true);
+    expect(result.current.streamingText).toBe("There's 1 module.");
+    expect(result.current.toolStatus).toHaveLength(1);
+
+    // The refetch lands the persisted answer row → the freeze lifts.
+    getConversation.mockResolvedValue(conv([userRow, cardRow, answerRow]));
+    act(() => {
+      emit('proposalUpdate'); // any event that re-invalidates the conversation
+    });
+
+    await waitFor(() => expect(result.current.finalizing).toBe(false));
+    expect(result.current.streamingText).toBe('');
+    expect(result.current.toolStatus).toEqual([]);
+  });
+
+  it('drops the frozen answer when the next turn starts', async () => {
+    const getConversation = vi.mocked(assistantService.getConversation);
+    getConversation.mockResolvedValue(conv([userRow, cardRow]));
+
+    const { result } = renderHook(() => useAssistantConversation('conv-a'), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+
+    act(() => {
+      emit('token', 'first answer');
+      emit('done');
+    });
+    expect(result.current.finalizing).toBe(true);
+
+    await act(async () => {
+      result.current.sendMessage('follow up');
+    });
+
+    await waitFor(() => expect(result.current.finalizing).toBe(false));
+    expect(result.current.streamingText).toBe('');
   });
 });
