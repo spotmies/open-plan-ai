@@ -95,8 +95,12 @@ export const bomService = {
     return apiClient.delete<{ deletedCount: number }>(ENDPOINTS.BOM.NODE(nodeId));
   },
 
-  async addRequirement(nodeId: string, requirementId: string): Promise<ApiReqLinkResponse> {
-    return apiClient.post<ApiReqLinkResponse>(ENDPOINTS.BOM.NODE_REQUIREMENTS(nodeId), { requirementId });
+  async addRequirement(nodeId: string, requirementId: string, rationale?: string | null): Promise<ApiReqLinkResponse> {
+    return apiClient.post<ApiReqLinkResponse>(ENDPOINTS.BOM.NODE_REQUIREMENTS(nodeId), { requirementId, rationale });
+  },
+
+  async updateRequirementLink(linkId: string, rationale: string | null): Promise<ApiReqLinkResponse> {
+    return apiClient.patch<ApiReqLinkResponse>(ENDPOINTS.BOM.REQ_LINK(linkId), { rationale });
   },
 
   async removeRequirement(linkId: string): Promise<void> {

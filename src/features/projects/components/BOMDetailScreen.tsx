@@ -26,7 +26,7 @@ import { fromApiEcoByPart, statusMeta } from './ecoData';
 import { useEcosByPart } from '@/hooks/useECOs';
 import { BOMImportSubcomponentsDialog } from './BOMImportSubcomponentsDialog';
 import { usePartRevisions, useCreatePart, useUpdatePart, useCreateRevision } from '@/hooks/useParts';
-import { useCreateBomNode, useUpdateBomNode, useDeleteBomNode, useAddRequirement, useRemoveRequirement, useCreateApprovalRequest, useDecideApprovalRequest, useBomNodeApprovals, useBomApprovalRequests, useActiveBomApprovalRequest } from '@/hooks/useBom';
+import { useCreateBomNode, useUpdateBomNode, useDeleteBomNode, useAddRequirement, useUpdateRequirementLink, useRemoveRequirement, useCreateApprovalRequest, useDecideApprovalRequest, useBomNodeApprovals, useBomApprovalRequests, useActiveBomApprovalRequest } from '@/hooks/useBom';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useAuth } from '@/contexts/AuthContext';
 import { BOMSendForReviewModal } from './BOMSendForReviewModal';
@@ -542,6 +542,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
   const updatePart = useUpdatePart();
   const createRev = useCreateRevision();
   const addRequirement = useAddRequirement(projectId);
+  const updateRequirementLink = useUpdateRequirementLink(projectId);
   const removeRequirement = useRemoveRequirement(projectId);
 
   const activeRev = revHistory[activeRevIdx] ?? { id: originalNode.id, rev: originalNode.rev, status: originalNode.status, price: originalNode.price, leadTime: originalNode.leadTime, date: '', author: '', changes: '', customFields: originalNode.customFields } as BOMRevision;
@@ -705,8 +706,16 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
     const toRemoveLegacy = (originalNode._reqLinks ?? []).filter(
       l => !l.requirementId && (payload.removedLegacyLinkIds ?? []).includes(l.id),
     );
+    // Already-linked requirements whose rationale text changed — diffed against
+    // the raw link rows rather than payload.req, which only carries ids.
+    const toUpdateRationale = (originalNode._reqLinks ?? []).filter(
+      l => l.requirementId
+        && payload.req.includes(l.requirementId)
+        && (payload.reqRationales[l.requirementId] ?? '') !== (l.rationale ?? ''),
+    );
     await Promise.all([
-      ...toAdd.map(requirementId => addRequirement.mutateAsync({ nodeId: originalNode.id, requirementId })),
+      ...toAdd.map(requirementId => addRequirement.mutateAsync({ nodeId: originalNode.id, requirementId, rationale: payload.reqRationales[requirementId] ?? null })),
+      ...toUpdateRationale.map(link => updateRequirementLink.mutateAsync({ linkId: link.id, rationale: payload.reqRationales[link.requirementId!] ?? null })),
       ...toRemoveReal.map(link => removeRequirement.mutateAsync(link.id)),
       ...toRemoveLegacy.map(link => removeRequirement.mutateAsync(link.id)),
     ]);

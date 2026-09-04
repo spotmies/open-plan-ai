@@ -199,6 +199,8 @@ export interface ApiReqLinkResponse {
   // Free-typed label from before the real FK existed — set only on old,
   // unmatched rows that don't resolve to a real requirement.
   legacyLabel: string | null;
+  // Why this part was selected to satisfy the requirement — optional.
+  rationale: string | null;
   createdAt: string;
 }
 
@@ -209,6 +211,10 @@ export interface ApiRequirementAllocation {
   partId: string;
   partNumber: string;
   partName: string;
+  rationale: string | null;
+  // The BOM node's approval status — 'implemented' coverage requires an
+  // 'approved' allocation, not just any allocation regardless of review state.
+  status: BOMStatus;
 }
 
 export interface ApiNodeResponse {

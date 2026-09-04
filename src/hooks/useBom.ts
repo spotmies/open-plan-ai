@@ -96,8 +96,20 @@ export function useDeleteBomNode(projectId: string) {
 export function useAddRequirement(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ nodeId, requirementId }: { nodeId: string; requirementId: string }) =>
-      bomService.addRequirement(nodeId, requirementId),
+    mutationFn: ({ nodeId, requirementId, rationale }: { nodeId: string; requirementId: string; rationale?: string | null }) =>
+      bomService.addRequirement(nodeId, requirementId, rationale),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.bom.tree(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.bom.requirementAllocations(projectId) });
+    },
+  });
+}
+
+export function useUpdateRequirementLink(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ linkId, rationale }: { linkId: string; rationale: string | null }) =>
+      bomService.updateRequirementLink(linkId, rationale),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.bom.tree(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.bom.requirementAllocations(projectId) });

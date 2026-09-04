@@ -5,6 +5,7 @@ import {
   Unlink, PackageX, FlaskConical, AlertTriangle, Send, ChevronDown,
   Activity, Sparkles, GitBranch, ClipboardCheck, BookOpen, MessageSquare,
   Link2, GitMerge, ArrowUpRight, ArrowDownRight, ArrowRight as ArrowRightIcon,
+  Paperclip, Upload,
 } from 'lucide-react';
 import {
   REQS, BY_KEY, REQ_TYPE, REQ_STATUS, REQ_STATUS_FLOW, REQ_VSTATUS, REQ_CATEGORY,
@@ -26,6 +27,11 @@ import {
 } from '@/hooks/useVerification';
 import { RequirementECOSheet, type TestFailureTrigger } from './RequirementECOSheet';
 import { useInventoryBuilds } from '@/hooks/useInventory';
+import {
+  useTestExecutionAttachments, uploadTestExecutionAttachmentFile,
+} from '@/hooks/useTestExecutionAttachments';
+import { resolveFileUrl } from '@/utils/fileUrl';
+import { FilePreviewDialog, type FilePreviewTarget } from '@/components/FilePreviewDialog';
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 export default function RequirementDetailScreen({ reqKey, projectId, orgId, onClose, onEdit, onImpact, onNavigate, onEcoCreated }:
@@ -392,12 +398,19 @@ function LinkGroup({ title, icon:Ic, links, onNavigate, onDelete, tint }: { titl
           const isSuspect = l.status === 'suspect';
           return (
             <div key={i} onClick={() => { if (target && !l.external) onNavigate(l.target); }}
+              title={l.kind==='part' && l.rationale ? l.rationale : undefined}
               style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', borderRadius:9, border:`1px solid ${isSuspect ? softTint('#DC2626',0.35) : 'hsl(var(--border))'}`, background: isSuspect ? softTint('#DC2626',0.04) : 'hsl(var(--card))', cursor: target && !l.external ? 'pointer' : 'default', transition:'background .1s' }}
               onMouseEnter={e=>{ if(target&&!l.external) e.currentTarget.style.background='hsl(var(--muted))'; }}
               onMouseLeave={e=>{ e.currentTarget.style.background=isSuspect?softTint('#DC2626',0.04):'hsl(var(--card))'; }}>
               <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, fontWeight:600, color: l.kind==='part'?'#D97706':l.kind==='test'?'#9333EA':l.kind==='eco'?'#DC2626':'#3B82F6', width:90, flexShrink:0 }}>{l.target}</span>
               <span style={{ color:'hsl(var(--muted-foreground))', flex:'0 0 100px', fontSize:11, fontWeight:500 }}>{REQ_LINKTYPE[l.type]?.label ?? l.type}</span>
               <span style={{ flex:1, fontSize:12.5, color:'hsl(var(--foreground))', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{target ? target.title : l.kind==='part' ? 'BOM part / assembly' : l.kind==='test' ? 'Test case' : l.kind==='eco' ? 'Engineering change order' : 'External source'}</span>
+              {l.kind==='part' && l.partStatus && l.partStatus !== 'approved' && (
+                <span title={`BOM part is ${l.partStatus} — coverage needs an approved allocation`}
+                  style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:0.3, color:'#D97706', background:softTint('#D97706',0.12), borderRadius:5, padding:'2px 6px', flexShrink:0 }}>
+                  {l.partStatus}
+                </span>
+              )}
               {l.kind==='part' && l.qty && (
                 <span title={`${l.qty.onHand} on hand · ${l.qty.allocated} allocated elsewhere`}
                   style={{ fontSize:10.5, fontWeight:600, color: l.qty.available <= 0 ? '#DC2626' : 'hsl(var(--muted-foreground))', flexShrink:0 }}>
@@ -587,9 +600,16 @@ function VerifyTab({ r, projectId, orgId, onEcoCreated }: { r: Requirement; proj
       {recordFor && (
         <RecordExecutionForm testCase={recordFor} requirement={r} pending={recordExecution.isPending} builds={projectBuilds}
           onClose={() => setRecordForId(null)}
-          onRecord={(payload) => {
+          onRecord={(payload, file) => {
             recordExecution.mutate({ testCaseId: recordFor.id, payload }, {
-              onSuccess: () => { toast.success('Result recorded'); setRecordForId(null); },
+              onSuccess: (execution) => {
+                toast.success('Result recorded');
+                setRecordForId(null);
+                if (file) {
+                  uploadTestExecutionAttachmentFile(execution.id, file).catch(() =>
+                    toast.error('Result recorded, but the evidence file failed to upload'));
+                }
+              },
               onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to record result'),
             });
           }} />
@@ -615,6 +635,7 @@ function ResultBadge({ result }: { result: ApiTestExecutionResult }) {
 
 function ExecutionHistoryRow({ testCaseId }: { testCaseId: string }) {
   const { data: executions, isLoading } = useTestCaseExecutions(testCaseId);
+  const [preview, setPreview] = useState<FilePreviewTarget | null>(null);
   return (
     <tr style={{ borderBottom:'1px solid hsl(var(--border))' }}>
       <td colSpan={8} style={{ padding:'0 12px 12px', background:'hsl(var(--muted)/0.3)' }}>
@@ -633,12 +654,34 @@ function ExecutionHistoryRow({ testCaseId }: { testCaseId: string }) {
                 <span style={{ color:'hsl(var(--muted-foreground))', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.notes}</span>
                 {e.buildLabel && <span style={{ color:'hsl(var(--muted-foreground))', flexShrink:0 }}>build: {e.buildLabel}</span>}
                 <span style={{ color:'hsl(var(--muted-foreground))', flexShrink:0 }}>{e.testedByName ?? '—'} · {new Date(e.testedAt).toLocaleString()}</span>
+                <ExecutionEvidence executionId={e.id} onPreview={setPreview}/>
               </div>
             ))}
           </div>
         )}
+        <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
       </td>
     </tr>
+  );
+}
+
+// Evidence files (reports, photos, logs) attached to one execution — a small
+// paperclip + count, click to preview. Per-execution fetch (N+1 across a
+// history list) is acceptable here: history is only fetched on-demand when
+// the row is expanded, and each test case rarely has more than a handful.
+function ExecutionEvidence({ executionId, onPreview }: { executionId: string; onPreview: (f: FilePreviewTarget) => void }) {
+  const { data: attachments } = useTestExecutionAttachments(executionId);
+  if (!attachments || attachments.length === 0) return null;
+  return (
+    <button
+      onClick={() => {
+        const url = resolveFileUrl(attachments[0].fileUrl);
+        if (url) onPreview({ url, fileName: attachments[0].fileName ?? 'Evidence', mimeType: attachments[0].mimeType });
+      }}
+      title={attachments.map(a => a.fileName).join(', ')}
+      style={{ display:'inline-flex', alignItems:'center', gap:3, flexShrink:0, border:'none', background:'transparent', cursor:'pointer', color:'hsl(var(--muted-foreground))', fontFamily:'inherit', fontSize:11 }}>
+      <Paperclip size={11}/>{attachments.length}
+    </button>
   );
 }
 
@@ -694,13 +737,14 @@ function ConfirmVerifiedForm({ onClose, onConfirm, pending }: { onClose: () => v
 function RecordExecutionForm({ testCase, requirement, builds, onClose, onRecord, pending }: {
   testCase: ApiTestCase; requirement: Requirement; pending: boolean; onClose: () => void;
   builds: { id: string; name: string; type: string; status: string }[];
-  onRecord: (payload: { measuredValue?: number | null; unit?: string; result?: ApiTestExecutionResult; notes?: string; buildId?: string | null }) => void;
+  onRecord: (payload: { measuredValue?: number | null; unit?: string; result?: ApiTestExecutionResult; notes?: string; buildId?: string | null }, file?: File) => void;
 }) {
   const [measuredValue, setMeasuredValue] = useState('');
   const [unit, setUnit] = useState(requirement.target?.unit ?? '');
   const [result, setResult] = useState<ApiTestExecutionResult>('pass');
   const [notes, setNotes] = useState('');
   const [buildId, setBuildId] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const inputStyle: React.CSSProperties = { height:32, borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:'0 8px' };
   const isTestMethod = testCase.method === 'test';
   const hasTarget = requirement.target !== null;
@@ -736,6 +780,11 @@ function RecordExecutionForm({ testCase, requirement, builds, onClose, onRecord,
       )}
       <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
         style={{ borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:8, resize:'vertical' }}/>
+      <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11.5, color:'hsl(var(--muted-foreground))', cursor:'pointer' }}>
+        <Upload size={12}/>
+        {evidenceFile ? evidenceFile.name : 'Attach evidence (optional)'}
+        <input type="file" onChange={e => setEvidenceFile(e.target.files?.[0] ?? null)} style={{ display:'none' }}/>
+      </label>
       <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
         <button onClick={onClose} style={{ height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5 }}>Cancel</button>
         <button
@@ -745,7 +794,7 @@ function RecordExecutionForm({ testCase, requirement, builds, onClose, onRecord,
             result: (!isTestMethod || !measuredValue) ? result : undefined,
             notes: notes.trim() || undefined,
             buildId: buildId || undefined,
-          })}
+          }, evidenceFile ?? undefined)}
           disabled={pending}
           style={{ height:30, padding:'0 12px', borderRadius:7, border:'none', background: pending ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))', color:'hsl(var(--primary-foreground))', cursor: pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
           {pending ? 'Recording…' : 'Record result'}

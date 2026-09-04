@@ -74,6 +74,7 @@ export interface BOMPartPayload {
   owner: string;
   ownerId?: string;
   req: string[];                      // desired set of real requirement UUIDs
+  reqRationales: Record<string, string>;  // requirement id -> rationale text (why this part satisfies it)
   removedLegacyLinkIds?: string[];    // legacy (pre-FK, unmatched) link ids the user explicitly removed
   // documents (uploaded file or linked URL; null = cleared, undefined = unchanged)
   docPhoto?: DocValue | null;
@@ -487,8 +488,9 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
   const [mpn, setMpn] = useState(node?.mpn ?? '');
   const [selectedOwner, setSelectedOwner] = useState<TeamMember | null>(null);
   const [ownerPopover, setOwnerPopover] = useState(false);
-  // Real requirement links, editable via the picker below (id/key/title for display).
-  const [reqItems, setReqItems] = useState<{ id: string; key: string; title: string }[]>([]);
+  // Real requirement links, editable via the picker below (id/key/title for display,
+  // rationale is "why this part satisfies the requirement" — Reconciliation ④).
+  const [reqItems, setReqItems] = useState<{ id: string; key: string; title: string; rationale: string }[]>([]);
   // Legacy (pre-FK, free-typed) links that don't resolve to a real requirement —
   // remove-only, no re-add. Tracked separately since they carry no requirement id.
   const [legacyReqChips, setLegacyReqChips] = useState<{ linkId: string; label: string }[]>([]);
@@ -538,7 +540,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
     const iMpn = node?.mpn ?? '';
     const iReqItems = (node?._reqLinks ?? [])
       .filter(l => l.requirementId && l.requirement)
-      .map(l => ({ id: l.requirementId!, key: l.requirement!.key, title: l.requirement!.title }));
+      .map(l => ({ id: l.requirementId!, key: l.requirement!.key, title: l.requirement!.title, rationale: l.rationale ?? '' }));
     const iLegacyChips = (node?._reqLinks ?? [])
       .filter(l => !l.requirementId)
       .map(l => ({ linkId: l.id, label: l.legacyLabel ?? '(unlabeled)' }));
@@ -583,7 +585,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
       pn: iPn, name: iName, desc: iDesc, category: iCategory, status: iStatus, rev: iRev,
       qty: iQty, uom: iUom, manufacturer: iManufacturer, suppliers: iSuppliers,
       leadTime: lt.value, leadTimeUnit: lt.unit, mpn: iMpn, ownerId: null,
-      req: iReqItems.map(i => i.id), removedLegacyIds: [] as string[],
+      req: iReqItems.map(i => ({ id: i.id, rationale: i.rationale })), removedLegacyIds: [] as string[],
       customFields: iCustomFields, versionMode: iVersionMode, newRevLabel: iNewRevLabel, changeNotes: iChangeNotes,
       docPhoto: null, techSections: normSections(DEFAULT_TECH_SECTIONS.map(s => ({ ...s, value: [] }))),
     });
@@ -702,7 +704,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
   const isDirty = JSON.stringify({
     pn, name, desc, category, status, rev, qty, uom, manufacturer, suppliers,
     leadTime, leadTimeUnit, mpn, ownerId: selectedOwner?.id ?? null,
-    req: reqItems.map(i => i.id), removedLegacyIds,
+    req: reqItems.map(i => ({ id: i.id, rationale: i.rationale })), removedLegacyIds,
     customFields, versionMode, newRevLabel, changeNotes,
     docPhoto: normDoc(docPhoto), techSections: normSections(techSections),
   }) !== baselineRef.current;
@@ -716,10 +718,12 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
   };
 
   const addReqItem = (r: { id: string; key: string; title: string }) => {
-    setReqItems(items => items.some(i => i.id === r.id) ? items : [...items, r]);
+    setReqItems(items => items.some(i => i.id === r.id) ? items : [...items, { ...r, rationale: '' }]);
     setReqPopover(false);
   };
   const removeReqItem = (id: string) => setReqItems(items => items.filter(i => i.id !== id));
+  const setReqItemRationale = (id: string, rationale: string) =>
+    setReqItems(items => items.map(i => i.id === id ? { ...i, rationale } : i));
   const removeLegacyChip = (linkId: string) => {
     setLegacyReqChips(chips => chips.filter(c => c.linkId !== linkId));
     setRemovedLegacyIds(ids => [...ids, linkId]);
@@ -829,6 +833,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
         owner: selectedOwner?.name ?? (isEdit ? node?.owner ?? '' : ''),
         ownerId: selectedOwner?.id,
         req: reqItems.map(i => i.id),
+        reqRationales: Object.fromEntries(reqItems.filter(i => i.rationale.trim()).map(i => [i.id, i.rationale.trim()])),
         removedLegacyLinkIds: removedLegacyIds,
         customFields: customFields.filter(f => f.label.trim()),
         docPhoto,
@@ -1290,14 +1295,25 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                         <p className="text-sm text-muted-foreground text-center px-4">No requirements linked yet</p>
                       </div>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
+                      <div className="space-y-2">
                         {reqItems.map(r => (
-                          <span key={r.id} title={r.title} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border bg-muted text-foreground border-border">
-                            {r.key}
-                            <button onClick={() => removeReqItem(r.id)} className="opacity-60 hover:opacity-100 transition-opacity">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
+                          <div key={r.id} className="rounded-lg border border-border bg-muted/30 px-3 py-2 space-y-1.5">
+                            <div className="flex items-center gap-1.5" title={r.title}>
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-muted text-foreground border-border">
+                                {r.key}
+                              </span>
+                              <span className="text-xs text-muted-foreground truncate flex-1">{r.title}</span>
+                              <button onClick={() => removeReqItem(r.id)} className="opacity-60 hover:opacity-100 transition-opacity shrink-0">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <Input
+                              value={r.rationale}
+                              onChange={e => setReqItemRationale(r.id, e.target.value)}
+                              placeholder="Why this part satisfies the requirement (optional)"
+                              className="h-7 text-xs bg-background"
+                            />
+                          </div>
                         ))}
                         {legacyReqChips.map(c => (
                           <span key={c.linkId} title="Legacy link — free-typed before real linking existed; can only be removed"
@@ -1962,14 +1978,25 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
                       <p className="text-sm text-muted-foreground">No requirements linked yet</p>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="space-y-2">
                       {reqItems.map(r => (
-                        <span key={r.id} title={r.title} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border bg-muted text-foreground border-border">
-                          {r.key}
-                          <button onClick={() => removeReqItem(r.id)} className="opacity-60 hover:opacity-100 transition-opacity">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
+                        <div key={r.id} className="rounded-lg border border-border bg-muted/30 px-3 py-2 space-y-1.5">
+                          <div className="flex items-center gap-1.5" title={r.title}>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-muted text-foreground border-border">
+                              {r.key}
+                            </span>
+                            <span className="text-xs text-muted-foreground truncate flex-1">{r.title}</span>
+                            <button onClick={() => removeReqItem(r.id)} className="opacity-60 hover:opacity-100 transition-opacity shrink-0">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <Input
+                            value={r.rationale}
+                            onChange={e => setReqItemRationale(r.id, e.target.value)}
+                            placeholder="Why this part satisfies the requirement (optional)"
+                            className="h-7 text-xs bg-background"
+                          />
+                        </div>
                       ))}
                       {legacyReqChips.map(c => (
                         <span key={c.linkId} title="Legacy link — free-typed before real linking existed; can only be removed"

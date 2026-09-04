@@ -1480,7 +1480,7 @@ export function BOMView({
       const { photoUrl } = await saveBomDocs(node.id, payload);
       if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
       // Link any requirements added in the Traceability tab
-      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
+      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId, rationale: payload.reqRationales[requirementId] ?? null })));
       toast.success('Part added to BOM');
       if (onAddClose) onAddClose();
     } catch (err) {
@@ -1523,7 +1523,7 @@ export function BOMView({
       });
       const { photoUrl } = await saveBomDocs(node.id, payload);
       if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
-      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
+      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId, rationale: payload.reqRationales[requirementId] ?? null })));
       setCreateSubNode(null);
     } catch {
       // errors are logged by React Query's MutationCache; no further action needed

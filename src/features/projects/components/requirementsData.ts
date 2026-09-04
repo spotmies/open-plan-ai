@@ -123,6 +123,10 @@ export interface ReqLink {
    * allocated part has a real `inventory_stock` row for the project's org.
    * Absent (not zero) means "never stocked", not "zero on hand". */
   qty?: AllocatedPartStock;
+  /** `kind:'part'` links only — why this part was selected to satisfy the
+   * requirement (Reconciliation ④), and the BOM node's approval status. */
+  rationale?: string | null;
+  partStatus?: 'approved' | 'pending' | 'rejected' | 'draft';
 }
 /** Aggregated across every location for one part — see `rebuildRequirementsFromApi`'s
  * `stockByPartId` param. `available` mirrors Inventory's own `availableOf()`
@@ -150,7 +154,7 @@ export interface ComplianceStandard { code: string; title: string; domain: strin
 // ── Gap metadata ──────────────────────────────────────────────────────────────
 export const GAP_META = {
   orphan:        { icon: 'Unlink',        tint: '#DC2626', label: 'Orphan — no source link' },
-  unimplemented: { icon: 'PackageX',      tint: '#D97706', label: 'Unimplemented — not allocated' },
+  unimplemented: { icon: 'PackageX',      tint: '#D97706', label: 'Unimplemented — no approved allocation' },
   untested:      { icon: 'FlaskConical',  tint: '#D97706', label: 'Untested — no verification' },
   suspect:       { icon: 'AlertTriangle', tint: '#DC2626', label: 'Suspect link — upstream changed' },
 } as const;
@@ -218,6 +222,8 @@ export interface ApiRequirementLinkForRebuild {
 /** Minimal shape adapted from `ApiRequirementAllocation` (src/hooks/useBom.ts / bomData.ts). */
 export interface ApiRequirementAllocationForRebuild {
   requirementId: string; nodeId: string; partId: string; partNumber: string; partName: string;
+  rationale: string | null;
+  status: 'approved' | 'pending' | 'rejected' | 'draft';
 }
 
 /** Minimal shape adapted from `ApiAffectedRequirementLink` (src/hooks/useECOs.ts). */
@@ -348,6 +354,7 @@ export function rebuildRequirementsFromApi(
     alloc.forEach(a => links.push({
       type:'allocated_to', target:a.partNumber, status:'valid', kind:'part',
       qty: stockByPartId?.get(a.partId),
+      rationale: a.rationale, partStatus: a.status,
     }));
     r.alloc = alloc.map(a => a.partNumber);
     const ecoLinks = r._id ? ecoSuspectsByReqId[r._id] ?? [] : [];
@@ -356,8 +363,10 @@ export function rebuildRequirementsFromApi(
     const hasSource = r.type === 'stakeholder-need' || links.some(l => l.type === 'derives_from' || l.type === 'traces_to_source');
     const needsImpl = r.type === 'subsystem-req' || r.type === 'component-req';
     // Before allocations have loaded (undefined), default unimplemented to true
-    // for the tiers that need it rather than flashing "fully covered".
-    const unimplemented = needsImpl && (allocations === undefined || alloc.length === 0);
+    // for the tiers that need it rather than flashing "fully covered". A part
+    // merely linked but still draft/pending/rejected doesn't count — coverage
+    // requires at least one *approved* allocation, not just any allocation.
+    const unimplemented = needsImpl && (allocations === undefined || !alloc.some(a => a.status === 'approved'));
     // 'not-verified' (never run) and 'failed' both count as a gap; 'in-progress',
     // 'passed' and 'waived' all mean something real has happened, even if not
     // everything's finished — matches the same "don't flash a false-positive
