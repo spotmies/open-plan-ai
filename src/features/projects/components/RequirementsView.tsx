@@ -11,6 +11,7 @@ import {
   Maximize2, Minimize2, RefreshCw, Minus,
   FolderTree, FunctionSquare, FolderCheck, FileText, Triangle, FolderKanban,
   BookMarked, Cable, Ruler, BadgeCheck, Scale, Play, Circle,
+  ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
 import {
   REQS, BY_KEY, REQ_ROOTS, REQ_TYPE, REQ_CATEGORY, REQ_STATUS, REQ_STATUS_FLOW,
@@ -18,6 +19,7 @@ import {
   flattenTree, matchWithAncestors, descendants, ancestors, coverageBy, worstOffenders,
   reqStats, vDistribution, standardsRollup, gateReadiness, manufacturingReadiness,
   rebuildRequirementsFromApi,
+  traceDown, traceUp, requirementsAllocatingPart, allAllocatedParts, qtyForPart,
   GATES, STANDARDS,
   type Requirement, type ReqType, type ReqCategory, type ReqStatus,
   type ReqVStatus, type ReqPriority, type ReqGroup, type ReqVMethod,
@@ -1244,7 +1246,7 @@ function MatrixCell({ state, title }: { state: 'ok' | 'warn' | 'bad' | 'na'; tit
 
 // ── Traceability view ──────────────────────────────────────────────────────────
 function TraceabilityView({ onOpen, dataVersion }: { onOpen: (k: string) => void; onDrill?: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void; dataVersion: unknown }) {
-  const [mode, setMode] = useState<'matrix' | 'graph'>('matrix');
+  const [mode, setMode] = useState<'matrix' | 'graph' | 'proof'>('matrix');
   return (
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '10px 24px', borderTop: '1px solid hsl(var(--border))', background: 'hsl(var(--background))', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1252,6 +1254,7 @@ function TraceabilityView({ onOpen, dataVersion }: { onOpen: (k: string) => void
           {([
             { id: 'matrix', Icon: Table2,  label: 'Coverage matrix' },
             { id: 'graph',  Icon: Network, label: 'Dependency graph' },
+            { id: 'proof',  Icon: Cable,   label: 'Full trace' },
           ] as const).map(({ id, Icon, label }) => {
             const on = mode === id;
             return (
@@ -1272,10 +1275,246 @@ function TraceabilityView({ onOpen, dataVersion }: { onOpen: (k: string) => void
         <span style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
           {mode === 'matrix'
             ? 'Requirement × coverage-dimension grid — green = covered, amber = partial, red = gap.'
-            : 'Decomposition graph bridging requirements to allocated BOM parts. Hover to trace a path.'}
+            : mode === 'graph'
+            ? 'Decomposition graph bridging requirements to allocated BOM parts. Hover to trace a path.'
+            : 'Full multi-hop chain — tree + depends_on, in either direction — from a stakeholder need down to hardware, or from a part back up to why it exists.'}
         </span>
       </div>
-      {mode === 'matrix' ? <TraceMatrix onOpen={onOpen} dataVersion={dataVersion} /> : <DependencyGraph onOpen={onOpen} dataVersion={dataVersion} />}
+      {mode === 'matrix' ? <TraceMatrix onOpen={onOpen} dataVersion={dataVersion} />
+        : mode === 'graph' ? <DependencyGraph onOpen={onOpen} dataVersion={dataVersion} />
+        : <FullTraceView onOpen={onOpen} dataVersion={dataVersion} />}
+    </div>
+  );
+}
+
+// Picks any requirement as the trace anchor, or any allocated BOM part — the
+// part path is the literal "start at a component, see why it exists" query
+// (plan §B/§10); picking a requirement runs both directions from it at once,
+// answering §9 (forward, multi-hop through tree + depends_on) and the
+// "final proof" query (§32: does this chain actually reach real hardware).
+function FullTraceView({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
+  const [anchor, setAnchor] = useState<'req' | 'part'>('req');
+  const [focusKey, setFocusKey] = useState<string>('');
+  const [focusPart, setFocusPart] = useState<string>('');
+  const [pickOpen, setPickOpen] = useState(false);
+
+  const reqOptions = useMemo(() => REQS, [dataVersion]);
+  const partOptions = useMemo(() => allAllocatedParts(), [dataVersion]);
+
+  const effectiveFocus = focusKey && BY_KEY[focusKey] ? focusKey : reqOptions[0]?.key ?? '';
+  const fr = BY_KEY[effectiveFocus];
+
+  const { down, up } = useMemo(() => {
+    if (!fr) return { down: null, up: null };
+    return { down: traceDown(fr.key), up: traceUp(fr.key) };
+  }, [fr, dataVersion]);
+
+  const partAllocators = useMemo(
+    () => (focusPart ? requirementsAllocatingPart(focusPart) : []),
+    [focusPart, dataVersion],
+  );
+
+  if (anchor === 'req' && (!fr || !down || !up)) {
+    return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'hsl(var(--muted-foreground))', fontSize: 13 }}>No requirements yet.</div>;
+  }
+
+  // Exclude the focus itself from the rendered root list even though traceUp()
+  // correctly includes it when it has no parent — the focus card below already
+  // shows it; a self-referential "root" row would just duplicate that.
+  const isFocusRoot = fr ? (up?.roots ?? []).includes(fr.key) : false;
+  const rootReqs = (up?.roots ?? []).filter(k => k !== effectiveFocus).map(k => BY_KEY[k]).filter((r): r is Requirement => !!r);
+  const midReqs = (up?.reqs ?? []).filter(k => !(up?.roots ?? []).includes(k)).map(k => BY_KEY[k]).filter((r): r is Requirement => !!r);
+  const downReqs = (down?.reqs ?? []).map(k => BY_KEY[k]).filter((r): r is Requirement => !!r);
+  const proofOk = (rootReqs.length > 0 || isFocusRoot) && (down?.parts.length ?? 0) > 0;
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', borderTop: '1px solid hsl(var(--border))', background: 'hsl(var(--background))' }}>
+      {/* Anchor bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 24px', borderBottom: '1px solid hsl(var(--border))', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', background: 'hsl(var(--muted))', border: '1px solid hsl(var(--border))', borderRadius: 7, padding: 2, gap: 2 }}>
+          {([{ id: 'req' as const, label: 'Requirement' }, { id: 'part' as const, label: 'BOM part' }]).map(({ id, label }) => (
+            <button key={id} onClick={() => { setAnchor(id); setPickOpen(false); }} style={{
+              padding: '4px 10px', borderRadius: 5, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              fontFamily: 'inherit', border: 'none',
+              background: anchor === id ? 'hsl(var(--card))' : 'transparent',
+              color: anchor === id ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {anchor === 'req' ? (
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPickOpen(o => !o)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, height: 32, padding: '0 12px',
+              borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: '#3B82F6' }}>{fr?.key}</span>
+              <span style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fr?.title}</span>
+              <ChevronsUpDown size={13} color="hsl(var(--muted-foreground))" />
+            </button>
+            {pickOpen && (
+              <>
+                <div onClick={() => setPickOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div style={{ position: 'absolute', left: 0, top: 36, width: 340, maxHeight: 360, overflowY: 'auto', zIndex: 50, background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 9, boxShadow: '0 12px 32px rgba(20,24,31,0.16)', padding: 5 }}>
+                  {reqOptions.map(r => (
+                    <button key={r.key} onClick={() => { setFocusKey(r.key); setPickOpen(false); }} style={{
+                      display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '7px 9px',
+                      borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                      background: r.key === effectiveFocus ? softTint('#3B82F6', 0.08) : 'transparent',
+                    }}
+                    onMouseEnter={e => { if (r.key !== effectiveFocus) (e.currentTarget as HTMLElement).style.background = 'hsl(var(--muted))'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = r.key === effectiveFocus ? softTint('#3B82F6', 0.08) : 'transparent'; }}>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#3B82F6', width: 72, flexShrink: 0 }}>{r.key}</span>
+                      <span style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPickOpen(o => !o)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, height: 32, padding: '0 12px',
+              borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              <Package size={13} color="#D97706" />
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: '#D97706' }}>{focusPart || 'Pick a part…'}</span>
+              <ChevronsUpDown size={13} color="hsl(var(--muted-foreground))" />
+            </button>
+            {pickOpen && (
+              <>
+                <div onClick={() => setPickOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div style={{ position: 'absolute', left: 0, top: 36, width: 260, maxHeight: 360, overflowY: 'auto', zIndex: 50, background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 9, boxShadow: '0 12px 32px rgba(20,24,31,0.16)', padding: 5 }}>
+                  {partOptions.length === 0 && <div style={{ padding: '10px 9px', fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>No allocated parts yet.</div>}
+                  {partOptions.map(p => (
+                    <button key={p} onClick={() => { setFocusPart(p); setPickOpen(false); }} style={{
+                      display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '7px 9px',
+                      borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                      background: p === focusPart ? softTint('#D97706', 0.08) : 'transparent',
+                    }}
+                    onMouseEnter={e => { if (p !== focusPart) (e.currentTarget as HTMLElement).style.background = 'hsl(var(--muted))'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = p === focusPart ? softTint('#D97706', 0.08) : 'transparent'; }}>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#D97706' }}>{p}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={{ flex: 1 }} />
+        {anchor === 'req' && (
+          <span style={{ fontSize: 11.5, color: proofOk ? '#16A34A' : 'hsl(var(--muted-foreground))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {proofOk ? <CheckCircle size={13} color="#16A34A" /> : <AlertTriangle size={13} />}
+            {proofOk ? 'Full chain: need → hardware' : 'Chain incomplete — no root need or no hardware allocated'}
+          </span>
+        )}
+      </div>
+
+      {anchor === 'part' ? (
+        <div style={{ padding: 24 }}>
+          {!focusPart ? (
+            <div style={{ color: 'hsl(var(--muted-foreground))', fontSize: 13 }}>Pick a BOM part above to see why it exists.</div>
+          ) : partAllocators.length === 0 ? (
+            <div style={{ color: 'hsl(var(--muted-foreground))', fontSize: 13 }}>Not allocated to any requirement.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: '#D97706' }}>{focusPart}</span> is allocated to {partAllocators.length} requirement{partAllocators.length === 1 ? '' : 's'}:
+              </div>
+              {partAllocators.map(k => BY_KEY[k]).filter((r): r is Requirement => !!r).map(r => (
+                <div key={r.key} onClick={() => { setAnchor('req'); setFocusKey(r.key); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 9, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'hsl(var(--muted))')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'hsl(var(--card))')}>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#3B82F6', width: 78, flexShrink: 0 }}>{r.key}</span>
+                  <TypePill type={r.type} />
+                  <span style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                  <span style={{ fontSize: 11, color: '#3B82F6', fontWeight: 600, flexShrink: 0 }}>View full trace →</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 22 }}>
+          <TraceSection title="Traces up to" icon={ArrowUpRight} tint="#3B82F6"
+            emptyLabel="This is already a root — no parent, no incoming dependency.">
+            {rootReqs.map(r => <TraceReqRow key={r.key} r={r} tag="root" onOpen={onOpen} onFocus={setFocusKey} />)}
+            {midReqs.map(r => <TraceReqRow key={r.key} r={r} onOpen={onOpen} onFocus={setFocusKey} />)}
+          </TraceSection>
+
+          {/* Focus card */}
+          {fr && (
+            <div onClick={() => onOpen(fr.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 10, border: '2px solid #3B82F6', background: softTint('#3B82F6', 0.08), cursor: 'pointer' }}>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5, fontWeight: 700, color: '#3B82F6' }}>{fr.key}</span>
+              <TypePill type={fr.type} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fr.title}</span>
+              {fr.target && <span style={{ fontSize: 11.5, fontWeight: 600, color: '#3B82F6', flexShrink: 0 }}>target: {fr.target.value}{fr.target.unit}</span>}
+              {isFocusRoot && <span style={{ fontSize: 10, fontWeight: 700, color: '#16A34A', background: softTint('#16A34A', 0.12), padding: '2px 7px', borderRadius: 5, flexShrink: 0 }}>ROOT</span>}
+              <StatusBadge status={fr.status} />
+            </div>
+          )}
+
+          <TraceSection title="Traces down to" icon={ArrowDownRight} tint="#D97706"
+            emptyLabel="Nothing derives from or depends on this yet, and no BOM parts are allocated.">
+            {downReqs.map(r => <TraceReqRow key={r.key} r={r} onOpen={onOpen} onFocus={setFocusKey} />)}
+            {(down?.parts ?? []).map(p => <TracePartRow key={p} partNumber={p} qty={qtyForPart(p)} onFocusPart={(pn) => { setAnchor('part'); setFocusPart(pn); }} />)}
+          </TraceSection>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TraceSection({ title, icon: Icon, tint, emptyLabel, children }:
+  { title: string; icon: React.ElementType; tint: string; emptyLabel: string; children: React.ReactNode }) {
+  const hasChildren = React.Children.count(children) > 0;
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ width: 24, height: 24, borderRadius: 6, background: softTint(tint, 0.12), display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={13} color={tint} />
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))' }}>{title}</span>
+      </div>
+      {hasChildren
+        ? <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 8, borderLeft: `2px solid ${softTint(tint, 0.25)}` }}>{children}</div>
+        : <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', paddingLeft: 8 }}>{emptyLabel}</div>}
+    </div>
+  );
+}
+
+function TraceReqRow({ r, tag, onOpen, onFocus }: { r: Requirement; tag?: string; onOpen: (k: string) => void; onFocus: (k: string) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }}>
+      <span onClick={() => onOpen(r.key)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#3B82F6', width: 78, flexShrink: 0, cursor: 'pointer' }}>{r.key}</span>
+      <TypePill type={r.type} />
+      <span onClick={() => onOpen(r.key)} style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{r.title}</span>
+      {tag === 'root' && r.target && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>{r.target.value}{r.target.unit}</span>}
+      {tag === 'root' && <span style={{ fontSize: 10, fontWeight: 700, color: '#16A34A', background: softTint('#16A34A', 0.12), padding: '2px 7px', borderRadius: 5, flexShrink: 0 }}>ROOT</span>}
+      <button onClick={() => onFocus(r.key)} title="Trace from here" style={{ width: 22, height: 22, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'hsl(var(--muted))')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+        <Cable size={12} color="hsl(var(--muted-foreground))" />
+      </button>
+    </div>
+  );
+}
+
+function TracePartRow({ partNumber, qty, onFocusPart }: { partNumber: string; qty?: AllocatedPartStock; onFocusPart: (p: string) => void }) {
+  return (
+    <div onClick={() => onFocusPart(partNumber)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderRadius: 8, border: `1px solid ${softTint('#D97706', 0.3)}`, background: softTint('#D97706', 0.03), cursor: 'pointer' }}>
+      <Package size={13} color="#D97706" style={{ flexShrink: 0 }} />
+      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#D97706', flex: 1 }}>{partNumber}</span>
+      {qty && (
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: qty.available <= 0 ? '#DC2626' : 'hsl(var(--muted-foreground))', flexShrink: 0 }}>
+          {qty.available <= 0 ? 'out of stock' : `${qty.available} available`}
+        </span>
+      )}
     </div>
   );
 }

@@ -418,6 +418,98 @@ export function impactOf(key: string) {
   return { descendants: desc, parts: Array.from(parts), tests, blast: desc.length + parts.size + tests.length };
 }
 
+// ── Multi-hop trace (plan §B: forward/backward/"final proof" queries) ──────────
+// `descendants`/`ancestors` above only walk the derives_from/refined_by tree.
+// `traceDown`/`traceUp` widen that to a real graph walk that also follows
+// depends_on/depended_on_by peer edges (from real `requirement_links` rows),
+// so "everything that implements this" and "why does this exist" answer with
+// the full transitive closure, not just the tree. Cycle-safe via the `seen`
+// set — depends_on isn't guaranteed acyclic the way the tree is (the backend
+// only rejects self-links/duplicates/cross-project, not general graph cycles).
+export interface TraceEdge { from: string; to: string; kind: 'tree' | 'depends' | 'alloc'; }
+
+/** Forward closure from `key`: every requirement reachable via child tree
+ * edges or depends_on edges, plus every BOM part allocated anywhere in that
+ * closure (deduped). `reqs` excludes `key` itself. */
+export function traceDown(key: string): { reqs: string[]; parts: string[]; edges: TraceEdge[] } {
+  const seen = new Set<string>([key]);
+  const parts = new Set<string>();
+  const edges: TraceEdge[] = [];
+  const queue = [key];
+  while (queue.length) {
+    const k = queue.shift()!;
+    const r = BY_KEY[k]; if (!r) continue;
+    r.childKeys.forEach(c => {
+      edges.push({ from: k, to: c, kind: 'tree' });
+      if (!seen.has(c)) { seen.add(c); queue.push(c); }
+    });
+    r.links.forEach(l => {
+      if (l.type === 'depends_on' && BY_KEY[l.target]) {
+        edges.push({ from: k, to: l.target, kind: 'depends' });
+        if (!seen.has(l.target)) { seen.add(l.target); queue.push(l.target); }
+      }
+    });
+    r.alloc.forEach(p => { edges.push({ from: k, to: p, kind: 'alloc' }); parts.add(p); });
+  }
+  seen.delete(key);
+  return { reqs: Array.from(seen), parts: Array.from(parts), edges };
+}
+
+/** Backward closure from `key`: every requirement reachable via the parent
+ * tree or depended_on_by edges. `roots` are the requirements in that closure
+ * (`key` included, if it qualifies) with no parent of their own — the
+ * stakeholder-need(s) that ultimately justify `key`'s existence. `reqs`
+ * excludes `key` itself. */
+export function traceUp(key: string): { reqs: string[]; roots: string[]; edges: TraceEdge[] } {
+  const seen = new Set<string>([key]);
+  const edges: TraceEdge[] = [];
+  const queue = [key];
+  while (queue.length) {
+    const k = queue.shift()!;
+    const r = BY_KEY[k]; if (!r) continue;
+    if (r.parent && BY_KEY[r.parent]) {
+      edges.push({ from: r.parent, to: k, kind: 'tree' });
+      if (!seen.has(r.parent)) { seen.add(r.parent); queue.push(r.parent); }
+    }
+    r.links.forEach(l => {
+      if (l.type === 'depended_on_by' && BY_KEY[l.target]) {
+        edges.push({ from: k, to: l.target, kind: 'depends' });
+        if (!seen.has(l.target)) { seen.add(l.target); queue.push(l.target); }
+      }
+    });
+  }
+  const roots = Array.from(seen).filter(k => !BY_KEY[k]?.parent);
+  seen.delete(key);
+  return { reqs: Array.from(seen), roots, edges };
+}
+
+/** Reverse allocation lookup — every requirement with `partNumber` in its
+ * `alloc[]`. Backs the "start at a component, see why it exists" entry point
+ * (plan §B/§10): pick a part, land on the requirement(s) that justify it. */
+export function requirementsAllocatingPart(partNumber: string): string[] {
+  return REQS.filter(r => r.alloc.includes(partNumber)).map(r => r.key);
+}
+
+/** Every part number allocated to at least one requirement in the project,
+ * sorted — backs the part picker for the "start at a component" trace mode. */
+export function allAllocatedParts(): string[] {
+  const s = new Set<string>();
+  REQS.forEach(r => r.alloc.forEach(p => s.add(p)));
+  return Array.from(s).sort();
+}
+
+/** Live Inventory snapshot for a bare part number, reusing whatever
+ * `allocated_to` link already carries it — same value regardless of which
+ * requirement's link it's read from, since both come from the same
+ * `stockByPartId` join. Returns undefined for a part never stocked. */
+export function qtyForPart(partNumber: string): AllocatedPartStock | undefined {
+  for (const r of REQS) {
+    const l = r.links.find(l => l.kind === 'part' && l.target === partNumber && l.qty);
+    if (l?.qty) return l.qty;
+  }
+  return undefined;
+}
+
 // ── Phase gate data ───────────────────────────────────────────────────────────
 export const GATES: PhaseGate[] = [
   { id:'G0', name:'Concept',              short:'Concept', date:'Jan 30', state:'passed' },
