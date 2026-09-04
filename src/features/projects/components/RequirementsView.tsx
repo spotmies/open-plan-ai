@@ -28,6 +28,7 @@ import {
 import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@/hooks/useRequirements';
 import { useRequirementAllocations } from '@/hooks/useBom';
 import { useECOAffectedRequirements } from '@/hooks/useECOs';
+import { useVerificationSummary } from '@/hooks/useVerification';
 import { useInventoryStock } from '@/hooks/useInventory';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
 import {
@@ -108,6 +109,7 @@ export default function RequirementsView({ projectId, orgId, selectedKey = null,
   const { data: apiLinks } = useRequirementLinks(projectId);
   const { data: apiAllocations } = useRequirementAllocations(projectId);
   const { data: apiEcoSuspects } = useECOAffectedRequirements(projectId);
+  const { data: apiVerificationSummary } = useVerificationSummary(projectId);
   const { data: stockRows } = useInventoryStock(orgId);
   // Inventory stock is org-wide (not project-scoped — see project_inventory
   // memory), aggregated here across every location for the one figure a
@@ -146,16 +148,17 @@ export default function RequirementsView({ projectId, orgId, selectedKey = null,
   // component and in CoverageDashboard/ReadinessView/TraceabilityView/
   // RequirementsMapView.
   if (apiTree) {
-    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId);
+    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId, apiVerificationSummary);
   }
-  // apiTree, apiLinks, apiAllocations, apiEcoSuspects and stockByPartId are
-  // independent React Query-derived values, each stable (unchanged reference)
-  // until its own data actually changes — combined into one memoized value so
-  // every dependency array below only has one thing to list, and still only
-  // changes reference when any input really does.
+  // apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId and
+  // apiVerificationSummary are independent React Query-derived values, each
+  // stable (unchanged reference) until its own data actually changes —
+  // combined into one memoized value so every dependency array below only
+  // has one thing to list, and still only changes reference when any input
+  // really does.
   const dataVersion = useMemo(
-    () => ({ apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId }),
-    [apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId],
+    () => ({ apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId, apiVerificationSummary }),
+    [apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId, apiVerificationSummary],
   );
   const groups = apiGroups ?? [];
 

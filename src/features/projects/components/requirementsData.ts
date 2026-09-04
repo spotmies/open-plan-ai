@@ -225,13 +225,22 @@ export interface ApiEcoSuspectForRebuild {
   requirementId: string; ecoId: string; ecoNum: string; ecoStatus: string;
 }
 
+/** Minimal shape adapted from `ApiVerificationSummaryItem` (src/hooks/useVerification.ts).
+ * `vstatus` values match `ReqVStatus` exactly — same strings on both sides. */
+export interface ApiVerificationSummaryForRebuild {
+  requirementId: string; vstatus: ReqVStatus; testCaseCount: number;
+}
+
 /**
  * Rebuilds `REQS`/`BY_KEY`/`REQ_ROOTS` in place from a live API response.
- * `vmethod`/`vstatus` default to placeholders since Test & Verification
- * doesn't exist on the backend yet. `links` (the second param) is the
- * project-wide requirement_links list — omit it to leave depends_on/
- * conflicts_with/extra derives_from out of the rebuilt links entirely,
- * rather than silently treating "not fetched yet" as "known to be empty".
+ * `vmethod` stays a fixed placeholder — a requirement can have several test
+ * cases with different methods now that Test & Verification exists, so
+ * there's no longer one true value to put here; the real per-test-case
+ * methods live in the Verification tab's own data, not on `Requirement`.
+ * `links` (the second param) is the project-wide requirement_links list —
+ * omit it to leave depends_on/conflicts_with/extra derives_from out of the
+ * rebuilt links entirely, rather than silently treating "not fetched yet" as
+ * "known to be empty".
  * `allocations` (the third param) is the project-wide BOM↔requirement
  * allocation list (bom_requirement_links) — same omit-vs-empty distinction.
  * `ecoSuspects` (the fourth param) is the project-wide "requirements with an
@@ -242,6 +251,10 @@ export interface ApiEcoSuspectForRebuild {
  * `allocated_to` link with on-hand/allocated/available instead of just
  * "linked: yes/no". Omit while Inventory hasn't loaded yet; a part simply
  * absent from the map (vs. present with zeros) means it was never stocked.
+ * `verificationSummary` (the sixth param) is the project-wide rolled-up
+ * vstatus per requirement (test_cases/test_executions) — same omit-vs-empty
+ * distinction; a requirement absent from it (vs. present as 'not-verified')
+ * just has zero test cases yet.
  */
 export function rebuildRequirementsFromApi(
   items: ApiRequirementForRebuild[],
@@ -249,7 +262,10 @@ export function rebuildRequirementsFromApi(
   allocations?: ApiRequirementAllocationForRebuild[],
   ecoSuspects?: ApiEcoSuspectForRebuild[],
   stockByPartId?: Map<string, AllocatedPartStock>,
+  verificationSummary?: ApiVerificationSummaryForRebuild[],
 ): void {
+  const vstatusByReqId: Record<string, ReqVStatus> = {};
+  (verificationSummary ?? []).forEach(v => { vstatusByReqId[v.requirementId] = v.vstatus; });
   const idToKey: Record<string, string> = {};
   items.forEach(item => { idToKey[item.id] = item.key; });
 
@@ -263,7 +279,7 @@ export function rebuildRequirementsFromApi(
       priority: item.priority as ReqPriority,
       status: item.status as ReqStatus,
       vmethod: 'test',
-      vstatus: 'not-verified',
+      vstatus: vstatusByReqId[item.id] ?? 'not-verified',
       owner: item.ownerId ?? '',
       title: item.title,
       statement: item.statement,
@@ -342,7 +358,14 @@ export function rebuildRequirementsFromApi(
     // Before allocations have loaded (undefined), default unimplemented to true
     // for the tiers that need it rather than flashing "fully covered".
     const unimplemented = needsImpl && (allocations === undefined || alloc.length === 0);
-    r.coverage = { orphan:!hasSource, untested:true, unimplemented, suspect: links.some(l => l.status === 'suspect') };
+    // 'not-verified' (never run) and 'failed' both count as a gap; 'in-progress',
+    // 'passed' and 'waived' all mean something real has happened, even if not
+    // everything's finished — matches the same "don't flash a false-positive
+    // before data loads" caution as `unimplemented` below: before verificationSummary
+    // has loaded at all, every requirement defaults to 'not-verified' anyway,
+    // so this stays correctly conservative either way.
+    const untested = r.vstatus === 'not-verified' || r.vstatus === 'failed';
+    r.coverage = { orphan:!hasSource, untested, unimplemented, suspect: links.some(l => l.status === 'suspect') };
     r.hasGap = r.coverage.orphan || r.coverage.untested || r.coverage.unimplemented || r.coverage.suspect;
   });
 

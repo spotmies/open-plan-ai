@@ -19,6 +19,10 @@ import {
   useCreateRequirementLink, useDeleteRequirementLink,
   type RequirementLinkType,
 } from '@/hooks/useRequirements';
+import {
+  useRequirementVerification, useCreateTestCase, useRecordExecution, useConfirmVerified,
+  useDeleteTestCase, type ApiTestCase, type ApiVerificationMethod, type ApiTestExecutionResult,
+} from '@/hooks/useVerification';
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 export default function RequirementDetailScreen({ reqKey, projectId, onClose, onEdit, onImpact, onNavigate }:
@@ -118,7 +122,7 @@ export default function RequirementDetailScreen({ reqKey, projectId, onClose, on
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px' }}>
           {tab === 'overview' && <OverviewTab r={r} ai={ai} criteria={criteria} onNavigate={onNavigate}/>}
           {tab === 'trace'    && <TraceTab    r={r} projectId={projectId} onNavigate={onNavigate}/>}
-          {tab === 'verify'   && <VerifyTab   r={r}/>}
+          {tab === 'verify'   && <VerifyTab   r={r} projectId={projectId}/>}
         </div>
         {activityOpen && <ActivityPanel reqKey={r.key}/>}
       </div>
@@ -415,39 +419,122 @@ function LinkGroup({ title, icon:Ic, links, onNavigate, onDelete, tint }: { titl
 }
 
 // ── Verification tab ──────────────────────────────────────────────────────────
-function VerifyTab({ r }: { r: Requirement }) {
-  const testLinks = r.links.filter(l => l.kind === 'test');
-  const vm = r.vmethod;
-  const vs = REQ_VSTATUS[r.vstatus];
+// Real test_cases/test_executions data (Test & Verification, plan §C) — the
+// mock-era version of this tab read r.links.filter(kind==='test'), which was
+// always empty since no backend link type ever populated it.
+function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
+  const { data: verification, isLoading } = useRequirementVerification(r._id);
+  const createTestCase = useCreateTestCase(projectId, r._id ?? '');
+  const deleteTestCase = useDeleteTestCase(projectId, r._id ?? '');
+  const confirmVerified = useConfirmVerified(projectId, r._id ?? '');
+  const recordExecution = useRecordExecution(projectId, r._id ?? '');
+  const [addOpen, setAddOpen] = useState(false);
+  const [recordForId, setRecordForId] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  if (!r._id) {
+    return <div style={{ padding:32, textAlign:'center', color:'hsl(var(--muted-foreground))', fontSize:13 }}>This requirement is still syncing.</div>;
+  }
+
+  const testCases = verification?.testCases ?? [];
+  const vs = REQ_VSTATUS[verification?.vstatus ?? r.vstatus];
+  const recordFor = testCases.find(tc => tc.id === recordForId) ?? null;
+  const alreadyVerified = !!verification?.verifiedByName;
+  const canConfirm = !alreadyVerified && testCases.length > 0
+    && testCases.every(tc => tc.latestExecution)
+    && !testCases.some(tc => tc.latestExecution?.result === 'fail');
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       {/* stat cards */}
       <div style={{ display:'flex', gap:12 }}>
-        <VStatCard label="Method" value={vm} tint="#3B82F6"/>
         <VStatCard label="Status" value={vs.label} tint={vs.tint}/>
-        <VStatCard label="Test cases" value={String(testLinks.length)} tint="#9333EA"/>
+        <VStatCard label="Test cases" value={String(testCases.length)} tint="#9333EA"/>
+        <VStatCard label="Sign-off" value={alreadyVerified ? 'Confirmed' : 'Not confirmed'} tint={alreadyVerified ? '#16A34A' : 'hsl(var(--muted-foreground))'}/>
       </div>
 
+      {alreadyVerified && (
+        <div style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'11px 14px', borderRadius:10, border:`1px solid ${softTint('#16A34A',0.3)}`, background:softTint('#16A34A',0.06) }}>
+          <Check size={15} color="#16A34A" style={{ marginTop:1, flexShrink:0 }}/>
+          <div style={{ fontSize:12.5, color:'hsl(var(--foreground))', lineHeight:1.5 }}>
+            Confirmed verified by <strong>{verification!.verifiedByName}</strong>{verification!.verifiedAt ? ` on ${new Date(verification!.verifiedAt).toLocaleDateString()}` : ''}.
+            {verification!.verificationNote && <div style={{ color:'hsl(var(--muted-foreground))', marginTop:3 }}>{verification!.verificationNote}</div>}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+        {canConfirm && (
+          <button onClick={() => setConfirmOpen(true)} style={{ display:'inline-flex', alignItems:'center', gap:6, height:30, padding:'0 12px', borderRadius:7, border:'none', background:'#16A34A', color:'#fff', cursor:'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
+            <Check size={13}/>Confirm verified
+          </button>
+        )}
+        <button onClick={() => setAddOpen(true)} style={{ display:'inline-flex', alignItems:'center', gap:6, height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:500 }}>
+          <Plus size={13}/>Add test case
+        </button>
+      </div>
+
+      {addOpen && (
+        <AddTestCaseForm pending={createTestCase.isPending} onClose={() => setAddOpen(false)}
+          onCreate={(method, title, procedure) => {
+            createTestCase.mutate({ method, title, procedure: procedure || undefined }, {
+              onSuccess: () => { toast.success('Test case added'); setAddOpen(false); },
+              onError: () => toast.error('Failed to add test case'),
+            });
+          }} />
+      )}
+
+      {confirmOpen && (
+        <ConfirmVerifiedForm pending={confirmVerified.isPending} onClose={() => setConfirmOpen(false)}
+          onConfirm={(note) => {
+            confirmVerified.mutate(note || undefined, {
+              onSuccess: () => { toast.success('Requirement confirmed verified'); setConfirmOpen(false); },
+              onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to confirm verified'),
+            });
+          }} />
+      )}
+
       {/* test case table */}
-      {testLinks.length > 0 ? (
+      {isLoading ? (
+        <div style={{ padding:32, textAlign:'center', color:'hsl(var(--muted-foreground))', fontSize:13 }}>Loading…</div>
+      ) : testCases.length > 0 ? (
         <div style={{ background:'hsl(var(--card))', border:'1px solid hsl(var(--border))', borderRadius:12, overflow:'hidden' }}>
           <div style={{ padding:'12px 16px', borderBottom:'1px solid hsl(var(--border))', fontSize:13.5, fontWeight:600, color:'hsl(var(--foreground))' }}>Test cases</div>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
             <thead>
               <tr style={{ background:'hsl(var(--muted))' }}>
-                {['Test ID','Type','Result','Notes'].map(h => (
+                {['Test ID','Method','Result','Measured','Tested','',''].map(h => (
                   <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:11, fontWeight:700, color:'hsl(var(--muted-foreground))', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {testLinks.map((l,i) => (
-                <tr key={i} style={{ borderBottom:'1px solid hsl(var(--border))' }}>
-                  <td style={{ padding:'9px 12px', fontFamily:"'JetBrains Mono',monospace", color:'#9333EA', fontWeight:600 }}>{l.target}</td>
-                  <td style={{ padding:'9px 12px', color:'hsl(var(--foreground))' }}>{l.type}</td>
-                  <td style={{ padding:'9px 12px' }}>{l.result ? <VStatusBadge vstatus={l.result}/> : <span style={{ color:'hsl(var(--muted-foreground))' }}>—</span>}</td>
-                  <td style={{ padding:'9px 12px', color:'hsl(var(--muted-foreground))' }}>{l.status === 'suspect' ? <span style={{ color:'#DC2626', fontWeight:600 }}>Re-verification required</span> : 'Current'}</td>
+              {testCases.map(tc => (
+                <tr key={tc.id} style={{ borderBottom:'1px solid hsl(var(--border))' }}>
+                  <td style={{ padding:'9px 12px', fontFamily:"'JetBrains Mono',monospace", color:'#9333EA', fontWeight:600 }} title={tc.title}>{tc.key}</td>
+                  <td style={{ padding:'9px 12px', color:'hsl(var(--foreground))', textTransform:'capitalize' }}>{tc.method}</td>
+                  <td style={{ padding:'9px 12px' }}>{tc.latestExecution ? <ResultBadge result={tc.latestExecution.result}/> : <span style={{ color:'hsl(var(--muted-foreground))' }}>—</span>}</td>
+                  <td style={{ padding:'9px 12px', color:'hsl(var(--foreground))' }}>
+                    {tc.latestExecution?.measuredValue !== null && tc.latestExecution?.measuredValue !== undefined
+                      ? `${tc.latestExecution.measuredValue}${tc.latestExecution.unit ? ` ${tc.latestExecution.unit}` : ''}` : '—'}
+                  </td>
+                  <td style={{ padding:'9px 12px', color:'hsl(var(--muted-foreground))' }}>
+                    {tc.latestExecution ? `${tc.latestExecution.testedByName ?? '—'} · ${new Date(tc.latestExecution.testedAt).toLocaleDateString()}` : 'Not yet run'}
+                  </td>
+                  <td style={{ padding:'9px 12px' }}>
+                    <button onClick={() => setRecordForId(tc.id)} style={{ height:26, padding:'0 10px', borderRadius:6, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:11.5, fontWeight:500 }}>
+                      Record result
+                    </button>
+                  </td>
+                  <td style={{ padding:'9px 12px' }}>
+                    <button onClick={() => deleteTestCase.mutate(tc.id, {
+                      onSuccess: () => toast.success('Test case removed'),
+                      onError: () => toast.error('Failed to remove test case'),
+                    })} title="Delete test case" style={{ width:26, height:26, borderRadius:6, border:'none', background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'hsl(var(--destructive)/0.12)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <X size={13} color="hsl(var(--muted-foreground))"/>
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -456,9 +543,133 @@ function VerifyTab({ r }: { r: Requirement }) {
       ) : (
         <div style={{ padding:32, textAlign:'center', color:'hsl(var(--muted-foreground))', fontSize:13 }}>
           <FlaskConical size={32} style={{ marginBottom:8 }}/>
-          <div>No test cases linked yet.</div>
+          <div>No test cases yet.</div>
         </div>
       )}
+
+      {recordFor && (
+        <RecordExecutionForm testCase={recordFor} requirement={r} pending={recordExecution.isPending}
+          onClose={() => setRecordForId(null)}
+          onRecord={(payload) => {
+            recordExecution.mutate({ testCaseId: recordFor.id, payload }, {
+              onSuccess: () => { toast.success('Result recorded'); setRecordForId(null); },
+              onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to record result'),
+            });
+          }} />
+      )}
+    </div>
+  );
+}
+
+function ResultBadge({ result }: { result: ApiTestExecutionResult }) {
+  const tint = result === 'pass' ? '#16A34A' : result === 'fail' ? '#DC2626' : '#D97706';
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 9px', borderRadius:9999, fontSize:11, fontWeight:700, textTransform:'capitalize', background:softTint(tint,0.12), color:tint, border:`1px solid ${softTint(tint,0.28)}` }}>
+      {result}
+    </span>
+  );
+}
+
+function AddTestCaseForm({ onClose, onCreate, pending }:
+  { onClose: () => void; onCreate: (method: ApiVerificationMethod, title: string, procedure: string) => void; pending: boolean }) {
+  const [method, setMethod] = useState<ApiVerificationMethod>('test');
+  const [title, setTitle] = useState('');
+  const [procedure, setProcedure] = useState('');
+  const inputStyle: React.CSSProperties = { height:32, borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:'0 8px' };
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10, padding:14, borderRadius:10, border:'1px solid hsl(var(--border))', background:'hsl(var(--muted)/0.4)' }}>
+      <div style={{ display:'flex', gap:8 }}>
+        <select value={method} onChange={e => setMethod(e.target.value as ApiVerificationMethod)} style={{ ...inputStyle, flex:'0 0 160px' }}>
+          <option value="test">Test</option>
+          <option value="analysis">Analysis</option>
+          <option value="inspection">Inspection</option>
+          <option value="demonstration">Demonstration</option>
+        </select>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title, e.g. Power output bench test" style={{ ...inputStyle, flex:1 }}/>
+      </div>
+      <textarea value={procedure} onChange={e => setProcedure(e.target.value)} placeholder="Procedure (optional)" rows={2}
+        style={{ borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:8, resize:'vertical' }}/>
+      <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+        <button onClick={onClose} style={{ height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5 }}>Cancel</button>
+        <button onClick={() => title.trim() && onCreate(method, title.trim(), procedure.trim())} disabled={!title.trim() || pending}
+          style={{ height:30, padding:'0 12px', borderRadius:7, border:'none', background: !title.trim() || pending ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))', color:'hsl(var(--primary-foreground))', cursor: !title.trim() || pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
+          {pending ? 'Adding…' : 'Add test case'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmVerifiedForm({ onClose, onConfirm, pending }: { onClose: () => void; onConfirm: (note: string) => void; pending: boolean }) {
+  const [note, setNote] = useState('');
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10, padding:14, borderRadius:10, border:`1px solid ${softTint('#16A34A',0.3)}`, background:softTint('#16A34A',0.05) }}>
+      <div style={{ fontSize:12.5, color:'hsl(var(--foreground))' }}>Every test case has a passing or waived result. Confirming moves this requirement's status to <strong>verified</strong>.</div>
+      <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Sign-off note (optional)" rows={2}
+        style={{ borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:8, resize:'vertical' }}/>
+      <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+        <button onClick={onClose} style={{ height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5 }}>Cancel</button>
+        <button onClick={() => onConfirm(note.trim())} disabled={pending}
+          style={{ height:30, padding:'0 12px', borderRadius:7, border:'none', background:'#16A34A', color:'#fff', cursor: pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
+          {pending ? 'Confirming…' : 'Confirm verified'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecordExecutionForm({ testCase, requirement, onClose, onRecord, pending }: {
+  testCase: ApiTestCase; requirement: Requirement; pending: boolean; onClose: () => void;
+  onRecord: (payload: { measuredValue?: number | null; unit?: string; result?: ApiTestExecutionResult; notes?: string }) => void;
+}) {
+  const [measuredValue, setMeasuredValue] = useState('');
+  const [unit, setUnit] = useState(requirement.target?.unit ?? '');
+  const [result, setResult] = useState<ApiTestExecutionResult>('pass');
+  const [notes, setNotes] = useState('');
+  const inputStyle: React.CSSProperties = { height:32, borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:'0 8px' };
+  const isTestMethod = testCase.method === 'test';
+  const hasTarget = requirement.target !== null;
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10, padding:14, borderRadius:10, border:'1px solid hsl(var(--border))', background:'hsl(var(--muted)/0.4)' }}>
+      <div style={{ fontSize:12.5, fontWeight:600, color:'hsl(var(--foreground))' }}>
+        Record result — <span style={{ fontFamily:"'JetBrains Mono',monospace", color:'#9333EA' }}>{testCase.key}</span>
+      </div>
+      {isTestMethod && (
+        <div style={{ display:'flex', gap:8 }}>
+          <input value={measuredValue} onChange={e => setMeasuredValue(e.target.value)} type="number" placeholder="Measured value" style={{ ...inputStyle, flex:1 }}/>
+          <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit" style={{ ...inputStyle, flex:'0 0 100px' }}/>
+        </div>
+      )}
+      {isTestMethod && hasTarget && (
+        <div style={{ fontSize:11.5, color:'hsl(var(--muted-foreground))' }}>
+          Target: {requirement.target!.value}{requirement.target!.unit} {requirement.target!.tolerance && `(tolerance ${requirement.target!.tolerance})`} — pass/fail is computed automatically from the measured value when possible.
+        </div>
+      )}
+      {(!isTestMethod || !measuredValue) && (
+        <select value={result} onChange={e => setResult(e.target.value as ApiTestExecutionResult)} style={inputStyle}>
+          <option value="pass">Pass</option>
+          <option value="fail">Fail</option>
+          <option value="waived">Waived</option>
+        </select>
+      )}
+      <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
+        style={{ borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:8, resize:'vertical' }}/>
+      <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+        <button onClick={onClose} style={{ height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5 }}>Cancel</button>
+        <button
+          onClick={() => onRecord({
+            measuredValue: isTestMethod && measuredValue ? parseFloat(measuredValue) : undefined,
+            unit: isTestMethod && unit ? unit : undefined,
+            result: (!isTestMethod || !measuredValue) ? result : undefined,
+            notes: notes.trim() || undefined,
+          })}
+          disabled={pending}
+          style={{ height:30, padding:'0 12px', borderRadius:7, border:'none', background: pending ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))', color:'hsl(var(--primary-foreground))', cursor: pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
+          {pending ? 'Recording…' : 'Record result'}
+        </button>
+      </div>
     </div>
   );
 }

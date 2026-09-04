@@ -202,6 +202,13 @@ export const queryKeys = {
     list:        (requirementId: string) => ['requirementLinks', 'list', requirementId] as const,
     projectList: (projectId: string) => ['requirementLinks', 'projectList', projectId] as const,
   },
+  // Test & Verification
+  verification: {
+    all:           ['verification'] as const,
+    summary:       (projectId: string) => ['verification', 'summary', projectId] as const,
+    byRequirement: (requirementId: string) => ['verification', 'requirement', requirementId] as const,
+    executions:    (testCaseId: string) => ['verification', 'executions', testCaseId] as const,
+  },
 
   // Engineering Changes (ECO)
   ecos: {

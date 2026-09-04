@@ -297,6 +297,17 @@ export const ENDPOINTS = {
     UPDATE: (linkId: string) => `/requirement-links/${linkId}`,
     DELETE: (linkId: string) => `/requirement-links/${linkId}`,
   },
+  // Test & Verification
+  VERIFICATION: {
+    SUMMARY:          (projectId: string) => `/projects/${projectId}/verification-summary`,
+    BY_REQUIREMENT:   (requirementId: string) => `/requirements/${requirementId}/verification`,
+    CREATE_TEST_CASE: (requirementId: string) => `/requirements/${requirementId}/test-cases`,
+    CONFIRM_VERIFIED: (requirementId: string) => `/requirements/${requirementId}/confirm-verified`,
+    UPDATE_TEST_CASE: (testCaseId: string) => `/test-cases/${testCaseId}`,
+    DELETE_TEST_CASE: (testCaseId: string) => `/test-cases/${testCaseId}`,
+    EXECUTIONS:       (testCaseId: string) => `/test-cases/${testCaseId}/executions`,
+    RECORD_EXECUTION: (testCaseId: string) => `/test-cases/${testCaseId}/executions`,
+  },
   // Engineering Changes (ECO)
   ECOS: {
     LIST:     (projectId: string) => `/projects/${projectId}/ecos`,
