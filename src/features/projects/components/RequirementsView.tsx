@@ -274,7 +274,7 @@ export default function RequirementsView({ projectId, orgId, selectedKey = null,
     <>
       <RequirementDetailScreen reqKey={detailKey} projectId={projectId} onClose={() => setDetailKey(null)}
         onEdit={key => { setDetailKey(null); openEditor(key); }}
-        onImpact={key => setImpactKey(key)} onNavigate={openDetail} />
+        onImpact={key => setImpactKey(key)} onNavigate={openDetail} onEcoCreated={onEcoCreated} />
       {/* Rendered here too (not just in the main-view return below) — the
           Impact button lives on the detail screen, so without this the
           drawer's state gets set on click but nothing appears until the

@@ -24,10 +24,11 @@ import {
   useDeleteTestCase, useTestCaseExecutions,
   type ApiTestCase, type ApiVerificationMethod, type ApiTestExecutionResult,
 } from '@/hooks/useVerification';
+import { RequirementECOSheet, type TestFailureTrigger } from './RequirementECOSheet';
 
 // ── Entry point ────────────────────────────────────────────────────────────────
-export default function RequirementDetailScreen({ reqKey, projectId, onClose, onEdit, onImpact, onNavigate }:
-  { reqKey: string; projectId: string; onClose: () => void; onEdit: (k:string) => void; onImpact: (k:string) => void; onNavigate: (k:string) => void }) {
+export default function RequirementDetailScreen({ reqKey, projectId, onClose, onEdit, onImpact, onNavigate, onEcoCreated }:
+  { reqKey: string; projectId: string; onClose: () => void; onEdit: (k:string) => void; onImpact: (k:string) => void; onNavigate: (k:string) => void; onEcoCreated?: (ecoId: string) => void }) {
 
   const r = BY_KEY[reqKey];
   const [tab, setTab] = useState<'overview'|'trace'|'verify'>('overview');
@@ -123,7 +124,7 @@ export default function RequirementDetailScreen({ reqKey, projectId, onClose, on
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px' }}>
           {tab === 'overview' && <OverviewTab r={r} ai={ai} criteria={criteria} onNavigate={onNavigate}/>}
           {tab === 'trace'    && <TraceTab    r={r} projectId={projectId} onNavigate={onNavigate}/>}
-          {tab === 'verify'   && <VerifyTab   r={r} projectId={projectId}/>}
+          {tab === 'verify'   && <VerifyTab   r={r} projectId={projectId} onEcoCreated={onEcoCreated}/>}
         </div>
         {activityOpen && <ActivityPanel reqKey={r.key}/>}
       </div>
@@ -423,7 +424,7 @@ function LinkGroup({ title, icon:Ic, links, onNavigate, onDelete, tint }: { titl
 // Real test_cases/test_executions data (Test & Verification, plan §C) — the
 // mock-era version of this tab read r.links.filter(kind==='test'), which was
 // always empty since no backend link type ever populated it.
-function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
+function VerifyTab({ r, projectId, onEcoCreated }: { r: Requirement; projectId: string; onEcoCreated?: (ecoId: string) => void }) {
   const { data: verification, isLoading } = useRequirementVerification(r._id);
   const createTestCase = useCreateTestCase(projectId, r._id ?? '');
   const deleteTestCase = useDeleteTestCase(projectId, r._id ?? '');
@@ -433,6 +434,7 @@ function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
   const [recordForId, setRecordForId] = useState<string | null>(null);
   const [historyForId, setHistoryForId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [ecoTrigger, setEcoTrigger] = useState<TestFailureTrigger | null>(null);
 
   if (!r._id) {
     return <div style={{ padding:32, textAlign:'center', color:'hsl(var(--muted-foreground))', fontSize:13 }}>This requirement is still syncing.</div>;
@@ -516,7 +518,20 @@ function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
                 <tr style={{ borderBottom: historyForId === tc.id ? 'none' : '1px solid hsl(var(--border))' }}>
                   <td style={{ padding:'9px 12px', fontFamily:"'JetBrains Mono',monospace", color:'#9333EA', fontWeight:600 }} title={tc.title}>{tc.key}</td>
                   <td style={{ padding:'9px 12px', color:'hsl(var(--foreground))', textTransform:'capitalize' }}>{tc.method}</td>
-                  <td style={{ padding:'9px 12px' }}>{tc.latestExecution ? <ResultBadge result={tc.latestExecution.result}/> : <span style={{ color:'hsl(var(--muted-foreground))' }}>—</span>}</td>
+                  <td style={{ padding:'9px 12px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      {tc.latestExecution ? <ResultBadge result={tc.latestExecution.result}/> : <span style={{ color:'hsl(var(--muted-foreground))' }}>—</span>}
+                      {tc.latestExecution?.result === 'fail' && (
+                        <button onClick={() => setEcoTrigger({
+                          testExecutionId: tc.latestExecution!.id, testCaseKey: tc.key,
+                          measuredValue: tc.latestExecution!.measuredValue, unit: tc.latestExecution!.unit,
+                          target: r.target,
+                        })} title="Raise an ECO from this failed result" style={{ display:'inline-flex', alignItems:'center', gap:3, height:20, padding:'0 7px', borderRadius:5, border:'1px solid #DC2626', background:softTint('#DC2626',0.08), color:'#DC2626', cursor:'pointer', fontFamily:'inherit', fontSize:10.5, fontWeight:600 }}>
+                          <GitMerge size={10}/>Raise ECO
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td style={{ padding:'9px 12px', color:'hsl(var(--foreground))' }}>
                     {tc.latestExecution?.measuredValue !== null && tc.latestExecution?.measuredValue !== undefined
                       ? `${tc.latestExecution.measuredValue}${tc.latestExecution.unit ? ` ${tc.latestExecution.unit}` : ''}` : '—'}
@@ -569,6 +584,12 @@ function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
               onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to record result'),
             });
           }} />
+      )}
+
+      {ecoTrigger && (
+        <RequirementECOSheet open reqKey={r.key} projectId={projectId} trigger={ecoTrigger}
+          onClose={() => setEcoTrigger(null)}
+          onCreated={ecoId => { setEcoTrigger(null); onEcoCreated?.(ecoId); }} />
       )}
     </div>
   );

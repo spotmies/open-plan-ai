@@ -134,6 +134,9 @@ export interface ApiEcoDetail extends ApiEcoListItem {
   diffRows: ApiEcoDiffRow[];
   ecn: ApiEcn | null;
   activities: ApiEcoActivity[];
+  // Set when this ECO was raised from a failed test result (Test &
+  // Verification closed loop) rather than created directly — null otherwise.
+  triggeredByTestExecutionId: string | null;
 }
 
 export interface ApiEcoStats {

@@ -81,18 +81,32 @@ interface PipelineStepLocal extends PipelineStep {
   isCustom?: boolean;
 }
 
+// Set when this sheet is opened from a failed test result (Test &
+// Verification closed loop, plan §E) rather than the requirement's own
+// Impact drawer — pre-fills the title/reason with the failure context and
+// threads triggeredByTestExecutionId through on create.
+export interface TestFailureTrigger {
+  testExecutionId: string;
+  testCaseKey: string;
+  measuredValue: number | null;
+  unit: string | null;
+  target: { value: number; unit: string; tolerance: string } | null;
+}
+
 export function RequirementECOSheet({
   open,
   onClose,
   reqKey,
   projectId,
   onCreated,
+  trigger,
 }: {
   open: boolean;
   onClose: () => void;
   reqKey: string;
   projectId: string;
   onCreated?: (ecoId: string) => void;
+  trigger?: TestFailureTrigger;
 }) {
   const createMutation = useCreateECO(projectId);
   const { data: allocations = [] } = useRequirementAllocations(projectId);
@@ -107,11 +121,23 @@ export function RequirementECOSheet({
 
   useEffect(() => {
     if (!open || !r) return;
-    setEcoTitle(`Change: ${r.title}`);
+    if (trigger) {
+      setEcoTitle(`Fix: ${trigger.testCaseKey} failure on ${r.key}`);
+      setReasonCode('QUALITY');
+      setPriority('HIGH');
+      const measured = trigger.measuredValue !== null
+        ? `${trigger.measuredValue}${trigger.unit ? ` ${trigger.unit}` : ''}` : 'a non-passing result';
+      const targetText = trigger.target
+        ? ` (target: ${trigger.target.value}${trigger.target.unit}${trigger.target.tolerance ? `, tolerance ${trigger.target.tolerance}` : ''})`
+        : '';
+      setReasonDesc(`Raised from a failed test result on ${trigger.testCaseKey}: measured ${measured}${targetText}.`);
+    } else {
+      setEcoTitle(`Change: ${r.title}`);
+    }
     setErrors({});
     setActiveTab('requirement');
     setMaxTabReached(0);
-  }, [open, reqKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, reqKey, trigger]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The requirement itself plus every descendant — matches the copy already
   // shown in the Impact drawer ("Downstream requirements would be flagged
@@ -243,6 +269,7 @@ export function RequirementECOSheet({
       const created = await createMutation.mutateAsync({
         title: ecoTitle.trim(),
         description: reasonDesc || null,
+        triggeredByTestExecutionId: trigger?.testExecutionId,
         type: changeType.toLowerCase(),
         typeOther: changeType === 'OTHER' ? changeTypeOther.trim() : null,
         reason: reasonCode.toLowerCase(),
@@ -303,7 +330,7 @@ export function RequirementECOSheet({
                 </span>
               </div>
               <DialogDescription className="text-[12px] text-muted-foreground mt-0.5">
-                Raised from this requirement's change impact · ECO number assigned on save
+                {trigger ? `Raised from a failed test result (${trigger.testCaseKey})` : "Raised from this requirement's change impact"} · ECO number assigned on save
               </DialogDescription>
             </div>
           </div>
