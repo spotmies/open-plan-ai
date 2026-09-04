@@ -25,10 +25,11 @@ import {
   type ApiTestCase, type ApiVerificationMethod, type ApiTestExecutionResult,
 } from '@/hooks/useVerification';
 import { RequirementECOSheet, type TestFailureTrigger } from './RequirementECOSheet';
+import { useInventoryBuilds } from '@/hooks/useInventory';
 
 // ── Entry point ────────────────────────────────────────────────────────────────
-export default function RequirementDetailScreen({ reqKey, projectId, onClose, onEdit, onImpact, onNavigate, onEcoCreated }:
-  { reqKey: string; projectId: string; onClose: () => void; onEdit: (k:string) => void; onImpact: (k:string) => void; onNavigate: (k:string) => void; onEcoCreated?: (ecoId: string) => void }) {
+export default function RequirementDetailScreen({ reqKey, projectId, orgId, onClose, onEdit, onImpact, onNavigate, onEcoCreated }:
+  { reqKey: string; projectId: string; orgId: string; onClose: () => void; onEdit: (k:string) => void; onImpact: (k:string) => void; onNavigate: (k:string) => void; onEcoCreated?: (ecoId: string) => void }) {
 
   const r = BY_KEY[reqKey];
   const [tab, setTab] = useState<'overview'|'trace'|'verify'>('overview');
@@ -124,7 +125,7 @@ export default function RequirementDetailScreen({ reqKey, projectId, onClose, on
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px' }}>
           {tab === 'overview' && <OverviewTab r={r} ai={ai} criteria={criteria} onNavigate={onNavigate}/>}
           {tab === 'trace'    && <TraceTab    r={r} projectId={projectId} onNavigate={onNavigate}/>}
-          {tab === 'verify'   && <VerifyTab   r={r} projectId={projectId} onEcoCreated={onEcoCreated}/>}
+          {tab === 'verify'   && <VerifyTab   r={r} projectId={projectId} orgId={orgId} onEcoCreated={onEcoCreated}/>}
         </div>
         {activityOpen && <ActivityPanel reqKey={r.key}/>}
       </div>
@@ -424,12 +425,20 @@ function LinkGroup({ title, icon:Ic, links, onNavigate, onDelete, tint }: { titl
 // Real test_cases/test_executions data (Test & Verification, plan §C) — the
 // mock-era version of this tab read r.links.filter(kind==='test'), which was
 // always empty since no backend link type ever populated it.
-function VerifyTab({ r, projectId, onEcoCreated }: { r: Requirement; projectId: string; onEcoCreated?: (ecoId: string) => void }) {
+function VerifyTab({ r, projectId, orgId, onEcoCreated }: { r: Requirement; projectId: string; orgId: string; onEcoCreated?: (ecoId: string) => void }) {
   const { data: verification, isLoading } = useRequirementVerification(r._id);
   const createTestCase = useCreateTestCase(projectId, r._id ?? '');
   const deleteTestCase = useDeleteTestCase(projectId, r._id ?? '');
   const confirmVerified = useConfirmVerified(projectId, r._id ?? '');
   const recordExecution = useRecordExecution(projectId, r._id ?? '');
+  // Inventory builds are org-wide, not project-scoped (see project_inventory
+  // memory) — filtered down to this requirement's project client-side, same
+  // pattern as the stock join used elsewhere in Requirements.
+  const { data: allBuilds } = useInventoryBuilds(orgId);
+  const projectBuilds = useMemo(
+    () => (allBuilds ?? []).filter(b => b.projectId === projectId),
+    [allBuilds, projectId],
+  );
   const [addOpen, setAddOpen] = useState(false);
   const [recordForId, setRecordForId] = useState<string | null>(null);
   const [historyForId, setHistoryForId] = useState<string | null>(null);
@@ -576,7 +585,7 @@ function VerifyTab({ r, projectId, onEcoCreated }: { r: Requirement; projectId: 
       )}
 
       {recordFor && (
-        <RecordExecutionForm testCase={recordFor} requirement={r} pending={recordExecution.isPending}
+        <RecordExecutionForm testCase={recordFor} requirement={r} pending={recordExecution.isPending} builds={projectBuilds}
           onClose={() => setRecordForId(null)}
           onRecord={(payload) => {
             recordExecution.mutate({ testCaseId: recordFor.id, payload }, {
@@ -682,14 +691,16 @@ function ConfirmVerifiedForm({ onClose, onConfirm, pending }: { onClose: () => v
   );
 }
 
-function RecordExecutionForm({ testCase, requirement, onClose, onRecord, pending }: {
+function RecordExecutionForm({ testCase, requirement, builds, onClose, onRecord, pending }: {
   testCase: ApiTestCase; requirement: Requirement; pending: boolean; onClose: () => void;
-  onRecord: (payload: { measuredValue?: number | null; unit?: string; result?: ApiTestExecutionResult; notes?: string }) => void;
+  builds: { id: string; name: string; type: string; status: string }[];
+  onRecord: (payload: { measuredValue?: number | null; unit?: string; result?: ApiTestExecutionResult; notes?: string; buildId?: string | null }) => void;
 }) {
   const [measuredValue, setMeasuredValue] = useState('');
   const [unit, setUnit] = useState(requirement.target?.unit ?? '');
   const [result, setResult] = useState<ApiTestExecutionResult>('pass');
   const [notes, setNotes] = useState('');
+  const [buildId, setBuildId] = useState('');
   const inputStyle: React.CSSProperties = { height:32, borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12.5, padding:'0 8px' };
   const isTestMethod = testCase.method === 'test';
   const hasTarget = requirement.target !== null;
@@ -710,6 +721,12 @@ function RecordExecutionForm({ testCase, requirement, onClose, onRecord, pending
           Target: {requirement.target!.value}{requirement.target!.unit} {requirement.target!.tolerance && `(tolerance ${requirement.target!.tolerance})`} — pass/fail is computed automatically from the measured value when possible.
         </div>
       )}
+      {builds.length > 0 && (
+        <select value={buildId} onChange={e => setBuildId(e.target.value)} style={inputStyle} title="Which physical unit was tested, if applicable">
+          <option value="">No specific build</option>
+          {builds.map(b => <option key={b.id} value={b.id}>{b.name} ({b.type}, {b.status})</option>)}
+        </select>
+      )}
       {(!isTestMethod || !measuredValue) && (
         <select value={result} onChange={e => setResult(e.target.value as ApiTestExecutionResult)} style={inputStyle}>
           <option value="pass">Pass</option>
@@ -727,6 +744,7 @@ function RecordExecutionForm({ testCase, requirement, onClose, onRecord, pending
             unit: isTestMethod && unit ? unit : undefined,
             result: (!isTestMethod || !measuredValue) ? result : undefined,
             notes: notes.trim() || undefined,
+            buildId: buildId || undefined,
           })}
           disabled={pending}
           style={{ height:30, padding:'0 12px', borderRadius:7, border:'none', background: pending ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))', color:'hsl(var(--primary-foreground))', cursor: pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>

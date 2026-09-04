@@ -399,10 +399,12 @@ export const ENDPOINTS = {
     KIT_BUILD:          (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/kit`,
     GENERATE_SHORTAGE_ORDERS: (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/generate-shortage-orders`,
   },
-  // Locations (org-wide registry of stock locations — backs the inventory Location picker)
+  // Locations (org-wide Warehouse -> Shelf -> Box hierarchy — backs the inventory Location picker)
   LOCATIONS: {
     LIST:   (orgId: string) => `/organizations/${orgId}/locations`,
     CREATE: (orgId: string) => `/organizations/${orgId}/locations`,
+    UPDATE: (orgId: string, locationId: string) => `/organizations/${orgId}/locations/${locationId}`,
+    DELETE: (orgId: string, locationId: string) => `/organizations/${orgId}/locations/${locationId}`,
   },
   // Act (phase 2) proposals
   AI_PROPOSALS: {

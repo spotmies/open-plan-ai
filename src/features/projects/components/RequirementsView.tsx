@@ -29,7 +29,7 @@ import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@
 import { useRequirementAllocations } from '@/hooks/useBom';
 import { useECOAffectedRequirements } from '@/hooks/useECOs';
 import { useVerificationSummary } from '@/hooks/useVerification';
-import { useInventoryStock } from '@/hooks/useInventory';
+import { useInventoryStock, useInventoryBuilds } from '@/hooks/useInventory';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
@@ -272,7 +272,7 @@ export default function RequirementsView({ projectId, orgId, selectedKey = null,
 
   if (detailKey) return (
     <>
-      <RequirementDetailScreen reqKey={detailKey} projectId={projectId} onClose={() => setDetailKey(null)}
+      <RequirementDetailScreen reqKey={detailKey} projectId={projectId} orgId={orgId} onClose={() => setDetailKey(null)}
         onEdit={key => { setDetailKey(null); openEditor(key); }}
         onImpact={key => setImpactKey(key)} onNavigate={openDetail} onEcoCreated={onEcoCreated} />
       {/* Rendered here too (not just in the main-view return below) — the
@@ -426,7 +426,7 @@ export default function RequirementsView({ projectId, orgId, selectedKey = null,
         ) : view === 'coverage' ? (
           <CoverageDashboard stats={stats} onDrill={drillToTable} onOpen={openDetail} dataVersion={dataVersion} />
         ) : (
-          <ReadinessView dataVersion={dataVersion} />
+          <ReadinessView dataVersion={dataVersion} projectId={projectId} orgId={orgId} />
         )}
       </div>
 
@@ -1062,10 +1062,27 @@ function CoverageDashboard({ stats, onDrill, onOpen, dataVersion }:
 }
 
 // ── Readiness view ─────────────────────────────────────────────────────────────
-function ReadinessView({ dataVersion }: { dataVersion: unknown }) {
+function ReadinessView({ dataVersion, projectId, orgId }: { dataVersion: unknown; projectId: string; orgId: string }) {
   const gate = useMemo(() => gateReadiness(), [dataVersion]);
-  const mfr = useMemo(() => manufacturingReadiness(), [dataVersion]);
   const stds = useMemo(() => standardsRollup(), [dataVersion]);
+
+  // Manufacturing readiness by build — plan §F: "roll up from real
+  // build-level pass/fail instead of requirement-level guesses." Empty
+  // buildId means the project-wide rollup (unchanged default behavior).
+  const [buildId, setBuildId] = useState('');
+  const { data: allBuilds } = useInventoryBuilds(orgId);
+  const projectBuilds = useMemo(
+    () => (allBuilds ?? []).filter(b => b.projectId === projectId),
+    [allBuilds, projectId],
+  );
+  const { data: buildSummary } = useVerificationSummary(projectId, buildId || undefined);
+  const buildVstatusMap = useMemo(() => {
+    if (!buildId || !buildSummary) return undefined;
+    const m = new Map<string, ReqVStatus>();
+    buildSummary.forEach(s => m.set(s.requirementId, s.vstatus));
+    return m;
+  }, [buildId, buildSummary]);
+  const mfr = useMemo(() => manufacturingReadiness(buildVstatusMap), [dataVersion, buildVstatusMap]);
 
   const statusColor = (s: string) => s === 'compliant' || s === 'ready' ? '#16A34A' : s === 'in-progress' || s === 'at-risk' ? '#D97706' : '#DC2626';
   const statusLabel = (s: string) => s === 'compliant' ? 'Compliant' : s === 'in-progress' ? 'In Progress' : s === 'ready' ? 'Ready' : s === 'at-risk' ? 'At Risk' : 'Blocked';
@@ -1150,6 +1167,14 @@ function ReadinessView({ dataVersion }: { dataVersion: unknown }) {
           <div style={{ padding: '13px 16px', borderBottom: '1px solid hsl(var(--border))', display: 'flex', alignItems: 'center', gap: 9 }}>
             <Activity size={15} color="hsl(var(--muted-foreground))" />
             <span style={{ fontSize: 13.5, fontWeight: 600, color: 'hsl(var(--foreground))' }}>Manufacturing readiness by subsystem</span>
+            <div style={{ flex: 1 }} />
+            {projectBuilds.length > 0 && (
+              <select value={buildId} onChange={e => setBuildId(e.target.value)} title="Scope readiness to one physical build's test results, instead of the project-wide rollup"
+                style={{ height: 28, borderRadius: 6, border: '1px solid hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))', fontFamily: 'inherit', fontSize: 12, padding: '0 8px' }}>
+                <option value="">All builds (project-wide)</option>
+                {projectBuilds.map(b => <option key={b.id} value={b.id}>{b.name} ({b.type})</option>)}
+              </select>
+            )}
           </div>
           <div style={{ padding: 16 }}>
             {mfr.map(m => (

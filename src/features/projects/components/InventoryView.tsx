@@ -293,6 +293,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
     receiveStockMutation.mutate({
       partId: input.partId,
       location: input.location,
+      locationNodeId: input.locationNodeId,
       quantity: input.quantity,
       reference: input.reference,
       quarantine: input.quarantine,
@@ -315,6 +316,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
       supplierRef: input.supplierRef,
       unitCost: input.unitCost,
       location: input.location,
+      locationNodeId: input.locationNodeId,
       note: input.note,
       description: input.description,
       purpose: input.purpose,
@@ -349,6 +351,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
     const dto = {
       partId: input.partId,
       location: input.location,
+      locationNodeId: input.locationNodeId,
       direction: input.direction,
       mode: input.mode,
       quantity: input.quantity,

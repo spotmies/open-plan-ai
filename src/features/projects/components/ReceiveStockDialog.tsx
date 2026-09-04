@@ -51,7 +51,7 @@ import { Check, ChevronsUpDown, Download, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
-import { LocationCombobox, LockedLocationField, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
+import { LocationHierarchyPicker, LockedLocationField, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
 
 const NO_ORDER_SENTINEL = '__no_order__';
 
@@ -84,6 +84,7 @@ export interface ReceiveStockInput {
   name: string;
   cat: BOMCategory;
   location: StockLocation;
+  locationNodeId?: string | null;
   quantity: number;
   reference?: string;
   quarantine: boolean;
@@ -112,7 +113,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
   const [selectedPart, setSelectedPart] = useState<ApiPartResponse | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const { data: knownLocations = [] } = useLocations(orgId);
+  const { data: locations = [] } = useLocations(orgId);
 
   // Receiving is a PO-fulfillment action — only parts with a remaining balance on an
   // actually-placed order (not a 'planned' want-to-order flag) are eligible to receive
@@ -238,12 +239,14 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
       toast.error(`Quantity cannot exceed the on-order amount (${maxQuantity})`);
       return;
     }
+    const finalLocation = (lockedLocation ?? data.location) as StockLocation;
     onReceive({
       partId: selectedPart.id,
       pn: selectedPart.partNumber,
       name: selectedPart.name,
       cat: selectedPart.category,
-      location: (lockedLocation ?? data.location) as StockLocation,
+      location: finalLocation,
+      locationNodeId: locations.find((l) => l.path === finalLocation)?.id ?? null,
       quantity: data.quantity,
       reference: data.reference?.trim() || undefined,
       quarantine: data.quarantine,
@@ -363,7 +366,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                         <LockedLocationField location={lockedLocation} />
                       ) : (
                         <FormControl>
-                          <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                          <LocationHierarchyPicker value={field.value} onChange={field.onChange} orgId={orgId} />
                         </FormControl>
                       )}
                       <FormMessage />

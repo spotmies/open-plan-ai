@@ -43,7 +43,7 @@ import { Check, ChevronsUpDown, Clock, ShoppingCart, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
-import { LocationCombobox, LockedLocationField } from './inventoryData';
+import { LocationHierarchyPicker, LockedLocationField } from './inventoryData';
 
 const orderSchema = z.object({
   partId: z.string().min(1, 'Select a part'),
@@ -70,6 +70,7 @@ export interface PlaceOrderInput {
   supplierRef?: string;
   unitCost?: number;
   location: string;
+  locationNodeId?: string | null;
   note?: string;
   description?: string;
   purpose?: string;
@@ -98,7 +99,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
   const [selectedPart, setSelectedPart] = useState<ApiPartResponse | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const { data: knownLocations = [] } = useLocations(orgId);
+  const { data: locations = [] } = useLocations(orgId);
 
   const form = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
@@ -157,6 +158,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       toast.error('Select a part to order');
       return;
     }
+    const finalLocation = lockedLocation ?? data.location;
     onPlaceOrder({
       partId: selectedPart.id,
       pn: selectedPart.partNumber,
@@ -167,7 +169,8 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
       leadTime: data.leadTime,
       supplierRef: data.supplierRef?.trim() || undefined,
       unitCost: data.unitCost === '' || data.unitCost === undefined ? undefined : Number(data.unitCost),
-      location: lockedLocation ?? data.location,
+      location: finalLocation,
+      locationNodeId: locations.find((l) => l.path === finalLocation)?.id ?? null,
       purpose: data.purpose?.trim() || undefined,
       status: data.orderStatus,
     });
@@ -364,7 +367,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                         <LockedLocationField location={lockedLocation} />
                       ) : (
                         <FormControl>
-                          <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                          <LocationHierarchyPicker value={field.value} onChange={field.onChange} orgId={orgId} />
                         </FormControl>
                       )}
                       <FormMessage />

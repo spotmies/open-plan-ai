@@ -45,7 +45,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory, getCategoryMeta } from './bomData';
-import { LocationCombobox, LockedLocationField, CategoryCombobox, UnitCombobox, type StockLocation, type StockRecord } from './inventoryData';
+import { LocationHierarchyPicker, LockedLocationField, CategoryCombobox, UnitCombobox, type StockLocation, type StockRecord } from './inventoryData';
 import type { PlaceOrderInput } from './PlaceOrderDialog';
 
 interface PickerPart {
@@ -101,6 +101,7 @@ export interface AdjustQuantityInput {
   name?: string;
   cat?: BOMCategory;
   location: StockLocation;
+  locationNodeId?: string | null;
   direction: 'add' | 'remove';
   /** 'set' overwrites on-hand with `quantity`; 'delta' adds `quantity` per `direction`. */
   mode: 'delta' | 'set';
@@ -159,7 +160,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
 
   const createPart = useCreatePart(orgId);
   const updatePart = useUpdatePart();
-  const { data: knownLocations = [] } = useLocations(orgId);
+  const { data: locations = [] } = useLocations(orgId);
 
   const stockPartIds = useMemo(() => new Set(stock.map(r => r.partId)), [stock]);
 
@@ -494,6 +495,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     }
     const cat = (data.category || part.cat) as BOMCategory | undefined;
     const location = lockedLocation ?? data.location;
+    const locationNodeId = locations.find((l) => l.path === location)?.id ?? null;
     // Blank lead time (BOM defined none, user left it empty) is passed through as undefined.
     const leadTimeDays = typeof data.leadTimeDays === 'number' ? data.leadTimeDays : undefined;
 
@@ -507,6 +509,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         expectedDate: data.expectedDate?.trim() || undefined,
         leadTime: leadTimeDays,
         location,
+        locationNodeId,
         supplierRef: data.supplierRef?.trim() || undefined,
         note: data.orderNote?.trim() || undefined,
         description: data.description?.trim() || undefined,
@@ -518,6 +521,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
         partId: part.partId,
         ...(selectedRecord ? {} : { pn: part.pn, name: part.name, cat }),
         location: location as StockLocation,
+        locationNodeId,
         direction: data.direction,
         // Row-level "Adjust quantity" sets the absolute on-hand count; "New transaction" adds a delta.
         mode: initialPartId ? 'set' : 'delta',
@@ -856,7 +860,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                         <LockedLocationField location={lockedLocation} />
                       ) : (
                         <FormControl>
-                          <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                          <LocationHierarchyPicker value={field.value} onChange={field.onChange} orgId={orgId} />
                         </FormControl>
                       )}
                       <FormMessage />

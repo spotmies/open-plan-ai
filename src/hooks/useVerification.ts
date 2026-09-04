@@ -83,11 +83,16 @@ export interface RecordExecutionPayload {
 
 // ─── Project-wide summary ──────────────────────────────────────────────────────
 
-export function useVerificationSummary(projectId: string | undefined) {
+// `buildId` scopes the rollup to one physical unit's test executions only —
+// backs the Readiness view's per-build manufacturing readiness (plan §F).
+// Omit it for the project-wide rollup used everywhere else.
+export function useVerificationSummary(projectId: string | undefined, buildId?: string) {
   return useQuery({
-    queryKey: queryKeys.verification.summary(projectId ?? ''),
+    queryKey: queryKeys.verification.summary(projectId ?? '', buildId),
     queryFn: () =>
-      apiClient.get<ApiVerificationSummaryItem[]>(ENDPOINTS.VERIFICATION.SUMMARY(projectId!)),
+      apiClient.get<ApiVerificationSummaryItem[]>(ENDPOINTS.VERIFICATION.SUMMARY(projectId!), {
+        params: buildId ? { buildId } : undefined,
+      }),
     enabled: !!projectId,
     staleTime: 30 * 1000,
   });

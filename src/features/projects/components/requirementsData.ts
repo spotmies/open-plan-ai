@@ -599,12 +599,23 @@ export function gateReadiness() {
   return { critical:critical.length, approved, approvedPct, sysSub:sysSub.length, verified, verifiedPct, blockers, score };
 }
 
-export function manufacturingReadiness() {
+/**
+ * `vstatusOverride`, when given, replaces each requirement's project-wide
+ * `vstatus` with a build-scoped one (plan §F: "Coverage and Readiness
+ * dashboards roll up from real build-level pass/fail" — is *this specific
+ * physical unit* ready, not "has this requirement ever passed on any unit").
+ * A requirement absent from the override (never tested against that build)
+ * reads as 'not-verified', matching the backend's own omit-vs-empty
+ * convention for the build-scoped verification-summary endpoint.
+ */
+export function manufacturingReadiness(vstatusOverride?: Map<string, ReqVStatus>) {
+  const vstatusOf = (r: Requirement): ReqVStatus =>
+    vstatusOverride ? (r._id ? (vstatusOverride.get(r._id) ?? 'not-verified') : 'not-verified') : r.vstatus;
   return (Object.keys(REQ_GROUP) as ReqGroup[]).map(g => {
     const reqs = REQS.filter(r => r.group === g && (r.type === 'subsystem-req' || r.type === 'component-req'));
     if (!reqs.length) return null;
     const parts = new Set<string>(); reqs.forEach(r => (r.alloc ?? []).forEach(p => parts.add(p)));
-    const verif = reqs.filter(r => r.status === 'verified' || r.status === 'validated' || r.vstatus === 'passed').length;
+    const verif = reqs.filter(r => r.status === 'verified' || r.status === 'validated' || vstatusOf(r) === 'passed').length;
     const open = reqs.filter(r => r.hasGap).length;
     const pct = Math.round(verif/reqs.length*100);
     const status: 'ready' | 'at-risk' | 'blocked' = pct >= 80 && open <= 1 ? 'ready' : pct >= 50 ? 'at-risk' : 'blocked';

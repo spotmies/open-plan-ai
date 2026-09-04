@@ -205,7 +205,7 @@ export const queryKeys = {
   // Test & Verification
   verification: {
     all:           ['verification'] as const,
-    summary:       (projectId: string) => ['verification', 'summary', projectId] as const,
+    summary:       (projectId: string, buildId?: string) => ['verification', 'summary', projectId, buildId ?? null] as const,
     byRequirement: (requirementId: string) => ['verification', 'requirement', requirementId] as const,
     executions:    (testCaseId: string) => ['verification', 'executions', testCaseId] as const,
   },
