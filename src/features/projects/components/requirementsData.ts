@@ -1,15 +1,31 @@
 // Requirements data model — types, enums, mock data, and helpers
 
-// ── Team mock ────────────────────────────────────────────────────────────────
+// ── Team (real project members, once rebuilt) ───────────────────────────────
+// A mutable singleton mirroring REQS/BY_KEY's own pattern: starts empty (no
+// hardcoded placeholder members — `ownerOf()`'s fallback already renders a
+// clean "?" for an id it can't find), populated in place by
+// `rebuildTeamFromApi()` from the project's real member list. `color` isn't
+// carried by the backend — derived deterministically per id so the same
+// member always gets the same tint across renders/sessions.
 export interface TeamMember { id: string; name: string; initials: string; color: string; }
-export const REQ_TEAM: TeamMember[] = [
-  { id: 'tm-1', name: 'Sana Arif',    initials: 'SA', color: '#7C3AED' },
-  { id: 'tm-2', name: 'Marcus Lee',   initials: 'ML', color: '#2563EB' },
-  { id: 'tm-3', name: 'Kabir Anand',  initials: 'KA', color: '#059669' },
-  { id: 'tm-4', name: 'Jin Park',     initials: 'JP', color: '#D97706' },
-  { id: 'tm-5', name: 'Nina Torres',  initials: 'NT', color: '#DC2626' },
-  { id: 'tm-6', name: 'Aria Roy',     initials: 'AR', color: '#0891B2' },
-];
+export const REQ_TEAM: TeamMember[] = [];
+const TEAM_COLORS = ['#7C3AED', '#2563EB', '#059669', '#D97706', '#DC2626', '#0891B2', '#DB2777', '#65A30D'];
+const colorForId = (id: string): string => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return TEAM_COLORS[h % TEAM_COLORS.length];
+};
+/** Minimal shape adapted from `TeamMember` (src/types/index.ts, via
+ * `useProjectMembers()`). */
+export interface ApiTeamMemberForRebuild { id: string; name: string; initials?: string; }
+export function rebuildTeamFromApi(members: ApiTeamMemberForRebuild[]): void {
+  REQ_TEAM.length = 0;
+  members.forEach(m => REQ_TEAM.push({
+    id: m.id, name: m.name,
+    initials: m.initials || m.name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?',
+    color: colorForId(m.id),
+  }));
+}
 export const ownerOf = (id: string): TeamMember =>
   REQ_TEAM.find(m => m.id === id) ?? { id, name: '—', initials: '?', color: '#888' };
 

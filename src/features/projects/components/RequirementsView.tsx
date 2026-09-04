@@ -18,7 +18,7 @@ import {
   REQ_VSTATUS, REQ_PRIORITY, REQ_GROUP, REQ_VMETHOD, REQ_LINKTYPE, GAP_META, REQ_TEAM,
   flattenTree, matchWithAncestors, descendants, ancestors, coverageBy, worstOffenders,
   reqStats, vDistribution, standardsRollup, gateReadiness, manufacturingReadiness,
-  rebuildRequirementsFromApi,
+  rebuildRequirementsFromApi, rebuildTeamFromApi,
   traceDown, traceUp, requirementsAllocatingPart, allAllocatedParts, qtyForPart,
   GATES, STANDARDS,
   type Requirement, type ReqType, type ReqCategory, type ReqStatus,
@@ -29,6 +29,7 @@ import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@
 import { useRequirementAllocations } from '@/hooks/useBom';
 import { useECOAffectedRequirements } from '@/hooks/useECOs';
 import { useInventoryStock } from '@/hooks/useInventory';
+import { useProjectMembers } from '@/hooks/useProjectTeam';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, Donut, StatTile, CoverageBar, ScoreRing, softTint,
@@ -125,6 +126,14 @@ export default function RequirementsView({ projectId, orgId, selectedKey = null,
     });
     return map;
   }, [stockRows]);
+  const { data: projectMembers } = useProjectMembers(projectId);
+  // Same idempotent-rebuild-on-every-render approach as REQS below — REQ_TEAM
+  // is a mutable singleton too. Guarded on `projectMembers` being loaded (not
+  // just non-empty) so a project with zero real members doesn't get wiped
+  // back to nothing before the first fetch settles.
+  if (projectMembers) {
+    rebuildTeamFromApi(projectMembers);
+  }
   // REQS/BY_KEY/REQ_ROOTS are mutated in place, not replaced — plain object
   // identity never changes, so nothing here can appear in a useMemo dependency
   // array to signal "the data changed." Rebuilding unconditionally every render

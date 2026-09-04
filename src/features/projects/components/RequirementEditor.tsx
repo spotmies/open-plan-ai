@@ -28,7 +28,7 @@ const defaultForm = (defaultGroupId: string): FormState => ({
   pattern:'ubiquitous', subject:'system', response:'', trigger:'', state:'', feature:'', condition:'', free:'',
   title:'',
   type:'system-req', category:'functional', priority:'medium', status:'draft', vmethod:'test',
-  owner: REQ_TEAM[0].id, rationale:'', targetValue:'', targetTolerance:'', targetUnit:'',
+  owner: REQ_TEAM[0]?.id ?? '', rationale:'', targetValue:'', targetTolerance:'', targetUnit:'',
   groupId: defaultGroupId, parentId:'',
 });
 
@@ -138,6 +138,7 @@ export default function RequirementEditor({ reqKey, projectId, groups, onClose, 
             statement,
             rationale: form.rationale || undefined,
             target,
+            ownerId: form.owner || undefined,
           },
         });
         toast.success('Requirement updated');
@@ -152,6 +153,7 @@ export default function RequirementEditor({ reqKey, projectId, groups, onClose, 
           statement,
           rationale: form.rationale || undefined,
           target,
+          ownerId: form.owner || undefined,
         });
         toast.success('Requirement created');
       }
