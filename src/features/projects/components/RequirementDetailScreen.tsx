@@ -21,7 +21,8 @@ import {
 } from '@/hooks/useRequirements';
 import {
   useRequirementVerification, useCreateTestCase, useRecordExecution, useConfirmVerified,
-  useDeleteTestCase, type ApiTestCase, type ApiVerificationMethod, type ApiTestExecutionResult,
+  useDeleteTestCase, useTestCaseExecutions,
+  type ApiTestCase, type ApiVerificationMethod, type ApiTestExecutionResult,
 } from '@/hooks/useVerification';
 
 // ── Entry point ────────────────────────────────────────────────────────────────
@@ -430,6 +431,7 @@ function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
   const recordExecution = useRecordExecution(projectId, r._id ?? '');
   const [addOpen, setAddOpen] = useState(false);
   const [recordForId, setRecordForId] = useState<string | null>(null);
+  const [historyForId, setHistoryForId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!r._id) {
@@ -503,14 +505,15 @@ function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
             <thead>
               <tr style={{ background:'hsl(var(--muted))' }}>
-                {['Test ID','Method','Result','Measured','Tested','',''].map(h => (
-                  <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:11, fontWeight:700, color:'hsl(var(--muted-foreground))', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
+                {['Test ID','Method','Result','Measured','Tested','','',''].map((h,i) => (
+                  <th key={`${h}-${i}`} style={{ padding:'8px 12px', textAlign:'left', fontSize:11, fontWeight:700, color:'hsl(var(--muted-foreground))', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {testCases.map(tc => (
-                <tr key={tc.id} style={{ borderBottom:'1px solid hsl(var(--border))' }}>
+                <React.Fragment key={tc.id}>
+                <tr style={{ borderBottom: historyForId === tc.id ? 'none' : '1px solid hsl(var(--border))' }}>
                   <td style={{ padding:'9px 12px', fontFamily:"'JetBrains Mono',monospace", color:'#9333EA', fontWeight:600 }} title={tc.title}>{tc.key}</td>
                   <td style={{ padding:'9px 12px', color:'hsl(var(--foreground))', textTransform:'capitalize' }}>{tc.method}</td>
                   <td style={{ padding:'9px 12px' }}>{tc.latestExecution ? <ResultBadge result={tc.latestExecution.result}/> : <span style={{ color:'hsl(var(--muted-foreground))' }}>—</span>}</td>
@@ -520,6 +523,14 @@ function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
                   </td>
                   <td style={{ padding:'9px 12px', color:'hsl(var(--muted-foreground))' }}>
                     {tc.latestExecution ? `${tc.latestExecution.testedByName ?? '—'} · ${new Date(tc.latestExecution.testedAt).toLocaleDateString()}` : 'Not yet run'}
+                  </td>
+                  <td style={{ padding:'9px 12px' }}>
+                    {tc.executionCount > 0 && (
+                      <button onClick={() => setHistoryForId(id => id === tc.id ? null : tc.id)} style={{ display:'inline-flex', alignItems:'center', gap:4, height:26, padding:'0 10px', borderRadius:6, border:'1px solid hsl(var(--border))', background: historyForId === tc.id ? 'hsl(var(--muted))' : 'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:11.5, fontWeight:500 }}>
+                        History ({tc.executionCount})
+                        <ChevronDown size={11} style={{ transform: historyForId === tc.id ? 'rotate(180deg)' : 'none', transition:'transform .12s' }}/>
+                      </button>
+                    )}
                   </td>
                   <td style={{ padding:'9px 12px' }}>
                     <button onClick={() => setRecordForId(tc.id)} style={{ height:26, padding:'0 10px', borderRadius:6, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:11.5, fontWeight:500 }}>
@@ -536,6 +547,8 @@ function VerifyTab({ r, projectId }: { r: Requirement; projectId: string }) {
                     </button>
                   </td>
                 </tr>
+                {historyForId === tc.id && <ExecutionHistoryRow testCaseId={tc.id}/>}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -567,6 +580,35 @@ function ResultBadge({ result }: { result: ApiTestExecutionResult }) {
     <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 9px', borderRadius:9999, fontSize:11, fontWeight:700, textTransform:'capitalize', background:softTint(tint,0.12), color:tint, border:`1px solid ${softTint(tint,0.28)}` }}>
       {result}
     </span>
+  );
+}
+
+function ExecutionHistoryRow({ testCaseId }: { testCaseId: string }) {
+  const { data: executions, isLoading } = useTestCaseExecutions(testCaseId);
+  return (
+    <tr style={{ borderBottom:'1px solid hsl(var(--border))' }}>
+      <td colSpan={8} style={{ padding:'0 12px 12px', background:'hsl(var(--muted)/0.3)' }}>
+        {isLoading ? (
+          <div style={{ padding:'8px 0', fontSize:12, color:'hsl(var(--muted-foreground))' }}>Loading history…</div>
+        ) : !executions || executions.length === 0 ? (
+          <div style={{ padding:'8px 0', fontSize:12, color:'hsl(var(--muted-foreground))' }}>No executions recorded.</div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:6, paddingTop:8 }}>
+            {executions.map(e => (
+              <div key={e.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'6px 10px', borderRadius:7, background:'hsl(var(--card))', border:'1px solid hsl(var(--border))', fontSize:12 }}>
+                <ResultBadge result={e.result}/>
+                <span style={{ color:'hsl(var(--foreground))', flexShrink:0 }}>
+                  {e.measuredValue !== null && e.measuredValue !== undefined ? `${e.measuredValue}${e.unit ? ` ${e.unit}` : ''}` : '—'}
+                </span>
+                <span style={{ color:'hsl(var(--muted-foreground))', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.notes}</span>
+                {e.buildLabel && <span style={{ color:'hsl(var(--muted-foreground))', flexShrink:0 }}>build: {e.buildLabel}</span>}
+                <span style={{ color:'hsl(var(--muted-foreground))', flexShrink:0 }}>{e.testedByName ?? '—'} · {new Date(e.testedAt).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </td>
+    </tr>
   );
 }
 
