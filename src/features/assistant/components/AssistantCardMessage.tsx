@@ -820,7 +820,7 @@ export function AssistantCardMessage({ card, createdAt, onFollowUp, readOnly }: 
                   {card.effectivity ? <Fact key="eff" icon={Flag} text={card.effectivity} /> : null}
                   {card.revision ? <Fact key="rev" icon={GitBranch} text={`Revision ${card.revision}`} /> : null}
                   {card.scheduleImpact ? (
-                    <Fact key="sched" icon={Clock} text={`${titleCase(card.scheduleImpact)} schedule impact`} />
+                    <Fact key="sched" icon={Clock} text={`${titleCase(card.scheduleImpact)} impact level`} />
                   ) : null}
                   {card.costImpact ? <Fact key="cost" icon={DollarSign} text={card.costImpact} /> : null}
                   {card.affectedPartCount != null || card.affectedModuleCount ? (

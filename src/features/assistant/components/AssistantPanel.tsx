@@ -21,7 +21,13 @@ import {
   type AssistantScope,
   type AiMessageAttachment,
 } from '../assistantData';
-import { isMessageTooLargeError, MESSAGE_TOO_LARGE_NOTICE, useAssistantConversation } from '../hooks/useAssistantConversation';
+import {
+  isMessageTooLargeError,
+  MESSAGE_TOO_LARGE_NOTICE,
+  isRateLimitError,
+  RATE_LIMIT_NOTICE,
+  useAssistantConversation,
+} from '../hooks/useAssistantConversation';
 import {
   useAssistantConversations,
   useCreateAssistantConversation,
@@ -330,7 +336,13 @@ export function AssistantPanel({
           // No conversation/transcript exists yet to show an inline notice in
           // (see useAssistantConversation's sendFailureNotice for the
           // in-conversation equivalent) — a toast is the best we can do here.
-          toast.error(isMessageTooLargeError(error) ? MESSAGE_TOO_LARGE_NOTICE : "Couldn't start that conversation — try again.");
+          toast.error(
+            isMessageTooLargeError(error)
+              ? MESSAGE_TOO_LARGE_NOTICE
+              : isRateLimitError(error)
+                ? RATE_LIMIT_NOTICE
+                : "Couldn't start that conversation — try again.",
+          );
         },
       },
     );
