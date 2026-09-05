@@ -3,9 +3,9 @@ import { ENDPOINTS } from '@/services/api/endpoints';
 import type { EcoImportJobStatusDto, CommitEcoImportResult } from '../ecoImportData';
 
 export const ecoImportService = {
-  async startImport(projectId: string, file: File): Promise<EcoImportJobStatusDto> {
+  async startImport(projectId: string, files: File[]): Promise<EcoImportJobStatusDto> {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach((file) => formData.append('files', file));
     const res = await apiClient.raw.post<{ success: boolean; data: EcoImportJobStatusDto }>(
       ENDPOINTS.ECO_IMPORTS.START(projectId),
       formData,

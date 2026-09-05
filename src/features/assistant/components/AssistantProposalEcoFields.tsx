@@ -43,6 +43,24 @@ interface EcoFieldEditorProps {
   fieldKey: string;
   value: unknown;
   onChange: (value: unknown) => void;
+  /** True for 'parts' on an update — affected parts are fixed once the ECO is created. */
+  locked?: boolean;
+}
+
+/** Read-only view of the affected parts already on this ECO — shown instead of PartsField once the ECO exists. */
+function LockedPartsField({ value }: { value: unknown }) {
+  const rows = (value as PartRow[]) ?? [];
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">Affected parts are fixed to what this ECO was created for and can't be changed. Create a separate ECO to cover a different or additional part.</p>
+      {rows.length === 0 && <p className="text-xs text-muted-foreground">No affected parts on this ECO.</p>}
+      {rows.map((row, i) => (
+        <div key={i} className="rounded-md border border-border bg-muted/40 px-2 py-1 text-xs text-foreground">
+          {row.partNumber}{row.name ? ` — ${row.name}` : ''}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function toNumberOrNull(raw: string): number | null {
@@ -292,7 +310,7 @@ function ModulesField({ projectId, value, onChange }: { projectId: string | null
  * key this module doesn't own, so the caller falls through to the shared
  * editors — see ECO_FIELD_KEYS in ../ecoProposalFields.
  */
-export function EcoFieldEditor({ projectId, fieldKey, value, onChange }: EcoFieldEditorProps) {
+export function EcoFieldEditor({ projectId, fieldKey, value, onChange, locked }: EcoFieldEditorProps) {
   switch (fieldKey) {
     case 'type':
       return <SelectField value={value} onChange={onChange} options={TYPE_OPTIONS} placeholder="Select a change type" />;
@@ -333,7 +351,7 @@ export function EcoFieldEditor({ projectId, fieldKey, value, onChange }: EcoFiel
     case 'affectedModules':
       return <ModulesField projectId={projectId} value={value} onChange={onChange} />;
     case 'parts':
-      return <PartsField projectId={projectId} value={value} onChange={onChange} />;
+      return locked ? <LockedPartsField value={value} /> : <PartsField projectId={projectId} value={value} onChange={onChange} />;
     case 'diffRows':
       return <DiffRowsField value={value} onChange={onChange} />;
     case 'attachments':

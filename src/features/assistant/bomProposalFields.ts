@@ -65,6 +65,6 @@ export const BOM_FIELD_LABELS: Record<string, string> = {
   documents: 'Documents (by URL)',
   parentId: 'Parent assembly',
   designators: 'Designators',
-  notes: 'Line note',
+  notes: 'Note',
   changeNotes: 'Change notes',
 };

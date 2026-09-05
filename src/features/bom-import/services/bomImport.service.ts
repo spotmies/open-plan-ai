@@ -3,9 +3,9 @@ import { ENDPOINTS } from '@/services/api/endpoints';
 import type { BomImportJobStatusDto, CommitImportResult } from '../bomImportData';
 
 export const bomImportService = {
-  async startImport(projectId: string, file: File, parentNodeId?: string): Promise<BomImportJobStatusDto> {
+  async startImport(projectId: string, files: File[], parentNodeId?: string): Promise<BomImportJobStatusDto> {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach((file) => formData.append('files', file));
     if (parentNodeId) formData.append('parentNodeId', parentNodeId);
     const res = await apiClient.raw.post<{ success: boolean; data: BomImportJobStatusDto }>(
       ENDPOINTS.BOM_IMPORTS.START(projectId),

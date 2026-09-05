@@ -3,9 +3,9 @@ import { ENDPOINTS } from '@/services/api/endpoints';
 import type { TaskImportJobStatusDto, CommitImportResult } from '../taskImportData';
 
 export const taskImportService = {
-  async startImport(projectId: string, file: File): Promise<TaskImportJobStatusDto> {
+  async startImport(projectId: string, files: File[]): Promise<TaskImportJobStatusDto> {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach((file) => formData.append('files', file));
     const res = await apiClient.raw.post<{ success: boolean; data: TaskImportJobStatusDto }>(
       ENDPOINTS.TASK_IMPORTS.START(projectId),
       formData,

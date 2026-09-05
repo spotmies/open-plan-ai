@@ -36,6 +36,16 @@ export function isMessageTooLargeError(error: unknown): boolean {
 export const MESSAGE_TOO_LARGE_NOTICE =
   "That message is too long for me to process in one go. Try summarizing it or breaking it into smaller messages, then send it again.";
 
+// Detects the backend's rate limiter (RATE_LIMIT_EXCEEDED, HTTP 429) so it
+// surfaces as a specific, less alarming toast instead of the generic
+// "try again" one — see rateLimiter.middleware.ts.
+export function isRateLimitError(error: unknown): boolean {
+  const err = error as { response?: { status?: number } };
+  return err?.response?.status === 429;
+}
+
+export const RATE_LIMIT_NOTICE = "You're sending requests a bit too fast — please wait a moment and try again.";
+
 /**
  * Owns everything needed to render one active conversation: the persisted
  * detail (React Query), plus live streaming state fed by the socket
@@ -284,7 +294,13 @@ export function useAssistantConversation(conversationId: string | null) {
     onError: (error) => {
       setOptimisticMessage(null);
       setOptimisticAttachments(null);
-      toast.error(isMessageTooLargeError(error) ? MESSAGE_TOO_LARGE_NOTICE : "Couldn't send that message — try again.");
+      toast.error(
+        isMessageTooLargeError(error)
+          ? MESSAGE_TOO_LARGE_NOTICE
+          : isRateLimitError(error)
+            ? RATE_LIMIT_NOTICE
+            : "Couldn't send that message — try again.",
+      );
     },
   });
 

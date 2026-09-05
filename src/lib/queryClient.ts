@@ -174,6 +174,7 @@ export const queryKeys = {
     projectApprovalRequests: (projectId: string, status?: string) => ['bom', 'project-approval-requests', projectId, status ?? 'all'] as const,
     notes:      (nodeId: string)    => ['bom', 'notes', nodeId] as const,
     costTrend:  (projectId: string, granularity: string) => ['bom', 'cost-trend', projectId, granularity] as const,
+    requirementAllocations: (projectId: string) => ['bom', 'requirement-allocations', projectId] as const,
   },
 
   // Parts catalog
@@ -187,6 +188,28 @@ export const queryKeys = {
     revisions: (partId: string) => ['parts', 'revisions', partId] as const,
   },
 
+  // Requirements
+  requirementGroups: {
+    all:  ['requirementGroups'] as const,
+    list: (projectId: string) => ['requirementGroups', 'list', projectId] as const,
+  },
+  requirements: {
+    all:  ['requirements'] as const,
+    tree: (projectId: string) => ['requirements', 'tree', projectId] as const,
+  },
+  requirementLinks: {
+    all:         ['requirementLinks'] as const,
+    list:        (requirementId: string) => ['requirementLinks', 'list', requirementId] as const,
+    projectList: (projectId: string) => ['requirementLinks', 'projectList', projectId] as const,
+  },
+  // Test & Verification
+  verification: {
+    all:           ['verification'] as const,
+    summary:       (projectId: string, buildId?: string) => ['verification', 'summary', projectId, buildId ?? null] as const,
+    byRequirement: (requirementId: string) => ['verification', 'requirement', requirementId] as const,
+    executions:    (testCaseId: string) => ['verification', 'executions', testCaseId] as const,
+  },
+
   // Engineering Changes (ECO)
   ecos: {
     all:      ['ecos'] as const,
@@ -195,6 +218,7 @@ export const queryKeys = {
     listRoot: (projectId: string) => ['ecos', 'list', projectId] as const,
     list:     (projectId: string, filters?: object) => ['ecos', 'list', projectId, filters] as const,
     byPart:   (partId: string) => ['ecos', 'by-part', partId] as const,
+    affectedRequirements: (projectId: string) => ['ecos', 'affected-requirements', projectId] as const,
     stats:    (projectId: string) => ['ecos', 'stats', projectId] as const,
     detail:   (ecoId: string) => ['ecos', 'detail', ecoId] as const,
     ecn:      (ecoId: string) => ['ecos', 'ecn', ecoId] as const,

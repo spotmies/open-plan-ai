@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Bell, CheckCircle2, AlertCircle, FolderKanban, Clock, Activity, MessageSquare, UserMinus, UserPlus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -42,6 +42,7 @@ const getNotificationIcon = (type: AppNotification['type']) => {
 export function NotificationsPopover() {
     const [open, setOpen] = useState(false);
     const navigate = useNavigate();
+    const location = useLocation();
     const isMobile = useIsMobile();
     const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
 
@@ -143,7 +144,9 @@ export function NotificationsPopover() {
                                         handleMarkAsRead(notification.id);
                                         setOpen(false);
                                         if (notification.actionUrl) {
-                                            navigate(notification.actionUrl);
+                                            navigate(notification.actionUrl, {
+                                                state: { backTo: location.pathname + location.search },
+                                            });
                                         }
                                     }}
                                 >

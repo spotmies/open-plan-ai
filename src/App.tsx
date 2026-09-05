@@ -68,7 +68,7 @@ const ReactQueryDevtools = import.meta.env.DEV
   : null;
 
 // Normalizes legacy `/projects/:id?tab=X` links to the canonical `/projects/:id/X` path.
-const PROJECT_SECTIONS = ['bom', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
+const PROJECT_SECTIONS = ['bom', 'requirements', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
 function ProjectLegacyTabRedirect() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -159,6 +159,14 @@ function AppShell() {
             />
             <Route
               path="/projects/:id/bom/:partId"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
+                  <ProjectDetail />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/projects/:id/requirements/:reqKey"
               element={
                 <Suspense fallback={<AppLayoutSkeleton variant="project-detail" />}>
                   <ProjectDetail />
@@ -289,6 +297,10 @@ function AppShell() {
                 </Suspense>
               }
             />
+          </Route>
+
+          {/* ── Routes without content padding ───────────────── */}
+          <Route element={<AppLayoutOutlet noPadding />}>
             <Route
               path="/team"
               element={

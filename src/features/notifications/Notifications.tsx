@@ -279,7 +279,9 @@ const Notifications = () => {
                                             onClick={() => {
                                                 handleMarkAsRead(notification.id);
                                                 if (notification.actionUrl) {
-                                                    navigate(notification.actionUrl);
+                                                    navigate(notification.actionUrl, {
+                                                        state: { backTo: '/notifications' },
+                                                    });
                                                 }
                                             }}
                                         >

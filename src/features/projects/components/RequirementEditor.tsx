@@ -1,28 +1,35 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import {
   ArrowLeft, Sparkles, Check, X, Zap, Activity, ToggleRight, ShieldAlert,
-  GitBranch, PenLine, Infinity as InfinityIcon, ChevronDown, ChevronRight as ChevronRightIcon,
+  GitBranch, PenLine, Infinity as InfinityIcon, ChevronDown,
 } from 'lucide-react';
 import {
-  BY_KEY, REQ_TYPE, REQ_CATEGORY, REQ_STATUS, REQ_VSTATUS, REQ_PRIORITY,
-  REQ_GROUP, REQ_TEAM, EARS, analyzeQuality, ownerOf,
-  type ReqType, type ReqCategory, type ReqStatus, type ReqVStatus, type ReqPriority, type ReqGroup,
-  type EARSPattern,
+  REQS, BY_KEY, REQ_TYPE, REQ_CATEGORY, REQ_STATUS, REQ_PRIORITY,
+  REQ_TEAM, EARS, analyzeQuality,
+  type ReqType, type ReqCategory, type ReqStatus, type ReqPriority,
 } from './requirementsData';
 import { ScoreRing, softTint } from './RequirementsShared';
+import { useCreateRequirement, useUpdateRequirement, type ApiRequirementGroup } from '@/hooks/useRequirements';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface FormState {
   pattern: string; subject: string; response: string; trigger: string;
   state: string; feature: string; condition: string; free: string;
+  title: string;
   type: ReqType; category: ReqCategory; priority: ReqPriority; status: ReqStatus;
   vmethod: string; owner: string; rationale: string;
   targetValue: string; targetTolerance: string; targetUnit: string;
+  groupId: string; parentId: string;
 }
 
-const defaultForm = (): FormState => ({
+const defaultForm = (defaultGroupId: string): FormState => ({
   pattern:'ubiquitous', subject:'system', response:'', trigger:'', state:'', feature:'', condition:'', free:'',
+  title:'',
   type:'system-req', category:'functional', priority:'medium', status:'draft', vmethod:'test',
-  owner: REQ_TEAM[0].id, rationale:'', targetValue:'', targetTolerance:'', targetUnit:'',
+  owner: REQ_TEAM[0]?.id ?? '', rationale:'', targetValue:'', targetTolerance:'', targetUnit:'',
+  groupId: defaultGroupId, parentId:'',
 });
 
 const PATTERN_ICONS: Record<string, React.ElementType> = {
@@ -55,79 +62,154 @@ function highlightEARS(text: string): React.ReactNode {
   const parts = text.split(/(\bWhile\b|\bWhen\b|\bIf\b|\bWhere\b|\bthen\b|\bshall\b)/g);
   return parts.map((p, i) => {
     const low = p.toLowerCase();
-    if (['while','when','if','where','then'].includes(low)) return <strong key={i} style={{ color:'#2563EB' }}>{p}</strong>;
-    if (low === 'shall') return <strong key={i} style={{ color:'#9333EA' }}>{p}</strong>;
+    if (['while','when','if','where','then'].includes(low)) return <strong key={i} className="text-blue-500">{p}</strong>;
+    if (low === 'shall') return <strong key={i} className="text-purple-500">{p}</strong>;
     return <span key={i}>{p}</span>;
   });
 }
 
 // ── Editor entry point ────────────────────────────────────────────────────────
-export default function RequirementEditor({ reqKey, onClose, onSaved }:
-  { reqKey: string|null; onClose: () => void; onSaved: () => void }) {
+export default function RequirementEditor({ reqKey, projectId, groups, onClose, onSaved }:
+  { reqKey: string|null; projectId: string; groups: ApiRequirementGroup[]; onClose: () => void; onSaved: () => void }) {
 
   const existing = reqKey ? BY_KEY[reqKey] : null;
   const [form, setForm] = useState<FormState>(() => {
-    if (!existing) return defaultForm();
+    if (!existing) return defaultForm(groups[0]?.id ?? '');
     return {
       pattern:'free', subject:'system', response:'', trigger:'', state:'', feature:'', condition:'',
       free: existing.statement,
+      title: existing.title,
       type: existing.type, category: existing.category, priority: existing.priority,
       status: existing.status, vmethod: existing.vmethod, owner: existing.owner,
       rationale: existing.rationale,
       targetValue: existing.target?.value.toString() ?? '',
       targetTolerance: existing.target?.tolerance ?? '',
       targetUnit: existing.target?.unit ?? '',
+      groupId: existing._groupId ?? groups[0]?.id ?? '',
+      parentId: existing.parent ? (BY_KEY[existing.parent]?._id ?? '') : '',
     };
   });
 
   const upd = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm(p => ({ ...p, [k]: v }));
   const preview = previewStatement(form);
-  const ai = useMemo(() => analyzeQuality({ statement:preview, type:form.type, category:form.category, vmethod:form.vmethod as any, vstatus:'not-verified', rationale:form.rationale, parent:null, source:'' }), [preview, form.type, form.category, form.vmethod, form.rationale]);
+  // Live AI quality panel is commented out for now (see below) — commenting this
+  // out too so it doesn't compute on every keystroke for nothing.
+  // const ai = useMemo(() => analyzeQuality({ statement:preview, type:form.type, category:form.category, vmethod:form.vmethod as any, vstatus:'not-verified', rationale:form.rationale, parent:null, source:'' }), [preview, form.type, form.category, form.vmethod, form.rationale]);
 
   const pat = EARS[form.pattern];
 
+  // Parent options: any requirement with a strictly lower tier than the chosen
+  // type — mirrors the backend's own tier-validation rule (see
+  // requirements.service.ts's REQUIREMENT_TIER map). Not filtered by group —
+  // cross-group parenting is normal (e.g. a system-req in SYS parenting a
+  // subsystem-req in PWR), matching the original data's own structure.
+  const parentOptions = useMemo(() => {
+    const tier = REQ_TYPE[form.type].tier;
+    return REQS
+      .filter(r => REQ_TYPE[r.type].tier < tier && r._id && r._id !== existing?._id)
+      .map(r => ({ value: r._id as string, label: `${r.key} — ${r.title}` }));
+  }, [form.type, existing?._id]);
+
+  const createMutation = useCreateRequirement(projectId);
+  const updateMutation = useUpdateRequirement(projectId);
+  const saving = createMutation.isPending || updateMutation.isPending;
+
+  const handleSave = async () => {
+    const statement = (preview || form.free).trim();
+    if (!form.title.trim()) { toast.error('Title is required'); return; }
+    if (!statement) { toast.error('Statement is required'); return; }
+    if (!form.groupId) { toast.error('Select a group'); return; }
+
+    const target = form.targetValue.trim()
+      ? { value: Number(form.targetValue), tolerance: form.targetTolerance || undefined, unit: form.targetUnit || undefined }
+      : null;
+
+    try {
+      if (existing?._id) {
+        await updateMutation.mutateAsync({
+          requirementId: existing._id,
+          payload: {
+            groupId: form.groupId,
+            parentId: form.parentId || null,
+            category: form.category,
+            priority: form.priority,
+            status: form.status,
+            title: form.title,
+            statement,
+            rationale: form.rationale || undefined,
+            target,
+            ownerId: form.owner || undefined,
+          },
+        });
+        toast.success('Requirement updated');
+      } else {
+        await createMutation.mutateAsync({
+          groupId: form.groupId,
+          parentId: form.parentId || null,
+          type: form.type.replace(/-/g, '_'),
+          category: form.category,
+          priority: form.priority,
+          title: form.title,
+          statement,
+          rationale: form.rationale || undefined,
+          target,
+          ownerId: form.owner || undefined,
+        });
+        toast.success('Requirement created');
+      }
+      onSaved();
+    } catch {
+      toast.error(existing ? 'Failed to update requirement' : 'Failed to create requirement');
+    }
+  };
+
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%', background:'hsl(var(--background))' }}>
+    <div className="flex flex-col h-full bg-background">
       {/* header */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderBottom:'1px solid hsl(var(--border))', background:'hsl(var(--card))' }}>
-        <button onClick={onClose} style={{ width:30, height:30, borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
-          onMouseEnter={e=>(e.currentTarget.style.background='hsl(var(--muted))')} onMouseLeave={e=>(e.currentTarget.style.background='hsl(var(--card))')}>
-          <ArrowLeft size={16} color="hsl(var(--muted-foreground))"/>
-        </button>
-        <span style={{ fontSize:16, fontWeight:700, color:'hsl(var(--foreground))' }}>{existing ? `Edit ${existing.key}` : 'New Requirement'}</span>
-        <div style={{ flex:1 }}/>
-        <button onClick={onSaved} style={{ display:'flex', alignItems:'center', gap:6, height:34, padding:'0 16px', borderRadius:8, border:'none', background:'hsl(var(--foreground))', color:'hsl(var(--background))', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600 }}>
-          <Check size={14}/> {existing ? 'Save changes' : 'Create'}
-        </button>
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-card shrink-0">
+        <Button variant="outline" size="icon" className="h-8 w-8" onClick={onClose}>
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <span className="text-base font-bold text-foreground">{existing ? `Edit ${existing.key}` : 'New Requirement'}</span>
+        <div className="flex-1" />
+        <Button size="sm" className="h-8 gap-1.5 text-[12.5px]" onClick={handleSave} disabled={saving}>
+          <Check className="w-3.5 h-3.5" /> {saving ? 'Saving…' : existing ? 'Save changes' : 'Create'}
+        </Button>
       </div>
 
       {/* body */}
-      <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
-        {/* main form */}
-        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px' }}>
-          <div style={{ maxWidth:700 }}>
+      <div className="flex-1 flex overflow-hidden">
+        {/* main form — centered reading column so leftover width splits evenly
+            instead of piling up as dead space next to the AI panel */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="max-w-[700px] mx-auto">
 
             {/* 1. EARS pattern */}
             <EditorCard num="1" title="EARS pattern" icon={GitBranch}>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:14 }}>
+              <div className="flex flex-wrap gap-1.5 mb-3.5">
                 {Object.keys(EARS).map(k => {
                   const p = EARS[k]; const Ic = PATTERN_ICONS[k] ?? PenLine; const active = form.pattern === k;
                   return (
-                    <button key={k} onClick={() => upd('pattern', k)} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 12px', borderRadius:9999, border:`1px solid ${active?'hsl(var(--foreground))':'hsl(var(--border))'}`, background: active?'hsl(var(--muted))':'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:active?700:400 }}>
-                      <Ic size={12}/>{p.label}
+                    <button key={k} onClick={() => upd('pattern', k)}
+                      className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer transition-colors',
+                        active ? 'border-primary bg-primary/10 text-primary font-semibold' : 'border-border bg-card text-foreground font-normal hover:bg-muted')}>
+                      <Ic className="w-3 h-3" />{p.label}
                     </button>
                   );
                 })}
               </div>
               {pat && (
-                <div style={{ padding:'8px 12px', borderRadius:8, background:'hsl(var(--muted))', fontSize:12.5, color:'hsl(var(--muted-foreground))' }}>
-                  <span style={{ fontWeight:600, color:'hsl(var(--foreground))' }}>{pat.label}</span> — {pat.desc}
+                <div className="px-3 py-2 rounded-md bg-muted/40 text-[12.5px] text-muted-foreground">
+                  <span className="font-semibold text-foreground">{pat.label}</span> — {pat.desc}
                 </div>
               )}
             </EditorCard>
 
             {/* 2. Statement fields */}
             <EditorCard num="2" title="Statement fields" icon={PenLine}>
+              <Field label="Title" required hint="Short label shown in lists">
+                <EdInput value={form.title} onChange={v => upd('title',v)} placeholder="e.g. Rated DC output power"/>
+              </Field>
               <Field label="Subject" required hint="The entity that shall do something">
                 <EdInput value={form.subject} onChange={v => upd('subject',v)} placeholder="e.g. charging station"/>
               </Field>
@@ -143,13 +225,13 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
               )}
 
               {/* preview */}
-              <div style={{ marginTop:12, padding:'10px 14px', borderRadius:9, border:'1px solid hsl(var(--border))', background:'hsl(var(--muted))' }}>
-                <div style={{ fontSize:10.5, fontWeight:700, color:'hsl(var(--muted-foreground))', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:6 }}>Live preview</div>
-                <p style={{ fontSize:13.5, color:'hsl(var(--foreground))', lineHeight:1.65, margin:0 }}>{highlightEARS(preview || '…')}</p>
+              <div className="mt-3 px-3.5 py-2.5 rounded-md border border-border bg-muted/40">
+                <div className="text-[10.5px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Live preview</div>
+                <p className="text-[13.5px] text-foreground leading-relaxed m-0">{highlightEARS(preview || '…')}</p>
                 {preview && (
                   <button onClick={() => { const rw = rewriteWeak(form.free || preview); upd('free', rw); if (form.pattern !== 'free') upd('pattern','free'); }}
-                    style={{ marginTop:8, fontSize:11.5, color:'#3B82F6', border:'none', background:'transparent', cursor:'pointer', textDecoration:'underline', padding:0, fontFamily:'inherit' }}>
-                    ✨ Auto-clarify ambiguous terms
+                    className="mt-2 text-[11.5px] text-primary hover:underline cursor-pointer bg-transparent border-none p-0">
+                    <Sparkles className="w-3 h-3 inline -mt-0.5 mr-0.5" /> Auto-clarify ambiguous terms
                   </button>
                 )}
               </div>
@@ -157,7 +239,7 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
 
             {/* 3. Target */}
             <EditorCard num="3" title="Quantitative target (optional)" icon={Activity}>
-              <div style={{ display:'flex', gap:10 }}>
+              <div className="flex gap-2.5">
                 <Field label="Value" hint="numeric"><EdInput value={form.targetValue} onChange={v => upd('targetValue',v)} placeholder="150"/></Field>
                 <Field label="Tolerance"><EdInput value={form.targetTolerance} onChange={v => upd('targetTolerance',v)} placeholder="±2 or max or min"/></Field>
                 <Field label="Unit"><EdInput value={form.targetUnit} onChange={v => upd('targetUnit',v)} placeholder="kW"/></Field>
@@ -166,7 +248,7 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
 
             {/* 4. Metadata */}
             <EditorCard num="4" title="Metadata" icon={Activity}>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Type">
                   <EdSelect value={form.type} onChange={v => upd('type', v as ReqType)} options={Object.keys(REQ_TYPE).map(k => ({ value:k, label:REQ_TYPE[k as ReqType].label }))}/>
                 </Field>
@@ -185,8 +267,16 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
                 <Field label="Owner">
                   <EdSelect value={form.owner} onChange={v => upd('owner', v)} options={REQ_TEAM.map(m => ({ value:m.id, label:m.name }))}/>
                 </Field>
+                <Field label="Group">
+                  <EdSelect value={form.groupId} onChange={v => upd('groupId', v)}
+                    options={groups.map(g => ({ value:g.id, label:g.label }))}/>
+                </Field>
+                <Field label="Parent" hint="optional">
+                  <EdSelect value={form.parentId} onChange={v => upd('parentId', v)}
+                    options={[{ value:'', label:'— None (top-level) —' }, ...parentOptions]}/>
+                </Field>
               </div>
-              <div style={{ marginTop:12 }}>
+              <div className="mt-3">
                 <Field label="Rationale" hint="Why does this requirement exist?">
                   <EdTextarea value={form.rationale} onChange={v => upd('rationale',v)} placeholder="Explain the design intent and source of this requirement…" rows={3}/>
                 </Field>
@@ -196,47 +286,51 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
           </div>
         </div>
 
-        {/* live AI quality panel */}
-        <div style={{ width:300, flexShrink:0, borderLeft:'1px solid hsl(var(--border))', background:'hsl(var(--card))', overflowY:'auto', padding:16 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:14 }}>
-            <Sparkles size={14} color="#3B82F6"/>
-            <span style={{ fontSize:13.5, fontWeight:600, color:'hsl(var(--foreground))' }}>Live AI quality</span>
+        {/* live AI quality panel — commented out for now, not deleted.
+            To bring it back: uncomment this block and the `ai` useMemo above.
+        <div className="w-[300px] shrink-0 border-l border-border bg-card overflow-y-auto p-4">
+          <div className="flex items-center gap-1.5 mb-3.5">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span className="text-[13.5px] font-semibold text-foreground">Live AI quality</span>
           </div>
 
-          <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:16, padding:'12px 14px', borderRadius:10, border:`1px solid ${softTint(ai.tint,0.3)}`, background:softTint(ai.tint,0.05) }}>
+          <div className="flex items-center gap-3.5 mb-4 px-3.5 py-3 rounded-lg border"
+            style={{ borderColor: softTint(ai.tint, 0.3), background: softTint(ai.tint, 0.05) }}>
             <ScoreRing pct={ai.pct} tint={ai.tint} grade={ai.grade} size={64}/>
             <div>
-              <div style={{ fontSize:20, fontWeight:800, color:ai.tint, lineHeight:1 }}>{ai.pct}%</div>
-              <div style={{ fontSize:11, color:'hsl(var(--muted-foreground))', marginTop:3 }}>quality score</div>
+              <div className="text-xl font-extrabold leading-none" style={{ color: ai.tint }}>{ai.pct}%</div>
+              <div className="text-[11px] text-muted-foreground mt-1">quality score</div>
             </div>
           </div>
 
-          <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
+          <div className="flex flex-col gap-1.5 mb-4">
             {ai.checks.map(c => (
-              <div key={c.id} style={{ display:'flex', alignItems:'flex-start', gap:7 }}>
-                <span style={{ width:15, height:15, borderRadius:9999, flexShrink:0, marginTop:1, background: c.pass?softTint('#16A34A',0.15):softTint('#DC2626',0.15), display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
-                  {c.pass ? <Check size={9} color="#16A34A"/> : <X size={9} color="#DC2626"/>}
+              <div key={c.id} className="flex items-start gap-1.5">
+                <span className="w-[15px] h-[15px] rounded-full shrink-0 mt-0.5 inline-flex items-center justify-center"
+                  style={{ background: c.pass ? softTint('#16A34A', 0.15) : softTint('#DC2626', 0.15) }}>
+                  {c.pass ? <Check className="w-2.5 h-2.5 text-green-600" /> : <X className="w-2.5 h-2.5 text-red-600" />}
                 </span>
                 <div>
-                  <div style={{ fontSize:11.5, fontWeight:600, color:'hsl(var(--foreground))' }}>{c.label}</div>
-                  <div style={{ fontSize:10.5, color:'hsl(var(--muted-foreground))', lineHeight:1.35 }}>{c.detail}</div>
+                  <div className="text-[11.5px] font-semibold text-foreground">{c.label}</div>
+                  <div className="text-[10.5px] text-muted-foreground leading-snug">{c.detail}</div>
                 </div>
               </div>
             ))}
           </div>
 
           {ai.suggestions.length > 0 && (
-            <div style={{ borderTop:'1px solid hsl(var(--border))', paddingTop:12 }}>
-              <div style={{ fontSize:11.5, fontWeight:700, color:'hsl(var(--foreground))', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.04em' }}>Suggestions</div>
+            <div className="border-t border-border pt-3">
+              <div className="text-[11.5px] font-bold text-foreground mb-2 uppercase tracking-wide">Suggestions</div>
               {ai.suggestions.map((s, i) => (
-                <div key={i} style={{ display:'flex', gap:7, padding:'6px 9px', borderRadius:8, background:'hsl(var(--muted))', marginBottom:5 }}>
-                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 5px', borderRadius:4, background:softTint('#3B82F6',0.12), color:'#3B82F6', flexShrink:0 }}>{s.kind}</span>
-                  <span style={{ fontSize:11, color:'hsl(var(--foreground))', lineHeight:1.4 }}>{s.text}</span>
+                <div key={i} className="flex gap-1.5 px-2.5 py-1.5 rounded-md bg-muted mb-1.5">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-primary/10 text-primary">{s.kind}</span>
+                  <span className="text-[11px] text-foreground leading-snug">{s.text}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
+        */}
       </div>
     </div>
   );
@@ -245,55 +339,54 @@ export default function RequirementEditor({ reqKey, onClose, onSaved }:
 // ── Form primitives ───────────────────────────────────────────────────────────
 function EditorCard({ num, title, icon:Ic, children }: { num:string; title:string; icon:React.ElementType; children:React.ReactNode }) {
   return (
-    <div style={{ background:'hsl(var(--card))', border:'1px solid hsl(var(--border))', borderRadius:12, overflow:'hidden', marginBottom:16 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderBottom:'1px solid hsl(var(--border))' }}>
-        <span style={{ width:22, height:22, borderRadius:9999, flexShrink:0, background:softTint('#3B82F6',0.12), color:'#3B82F6', fontSize:11.5, fontWeight:700, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{num}</span>
-        <Ic size={14} color="hsl(var(--muted-foreground))"/>
-        <span style={{ fontSize:14, fontWeight:600, color:'hsl(var(--foreground))' }}>{title}</span>
+    <div className="bg-card border border-border rounded-lg overflow-hidden mb-4">
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border">
+        <span className="w-[22px] h-[22px] rounded-full shrink-0 bg-primary/10 text-primary text-[11.5px] font-bold inline-flex items-center justify-center">{num}</span>
+        <Ic className="w-3.5 h-3.5 text-muted-foreground"/>
+        <span className="text-sm font-semibold text-foreground">{title}</span>
       </div>
-      <div style={{ padding:16 }}>{children}</div>
+      <div className="p-4">{children}</div>
     </div>
   );
 }
 
 function Field({ label, hint, required, children }: { label:string; hint?:string; required?:boolean; children:React.ReactNode }) {
   return (
-    <div style={{ marginBottom:12 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:5 }}>
-        <label style={{ fontSize:12, fontWeight:600, color:'hsl(var(--muted-foreground))' }}>{label}</label>
-        {required && <span style={{ fontSize:11, color:'#DC2626' }}>*</span>}
-        {hint && <span style={{ fontSize:11, color:'hsl(var(--muted-foreground))' }}>· {hint}</span>}
+    <div className="mb-3 flex-1 min-w-0">
+      <div className="flex items-center gap-1 mb-1">
+        <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</label>
+        {required && <span className="text-[11px] text-destructive">*</span>}
+        {hint && <span className="text-[11px] text-muted-foreground normal-case tracking-normal">· {hint}</span>}
       </div>
       {children}
     </div>
   );
 }
 
-const inputBase: React.CSSProperties = { width:'100%', boxSizing:'border-box', background:'hsl(var(--background))', border:'1px solid hsl(var(--border))', borderRadius:8, padding:'8px 10px', fontSize:13, color:'hsl(var(--foreground))', outline:'none', fontFamily:'inherit' };
+const inputCls = 'w-full bg-muted/40 border border-border rounded-md text-foreground text-[13px] px-2.5 py-2 outline-none focus:border-primary/40 placeholder:text-muted-foreground/50 font-[inherit] transition-colors';
 
 function EdInput({ value, onChange, placeholder, mono }: { value:string; onChange:(v:string)=>void; placeholder?:string; mono?:boolean }) {
-  const [f, setF] = useState(false);
   return (
     <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-      onFocus={() => setF(true)} onBlur={() => setF(false)}
-      style={{ ...inputBase, fontFamily: mono?"'JetBrains Mono',monospace":'inherit', borderColor:f?'hsl(var(--foreground))':'hsl(var(--border))', boxShadow:f?'0 0 0 3px hsl(var(--border))':`none`, transition:'border-color .12s, box-shadow .12s' }}/>
+      className={cn(inputCls, mono && 'font-mono')}/>
   );
 }
 
 function EdTextarea({ value, onChange, placeholder, rows=3 }: { value:string; onChange:(v:string)=>void; placeholder?:string; rows?:number }) {
-  const [f, setF] = useState(false);
   return (
     <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={rows}
-      onFocus={() => setF(true)} onBlur={() => setF(false)}
-      style={{ ...inputBase, resize:'vertical', lineHeight:1.55, borderColor:f?'hsl(var(--foreground))':'hsl(var(--border))', boxShadow:f?'0 0 0 3px hsl(var(--border))':`none`, transition:'border-color .12s, box-shadow .12s' }}/>
+      className={cn(inputCls, 'resize-y leading-relaxed')}/>
   );
 }
 
 function EdSelect({ value, onChange, options }: { value:string; onChange:(v:string)=>void; options:{value:string;label:string}[] }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}
-      style={{ ...inputBase, cursor:'pointer' }}>
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <div className="relative">
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className={cn(inputCls, 'cursor-pointer appearance-none pr-8')}>
+        {options.map(o => <option key={o.value} value={o.value} className="bg-card">{o.label}</option>)}
+      </select>
+      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+    </div>
   );
 }

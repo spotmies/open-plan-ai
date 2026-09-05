@@ -12,6 +12,7 @@ interface ApiFeatureToggles {
   reports: boolean;
   inventory: boolean;
   support: boolean;
+  requirements: boolean;
 }
 
 function fromApi(raw: ApiFeatureToggles): FeatureTogglesResponse {
@@ -21,6 +22,7 @@ function fromApi(raw: ApiFeatureToggles): FeatureTogglesResponse {
     reports: raw.reports,
     inventory: raw.inventory,
     support: raw.support,
+    requirements: raw.requirements,
   };
 }
 

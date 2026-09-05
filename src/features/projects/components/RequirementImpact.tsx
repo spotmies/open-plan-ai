@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { X, GitPullRequest, GitBranch, Package, ClipboardCheck, AlertTriangle, CircleCheck, ArrowRight } from 'lucide-react';
 import { BY_KEY, impactOf } from './requirementsData';
 import { ReqKeyTag, StatusBadge, PriorityPill, softTint } from './RequirementsShared';
+import { RequirementECOSheet } from './RequirementECOSheet';
 
-export default function RequirementImpact({ reqKey, onClose, onOpen }:
-  { reqKey: string; onClose: () => void; onOpen: (k:string) => void }) {
+export default function RequirementImpact({ reqKey, projectId, onClose, onOpen, onEcoCreated }:
+  { reqKey: string; projectId: string; onClose: () => void; onOpen: (k:string) => void; onEcoCreated?: (ecoId: string) => void }) {
 
   const r = BY_KEY[reqKey];
-  const [stage, setStage] = useState<'assess'|'raised'>('assess');
+  const [stage, setStage] = useState<'assess'|'sheet'|'raised'>('assess');
+  const [createdEcoId, setCreatedEcoId] = useState<string | null>(null);
 
   if (!r) return null;
 
@@ -19,8 +21,12 @@ export default function RequirementImpact({ reqKey, onClose, onOpen }:
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.42)', zIndex:90 }}/>
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, maxWidth:'94vw', zIndex:91, background:'hsl(var(--card))', borderLeft:'1px solid hsl(var(--border))', boxShadow:'-12px 0 40px rgba(0,0,0,0.18)', display:'flex', flexDirection:'column' }}>
+      {/* z-index above everything else the Requirements feature renders,
+          including the Map view's fullscreen mode (zIndex 1000) and its
+          floating toolbar/minimap (up to 210) — otherwise those controls
+          render on top of this drawer's backdrop instead of behind it. */}
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.42)', zIndex:2000 }}/>
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, maxWidth:'94vw', zIndex:2001, background:'hsl(var(--card))', borderLeft:'1px solid hsl(var(--border))', boxShadow:'-12px 0 40px rgba(0,0,0,0.18)', display:'flex', flexDirection:'column' }}>
 
         {/* header */}
         <div style={{ padding:'16px 20px', borderBottom:'1px solid hsl(var(--border))', display:'flex', alignItems:'flex-start', gap:12 }}>
@@ -39,7 +45,7 @@ export default function RequirementImpact({ reqKey, onClose, onOpen }:
           </button>
         </div>
 
-        {stage === 'assess' ? (
+        {stage !== 'raised' ? (
           <>
             <div style={{ flex:1, overflowY:'auto', padding:20 }}>
               {/* blast summary */}
@@ -96,7 +102,7 @@ export default function RequirementImpact({ reqKey, onClose, onOpen }:
             {/* footer */}
             <div style={{ padding:'14px 20px', borderTop:'1px solid hsl(var(--border))', display:'flex', gap:10 }}>
               <button onClick={onClose} style={{ flex:'0 0 auto', height:38, padding:'0 16px', borderRadius:8, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', fontSize:13, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
-              <button onClick={() => setStage('raised')} style={{ flex:1, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, height:38, borderRadius:8, border:'none', background:'#D97706', color:'#fff', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+              <button onClick={() => setStage('sheet')} style={{ flex:1, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, height:38, borderRadius:8, border:'none', background:'#D97706', color:'#fff', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
                 <GitPullRequest size={15} color="#fff"/>Raise ECO with this scope
               </button>
             </div>
@@ -106,20 +112,29 @@ export default function RequirementImpact({ reqKey, onClose, onOpen }:
             <span style={{ width:56, height:56, borderRadius:14, background:softTint('#16A34A',0.12), display:'inline-flex', alignItems:'center', justifyContent:'center', marginBottom:18 }}>
               <CircleCheck size={28} color="#16A34A"/>
             </span>
-            <div style={{ fontSize:17, fontWeight:600, color:'hsl(var(--foreground))', marginBottom:6 }}>ECO-0042 drafted</div>
+            <div style={{ fontSize:17, fontWeight:600, color:'hsl(var(--foreground))', marginBottom:6 }}>Engineering change created</div>
             <div style={{ fontSize:13, color:'hsl(var(--muted-foreground))', lineHeight:1.55, marginBottom:8, maxWidth:320 }}>
-              A change order was pre-populated with <strong style={{ color:'hsl(var(--foreground))' }}>{r.key}</strong> and its {impact.blast} affected artifacts. The downstream requirements are now flagged suspect pending review.
+              A change order was created for <strong style={{ color:'hsl(var(--foreground))' }}>{r.key}</strong> and its downstream requirements — now flagged suspect while it's open.
             </div>
             <div style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'6px 13px', borderRadius:9999, background:'hsl(var(--muted))', border:'1px solid hsl(var(--border))', fontSize:12, color:'hsl(var(--muted-foreground))', marginBottom:22 }}>
               <GitPullRequest size={13} color="#D97706"/> Routed to Eng. Changes for approval
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={onClose} style={{ height:38, padding:'0 16px', borderRadius:8, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', fontSize:13, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>Close</button>
-              <button onClick={onClose} style={{ display:'inline-flex', alignItems:'center', gap:7, height:38, padding:'0 16px', borderRadius:8, border:'none', background:'hsl(var(--foreground))', color:'hsl(var(--background))', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
-                <ArrowRight size={15} color="hsl(var(--background))"/>Open ECO-0042
+              <button onClick={() => { if (createdEcoId) onEcoCreated?.(createdEcoId); onClose(); }} style={{ display:'inline-flex', alignItems:'center', gap:7, height:38, padding:'0 16px', borderRadius:8, border:'none', background:'hsl(var(--foreground))', color:'hsl(var(--background))', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                <ArrowRight size={15} color="hsl(var(--background))"/>Open change order
               </button>
             </div>
           </div>
+        )}
+        {stage === 'sheet' && (
+          <RequirementECOSheet
+            open
+            onClose={() => setStage('assess')}
+            reqKey={reqKey}
+            projectId={projectId}
+            onCreated={(ecoId) => { setCreatedEcoId(ecoId); setStage('raised'); }}
+          />
         )}
       </div>
     </>

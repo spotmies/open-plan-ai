@@ -15,7 +15,8 @@ import { useBomTree, useCreateBomNode, useDeleteBomNode, useAddRequirement, useP
 import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useAuth } from '@/contexts/AuthContext';
-import { uploadBomDocumentFile, addBomDocumentLink } from '@/hooks/useBomDocuments';
+import { uploadBomDocumentFile, addBomDocumentLink, deleteBomDocument } from '@/hooks/useBomDocuments';
+import { queryClient as rqClient } from '@/lib/queryClient';
 import { bomService } from '@/services/bom.service';
 import { downloadBomCsv } from '@/features/reports/utils/exportUtils';
 import { createBomWorkbook, downloadExcelFile } from '@/utils/excelExport';
@@ -25,7 +26,9 @@ import type { BOMApprovalRequest } from './bomData';
 // part catalog row so Inventory can show it) — undefined when the photo wasn't
 // touched, null when the user explicitly removed it.
 async function saveBomDocs(nodeId: string, payload: BOMPartPayload): Promise<{ photoUrl?: string | null }> {
-  const otherDocs = [...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])].filter(Boolean) as DocValue[];
+  // Already-existing attachments are kept as-is — only new files/links need to be created.
+  const otherDocs = [...(payload.docDatasheet ?? []), ...(payload.doc3DModel ?? []), ...(payload.docFootprint ?? []), ...(payload.docCustom ?? [])]
+    .filter((d): d is DocValue => !!d && d.kind !== 'existing');
   const uploads = Promise.allSettled(
     otherDocs.map(d => d.kind === 'file' ? uploadBomDocumentFile(nodeId, d.file) : addBomDocumentLink(nodeId, d.url, d.fileName ?? undefined)),
   );
@@ -42,6 +45,14 @@ async function saveBomDocs(nodeId: string, payload: BOMPartPayload): Promise<{ p
   }
 
   await uploads;
+
+  // Attachments (photo or tech file) the user removed or replaced in this edit — delete
+  // them server-side so they don't linger as orphaned documents.
+  if (payload.docsRemovedIds?.length) {
+    await Promise.allSettled(payload.docsRemovedIds.map(id => deleteBomDocument(id)));
+  }
+  rqClient.invalidateQueries({ queryKey: ['bom-documents', nodeId] });
+
   return { photoUrl };
 }
 
@@ -694,9 +705,9 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
 
           <Section title="Status" icon={CheckCircle2} count={draft.statuses.length}>
             <div className="flex gap-2 flex-wrap">
-              {(['approved', 'pending', 'rejected'] as const).map(s => (
+              {(['approved', 'pending', 'rejected', 'draft'] as const).map(s => (
                 <Chip key={s} active={draft.statuses.includes(s)} onClick={() => toggle('statuses', s)}>
-                  {s === 'approved' ? 'Approved' : s === 'pending' ? 'Pending' : 'Rejected'}
+                  {s === 'approved' ? 'Approved' : s === 'pending' ? 'Pending' : s === 'rejected' ? 'Rejected' : 'Draft'}
                 </Chip>
               ))}
             </div>
@@ -1576,7 +1587,10 @@ export function BOMView({
     try {
       const { photoUrl } = await saveBomDocs(node.id, payload);
       if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
-      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
+      // Link any requirements added in the Traceability tab
+      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId, rationale: payload.reqRationales[requirementId] ?? null })));
+      toast.success('Part added to BOM');
+      if (onAddClose) onAddClose();
     } catch (err) {
       toast.error('Part saved, but documents or requirement links failed — click Save to retry', {
         description: err instanceof Error ? err.message : undefined,
@@ -1867,6 +1881,7 @@ export function BOMView({
           <Tab id="approved" label="Approved" />
           <Tab id="pending" label="Pending" />
           <Tab id="rejected" label="Rejected" />
+          <Tab id="draft" label="Draft" />
 
           <div className="flex-1" />
 
@@ -1965,7 +1980,7 @@ export function BOMView({
                 <DropdownMenuTrigger asChild>
                   <button className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors">
                     {filters.statuses.length === 0 ? 'All'
-                      : filters.statuses.length === 1 ? (filters.statuses[0] === 'approved' ? 'Approved' : filters.statuses[0] === 'pending' ? 'Pending' : 'Rejected')
+                      : filters.statuses.length === 1 ? (filters.statuses[0] === 'approved' ? 'Approved' : filters.statuses[0] === 'pending' ? 'Pending' : filters.statuses[0] === 'rejected' ? 'Rejected' : 'Draft')
                       : `${filters.statuses.length} Statuses`}
                     <ChevronDown className="w-3.5 h-3.5" />
                   </button>
@@ -1975,6 +1990,7 @@ export function BOMView({
                   <DropdownMenuCheckboxItem checked={filters.statuses.includes('approved')} onCheckedChange={() => toggleFilterStatus('approved')} onSelect={e => e.preventDefault()}>Approved</DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem checked={filters.statuses.includes('pending')} onCheckedChange={() => toggleFilterStatus('pending')} onSelect={e => e.preventDefault()}>Pending</DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem checked={filters.statuses.includes('rejected')} onCheckedChange={() => toggleFilterStatus('rejected')} onSelect={e => e.preventDefault()}>Rejected</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem checked={filters.statuses.includes('draft')} onCheckedChange={() => toggleFilterStatus('draft')} onSelect={e => e.preventDefault()}>Draft</DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 

@@ -292,7 +292,11 @@ function NotesSection({ nodeId, currentUserId }: { nodeId: string; currentUserId
 }
 
 // ── Documents ──────────────────────────────────────────────────────
-function DocumentsSection({ nodeId }: { nodeId: string }) {
+// `photoUrl` is the part's explicitly-set product photo (part.imageUrl). The attachment
+// backing it is managed from the Edit Part dialog's dedicated Product Photo widget, so it's
+// excluded here — deleting it from this generic file list would silently break the part's
+// photo everywhere else (BOM rows, thumbnails) without updating part.imageUrl.
+function DocumentsSection({ nodeId, photoUrl }: { nodeId: string; photoUrl?: string | null }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: docs, isLoading } = useBomDocuments(nodeId);
   const upload = useUploadBomDocument(nodeId);
@@ -301,7 +305,7 @@ function DocumentsSection({ nodeId }: { nodeId: string }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<FilePreviewTarget | null>(null);
 
-  const attachments = docs ?? [];
+  const attachments = (docs ?? []).filter(d => !photoUrl || d.fileUrl !== photoUrl);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -865,7 +869,7 @@ export function BOMDetailScreenMobile({
             </Section>
             )}
 
-            <DocumentsSection nodeId={node.id} />
+            <DocumentsSection nodeId={node.id} photoUrl={photoUrl} />
           </>
         )}
 

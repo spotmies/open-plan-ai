@@ -106,16 +106,17 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
     onClose();
   }
 
-  async function handleFile(file: File) {
-    if (!isSupportedImportFile(file)) {
-      setUploadError(`Unsupported file type. Use ${SUPPORTED_IMPORT_FILE_LABEL}.`);
+  async function handleFiles(files: File[]) {
+    const unsupported = files.filter((f) => !isSupportedImportFile(f));
+    if (unsupported.length > 0) {
+      setUploadError(`Unsupported file type: ${unsupported.map((f) => f.name).join(', ')}. Use ${SUPPORTED_IMPORT_FILE_LABEL}.`);
       return;
     }
     setUploadError(null);
-    setPendingFileName(file.name);
+    setPendingFileName(files.length === 1 ? files[0].name : `${files.length} files: ${files.map((f) => f.name).join(', ')}`);
     setUploading(true);
     try {
-      const job = await taskImportService.startImport(projectId, file);
+      const job = await taskImportService.startImport(projectId, files);
       setJobId(job.jobId);
       setStage('chat');
     } catch (err) {
@@ -279,7 +280,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
           <DialogTitle className="text-lg">Import Tasks</DialogTitle>
           <DialogDescription className="text-sm">
-            {stage === 'upload' && `Upload a file and AI will map it to tasks — ${SUPPORTED_IMPORT_FILE_LABEL}.`}
+            {stage === 'upload' && `Upload one or more files and AI will map them to tasks — ${SUPPORTED_IMPORT_FILE_LABEL}.`}
             {stage === 'chat' && !isFailed && (
               <span className="flex items-center gap-1.5 truncate">
                 <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
@@ -305,8 +306,8 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                 onDrop={(e) => {
                   e.preventDefault();
                   setDragging(false);
-                  const file = e.dataTransfer.files?.[0];
-                  if (file) void handleFile(file);
+                  const files = Array.from(e.dataTransfer.files ?? []);
+                  if (files.length > 0) void handleFiles(files);
                 }}
               >
                 <div className={cn('h-14 w-14 rounded-full flex items-center justify-center', dragging ? 'bg-primary/10' : 'bg-muted')}>
@@ -319,7 +320,7 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                 <div className="text-center space-y-1.5">
                   <p className="text-sm font-medium">
                     {uploading ? 'Uploading…' : (
-                      <>Drop a file here, or <span className="text-primary">browse</span></>
+                      <>Drop files here, or <span className="text-primary">browse</span></>
                     )}
                   </p>
                   {!uploading && (
@@ -329,11 +330,12 @@ export function ImportTasksDialog({ open, onClose, projectId }: Props) {
                 <input
                   ref={fileInputRef}
                   type="file"
+                  multiple
                   accept=".xlsx,.xls,.csv,.docx,.pdf,.txt,.md"
                   className="hidden"
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void handleFile(file);
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length > 0) void handleFiles(files);
                     e.target.value = '';
                   }}
                 />

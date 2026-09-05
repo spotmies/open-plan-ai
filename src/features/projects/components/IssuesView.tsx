@@ -575,6 +575,21 @@ export function IssuesView({
 
   const { containerRef: boardScrollRef, handleDragStart, handleDragEnd: handleAutoScrollDragEnd, getLastPointerPosition } = useKanbanEdgeAutoScroll();
 
+  // Buckets past the visible width are easy to miss when filtering by status —
+  // scroll the matching bucket into view so the filter's effect is visible
+  // without having to manually scroll the board horizontally.
+  const statusFilterKey = statusFilter.join(',');
+  useEffect(() => {
+    if (viewMode !== 'kanban' || isMobile || !statusFilter.length) return;
+    const targetColumn = columns.find((column) => statusFilter.includes(column.status));
+    if (!targetColumn) return;
+    const columnEl = boardScrollRef.current?.querySelector<HTMLElement>(
+      `[data-kanban-column-id="${targetColumn.id}"]`,
+    );
+    columnEl?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilterKey, viewMode, isMobile]);
+
   const dependencyIssuesCount = sortedIssues.filter(isDependencyIssue).length;
 
   // Hide the Dependencies bucket entirely until it has linked issues

@@ -50,8 +50,9 @@ import { cn } from '@/lib/utils';
 import { Check, ChevronsUpDown, Download, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
+import { usePartCatalogSearch } from '@/hooks/useParts';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
-import { LocationCombobox, LockedLocationField, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
+import { LocationHierarchyPicker, LockedLocationField, formatShortDate, type StockLocation, type OrderRecord } from './inventoryData';
 
 const NO_ORDER_SENTINEL = '__no_order__';
 
@@ -84,6 +85,7 @@ export interface ReceiveStockInput {
   name: string;
   cat: BOMCategory;
   location: StockLocation;
+  locationNodeId?: string | null;
   quantity: number;
   reference?: string;
   quarantine: boolean;
@@ -112,15 +114,17 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
   const [selectedPart, setSelectedPart] = useState<ApiPartResponse | null>(null);
   const [partPickerOpen, setPartPickerOpen] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const { data: knownLocations = [] } = useLocations(orgId);
+  const { data: locations = [] } = useLocations(orgId);
+  const { query: partQuery, setQuery: setPartQuery, results: searchedParts } = usePartCatalogSearch(orgId, parts);
 
   // Receiving is a PO-fulfillment action — only parts with a remaining balance on an
   // actually-placed order (not a 'planned' want-to-order flag) are eligible to receive
-  // against here.
+  // against here. `searchedParts` (rather than the raw `parts` page) so a part outside
+  // the org's first page can still be found once its part number is typed.
   const partsWithOpenOrders = useMemo(() => {
     const orderedPartIds = new Set(orders.filter(o => o.remainingQty > 0 && o.status !== 'planned').map(o => o.partId));
-    return parts.filter(p => orderedPartIds.has(p.id));
-  }, [parts, orders]);
+    return searchedParts.filter(p => orderedPartIds.has(p.id));
+  }, [searchedParts, orders]);
 
   const form = useForm<ReceiveFormData>({
     resolver: zodResolver(receiveSchema),
@@ -188,6 +192,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
     if (openOrdersForPart.length > 0 && !form.getValues('orderId')) {
       const defaultOrder = openOrdersForPart[0];
       form.setValue('orderId', defaultOrder.id);
+      form.setValue('quantity', defaultOrder.remainingQty);
       if (!lockedLocation) form.setValue('location', defaultOrder.location ?? form.getValues('location'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -238,12 +243,14 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
       toast.error(`Quantity cannot exceed the on-order amount (${maxQuantity})`);
       return;
     }
+    const finalLocation = (lockedLocation ?? data.location) as StockLocation;
     onReceive({
       partId: selectedPart.id,
       pn: selectedPart.partNumber,
       name: selectedPart.name,
       cat: selectedPart.category,
-      location: (lockedLocation ?? data.location) as StockLocation,
+      location: finalLocation,
+      locationNodeId: locations.find((l) => l.path === finalLocation)?.id ?? null,
       quantity: data.quantity,
       reference: data.reference?.trim() || undefined,
       quarantine: data.quarantine,
@@ -313,15 +320,19 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                           </FormControl>
                         </PopoverTrigger>
                         <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[420px] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search parts, MPN, manufacturer..." />
+                          <Command shouldFilter={false}>
+                            <CommandInput
+                              placeholder="Search parts, MPN, manufacturer..."
+                              value={partQuery}
+                              onValueChange={setPartQuery}
+                            />
                             <CommandList>
                               <CommandEmpty>No parts on order.</CommandEmpty>
                               <CommandGroup>
                                 {partsWithOpenOrders.map((p) => (
                                   <CommandItem
                                     key={p.id}
-                                    value={`${p.partNumber} ${p.name} ${p.mpn ?? ''} ${p.manufacturer ?? ''}`}
+                                    value={p.id}
                                     onSelect={() => {
                                       setSelectedPart(p);
                                       form.setValue('partId', p.id, { shouldDirty: true, shouldValidate: true });
@@ -363,7 +374,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
                         <LockedLocationField location={lockedLocation} />
                       ) : (
                         <FormControl>
-                          <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                          <LocationHierarchyPicker value={field.value} onChange={field.onChange} orgId={orgId} />
                         </FormControl>
                       )}
                       <FormMessage />

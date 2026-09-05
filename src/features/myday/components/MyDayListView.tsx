@@ -364,7 +364,7 @@ export function MyDayListView({
 
   return (
     <div className="rounded-lg border bg-card h-full min-h-0 flex flex-col flex-1 overflow-hidden">
-      <Table className="min-h-full" containerClassName="flex-1 min-h-0 overflow-auto">
+      <Table containerClassName="flex-1 min-h-0 overflow-auto">
         <TableHeader className="sticky top-0 z-10 bg-background shadow-xs">
           <TableRow className="bg-background hover:bg-background">
             <SortableHead field="title" className="w-[300px]">Task</SortableHead>
@@ -377,10 +377,10 @@ export function MyDayListView({
             <SortableHead field="dueDate">Due Date</SortableHead>
           </TableRow>
         </TableHeader>
-        <TableBody className="h-full">
+        <TableBody>
           {paginatedTasks.length === 0 ? (
-            <TableRow className="hover:bg-transparent h-full">
-              <TableCell colSpan={7} className="text-center py-20 align-middle text-muted-foreground font-medium h-full">
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={7} className="text-center py-20 align-middle text-muted-foreground font-medium">
                 {emptyMessage}
               </TableCell>
             </TableRow>
@@ -391,7 +391,7 @@ export function MyDayListView({
               onClick={() => onTaskClick(task)}
             >
               <TableCell>
-                <div className="flex items-start gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -401,7 +401,7 @@ export function MyDayListView({
                     }}
                     aria-label={isMyDayItemComplete(task.status) ? 'Mark as incomplete' : 'Mark as complete'}
                     className={cn(
-                      'h-4 w-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors',
+                      'h-4 w-4 rounded-full border flex items-center justify-center shrink-0 transition-colors',
                       isMyDayItemComplete(task.status)
                         ? 'bg-status-done border-status-done'
                         : 'border-muted-foreground/40 hover:border-status-done'

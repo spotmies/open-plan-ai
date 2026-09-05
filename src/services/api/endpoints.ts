@@ -199,6 +199,7 @@ export const ENDPOINTS = {
     APPROVAL_REQUEST_DECISION:(requestId: string) => `/bom/approval-requests/${requestId}/decision`,
     PROJECT_APPROVAL_REQUESTS:(projectId: string) => `/projects/${projectId}/bom/approval-requests`,
     NODE_NOTES:        (nodeId: string) => `/bom/nodes/${nodeId}/notes`,
+    REQUIREMENT_ALLOCATIONS: (projectId: string) => `/projects/${projectId}/bom/requirement-allocations`,
   },
   // BOM import — AI-assisted column mapping fallback for Excel import
   BOM_IMPORT: {
@@ -274,10 +275,48 @@ export const ENDPOINTS = {
     FAVOURITE_TOGGLE: (id: string) => `/conversations/${id}/favourite`,
     HIDE: (id: string) => `/conversations/${id}/hide`,
   },
+  // Requirement groups (project-scoped taxonomy)
+  REQUIREMENT_GROUPS: {
+    LIST:   (projectId: string) => `/projects/${projectId}/requirement-groups`,
+    CREATE: (projectId: string) => `/projects/${projectId}/requirement-groups`,
+    UPDATE: (groupId: string) => `/requirement-groups/${groupId}`,
+    DELETE: (groupId: string) => `/requirement-groups/${groupId}`,
+  },
+  // Requirements
+  REQUIREMENTS: {
+    TREE:   (projectId: string) => `/projects/${projectId}/requirements`,
+    CREATE: (projectId: string) => `/projects/${projectId}/requirements`,
+    BY_ID:  (requirementId: string) => `/requirements/${requirementId}`,
+    UPDATE: (requirementId: string) => `/requirements/${requirementId}`,
+    DELETE: (requirementId: string) => `/requirements/${requirementId}`,
+    LINKS:  (requirementId: string) => `/requirements/${requirementId}/links`,
+  },
+  // Requirement links (requirement <-> requirement graph edges)
+  REQUIREMENT_LINKS: {
+    PROJECT_LIST: (projectId: string) => `/projects/${projectId}/requirement-links`,
+    UPDATE: (linkId: string) => `/requirement-links/${linkId}`,
+    DELETE: (linkId: string) => `/requirement-links/${linkId}`,
+  },
+  // Test & Verification
+  VERIFICATION: {
+    SUMMARY:          (projectId: string) => `/projects/${projectId}/verification-summary`,
+    BY_REQUIREMENT:   (requirementId: string) => `/requirements/${requirementId}/verification`,
+    CREATE_TEST_CASE: (requirementId: string) => `/requirements/${requirementId}/test-cases`,
+    CONFIRM_VERIFIED: (requirementId: string) => `/requirements/${requirementId}/confirm-verified`,
+    UPDATE_TEST_CASE: (testCaseId: string) => `/test-cases/${testCaseId}`,
+    DELETE_TEST_CASE: (testCaseId: string) => `/test-cases/${testCaseId}`,
+    EXECUTIONS:       (testCaseId: string) => `/test-cases/${testCaseId}/executions`,
+    RECORD_EXECUTION: (testCaseId: string) => `/test-cases/${testCaseId}/executions`,
+    MODE:             (projectId: string) => `/projects/${projectId}/verification-mode`,
+    PIPELINE_TEMPLATE:(projectId: string) => `/projects/${projectId}/verification-pipeline-template`,
+    SUBMIT_FOR_VERIFICATION: (requirementId: string) => `/requirements/${requirementId}/submit-for-verification`,
+    PIPELINE_STEP_DECISION:  (stepId: string) => `/requirement-pipeline-steps/${stepId}/decision`,
+  },
   // Engineering Changes (ECO)
   ECOS: {
     LIST:     (projectId: string) => `/projects/${projectId}/ecos`,
     BY_PART:  (projectId: string, partId: string) => `/projects/${projectId}/ecos/by-part/${partId}`,
+    AFFECTED_REQUIREMENTS: (projectId: string) => `/projects/${projectId}/ecos/affected-requirements`,
     STATS:    (projectId: string) => `/projects/${projectId}/ecos/stats`,
     CREATE:   (projectId: string) => `/projects/${projectId}/ecos`,
     BY_ID:    (projectId: string, ecoId: string) => `/projects/${projectId}/ecos/${ecoId}`,
@@ -364,10 +403,12 @@ export const ENDPOINTS = {
     KIT_BUILD:          (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/kit`,
     GENERATE_SHORTAGE_ORDERS: (orgId: string, buildId: string) => `/organizations/${orgId}/inventory/builds/${buildId}/generate-shortage-orders`,
   },
-  // Locations (org-wide registry of stock locations — backs the inventory Location picker)
+  // Locations (org-wide Warehouse -> Shelf -> Box hierarchy — backs the inventory Location picker)
   LOCATIONS: {
     LIST:   (orgId: string) => `/organizations/${orgId}/locations`,
     CREATE: (orgId: string) => `/organizations/${orgId}/locations`,
+    UPDATE: (orgId: string, locationId: string) => `/organizations/${orgId}/locations/${locationId}`,
+    DELETE: (orgId: string, locationId: string) => `/organizations/${orgId}/locations/${locationId}`,
   },
   // Act (phase 2) proposals
   AI_PROPOSALS: {

@@ -171,7 +171,11 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
 }
 
 // ── Main component ─────────────────────────────────────────────────
-export function BOMDocuments({ nodeId }: { nodeId: string }) {
+// `photoUrl` is the part's explicitly-set product photo (part.imageUrl). The attachment
+// backing it is managed from the Edit Part dialog's dedicated Product Photo widget, so it's
+// excluded here — deleting it from this generic file list would silently break the part's
+// photo everywhere else (BOM rows, thumbnails) without updating part.imageUrl.
+export function BOMDocuments({ nodeId, photoUrl }: { nodeId: string; photoUrl?: string | null }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -182,7 +186,7 @@ export function BOMDocuments({ nodeId }: { nodeId: string }) {
   const upload = useUploadBomDocument(nodeId);
   const remove = useDeleteBomDocument(nodeId);
 
-  const attachments = docs ?? [];
+  const attachments = (docs ?? []).filter(d => !photoUrl || d.fileUrl !== photoUrl);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);

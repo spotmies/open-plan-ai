@@ -134,6 +134,9 @@ export interface ApiEcoDetail extends ApiEcoListItem {
   diffRows: ApiEcoDiffRow[];
   ecn: ApiEcn | null;
   activities: ApiEcoActivity[];
+  // Set when this ECO was raised from a failed test result (Test &
+  // Verification closed loop) rather than created directly — null otherwise.
+  triggeredByTestExecutionId: string | null;
 }
 
 export interface ApiEcoStats {
@@ -193,6 +196,25 @@ export function useEcosByPart(projectId: string | undefined, partId: string | un
   });
 }
 
+export interface ApiAffectedRequirementLink {
+  requirementId: string;
+  ecoId: string;
+  ecoNum: string;
+  ecoStatus: string;
+}
+
+// Project-wide "which requirements have an in-flight ECO" listing — feeds
+// requirementsData.ts's auto-suspect computation.
+export function useECOAffectedRequirements(projectId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.ecos.affectedRequirements(projectId ?? ''),
+    queryFn: (): Promise<ApiAffectedRequirementLink[]> =>
+      apiClient.get<ApiAffectedRequirementLink[]>(ENDPOINTS.ECOS.AFFECTED_REQUIREMENTS(projectId!)),
+    enabled: !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useECOStats(projectId: string | undefined) {
   return useQuery({
     queryKey: queryKeys.ecos.stats(projectId ?? ''),
@@ -219,6 +241,7 @@ export function useCreateECO(projectId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.ecos.listRoot(projectId) });
       qc.invalidateQueries({ queryKey: queryKeys.ecos.stats(projectId) });
+      qc.invalidateQueries({ queryKey: queryKeys.ecos.affectedRequirements(projectId) });
     },
   });
 }
@@ -313,6 +336,9 @@ export function useCloseECO(projectId: string, ecoId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.ecos.detail(ecoId) });
       qc.invalidateQueries({ queryKey: queryKeys.ecos.listRoot(projectId) });
       qc.invalidateQueries({ queryKey: queryKeys.ecos.stats(projectId) });
+      // Closing is the one status change that flips an affected requirement's
+      // "suspect" signal off — see requirementsData.ts's rebuild.
+      qc.invalidateQueries({ queryKey: queryKeys.ecos.affectedRequirements(projectId) });
     },
   });
 }

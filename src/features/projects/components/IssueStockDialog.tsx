@@ -24,8 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ArrowLeftRight, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useLocations } from '@/hooks/useLocations';
-import { availableOf, LocationCombobox, type StockRecord } from './inventoryData';
+import { availableOf, LocationHierarchyPicker, type StockRecord } from './inventoryData';
 
 const issueSchema = z.object({
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
@@ -53,7 +52,6 @@ interface IssueStockDialogProps {
 
 export function IssueStockDialog({ isOpen, onClose, orgId, record, onIssue }: IssueStockDialogProps) {
   const isMobile = useIsMobile();
-  const { data: knownLocations = [] } = useLocations(orgId);
 
   const form = useForm<IssueFormData>({
     resolver: zodResolver(issueSchema),
@@ -143,7 +141,7 @@ export function IssueStockDialog({ isOpen, onClose, orgId, record, onIssue }: Is
                         Destination location <span className="text-destructive" aria-hidden="true">*</span>
                       </FormLabel>
                       <FormControl>
-                        <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                        <LocationHierarchyPicker value={field.value} onChange={field.onChange} orgId={orgId} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

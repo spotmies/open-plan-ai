@@ -330,25 +330,25 @@ export default function MyDay() {
           {/* View controls */}
           <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible pb-1 sm:pb-0">
             <Tabs value={filter} onValueChange={(v) => setFilter(v as MyDayFilter)} className="shrink-0">
-              <TabsList className="h-9 p-1 shrink-0 gap-2">
-                <TabsTrigger value="today" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
-                  My Day
+              <TabsList className="h-9 p-1 shrink-0 gap-1 sm:gap-2">
+                <TabsTrigger value="today" className="px-3 sm:px-4 text-xs sm:text-sm shrink-0 gap-1.5">
+                  <span>My Day</span>
                   {todayActiveCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
+                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground leading-none shadow-xs">
                       {todayActiveCount}
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="overdue" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
-                  Overdue
+                <TabsTrigger value="overdue" className="px-3 sm:px-4 text-xs sm:text-sm shrink-0 gap-1.5">
+                  <span>Overdue</span>
                   {overdueTasks.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
+                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground leading-none shadow-xs">
                       {overdueTasks.length}
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="all" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">All</TabsTrigger>
-                <TabsTrigger value="completed" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">Completed</TabsTrigger>
+                <TabsTrigger value="all" className="px-3 sm:px-4 text-xs sm:text-sm shrink-0">All</TabsTrigger>
+                <TabsTrigger value="completed" className="px-3 sm:px-4 text-xs sm:text-sm shrink-0">Completed</TabsTrigger>
               </TabsList>
             </Tabs>
 
