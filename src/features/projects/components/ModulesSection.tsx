@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { LayoutGrid, List, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Module, ModuleViewMode, Task, Issue, TeamMember, ModuleType } from '@/types';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -63,12 +64,22 @@ export function ModuleViewControls({
         onValueChange={(value) => value && onViewModeChange(value as ModuleViewMode)}
         className="bg-muted/50 p-1 rounded-lg"
       >
-        <ToggleGroupItem value="kanban" aria-label="Kanban view" className="h-8 w-8 p-0 data-[state=on]:bg-background">
-          <LayoutGrid className="h-4 w-4" />
-        </ToggleGroupItem>
-        <ToggleGroupItem value="list" aria-label="List view" className="h-8 w-8 p-0 data-[state=on]:bg-background">
-          <List className="h-4 w-4" />
-        </ToggleGroupItem>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ToggleGroupItem value="kanban" aria-label="Kanban view" className="h-8 w-8 p-0 data-[state=on]:bg-background">
+              <LayoutGrid className="h-4 w-4" />
+            </ToggleGroupItem>
+          </TooltipTrigger>
+          <TooltipContent side="top">Kanban View</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ToggleGroupItem value="list" aria-label="List view" className="h-8 w-8 p-0 data-[state=on]:bg-background">
+              <List className="h-4 w-4" />
+            </ToggleGroupItem>
+          </TooltipTrigger>
+          <TooltipContent side="top">List View</TooltipContent>
+        </Tooltip>
       </ToggleGroup>
 
       {onAddModule && (

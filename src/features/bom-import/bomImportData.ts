@@ -29,14 +29,24 @@ export interface ImportRowPreview {
   /** 0-based hierarchy depth — used to indent the row in the review card. */
   level: number;
   existingPartId: string | null;
+  /** Raw "owner / handled by" name from the source file, or null. */
+  owner: string | null;
+  /** true once `owner` matched a real project member — the node gets an owner on commit. */
+  ownerResolved: boolean;
+  /** Product photo URL from the source file, or null — set on the new part on commit. */
+  imageUrl: string | null;
   issues: string[];
   /** false only when the row is missing a required field (or was explicitly skipped in chat) — every other issue is informational and still imports. */
   importable: boolean;
+  /** true when this part number is already a node in the project's BOM — skipped on commit, not re-added. */
+  alreadyInBom: boolean;
 }
 
 export interface ImportProposalPreview {
   itemCount: number;
   cleanCount: number;
+  /** Rows skipped because the part number is already in the project's BOM — a subset of (itemCount - cleanCount). */
+  duplicateCount: number;
   rows: ImportRowPreview[];
 }
 

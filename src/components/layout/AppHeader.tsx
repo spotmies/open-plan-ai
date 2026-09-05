@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
-import { Sun, Moon, ChevronLeft, BarChart3, Plus, Users, Bug, Sparkles, Download, ShoppingCart, Pencil } from 'lucide-react';
+import { Sun, Moon, ChevronLeft, ChevronDown, Check, BarChart3, Plus, Users, Bug, Sparkles, Download, ShoppingCart, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { Badge } from '@/components/ui/badge';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -14,6 +13,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { useProjects } from '@/hooks/useProjects';
+import type { Project } from '@/types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,13 +38,57 @@ import { useAssistantStore } from '@/features/assistant/stores/useAssistantStore
 import { ProjectTeamButton } from '@/features/projects/components/ProjectTeamButton';
 import { cn } from '@/lib/utils';
 
-const stageColors: Record<string, string> = {
-  concept: 'bg-muted text-muted-foreground',
-  design: 'bg-chart-1/10 text-chart-1',
-  development: 'bg-chart-2/10 text-chart-2',
-  testing: 'bg-chart-4/10 text-chart-4',
-  production: 'bg-chart-3/10 text-chart-3',
-};
+// GitHub-style "switch repository" dropdown: search box + list of every project
+// the user can access, current one checked, click navigates to the same tab
+// (e.g. /bom) on the selected project.
+function ProjectSwitcher({ current, restPath }: { current: Project; restPath: string }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const { data: projects = [] } = useProjects();
+
+  const handleSelect = (id: string) => {
+    setOpen(false);
+    if (id === current.id) return;
+    navigate(restPath ? `/projects/${id}/${restPath}` : `/projects/${id}`);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1 min-w-0 rounded-md px-1 -mx-1 hover:bg-muted transition-colors"
+        >
+          <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
+            {current.name}
+          </h1>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-72" align="start">
+        <Command>
+          <CommandInput placeholder="Search projects..." />
+          <CommandList>
+            <CommandEmpty>No projects found.</CommandEmpty>
+            <CommandGroup>
+              {projects.map((p) => (
+                <CommandItem
+                  key={p.id}
+                  value={p.name}
+                  onSelect={() => handleSelect(p.id)}
+                  className="cursor-pointer"
+                >
+                  <Check className={cn('h-3.5 w-3.5 shrink-0', p.id === current.id ? 'opacity-100' : 'opacity-0')} />
+                  <span className="truncate">{p.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function getPageTitle(pathname: string): string {
   if (pathname === '/') return 'Dashboard';
@@ -82,6 +129,7 @@ export function AppHeader() {
   // Detect project detail route to show project name in header
   const projectMatch = useMatch('/projects/:id/*');
   const projectId = projectMatch?.params?.id;
+  const projectRestPath = projectMatch?.params?.['*'] ?? '';
   const { data: project } = useProjectDetail(projectId, { enabled: !!projectId });
 
   // Mobile project detail: hide theme/notifications/profile, keep only back + name
@@ -115,7 +163,7 @@ export function AppHeader() {
     <header className="relative h-14 border-b border-border flex items-center justify-between px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 w-full max-w-full min-w-0 overflow-hidden">
       <div className="flex items-center gap-3 min-w-0">
 
-        {/* Project detail: Back + Name + Stage */}
+        {/* Project detail: Back + Name (with switcher dropdown) */}
         {project ? (
           <div className="flex items-center gap-2 min-w-0">
             <Button
@@ -126,17 +174,7 @@ export function AppHeader() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
-              {project.name}
-            </h1>
-            {!isMobile && (
-              <Badge
-                variant="secondary"
-                className={cn(stageColors[project.stage] ?? '', 'shrink-0')}
-              >
-                {project.stage.charAt(0).toUpperCase() + project.stage.slice(1)}
-              </Badge>
-            )}
+            <ProjectSwitcher current={project} restPath={projectRestPath} />
           </div>
         ) : (
           <div className="flex items-center gap-2">

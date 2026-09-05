@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Layers, Search, Filter, List, LayoutGrid, Share2,
@@ -87,7 +87,7 @@ function OwnerBadge({ name, size = 'sm' }: { name: string; size?: 'sm' | 'xs' })
 }
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { cn } from '@/lib/utils';
@@ -504,20 +504,33 @@ function Section({ title, icon: Icon, count, children }: {
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({ active, onClick, onDelete, children }: { active: boolean; onClick: () => void; onDelete?: () => void; children: React.ReactNode }) {
   return (
-    <button
+    <div
       onClick={onClick}
       title={typeof children === 'string' ? children : undefined}
       className={cn(
-        'px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border transition-colors max-w-[190px] truncate',
+        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border transition-colors max-w-[210px] select-none group',
         active
           ? 'bg-primary/10 text-primary border-primary/30'
           : 'bg-card text-muted-foreground border-border hover:bg-muted'
       )}
     >
-      {children}
-    </button>
+      <span className="truncate">{children}</span>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          title="Delete custom option"
+          className="w-4 h-4 rounded-full flex items-center justify-center text-muted-foreground/70 hover:text-destructive hover:bg-destructive/15 transition-all shrink-0 -mr-1"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -544,8 +557,22 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
   currencySymbol: string;
 }) {
   const [draft, setDraft] = useState<BOMFilters>({ ...filters });
-  const [customMfrs, setCustomMfrs] = useState<string[]>([]);
-  const [customSuppliers, setCustomSuppliers] = useState<string[]>([]);
+  const [customMfrs, setCustomMfrs] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('openplan_custom_mfrs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [customSuppliers, setCustomSuppliers] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('openplan_custom_suppliers');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [mfrInput, setMfrInput] = useState('');
   const [supplierInput, setSupplierInput] = useState('');
   const [showMfrInput, setShowMfrInput] = useState(false);
@@ -569,7 +596,11 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
   const addCustomMfr = () => {
     const v = mfrInput.trim();
     if (!v) return;
-    if (!customMfrs.includes(v)) setCustomMfrs(m => [...m, v]);
+    if (!customMfrs.includes(v)) {
+      const updated = [...customMfrs, v];
+      setCustomMfrs(updated);
+      try { localStorage.setItem('openplan_custom_mfrs', JSON.stringify(updated)); } catch {}
+    }
     setDraft(f => ({
       ...f,
       manufacturers: f.manufacturers.includes(v) ? f.manufacturers : [...f.manufacturers, v],
@@ -578,16 +609,44 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
     setShowMfrInput(false);
   };
 
+  const removeCustomMfr = (v: string) => {
+    setCustomMfrs(m => {
+      const updated = m.filter(x => x !== v);
+      try { localStorage.setItem('openplan_custom_mfrs', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    setDraft(f => ({
+      ...f,
+      manufacturers: f.manufacturers.filter(x => x !== v),
+    }));
+  };
+
   const addCustomSupplier = () => {
     const v = supplierInput.trim();
     if (!v) return;
-    if (!customSuppliers.includes(v)) setCustomSuppliers(s => [...s, v]);
+    if (!customSuppliers.includes(v)) {
+      const updated = [...customSuppliers, v];
+      setCustomSuppliers(updated);
+      try { localStorage.setItem('openplan_custom_suppliers', JSON.stringify(updated)); } catch {}
+    }
     setDraft(f => ({
       ...f,
       suppliers: f.suppliers.includes(v) ? f.suppliers : [...f.suppliers, v],
     }));
     setSupplierInput('');
     setShowSupplierInput(false);
+  };
+
+  const removeCustomSupplier = (v: string) => {
+    setCustomSuppliers(s => {
+      const updated = s.filter(x => x !== v);
+      try { localStorage.setItem('openplan_custom_suppliers', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    setDraft(f => ({
+      ...f,
+      suppliers: f.suppliers.filter(x => x !== v),
+    }));
   };
 
 
@@ -717,8 +776,11 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
 
           <Section title="Manufacturer" icon={Factory} count={draft.manufacturers.length}>
             <div className="flex gap-2 flex-wrap">
-              {[...facets.manufacturers, ...customMfrs.filter(c => !facets.manufacturers.includes(c))].map(m => (
+              {facets.manufacturers.map(m => (
                 <Chip key={m} active={draft.manufacturers.includes(m)} onClick={() => toggle('manufacturers', m)}>{m}</Chip>
+              ))}
+              {customMfrs.filter(c => !facets.manufacturers.includes(c)).map(m => (
+                <Chip key={m} active={draft.manufacturers.includes(m)} onClick={() => toggle('manufacturers', m)} onDelete={() => removeCustomMfr(m)}>{m}</Chip>
               ))}
               {showMfrInput ? (
                 <div className="flex items-center gap-1 bg-muted border border-primary/40 rounded-md px-2 py-0.5">
@@ -745,8 +807,11 @@ function FilterDrawer({ open, filters, setFilters, onClose, facets, currencySymb
 
           <Section title="Supplier / Distributor" icon={Truck} count={draft.suppliers.length}>
             <div className="flex gap-2 flex-wrap">
-              {[...facets.suppliers, ...customSuppliers.filter(c => !facets.suppliers.includes(c))].map(s => (
+              {facets.suppliers.map(s => (
                 <Chip key={s} active={draft.suppliers.includes(s)} onClick={() => toggle('suppliers', s)}>{s}</Chip>
+              ))}
+              {customSuppliers.filter(c => !facets.suppliers.includes(c)).map(s => (
+                <Chip key={s} active={draft.suppliers.includes(s)} onClick={() => toggle('suppliers', s)} onDelete={() => removeCustomSupplier(s)}>{s}</Chip>
               ))}
               {showSupplierInput ? (
                 <div className="flex items-center gap-1 bg-muted border border-primary/40 rounded-md px-2 py-0.5">
@@ -1162,9 +1227,8 @@ function GridBreadcrumb({ path, onJump }: { path: BOMNode[]; onJump: (depth: num
   );
 }
 
-function GridView({ rows, rootNodes, filtersActive, onOpen, totalCount, formatCurrency }: { rows: BOMNode[]; rootNodes: BOMNode[]; filtersActive: boolean; onOpen: (id: string) => void; totalCount: number; formatCurrency: (n: number) => string }) {
+function GridView({ rows, rootNodes, filtersActive, onOpen, totalCount, formatCurrency, drillPath, setDrillPath }: { rows: BOMNode[]; rootNodes: BOMNode[]; filtersActive: boolean; onOpen: (id: string) => void; totalCount: number; formatCurrency: (n: number) => string; drillPath: BOMNode[]; setDrillPath: Dispatch<SetStateAction<BOMNode[]>> }) {
   const [hovered, setHovered] = useState<string | null>(null);
-  const [drillPath, setDrillPath] = useState<BOMNode[]>([]);
 
   const current = drillPath[drillPath.length - 1];
   const displayRows = filtersActive ? rows : (current?.children ?? rootNodes);
@@ -1326,17 +1390,23 @@ export function BOMView({
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<BOMNode | null>(null);
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem('bom_view') as ViewMode) ?? 'list');
+  // Lifted out of GridView so drilling into a sub-component survives switching to
+  // List/Map and back — GridView is unmounted/remounted on each toggle since it's
+  // only rendered while view === 'grid'.
+  const [gridDrillPath, setGridDrillPath] = useState<BOMNode[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [filters, setFilters] = useState<BOMFilters>({ ...EMPTY_FILTERS });
-  // The toolbar's All/Approved/Pending/Rejected quick-tab is a single-select shortcut
-  // over the same status filter the drawer's Status chips edit — it reads/writes
-  // filters.statuses directly instead of keeping its own state, so the two controls
-  // can never disagree (e.g. tab="Approved" + drawer chip="Pending" would otherwise
-  // AND together into an always-empty result with no indication why).
-  const filterStatus: 'all' | BOMStatus = filters.statuses.length === 1 ? filters.statuses[0] : 'all';
-  const setFilterStatus = (id: 'all' | BOMStatus) =>
-    setFilters(f => ({ ...f, statuses: id === 'all' ? [] : [id] }));
+  // The toolbar's All/Approved/Pending/Rejected quick-tab is a multi-select shortcut
+  // over the same status filter the drawer's Status chips edit — both read/write
+  // filters.statuses directly (toggling membership, same as the drawer chips) so the
+  // two controls always reflect the exact same selection and can never disagree.
+  const toggleFilterStatus = (id: BOMStatus) =>
+    setFilters(f => ({
+      ...f,
+      statuses: f.statuses.includes(id) ? f.statuses.filter(s => s !== id) : [...f.statuses, id],
+    }));
+  const clearFilterStatus = () => setFilters(f => ({ ...f, statuses: [] }));
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('bom_expanded');
     if (saved) { try { return JSON.parse(saved); } catch { /* ignore */ } }
@@ -1448,86 +1518,141 @@ export function BOMView({
 
   const handleView = (v: ViewMode) => { setView(v); localStorage.setItem('bom_view', v); };
 
+  // Caches the part/node created by the current "Add Part" sheet session, so
+  // that if the docs/photo/requirement-link step below fails, retrying Save
+  // reuses them instead of calling createPart again (which would 409 as a
+  // duplicate part number) — see handleAddPart. Cleared on dialog close.
+  const pendingAddPartRef = useRef<{
+    part: Awaited<ReturnType<typeof createPart.mutateAsync>>;
+    node: Awaited<ReturnType<typeof createNode.mutateAsync>>;
+  } | null>(null);
+
   // ── Add Part handler (two-step: create part in catalog, then node) ─
   const handleAddPart = async (payload: BOMPartPayload) => {
+    let part = pendingAddPartRef.current?.part;
+    let node = pendingAddPartRef.current?.node;
+    if (!part || !node) {
+      try {
+        part = await createPart.mutateAsync({
+          partNumber: payload.pn,
+          name: payload.name,
+          description: payload.desc,
+          category: payload.category,
+          manufacturer: payload.manufacturer || undefined,
+          distributor: payload.distributor || undefined,
+          mpn: payload.mpn || undefined,
+          unit: payload.uom,
+          initialStatus: toInitialRevisionStatus(payload.status),
+          initialRev: payload.rev,
+          initialPrice: payload.price > 0 ? payload.price : undefined,
+          initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
+          initialSuppliers: payload.suppliers?.length ? payload.suppliers : undefined,
+          // Additional Fields from the form — dropped here until now, so anything
+          // typed into that section vanished the moment the part was created.
+          customFields: payload.customFields?.length ? payload.customFields : undefined,
+        });
+        node = await createNode.mutateAsync({
+          partId: part.id,
+          quantity: payload.qty,
+          unit: payload.uom,
+          status: toNodeStatus(payload.status),
+          ownerId: payload.ownerId ?? null,
+        });
+        pendingAddPartRef.current = { part, node };
+      } catch (err) {
+        toast.error('Failed to add part', {
+          description: err instanceof Error ? err.message : undefined,
+        });
+        throw err; // re-throw so the dialog stays open and the user can retry
+      }
+    }
+
+    // Part + BOM node are already committed at this point. If the docs/photo/
+    // requirement-link step below fails, don't report the whole add as
+    // failed (it wasn't) — but don't silently close and report success
+    // either, or the user will believe attachments saved when they didn't.
+    // Keep the dialog open so retrying Save (via the cache above) only
+    // retries the attachment step, and the part/node are never duplicated.
     try {
-      const part = await createPart.mutateAsync({
-        partNumber: payload.pn,
-        name: payload.name,
-        description: payload.desc,
-        category: payload.category,
-        manufacturer: payload.manufacturer || undefined,
-        distributor: payload.distributor || undefined,
-        mpn: payload.mpn || undefined,
-        unit: payload.uom,
-        initialStatus: toInitialRevisionStatus(payload.status),
-        initialRev: payload.rev,
-        initialPrice: payload.price > 0 ? payload.price : undefined,
-        initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
-        initialSuppliers: payload.suppliers?.length ? payload.suppliers : undefined,
-        // Additional Fields from the form — dropped here until now, so anything
-        // typed into that section vanished the moment the part was created.
-        customFields: payload.customFields?.length ? payload.customFields : undefined,
-      });
-      const node = await createNode.mutateAsync({
-        partId: part.id,
-        quantity: payload.qty,
-        unit: payload.uom,
-        status: toNodeStatus(payload.status),
-        ownerId: payload.ownerId ?? null,
-      });
-      // Upload any documents attached in the form
       const { photoUrl } = await saveBomDocs(node.id, payload);
       if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
-      // Link any requirements added in the Traceability tab
       await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
-      toast.success('Part added to BOM');
-      if (onAddClose) onAddClose();
     } catch (err) {
-      toast.error('Failed to add part', {
+      toast.error('Part saved, but documents or requirement links failed — click Save to retry', {
         description: err instanceof Error ? err.message : undefined,
       });
-      throw err; // re-throw so the dialog stays open and the user can retry
+      throw err; // re-throw so the dialog stays open; onSave's cache skips re-creating the part
     }
+    toast.success('Part added to BOM');
+    pendingAddPartRef.current = null;
+    if (onAddClose) onAddClose();
   };
+
+  // Same caching purpose as pendingAddPartRef above, for the "+" sub-component flow.
+  const pendingAddSubNodeRef = useRef<{
+    part: Awaited<ReturnType<typeof createPart.mutateAsync>>;
+    node: Awaited<ReturnType<typeof createNode.mutateAsync>>;
+  } | null>(null);
 
   // ── Add Sub-component handler (from the list view "+" action) ──────
   const handleAddSubcomponent = async (payload: BOMPartPayload) => {
     if (!createSubNode) return;
+    let part = pendingAddSubNodeRef.current?.part;
+    let node = pendingAddSubNodeRef.current?.node;
+    if (!part || !node) {
+      try {
+        part = await createPart.mutateAsync({
+          partNumber: payload.pn,
+          name: payload.name,
+          description: payload.desc,
+          category: payload.category,
+          manufacturer: payload.manufacturer || undefined,
+          distributor: payload.distributor || undefined,
+          mpn: payload.mpn || undefined,
+          unit: payload.uom,
+          initialStatus: toInitialRevisionStatus(payload.status),
+          initialRev: payload.rev,
+          initialPrice: payload.price > 0 ? payload.price : undefined,
+          initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
+          initialSuppliers: payload.suppliers?.length ? payload.suppliers : undefined,
+          // Additional Fields from the form — dropped here until now, so anything
+          // typed into that section vanished the moment the part was created.
+          customFields: payload.customFields?.length ? payload.customFields : undefined,
+        });
+        node = await createNode.mutateAsync({
+          partId: part.id,
+          quantity: payload.qty,
+          unit: payload.uom,
+          status: toNodeStatus(payload.status),
+          parentId: createSubNode.id,
+          ownerId: payload.ownerId ?? null,
+        });
+        pendingAddSubNodeRef.current = { part, node };
+      } catch (err) {
+        toast.error('Failed to add sub-component', {
+          description: err instanceof Error ? err.message : undefined,
+        });
+        throw err; // re-throw so the dialog stays open and the user can retry
+      }
+    }
+
+    // Part + BOM node are already committed at this point. Keep the dialog
+    // open on a docs/photo/requirement-link failure (same reasoning as
+    // handleAddPart) so the user isn't told it worked when attachments didn't,
+    // and so retrying Save reuses the cached part/node instead of duplicating it.
     try {
-      const part = await createPart.mutateAsync({
-        partNumber: payload.pn,
-        name: payload.name,
-        description: payload.desc,
-        category: payload.category,
-        manufacturer: payload.manufacturer || undefined,
-        distributor: payload.distributor || undefined,
-        mpn: payload.mpn || undefined,
-        unit: payload.uom,
-        initialStatus: toInitialRevisionStatus(payload.status),
-        initialRev: payload.rev,
-        initialPrice: payload.price > 0 ? payload.price : undefined,
-        initialLeadTimeDays: payload.leadTime > 0 ? payload.leadTime : undefined,
-        initialSuppliers: payload.suppliers?.length ? payload.suppliers : undefined,
-        // Additional Fields from the form — dropped here until now, so anything
-        // typed into that section vanished the moment the part was created.
-        customFields: payload.customFields?.length ? payload.customFields : undefined,
-      });
-      const node = await createNode.mutateAsync({
-        partId: part.id,
-        quantity: payload.qty,
-        unit: payload.uom,
-        status: toNodeStatus(payload.status),
-        parentId: createSubNode.id,
-        ownerId: payload.ownerId ?? null,
-      });
       const { photoUrl } = await saveBomDocs(node.id, payload);
       if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
       await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
-      setCreateSubNode(null);
-    } catch {
-      // errors are logged by React Query's MutationCache; no further action needed
+    } catch (err) {
+      toast.error('Sub-component saved, but documents or requirement links failed — click Save to retry', {
+        description: err instanceof Error ? err.message : undefined,
+      });
+      throw err; // re-throw so the dialog stays open; onSave's cache skips re-creating the part
     }
+    toast.success('Sub-component added to BOM');
+    pendingAddSubNodeRef.current = null;
+    setCreateSubNode(null);
   };
 
   const handleExportCsv = async () => {
@@ -1678,19 +1803,22 @@ export function BOMView({
     );
   }
 
-  const Tab = ({ id, label }: { id: 'all' | 'approved' | 'pending' | 'rejected'; label: string }) => (
-    <button
-      onClick={() => setFilterStatus(id)}
-      className={cn(
-        'px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer border transition-colors',
-        filterStatus === id
-          ? 'bg-primary/10 text-primary border-primary/25'
-          : 'text-muted-foreground border-transparent hover:text-foreground'
-      )}
-    >
-      {label}
-    </button>
-  );
+  const Tab = ({ id, label }: { id: 'all' | BOMStatus; label: string }) => {
+    const active = id === 'all' ? filters.statuses.length === 0 : filters.statuses.includes(id);
+    return (
+      <button
+        onClick={() => id === 'all' ? clearFilterStatus() : toggleFilterStatus(id)}
+        className={cn(
+          'px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer border transition-colors',
+          active
+            ? 'bg-primary/10 text-primary border-primary/25'
+            : 'text-muted-foreground border-transparent hover:text-foreground'
+        )}
+      >
+        {label}
+      </button>
+    );
+  };
 
   const ViewBtn = ({ id, icon: Icon, label }: { id: ViewMode; icon: React.ElementType; label: string }) => {
     const active = view === id;
@@ -1836,15 +1964,17 @@ export function BOMView({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium border bg-card text-foreground border-border hover:bg-muted cursor-pointer transition-colors">
-                    {filterStatus === 'all' ? 'All' : filterStatus === 'approved' ? 'Approved' : filterStatus === 'pending' ? 'Pending' : 'Rejected'}
+                    {filters.statuses.length === 0 ? 'All'
+                      : filters.statuses.length === 1 ? (filters.statuses[0] === 'approved' ? 'Approved' : filters.statuses[0] === 'pending' ? 'Pending' : 'Rejected')
+                      : `${filters.statuses.length} Statuses`}
                     <ChevronDown className="w-3.5 h-3.5" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  <DropdownMenuItem onClick={() => setFilterStatus('all')}>All</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFilterStatus('approved')}>Approved</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFilterStatus('pending')}>Pending</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFilterStatus('rejected')}>Rejected</DropdownMenuItem>
+                  <DropdownMenuItem onClick={clearFilterStatus}>All</DropdownMenuItem>
+                  <DropdownMenuCheckboxItem checked={filters.statuses.includes('approved')} onCheckedChange={() => toggleFilterStatus('approved')} onSelect={e => e.preventDefault()}>Approved</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem checked={filters.statuses.includes('pending')} onCheckedChange={() => toggleFilterStatus('pending')} onSelect={e => e.preventDefault()}>Pending</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem checked={filters.statuses.includes('rejected')} onCheckedChange={() => toggleFilterStatus('rejected')} onSelect={e => e.preventDefault()}>Rejected</DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -1958,7 +2088,7 @@ export function BOMView({
         </>
       )}
       {view === 'grid' && (
-        <GridView rows={gridRows} rootNodes={rootNodes} filtersActive={filtersActive} onOpen={setSelected} totalCount={totalCount} formatCurrency={formatCurrency} />
+        <GridView rows={gridRows} rootNodes={rootNodes} filtersActive={filtersActive} onOpen={setSelected} totalCount={totalCount} formatCurrency={formatCurrency} drillPath={gridDrillPath} setDrillPath={setGridDrillPath} />
       )}
       {view === 'map' && (
         <BOMMapView nodes={rootNodes} onOpen={setSelected} pred={pred} filtersActive={filtersActive} />
@@ -2061,7 +2191,7 @@ export function BOMView({
         projectId={projectId}
         orgId={orgId}
         open={addManualOpen}
-        onClose={() => { setAddManualOpen(false); onAddClose?.(); }}
+        onClose={() => { setAddManualOpen(false); pendingAddPartRef.current = null; onAddClose?.(); }}
         onSave={handleAddPart}
       />
 
@@ -2128,7 +2258,7 @@ export function BOMView({
           projectId={projectId}
           orgId={orgId}
           open={!!createSubNode}
-          onClose={() => setCreateSubNode(null)}
+          onClose={() => { setCreateSubNode(null); pendingAddSubNodeRef.current = null; }}
           onSave={handleAddSubcomponent}
           isSubPart
         />

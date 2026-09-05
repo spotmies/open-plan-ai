@@ -389,6 +389,9 @@ export interface MyTasksColumnFilters {
   assignedByIds?: string[];
   dueDate?: 'overdue' | 'today' | 'upcoming' | 'no-date';
   dueDateCustom?: string; // exact date (yyyy-MM-dd) picked from the calendar, overrides dueDate preset
+  tags?: string[];
+  reportedDateCustom?: string; // exact date (yyyy-MM-dd)
+  completedDateCustom?: string; // exact date (yyyy-MM-dd)
 }
 
 // Filter options - enhanced for hardware workflows

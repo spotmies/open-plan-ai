@@ -1,6 +1,7 @@
 import { apiClient } from '@/services/api/client';
 import { ENDPOINTS } from '@/services/api/endpoints';
 import { resolveFileUrl } from '@/utils/fileUrl';
+import { isQuarantineLocation } from '@/features/projects/components/inventoryData';
 import type { StockRecord, OrderRecord, StockTransaction, BuildDef, BuildBomLine, BuildAssignee } from '@/features/projects/components/inventoryData';
 
 // ─── API response shapes (match backend inventory.types.ts responses) ─────────
@@ -127,6 +128,15 @@ export interface ApiGenerateShortageOrdersResponse {
 // ─── Adapters ───────────────────────────────────────────────────────────────────
 
 export function fromApiStock(r: ApiStockRecord): StockRecord {
+  // Stock parked in a location literally named "Quarantine" is held wholesale — fold its
+  // free-to-use on-hand into quarantineQty so every downstream figure (Available, the
+  // Quarantine stat/count, the quarantine filter, the part-detail facts strip) matches what
+  // the location implies. Anything already allocated stays allocated rather than going
+  // negative-available.
+  const byLocation = isQuarantineLocation(r.location);
+  const quarantineQty = byLocation
+    ? Math.max(r.quarantineQty || 0, r.onHand - r.allocated)
+    : r.quarantineQty || undefined;
   return {
     id: r.id,
     partId: r.partId,
@@ -142,7 +152,8 @@ export function fromApiStock(r: ApiStockRecord): StockRecord {
     leadTimeDays: r.leadTimeDays,
     lotNumber: r.lotNumber ?? undefined,
     serialNumber: r.serialNumber ?? undefined,
-    quarantineQty: r.quarantineQty || undefined,
+    quarantineQty: quarantineQty || undefined,
+    quarantineByLocation: byLocation || undefined,
     imageUrl: resolveFileUrl(r.imageUrl) ?? undefined,
     createdAt: r.createdAt,
   };

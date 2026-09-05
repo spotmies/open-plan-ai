@@ -38,33 +38,33 @@ import NotFound from "./pages/NotFound";
 // import DebugDialogs from "./DebugDialogs";
 
 // ── Feature routes — lazy loaded for code splitting ───────────────────────────
-const Dashboard     = lazy(() => import("./features/dashboard"));
-const Assistant     = lazy(() => import("./features/assistant"));
-const MyDay         = lazy(() => import("./features/myday"));
-const Calendar      = lazy(() => import("./features/calendar"));
-const Projects      = lazy(() => import("./features/projects"));
+const Dashboard = lazy(() => import("./features/dashboard"));
+const Assistant = lazy(() => import("./features/assistant"));
+const MyDay = lazy(() => import("./features/myday"));
+const Calendar = lazy(() => import("./features/calendar"));
+const Projects = lazy(() => import("./features/projects"));
 const ProjectDetail = lazy(() => import("./features/projects/ProjectDetail"));
-const IssuePage     = lazy(() => import("./features/projects/IssuePage"));
-const NewProject    = lazy(() => import("./features/projects/NewProject"));
-const EditProject   = lazy(() => import("./features/projects/EditProject"));
+const IssuePage = lazy(() => import("./features/projects/IssuePage"));
+const NewProject = lazy(() => import("./features/projects/NewProject"));
+const EditProject = lazy(() => import("./features/projects/EditProject"));
 const ProjectDetailsPage = lazy(() => import("./features/projects/ProjectDetailsPage"));
-const Team          = lazy(() => import("./features/team"));
-const Settings      = lazy(() => import("./features/settings"));
+const Team = lazy(() => import("./features/team"));
+const Settings = lazy(() => import("./features/settings"));
 const EditOrganizationSettings = lazy(() => import("./features/settings/EditOrganizationSettings"));
-const Reports       = lazy(() => import("./features/reports"));
+const Reports = lazy(() => import("./features/reports"));
 const Notifications = lazy(() => import("./features/notifications"));
-const Chat          = lazy(() => import("./features/chat"));
-const Integrations  = lazy(() => import("./features/integrations"));
-const Inventory     = lazy(() => import("./features/inventory"));
+const Chat = lazy(() => import("./features/chat"));
+const Integrations = lazy(() => import("./features/integrations"));
+const Inventory = lazy(() => import("./features/inventory"));
 const SharedConversation = lazy(() => import("./features/assistant/SharedConversation"));
 
 // ── ReactQueryDevtools — dev only, lazy so it is never in the production bundle
 const ReactQueryDevtools = import.meta.env.DEV
   ? lazy(() =>
-      import("@tanstack/react-query-devtools").then((m) => ({
-        default: m.ReactQueryDevtools,
-      }))
-    )
+    import("@tanstack/react-query-devtools").then((m) => ({
+      default: m.ReactQueryDevtools,
+    }))
+  )
   : null;
 
 // Normalizes legacy `/projects/:id?tab=X` links to the canonical `/projects/:id/X` path.
@@ -101,13 +101,13 @@ function AppShell() {
       <Routes>
         {/* ── Public (auth) routes ─────────────────────────────── */}
         <Route element={<GuestRoute />}>
-          <Route path="/login"  element={<LoginPage />} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
         </Route>
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password"  element={<ResetPasswordPage />} />
-        <Route path="/verify-email"    element={<VerifyEmailPage />} />
-        <Route path="/join-org"        element={<JoinOrganizationPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/join-org" element={<JoinOrganizationPage />} />
         {/* <Route path="/debug-dialogs"   element={<DebugDialogs />} /> */}
         <Route
           path="/share/:shareId"
@@ -126,14 +126,6 @@ function AppShell() {
               element={
                 <Suspense fallback={<AppLayoutSkeleton variant="dashboard" />}>
                   <Dashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/my-day"
-              element={
-                <Suspense fallback={<AppLayoutSkeleton variant="list" />}>
-                  <MyDay />
                 </Suspense>
               }
             />
@@ -281,6 +273,14 @@ function AppShell() {
 
           {/* ── Routes without content padding ───────────────── */}
           <Route element={<AppLayoutOutlet noPadding />}>
+            <Route
+              path="/my-day"
+              element={
+                <Suspense fallback={<AppLayoutSkeleton variant="list" />}>
+                  <MyDay />
+                </Suspense>
+              }
+            />
             <Route
               path="/inventory"
               element={

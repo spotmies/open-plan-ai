@@ -3,7 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatModuleType, getModuleColor } from '../utils/projectUtils';
 import { resolveFileUrl } from '@/utils/fileUrl';
@@ -23,14 +23,20 @@ interface ModulesListViewProps {
 export function ModulesListView({ modules, onModuleClick }: ModulesListViewProps) {
   if (modules.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-muted-foreground">No modules to display</p>
+      <div className="rounded-lg border bg-card min-h-[calc(100vh-260px)] flex flex-col items-center justify-center p-12 text-center">
+        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
+          <ListTodo className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <h3 className="font-medium mb-1 text-base">No modules yet</h3>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          Add modules to organize your project by functional areas
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border">
+    <div className="rounded-lg border bg-card min-h-[calc(100vh-260px)]">
       <Table>
         <TableHeader>
           <TableRow>
@@ -48,14 +54,14 @@ export function ModulesListView({ modules, onModuleClick }: ModulesListViewProps
             const isComplete = module.progress === 100;
 
             return (
-              <TableRow 
-                key={module.id} 
+              <TableRow
+                key={module.id}
                 className="cursor-pointer hover:bg-muted/50"
                 onClick={() => onModuleClick?.(module)}
               >
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <div 
+                    <div
                       className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{ backgroundColor: moduleColor }}
                     />

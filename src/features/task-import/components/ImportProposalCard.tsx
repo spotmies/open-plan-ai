@@ -88,6 +88,12 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
                 {row.assigneeName && <span>Assignee: {row.assigneeName}</span>}
                 {row.dueDate && <span>Due: {row.dueDate}</span>}
                 {row.milestoneName && <span>Milestone: {row.milestoneName}</span>}
+                {row.imageUrl && (
+                  <span className="inline-flex items-center gap-1">
+                    <img src={row.imageUrl} alt="" className="h-4 w-4 rounded object-cover border" loading="lazy" />
+                    Image
+                  </span>
+                )}
               </div>
               {row.issues.length > 0 && (
                 <div

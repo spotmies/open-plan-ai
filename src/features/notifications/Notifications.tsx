@@ -242,7 +242,7 @@ const Notifications = () => {
                                         <Trash2 className="h-4 w-4 mr-2" />
                                         Clear read notifications
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => navigate('/settings?tab=notifications')}>
                                         <BellOff className="h-4 w-4 mr-2" />
                                         Notification settings
                                     </DropdownMenuItem>

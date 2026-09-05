@@ -61,6 +61,7 @@ export function TaskFilters({
   statusOptions,
 }: TaskFiltersProps) {
   const effectiveStatusOptions = statusOptions?.length ? statusOptions : DEFAULT_STATUS_OPTIONS;
+  const sortedTeamMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name));
 
   const toggleStatus = (status: TaskStatus) => {
     const current = filters.status || [];
@@ -244,6 +245,36 @@ export function TaskFilters({
         </SelectContent>
       </Select>
 
+      {/* Assigned By Filter */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1">
+            Assigned By
+            {filters.assignedBy?.length ? (
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                {filters.assignedBy.length}
+              </Badge>
+            ) : (
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-48 p-2" align="start">
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {sortedTeamMembers.map(member => (
+              <label key={member.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                <Checkbox
+                  checked={filters.assignedBy?.includes(member.id) || false}
+                  onCheckedChange={() => toggleAssignedBy(member.id)}
+                  className="mt-0.5"
+                />
+                <span className="text-sm leading-tight">{member.name}</span>
+              </label>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+
       {/* Assigned To Filter */}
       <Popover>
         <PopoverTrigger asChild>
@@ -268,41 +299,11 @@ export function TaskFilters({
               />
               <span className="text-sm text-muted-foreground leading-tight">Unassigned</span>
             </label>
-            {teamMembers.map(member => (
+            {sortedTeamMembers.map(member => (
               <label key={member.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
                 <Checkbox
                   checked={filters.assignee?.includes(member.id) || false}
                   onCheckedChange={() => toggleAssignee(member.id)}
-                  className="mt-0.5"
-                />
-                <span className="text-sm leading-tight">{member.name}</span>
-              </label>
-            ))}
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      {/* Assigned By Filter */}
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-1">
-            Assigned By
-            {filters.assignedBy?.length ? (
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
-                {filters.assignedBy.length}
-              </Badge>
-            ) : (
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-48 p-2" align="start">
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {teamMembers.map(member => (
-              <label key={member.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
-                <Checkbox
-                  checked={filters.assignedBy?.includes(member.id) || false}
-                  onCheckedChange={() => toggleAssignedBy(member.id)}
                   className="mt-0.5"
                 />
                 <span className="text-sm leading-tight">{member.name}</span>

@@ -407,6 +407,29 @@ export function fromApiRevision(r: ApiRevisionResponse): BOMRevision {
   };
 }
 
+export function formatRevisionDate(dateStr?: string | null): string {
+  if (!dateStr) return '—';
+  const clean = dateStr.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    if (y && m && d && y.length === 4) {
+      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+    }
+  }
+  return dateStr;
+}
+
+export function resolveRevisionAuthor(revAuthor?: string | null, fallbackAuthor?: string | null): string {
+  if (revAuthor && revAuthor !== 'Unknown' && revAuthor.trim() !== '') {
+    return revAuthor;
+  }
+  if (fallbackAuthor && fallbackAuthor !== 'Unknown' && fallbackAuthor.trim() !== '') {
+    return fallbackAuthor;
+  }
+  return 'Unknown';
+}
+
 // ── Lead time display ──────────────────────────────────────────────
 // leadTime is always stored/passed around in days; this picks whichever
 // unit (days/weeks/months) renders it most cleanly for display.

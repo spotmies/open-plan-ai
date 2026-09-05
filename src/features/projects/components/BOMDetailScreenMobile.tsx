@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { FilePreviewDialog, FilePreviewTarget } from '@/components/FilePreviewDialog';
 import { resolveFileUrl } from '@/utils/fileUrl';
-import { BOMNode, BOMRevision, BOMApproval, BOMApprovalRequest, BOMStatus, formatLeadTime } from './bomData';
+import { BOMNode, BOMRevision, BOMApproval, BOMApprovalRequest, BOMStatus, formatLeadTime, formatRevisionDate, resolveRevisionAuthor } from './bomData';
 import { ReqTag, PartThumb, PartImageThumb } from './BOMShared';
 import { BOMApprovalReviewCard } from './BOMApprovalReviewCard';
 import { useBomNotes, useAddBomNote, useDeleteBomNote } from '@/hooks/useBomNotes';
@@ -179,8 +179,8 @@ function PersonTag({ name, muted }: { name?: string | null; muted?: boolean }) {
 
 // ── Revision History row (tap to select + expand; selection drives the
 // Specifications/Overview cards above, same activeRevIdx as desktop) ──
-function RevisionRow({ r, isActive, isLatestRev, onSelect }: {
-  r: BOMRevision; isActive: boolean; isLatestRev: boolean; onSelect: () => void;
+function RevisionRow({ r, isActive, isLatestRev, onSelect, nodeAuthor }: {
+  r: BOMRevision; isActive: boolean; isLatestRev: boolean; onSelect: () => void; nodeAuthor?: string;
 }) {
   const { eco, lines } = parseChanges(r.changes);
   return (
@@ -195,7 +195,7 @@ function RevisionRow({ r, isActive, isLatestRev, onSelect }: {
           </span>
         )}
         {eco && <span className="text-[11px] font-mono font-medium text-primary truncate">{eco}</span>}
-        <span className="ml-auto text-[11px] text-muted-foreground shrink-0 tabular-nums">{r.date || '—'}</span>
+        <span className="ml-auto text-[11px] text-muted-foreground shrink-0 tabular-nums">{formatRevisionDate(r.date)}</span>
         <ChevronDown className={cn('w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform', isActive && 'rotate-180')} />
       </button>
       {isActive && (
@@ -208,7 +208,7 @@ function RevisionRow({ r, isActive, isLatestRev, onSelect }: {
           )) : (
             <div className="text-[11.5px] text-muted-foreground">No additional details.</div>
           )}
-          <div className="text-[10.5px] text-muted-foreground/60 pt-0.5">By {r.author || 'Unknown'}</div>
+          <div className="text-[10.5px] text-muted-foreground/60 pt-0.5">Revised by {resolveRevisionAuthor(r.author, nodeAuthor)}</div>
         </div>
       )}
     </div>
@@ -304,20 +304,37 @@ function DocumentsSection({ nodeId }: { nodeId: string }) {
   const attachments = docs ?? [];
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
     e.target.value = '';
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error('File is too large (max 50 MB)');
-      return;
+
+    const toUpload = files.filter((f) => f.size <= 50 * 1024 * 1024);
+    if (toUpload.length < files.length) {
+      toast.error(
+        toUpload.length === 0
+          ? 'File is too large (max 50 MB)'
+          : `Skipped ${files.length - toUpload.length} file(s) over the 50 MB limit`,
+      );
     }
-    setUploadingFile(file.name);
-    try {
-      await upload.mutateAsync(file);
-    } catch {
-      toast.error(`Failed to upload "${file.name}". Please try again.`);
-    } finally {
-      setUploadingFile(null);
+    if (toUpload.length === 0) return;
+
+    // Upload sequentially so the "uploading <name>" indicator tracks progress.
+    const failed: string[] = [];
+    for (const file of toUpload) {
+      setUploadingFile(file.name);
+      try {
+        await upload.mutateAsync(file);
+      } catch {
+        failed.push(file.name);
+      }
+    }
+    setUploadingFile(null);
+    if (failed.length > 0) {
+      toast.error(
+        failed.length === 1
+          ? `Failed to upload "${failed[0]}". Please try again.`
+          : `Failed to upload ${failed.length} files. Please try again.`,
+      );
     }
   };
 
@@ -345,7 +362,7 @@ function DocumentsSection({ nodeId }: { nodeId: string }) {
         </div>
       }
     >
-      <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} accept="*/*" />
+      <input ref={fileRef} type="file" multiple className="hidden" onChange={handleFileChange} accept="*/*" />
       {isLoading ? (
         <div className="px-4 py-3.5 space-y-3">
           {[0, 1].map(i => <Skeleton key={i} className="h-10 w-full" />)}
@@ -622,9 +639,26 @@ export function BOMDetailScreenMobile({
             <SpecField label="Part Name">{node.name}</SpecField>
             <SpecField label="MPN" mono>{node.mpn}</SpecField>
             <SpecField label="Manufacturer">{node.manufacturer}</SpecField>
-            <SpecField label="Supplier">{node.distributor}</SpecField>
+            {Array.isArray(node.suppliers) && node.suppliers.length > 0 ? (
+              node.suppliers.map((s, i) => (
+                <SpecField
+                  key={i}
+                  label={node.suppliers.length > 1 ? `Supplier ${i + 1}` : 'Supplier'}
+                >
+                  {(s.distributor || '—')}
+                  {' · '}
+                  {s.calcFromSubparts
+                    ? 'Calc. from sub-parts'
+                    : formatPrice(parseFloat(s.price) || 0, formatCurrency)}
+                </SpecField>
+              ))
+            ) : (
+              <>
+                <SpecField label="Supplier">{node.distributor}</SpecField>
+                <SpecField label="Unit Price">{formatPrice(node.price, formatCurrency)}</SpecField>
+              </>
+            )}
             <SpecField label="Quantity">{node.qty} {node.uom}</SpecField>
-            <SpecField label="Unit Price">{formatPrice(node.price, formatCurrency)}</SpecField>
             <SpecField label="Lead Time">{formatLeadTime(node.leadTime)}</SpecField>
             <SpecField label="BOM Level">{node.levelLabel ?? node.level}</SpecField>
             <SpecField label="Handled By"><PersonTag name={node.owner} /></SpecField>
@@ -724,15 +758,13 @@ export function BOMDetailScreenMobile({
               </Section>
             )}
 
-            <Section label="Requirements Traceability">
-              {node.req.length === 0 ? (
-                <p className="text-sm text-muted-foreground px-4 py-3.5">No requirements linked to this part.</p>
-              ) : (
+            {node.req.length > 0 && (
+              <Section label="Requirements Traceability">
                 <div className="flex flex-wrap gap-2 px-4 py-3.5">
                   {node.req.map(r => <ReqTag key={r} label={r} />)}
                 </div>
-              )}
-            </Section>
+              </Section>
+            )}
 
             <NotesSection nodeId={node.id} currentUserId={currentUserId} />
           </>
@@ -757,6 +789,7 @@ export function BOMDetailScreenMobile({
                         isLatestRev={origIdx === revHistory.length - 1}
                         isActive={origIdx === activeRevIdx}
                         onSelect={() => onSelectRevision(origIdx)}
+                        nodeAuthor={node.createdByName || node.owner}
                       />
                     );
                   })}
@@ -808,6 +841,7 @@ export function BOMDetailScreenMobile({
               )}
             </Section>
 
+            {path.length > 1 && (
             <Section label="Hierarchy">
               <div className="flex flex-wrap items-center gap-1.5 px-4 py-3.5">
                 {path.map((p, i) => {
@@ -829,6 +863,7 @@ export function BOMDetailScreenMobile({
                 })}
               </div>
             </Section>
+            )}
 
             <DocumentsSection nodeId={node.id} />
           </>

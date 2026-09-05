@@ -1386,10 +1386,10 @@ export function ECODetailView({
         {/* Field grid — one consistent layout for every header fact */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-3 pt-4 border-t border-border">
           {([
-            ['Originating ECR', detail.ecr
-              ? <span className="text-blue-500 font-semibold font-mono cursor-pointer">{detail.ecr}</span>
-              : <span className="text-muted-foreground/50">— (created directly)</span>],
-            ['Effectivity', <>{effectivityText(detail.effectivity)} <span className="text-muted-foreground/60 font-normal">· {EFFECTIVITY_LABEL[detail.effectivity.type]}</span></>],
+            // ['Originating ECR', detail.ecr
+            //   ? <span className="text-blue-500 font-semibold font-mono cursor-pointer">{detail.ecr}</span>
+            //   : <span className="text-muted-foreground/50">— (created directly)</span>],
+            // ['Effectivity', <>{effectivityText(detail.effectivity)} <span className="text-muted-foreground/60 font-normal">· {EFFECTIVITY_LABEL[detail.effectivity.type]}</span></>],
             ['Type', ECO_TYPE_LABEL[detail.type]],
             ['Reason Code', REASON_LABEL[detail.reason]],
             ['Originator', detail.originator],

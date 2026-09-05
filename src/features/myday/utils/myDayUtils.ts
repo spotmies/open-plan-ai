@@ -564,6 +564,20 @@ export function isMyDayItemComplete(status: string): boolean {
   return KANBAN_COMPLETED_STATUSES.has(status);
 }
 
+/** Task creation date, or issue report date — used by the "Reported Date" filter. */
+export function getReportedDate(item: MyDayItem): string | undefined {
+  return item.itemType === 'task' ? item.originalTask?.createdAt : item.originalIssue?.reportedAt;
+}
+
+/** When a task/issue was marked done/resolved — used by the "Completed Date" filter. */
+export function getCompletedDate(item: MyDayItem): string | null | undefined {
+  return item.itemType === 'task' ? item.originalTask?.completedAt : item.originalIssue?.resolvedAt;
+}
+
+export function getItemTags(item: MyDayItem): string[] {
+  return (item.itemType === 'task' ? item.originalTask?.tags : item.originalIssue?.tags) ?? [];
+}
+
 export type KanbanColumnId = 'dependency' | 'todo' | 'inProgress' | 'completed';
 
 /**

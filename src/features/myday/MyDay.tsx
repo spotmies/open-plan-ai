@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { Plus, LayoutGrid, List, Search } from 'lucide-react';
 import { MyDayStats } from './components/MyDayStats';
 import { MyDayKanbanView } from './components/MyDayKanbanView';
@@ -10,8 +10,9 @@ import { IssueDetailModal } from '@/features/projects/components/IssueDetailModa
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AppLayoutSkeleton } from '@/components/layout/AppLayoutSkeleton';
-import { categorizeMyDayItems, MyDayItem } from './utils/myDayUtils';
+import { categorizeMyDayItems, getCompletedDate, getItemTags, getReportedDate, MyDayItem } from './utils/myDayUtils';
 import { Task, Issue, TaskStatus, IssueStatus, MyDayGroupBy, MyDayFilter, MyTasksColumnFilters } from '@/types';
 import { useMyDayTasks, useCompletedTodayCount } from '@/hooks/useMyDayTasks';
 import { useUpdateTask, useBatchUpdateTasks, useCreatePersonalTask, useDeleteTask } from '@/hooks/useTasks';
@@ -52,6 +53,20 @@ export default function MyDay() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
 
+  // Height of the sticky stats + tabs bar, measured so the table header below
+  // it can stick at the right offset instead of overlapping it.
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const [topBarHeight, setTopBarHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = topBarRef.current;
+    if (!el) return;
+    const updateHeight = () => setTopBarHeight(el.getBoundingClientRect().height);
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // Fetch dynamic data
   const { data: userTasks = [], isLoading: tasksLoading } = useMyDayTasks(filter, columnFilters.status);
   const { data: overdueTasks = [] } = useMyDayTasks('overdue');
@@ -90,7 +105,7 @@ export default function MyDay() {
     return projects.flatMap(p => p.tasks || []);
   }, [projects]);
 
-  // Column filters (type/status/priority/project/assignedBy/dueDate) apply on top of the date filter
+  // Column filters (type/status/priority/project/assignedBy/dueDate/tags/reportedDate/completedDate) apply on top of the date filter
   const filteredTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return userTasks.filter((item) => {
@@ -121,6 +136,18 @@ export default function MyDay() {
         if (columnFilters.dueDate === 'today' && !item.isDueToday) return false;
         if (columnFilters.dueDate === 'no-date' && item.dueDate) return false;
         if (columnFilters.dueDate === 'upcoming' && (!item.dueDate || item.isOverdue || item.isDueToday)) return false;
+      }
+      if (columnFilters.tags?.length) {
+        const itemTags = getItemTags(item);
+        if (!itemTags.some((tag) => columnFilters.tags!.includes(tag))) return false;
+      }
+      if (columnFilters.reportedDateCustom) {
+        const reportedDate = getReportedDate(item);
+        if (!reportedDate || new Date(reportedDate).toDateString() !== new Date(columnFilters.reportedDateCustom).toDateString()) return false;
+      }
+      if (columnFilters.completedDateCustom) {
+        const completedDate = getCompletedDate(item);
+        if (!completedDate || new Date(completedDate).toDateString() !== new Date(columnFilters.completedDateCustom).toDateString()) return false;
       }
       return true;
     });
@@ -289,94 +316,108 @@ export default function MyDay() {
 
   return (
     <>
-      <div className="grid grid-cols-1 w-full min-w-0">
-        {/* Stats - always visible once data is ready */}
-        <MyDayStats
-          attentionCount={needsAttention.length}
-          readyCount={readyToWork.length}
-          blockedCount={waitingBlocked.length}
-          completedTodayCount={completedTodayCount}
-        />
+      <div className="flex flex-col h-full min-h-0 w-full min-w-0 p-4 gap-4 overflow-hidden">
+        {/* Top Header: Stats + View controls */}
+        <div className="shrink-0 space-y-4">
+          {/* Stats - always visible once data is ready */}
+          <MyDayStats
+            attentionCount={needsAttention.length}
+            readyCount={readyToWork.length}
+            blockedCount={waitingBlocked.length}
+            completedTodayCount={completedTodayCount}
+          />
 
-        {/* View controls - always visible once data is ready */}
-        <div className="flex items-center justify-between mb-6 gap-2 sm:gap-4 flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible pb-1 sm:pb-0">
-          <Tabs value={filter} onValueChange={(v) => setFilter(v as MyDayFilter)} className="shrink-0">
-            <TabsList className="h-9 p-1 shrink-0 gap-2">
-              <TabsTrigger value="today" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
-                My Day
-                {todayActiveCount > 0 && filter !== 'today' && (
-                  <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
-                    {todayActiveCount}
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="overdue" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
-                Overdue
-                {overdueTasks.length > 0 && filter !== 'overdue' && (
-                  <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
-                    {overdueTasks.length}
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="all" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">All</TabsTrigger>
-              <TabsTrigger value="completed" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">Completed</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* View controls */}
+          <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible pb-1 sm:pb-0">
+            <Tabs value={filter} onValueChange={(v) => setFilter(v as MyDayFilter)} className="shrink-0">
+              <TabsList className="h-9 p-1 shrink-0 gap-2">
+                <TabsTrigger value="today" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
+                  My Day
+                  {todayActiveCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
+                      {todayActiveCount}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="overdue" className="relative px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">
+                  Overdue
+                  {overdueTasks.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground leading-none z-10 shadow-xs">
+                      {overdueTasks.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="all" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">All</TabsTrigger>
+                <TabsTrigger value="completed" className="px-3.5 sm:px-4 text-xs sm:text-sm shrink-0">Completed</TabsTrigger>
+              </TabsList>
+            </Tabs>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <div className="relative shrink-0">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Search tasks..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-[140px] sm:w-[200px] pl-8 text-xs sm:text-sm"
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="relative shrink-0">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search tasks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-9 w-[180px] sm:w-[300px] md:w-[360px] pl-8 text-xs sm:text-sm"
+                />
+              </div>
+
+              <div className="flex items-center rounded-lg border p-0.5 h-9 shrink-0">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={view === 'list' ? 'secondary' : 'ghost'}
+                      className="h-8 px-2 rounded-md"
+                      onClick={() => setView('list')}
+                      aria-label="List view"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">List View</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={view === 'kanban' ? 'secondary' : 'ghost'}
+                      className="h-8 px-2 rounded-md"
+                      onClick={() => setView('kanban')}
+                      aria-label="Kanban view"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Kanban View</TooltipContent>
+                </Tooltip>
+              </div>
+
+              <MyTasksFiltersDropdown
+                items={userTasks}
+                filters={columnFilters}
+                onFiltersChange={setColumnFilters}
+                className="order-2 sm:order-1"
               />
-            </div>
 
-            <div className="flex items-center rounded-lg border p-0.5 h-9 shrink-0">
               <Button
                 size="sm"
-                variant={view === 'list' ? 'secondary' : 'ghost'}
-                className="h-8 px-2 rounded-md"
-                onClick={() => setView('list')}
-                aria-label="List view"
+                className="gap-1 h-9 rounded-lg px-2.5 sm:px-3 text-xs sm:text-sm order-1 sm:order-2"
+                onClick={() => setIsAddTaskOpen(true)}
               >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant={view === 'kanban' ? 'secondary' : 'ghost'}
-                className="h-8 px-2 rounded-md"
-                onClick={() => setView('kanban')}
-                aria-label="Kanban view"
-              >
-                <LayoutGrid className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
+                Add<span className="hidden sm:inline"> Task</span>
               </Button>
             </div>
-
-            <MyTasksFiltersDropdown
-              items={userTasks}
-              filters={columnFilters}
-              onFiltersChange={setColumnFilters}
-              className="order-2 sm:order-1"
-            />
-
-            <Button
-              size="sm"
-              className="gap-1 h-9 rounded-lg px-2.5 sm:px-3 text-xs sm:text-sm order-1 sm:order-2"
-              onClick={() => setIsAddTaskOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-              Add<span className="hidden sm:inline"> Task</span>
-            </Button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="grid grid-cols-1 w-full min-w-0">
-          <div className="min-h-[400px] w-full min-w-0">
+        <div className="flex-1 min-h-0 w-full min-w-0 flex flex-col">
+          <div className="h-full min-h-0 w-full min-w-0 flex flex-col flex-1">
             {view === 'kanban' ? (
               <MyDayKanbanView
                 tasks={filteredTasks}

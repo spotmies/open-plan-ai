@@ -185,24 +185,41 @@ export function BOMDocuments({ nodeId }: { nodeId: string }) {
   const attachments = docs ?? [];
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Reset input so the same file can be re-selected
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    // Reset input so the same file(s) can be re-selected
     e.target.value = '';
 
-    if (file.size > 50 * 1024 * 1024) {
-      setError('File is too large (max 50 MB)');
-      return;
+    const tooBig = files.filter((f) => f.size > 50 * 1024 * 1024);
+    const toUpload = files.filter((f) => f.size <= 50 * 1024 * 1024);
+    if (tooBig.length > 0) {
+      setError(
+        tooBig.length === files.length
+          ? 'File is too large (max 50 MB)'
+          : `Skipped ${tooBig.length} file(s) over the 50 MB limit`,
+      );
+    } else {
+      setError(null);
     }
+    if (toUpload.length === 0) return;
 
-    setError(null);
-    setUploadingFile(file.name);
-    try {
-      await upload.mutateAsync(file);
-    } catch {
-      setError(`Failed to upload "${file.name}". Please try again.`);
-    } finally {
-      setUploadingFile(null);
+    // Upload sequentially so the "uploading <name>" indicator tracks progress.
+    const failed: string[] = [];
+    for (const file of toUpload) {
+      setUploadingFile(file.name);
+      try {
+        await upload.mutateAsync(file);
+      } catch {
+        failed.push(file.name);
+      }
+    }
+    setUploadingFile(null);
+    if (failed.length > 0) {
+      setError(
+        failed.length === 1
+          ? `Failed to upload "${failed[0]}". Please try again.`
+          : `Failed to upload ${failed.length} files. Please try again.`,
+      );
     }
   };
 
@@ -244,6 +261,7 @@ export function BOMDocuments({ nodeId }: { nodeId: string }) {
         <input
           ref={fileRef}
           type="file"
+          multiple
           className="hidden"
           onChange={handleFileChange}
           accept="*/*"

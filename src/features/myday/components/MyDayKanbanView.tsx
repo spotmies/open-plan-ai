@@ -130,7 +130,7 @@ export function MyDayKanbanView({ tasks: initialTasks, onTaskClick, onStatusUpda
           {...provided.droppableProps}
           data-kanban-column-id={column.id}
           className={cn(
-            'flex flex-col gap-2 min-h-[200px] h-full p-2 rounded-lg',
+            'flex flex-col gap-2 flex-1 min-h-0 h-full p-2 rounded-lg overflow-y-auto',
             snapshot.isDraggingOver ? 'bg-muted/50' : 'bg-muted/30',
           )}
         >
@@ -244,10 +244,10 @@ export function MyDayKanbanView({ tasks: initialTasks, onTaskClick, onStatusUpda
   );
 
   return (
-    <div className="space-y-4">
+    <div className="h-full min-h-0 w-full flex flex-col flex-1 min-w-0">
       <DragDropContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         {isMobile ? (
-          <div className="flex flex-col gap-3 w-full">
+          <div className="flex flex-col gap-3 w-full flex-1 min-h-0 overflow-y-auto">
             {columns.map((column) => (
               <MobileKanbanColumn
                 key={column.id}
@@ -262,10 +262,10 @@ export function MyDayKanbanView({ tasks: initialTasks, onTaskClick, onStatusUpda
             ))}
           </div>
         ) : (
-          <div ref={boardScrollRef} className="w-full pb-4 overflow-x-auto md:overflow-visible touch-pan-x">
-            <div className="grid grid-cols-4 gap-4 min-w-[960px] md:min-w-0">
+          <div ref={boardScrollRef} className="w-full h-full min-h-0 flex flex-col flex-1 pb-2 overflow-x-auto md:overflow-visible touch-pan-x">
+            <div className="grid grid-cols-4 gap-4 h-full min-h-0 flex-1 min-w-[960px] md:min-w-0">
               {columns.map((column) => (
-                <div key={column.id} className="flex flex-col max-h-[calc(100vh-280px)]">
+                <div key={column.id} className="flex flex-col h-full min-h-0 flex-1">
                   <div className="flex-shrink-0 bg-background pb-3 space-y-3">
                     <div className="flex items-center gap-2 px-1">
                       <div className={cn('w-2 h-2 rounded-full', column.color)} />
@@ -273,7 +273,7 @@ export function MyDayKanbanView({ tasks: initialTasks, onTaskClick, onStatusUpda
                       <span className="text-xs text-muted-foreground">{column.tasks.length}</span>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto min-h-0">{renderCardsDroppable(column)}</div>
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{renderCardsDroppable(column)}</div>
                 </div>
               ))}
             </div>

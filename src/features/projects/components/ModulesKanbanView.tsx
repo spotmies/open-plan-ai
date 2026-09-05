@@ -23,12 +23,12 @@ interface ModulesKanbanViewProps {
 export function ModulesKanbanView({ modules, onModuleClick }: ModulesKanbanViewProps) {
   if (modules.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="rounded-lg border bg-card min-h-[calc(100vh-260px)] flex flex-col items-center justify-center p-12 text-center">
         <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
           <ListTodo className="h-6 w-6 text-muted-foreground" />
         </div>
-        <h3 className="font-medium mb-1">No modules yet</h3>
-        <p className="text-sm text-muted-foreground">
+        <h3 className="font-medium mb-1 text-base">No modules yet</h3>
+        <p className="text-sm text-muted-foreground max-w-sm">
           Add modules to organize your project by functional areas
         </p>
       </div>
@@ -54,7 +54,7 @@ export function ModulesKanbanView({ modules, onModuleClick }: ModulesKanbanViewP
             {/* Header */}
             <div className="flex items-start justify-between gap-2 mb-3 min-w-0">
               <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                <div 
+                <div
                   className="w-3 h-3 rounded-full shrink-0"
                   style={{ backgroundColor: moduleColor }}
                 />

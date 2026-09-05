@@ -74,6 +74,16 @@ export function ConversationList({
   const isSelfConversation = (c: Conversation) =>
     c.type === 'dm' && c.members.length > 0 && c.members.every((m) => m.id === currentUserId);
 
+  // Mirrors ConversationItem's displayName logic — needed here too so search
+  // ranking matches what's actually shown to the user (the other member's name
+  // for a DM, not the conversation's own possibly-empty `name` field).
+  const displayNameFor = (c: Conversation, forUserId?: string) => {
+    if (c.type !== 'dm') return c.name;
+    const isSelf = c.members.every((m) => m.id === forUserId);
+    const otherMember = c.members.find((m) => m.id !== forUserId) ?? (isSelf ? c.members[0] : undefined);
+    return isSelf ? `${otherMember?.name || 'You'} (You)` : otherMember?.name || c.name;
+  };
+
   const filtered = useMemo(() => {
     // A DM only counts as "started" once a message has actually been sent —
     // hide empty ones (created just by clicking a search result) from the
@@ -85,14 +95,32 @@ export function ConversationList({
     );
     if (conversationFilter === 'dms') list = list.filter((c) => c.type === 'dm');
     if (conversationFilter === 'groups') list = list.filter((c) => c.type === 'group');
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
       list = list.filter((c) =>
         (c.name ?? '').toLowerCase().includes(q) ||
-        c.members.some(m => (m.name ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q))
+        // Member-name matching is scoped to DMs, where the matched member *is* the
+        // displayed name. For groups it would surface any conversation a matching
+        // person belongs to (e.g. "Daily Standup Meeting") ahead of the person
+        // themself, burying the actual search target under unrelated group chats.
+        (c.type === 'dm' && c.members.some(m => (m.name ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q)))
       );
     }
     return list.sort((a, b) => {
+      // WhatsApp-style search: the chat whose name actually matches what was typed
+      // floats to the top, ranked above chats that only matched incidentally (e.g.
+      // a DM matched by email) or that just happen to be more recent. Outside of a
+      // search, fall through to plain recency.
+      if (q) {
+        const rank = (c: Conversation) => {
+          const name = (displayNameFor(c, currentUserId) ?? '').toLowerCase();
+          if (name.startsWith(q)) return 0;
+          if (name.includes(q)) return 1;
+          return 2;
+        };
+        const rankDiff = rank(a) - rank(b);
+        if (rankDiff !== 0) return rankDiff;
+      }
       const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
       const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
       return timeB - timeA;

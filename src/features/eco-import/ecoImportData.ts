@@ -65,7 +65,15 @@ export interface ImportRowPreview {
   reason: EcoImportReason;
   reasonOther: string | null;
   priority: EcoImportPriority;
+  /** Raw "owner / handled by" name from the source file, or null. */
+  owner: string | null;
+  /** true once `owner` matched a real project member — the ECO gets that owner on commit (otherwise it's owned by whoever ran the import). */
+  ownerResolved: boolean;
+  /** Image URL from the source file, or null — attached as a linked image on the ECO on commit. */
+  imageUrl: string | null;
   targetDate: string | null;
+  /** The source file's own reference ID for this change (e.g. an "ECO ID" column), if any — stored for traceability, never this ECO's real number. */
+  originatingEcr: string | null;
   issues: string[];
   /** false only when the row is missing its required title (or was explicitly skipped in chat) — every other issue is informational and still imports. */
   importable: boolean;

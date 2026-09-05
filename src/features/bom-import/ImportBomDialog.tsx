@@ -484,7 +484,7 @@ export function ImportBomDialog({ open, onClose, projectId, parentNodeId }: Prop
                 </p>
                 {result && result.skipped > 0 && (
                   <p className="text-sm text-muted-foreground max-w-sm">
-                    {result.skipped} row{result.skipped === 1 ? ' was' : 's were'} skipped — they still had unresolved issues.
+                    {result.skipped} row{result.skipped === 1 ? ' was' : 's were'} skipped — already in this project's BOM or still had unresolved issues.
                   </p>
                 )}
               </div>

@@ -3,20 +3,21 @@
 // Stock/orders/transactions/builds are persisted via the real backend — see
 // src/services/inventory.service.ts and src/hooks/useInventory.ts. This file holds only
 // backend-agnostic types, coverage/netting math (computeCoverage, availableOf, onOrderOf,
-// buildFromDef), and display components (LocationCombobox, CategoryCombobox, CoveragePill,
-// CoverageBar) that both real and (formerly) mock data flowed through unchanged.
+// buildFromDef), and display components (LocationCombobox, CategoryCombobox, CoveragePill)
+// that both real and (formerly) mock data flowed through unchanged.
 
 import { useState, useEffect, useMemo } from 'react';
-import { Lock } from 'lucide-react';
+import { Lock, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { KNOWN_BOM_CATEGORIES, UOM_OPTIONS, type BOMCategory } from './bomData';
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { KNOWN_BOM_CATEGORIES, UOM_OPTIONS, getCategoryMeta, type BOMCategory } from './bomData';
 
 export const STOCK_LOCATIONS = ['Lab Shelf A', 'Lab Shelf B', 'Incoming Dock', 'CM', 'Quarantine'] as const;
-// Locations are free-text (mirrors the BOMCategory custom-category pattern) — the presets
-// above are just suggestions surfaced in pickers, not a closed set the hardware team is
-// still deciding per-part-type constraints for.
+// Locations are free-text and org-owned: LocationCombobox shows only the org's own
+// locations (from useLocations) plus a "Create new location" action — a fresh org starts
+// with an empty list. STOCK_LOCATIONS is kept solely for PartDetailSheet's synthetic
+// "allocated at" label fallback; it is NOT surfaced as picker suggestions.
 export type StockLocation = string;
 
 export type CoverageStatus = 'ready' | 'covered-by-order' | 'short' | 'conflict';
@@ -37,6 +38,11 @@ export interface StockRecord {
   lotNumber?: string;
   serialNumber?: string;
   quarantineQty?: number;
+  /** True when this row's on-hand is quarantined purely because its location is named
+   * "Quarantine" (see isQuarantineLocation), as opposed to a real received-under-quarantine
+   * flag. Such stock can't be "released" by decrementing a column — it has to be transferred
+   * out to a normal location — so the release affordance is hidden for it. */
+  quarantineByLocation?: boolean;
   imageUrl?: string;   // part photo, when the catalog entry has one — falls back to a category icon
   createdAt: string;   // ISO — when this (part, location) stock row was first created; earliest row = the part's canonical location
 }
@@ -64,39 +70,52 @@ export interface OrderRecord {
 
 const CUSTOM_LOCATION_SENTINEL = '__custom_location__';
 
-/** Location picker: preset dropdown with a "custom" escape hatch — same pattern as
- * BOMCategory's free-text + preset-list combo (bomData.ts). `knownLocations` (from
- * useLocations) is merged in alongside the hardcoded presets, so a custom location
- * saved once (the backend auto-registers it on receive/adjust/order) shows up as a
- * preset the next time this picker opens instead of only ever living on that one
- * transaction. */
+/** Location picker: a dropdown of the org's own locations (`knownLocations`, from
+ * useLocations) plus a "Create new location" action that swaps to a free-text input.
+ * There are no hardcoded preset locations — a fresh org starts with an empty list and
+ * every entry was created by someone on a prior transaction (the backend auto-registers
+ * it on receive/adjust/order/transfer). A location created once shows up here the next
+ * time the picker opens instead of only ever living on that one transaction. */
 export function LocationCombobox({ value, onChange, placeholder = 'Select a location...', knownLocations = [] }: {
   value: string; onChange: (v: string) => void; placeholder?: string; knownLocations?: string[];
 }) {
+  // Locations the user just created in this picker session — kept locally so a freshly
+  // typed name appears in the list (and stays selected) immediately, before the backend
+  // registers it on save and it comes back through `knownLocations`.
+  const [added, setAdded] = useState<string[]>([]);
+  const [customMode, setCustomMode] = useState(false);
+  const [draft, setDraft] = useState('');
+
   const options = [
-    ...STOCK_LOCATIONS,
-    ...knownLocations.filter((loc) => !(STOCK_LOCATIONS as readonly string[]).includes(loc)).sort(),
-  ];
+    ...new Set([...knownLocations, ...added, ...(value ? [value] : [])]),
+  ].sort();
 
-  const [customMode, setCustomMode] = useState(
-    () => value !== '' && !options.includes(value)
-  );
-
-  useEffect(() => {
-    if (value === '') setCustomMode(false);
-  }, [value]);
+  const commitDraft = () => {
+    const name = draft.trim();
+    if (!name) return;
+    setAdded((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    onChange(name);
+    setDraft('');
+    setCustomMode(false);
+  };
 
   if (customMode) {
     return (
       <div className="flex gap-2">
         <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Enter custom location..."
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
+          }}
+          placeholder="Enter a location name..."
           autoFocus
         />
-        <Button type="button" variant="outline" size="sm" onClick={() => { setCustomMode(false); onChange(''); }}>
-          Presets
+        <Button type="button" size="sm" onClick={commitDraft} disabled={!draft.trim()}>
+          Add
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => { setDraft(''); setCustomMode(false); }}>
+          Cancel
         </Button>
       </div>
     );
@@ -111,7 +130,7 @@ export function LocationCombobox({ value, onChange, placeholder = 'Select a loca
           // internal close/focus-restore for that same click and gets silently discarded
           // (the dropdown just closes with nothing changed). Letting that finish first
           // before we swap avoids the race.
-          setTimeout(() => { setCustomMode(true); onChange(''); }, 0);
+          setTimeout(() => setCustomMode(true), 0);
         } else {
           onChange(v);
         }
@@ -122,10 +141,16 @@ export function LocationCombobox({ value, onChange, placeholder = 'Select a loca
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
+        <SelectItem value={CUSTOM_LOCATION_SENTINEL}>
+          <span className="flex items-center gap-2">
+            <Plus className="h-3.5 w-3.5" />
+            Create new location
+          </span>
+        </SelectItem>
+        {options.length > 0 && <SelectSeparator />}
         {options.map((loc) => (
           <SelectItem key={loc} value={loc}>{loc}</SelectItem>
         ))}
-        <SelectItem value={CUSTOM_LOCATION_SENTINEL}>Other (custom)…</SelectItem>
       </SelectContent>
     </Select>
   );
@@ -151,6 +176,12 @@ export function LockedLocationField({ location }: { location: string }) {
 const CUSTOM_CATEGORY_SENTINEL = '__custom_category__';
 
 function formatCategoryOptionLabel(category: string): string {
+  // Known BOM categories carry a friendly label ("Top Assembly", "Charging
+  // Connectors", "HMI & Interface") — mirror the same names the BOM part sheet
+  // and the inventory category chips use instead of raw-casing the enum key.
+  if ((KNOWN_BOM_CATEGORIES as readonly string[]).includes(category.trim().toLowerCase())) {
+    return getCategoryMeta(category.trim().toLowerCase()).label;
+  }
   return category
     .trim()
     .split(/[_-]+|\s+/)
@@ -375,6 +406,16 @@ export const REASON_CODES = [
   'Consumed outside system',
 ] as const;
 
+/**
+ * A stock row whose location is literally named "Quarantine" (see STOCK_LOCATIONS — it's a
+ * free-text location, org-owned) is treated as fully quarantined stock: its on-hand feeds the
+ * Quarantine figures and is held out of Available, exactly as if it had been received under
+ * the quarantine flag. This bridges the "Quarantine" location with the quarantineQty concept
+ * so the two never disagree. The fold happens once, in the fromApiStock adapter.
+ */
+export const isQuarantineLocation = (loc: string | null | undefined): boolean =>
+  (loc ?? '').trim().toLowerCase() === 'quarantine';
+
 export const availableOf = (r: StockRecord): number => r.onHand - r.allocated - (r.quarantineQty ?? 0);
 
 /** Sum of remaining qty across a part's open/partially-received orders — `onOrder` is
@@ -415,26 +456,6 @@ export function CoveragePill({ status }: { status: CoverageStatus }) {
     >
       {meta.label}
     </span>
-  );
-}
-
-/** Thin bar under the coverage pill — fill = remaining unallocated share of on-hand stock. */
-export function CoverageBar({ status, record }: { status: CoverageStatus; record: StockRecord }) {
-  const available = availableOf(record);
-  if (available < 0) {
-    const overRatio = Math.min(1, Math.abs(available) / Math.max(record.allocated, 1));
-    return (
-      <div className="flex h-1 w-full rounded-full overflow-hidden bg-muted mt-1.5">
-        <div style={{ width: `${(1 - overRatio) * 100}%`, background: COVERAGE_META.conflict.fg }} />
-        <div style={{ width: `${overRatio * 100}%`, background: COVERAGE_META['covered-by-order'].fg }} />
-      </div>
-    );
-  }
-  const pct = record.onHand > 0 ? Math.round((available / record.onHand) * 100) : 0;
-  return (
-    <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-1.5">
-      <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: COVERAGE_META[status].fg }} />
-    </div>
   );
 }
 

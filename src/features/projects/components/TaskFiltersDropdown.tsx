@@ -211,6 +211,7 @@ export function TaskFiltersDropdown({
     setOpen(false);
   };
   const effectiveStatusOptions = statusOptions?.length ? statusOptions : DEFAULT_STATUS_OPTIONS;
+  const sortedTeamMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -331,6 +332,20 @@ export function TaskFiltersDropdown({
             })}
           />
 
+          {/* Assigned By Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <User className="h-3 w-3" />
+              Assigned By
+            </Label>
+            <MultiSelect
+              options={sortedTeamMembers.map(m => ({ value: m.id, label: m.name }))}
+              selected={filters.assignedBy || []}
+              onChange={(values) => onFiltersChange({ ...filters, assignedBy: values.length ? values : undefined })}
+              placeholder="All Members"
+            />
+          </div>
+
           {/* Assigned To Filter */}
           <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1">
@@ -340,39 +355,11 @@ export function TaskFiltersDropdown({
             <MultiSelect
               options={[
                 { value: 'unassigned', label: 'Unassigned' },
-                ...teamMembers.map(m => ({ value: m.id, label: m.name })),
+                ...sortedTeamMembers.map(m => ({ value: m.id, label: m.name })),
               ]}
               selected={filters.assignee || []}
               onChange={(values) => onFiltersChange({ ...filters, assignee: values.length ? values : undefined })}
               placeholder="All Assignees"
-            />
-          </div>
-
-          {/* Assigned By Filter */}
-          <div className="space-y-2">
-            <Label className="text-xs flex items-center gap-1">
-              <User className="h-3 w-3" />
-              Assigned By
-            </Label>
-            <MultiSelect
-              options={teamMembers.map(m => ({ value: m.id, label: m.name }))}
-              selected={filters.assignedBy || []}
-              onChange={(values) => onFiltersChange({ ...filters, assignedBy: values.length ? values : undefined })}
-              placeholder="All Members"
-            />
-          </div>
-
-          {/* Updated By Filter */}
-          <div className="space-y-2">
-            <Label className="text-xs flex items-center gap-1">
-              <User className="h-3 w-3" />
-              Updated By
-            </Label>
-            <MultiSelect
-              options={teamMembers.map(m => ({ value: m.id, label: m.name }))}
-              selected={filters.updatedBy || []}
-              onChange={(values) => onFiltersChange({ ...filters, updatedBy: values.length ? values : undefined })}
-              placeholder="All Members"
             />
           </div>
 
@@ -391,6 +378,20 @@ export function TaskFiltersDropdown({
               />
             </div>
           )}
+
+          {/* Updated By Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1">
+              <User className="h-3 w-3" />
+              Updated By
+            </Label>
+            <MultiSelect
+              options={sortedTeamMembers.map(m => ({ value: m.id, label: m.name }))}
+              selected={filters.updatedBy || []}
+              onChange={(values) => onFiltersChange({ ...filters, updatedBy: values.length ? values : undefined })}
+              placeholder="All Members"
+            />
+          </div>
 
           {/* Show Only Blocked Tasks */}
           <label className="flex items-center gap-2 cursor-pointer pt-1">

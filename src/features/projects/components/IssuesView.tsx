@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Issue, IssueStatus, IssueSeverity, IssueCategory, Task, TeamMember } from '@/types';
@@ -239,6 +239,14 @@ export function IssuesView({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [selectedMobileStatus, setSelectedMobileStatus] = useState<string>('all');
+  // The table body scrolls inside its own fixed-height box (see max-h-[calc(100vh-320px)]
+  // below) independent of the page scroll — without this, paging kept whatever
+  // scroll position was left inside that box, so a new page could open already
+  // scrolled past its first rows.
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tableScrollRef.current?.scrollTo({ top: 0 });
+  }, [currentPage]);
 
   // Sync columns from API
   useEffect(() => {
@@ -1268,7 +1276,7 @@ export function IssuesView({
         </div>
       ) : (
         <div className="rounded-lg border">
-          <div className="max-h-[calc(100vh-320px)] min-h-[240px] overflow-y-auto">
+          <div ref={tableScrollRef} className="max-h-[calc(100vh-320px)] min-h-[240px] overflow-y-auto">
             <Table containerClassName="relative w-full overflow-visible">
               <TableHeader className="sticky top-0 z-10 bg-background shadow-sm">
                 <TableRow className="bg-background">
@@ -1281,117 +1289,117 @@ export function IssuesView({
                   <TableHead className="sticky top-0 z-10 bg-background">Reported</TableHead>
                 </TableRow>
               </TableHeader>
-            <TableBody>
-              {paginatedIssues.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    No issues found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paginatedIssues.map((issue) => {
-                  const SeverityIcon = ISSUE_SEVERITY_DISPLAY[issue.severity].icon;
-                  const CategoryIcon = categoryConfig[issue.category].icon;
-                  const blockingCount = (issue.blocksTaskIds?.length || 0) + (issue.blocksMilestoneIds?.length || 0);
+              <TableBody>
+                {paginatedIssues.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      No issues found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedIssues.map((issue) => {
+                    const SeverityIcon = ISSUE_SEVERITY_DISPLAY[issue.severity].icon;
+                    const CategoryIcon = categoryConfig[issue.category].icon;
+                    const blockingCount = (issue.blocksTaskIds?.length || 0) + (issue.blocksMilestoneIds?.length || 0);
 
-                  return (
-                    <TableRow
-                      key={issue.id}
-                      className="cursor-pointer hover:bg-muted/50 h-[72px]"
-                      onClick={() => handleIssueClick(issue)}
-                    >
-                      <TableCell className="align-middle">
-                        <Badge className={cn('gap-1', ISSUE_SEVERITY_DISPLAY[issue.severity].color)}>
-                          <SeverityIcon className="h-3 w-3" />
-                          {ISSUE_SEVERITY_DISPLAY[issue.severity].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="align-middle">
-                        <div className="flex items-start gap-2">
-                          {issue.status === 'resolved' && (
-                            <div className="h-4 w-4 rounded-full bg-status-done/20 flex items-center justify-center shrink-0 mt-0.5">
-                              <Check className="h-3 w-3 text-status-done" />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            {getDisplayId(projectCode, 'I', issue.number) && (
-                              <span className="font-mono font-semibold text-[11px] text-blue-500 block">
-                                {getDisplayId(projectCode, 'I', issue.number)}
-                              </span>
+                    return (
+                      <TableRow
+                        key={issue.id}
+                        className="cursor-pointer hover:bg-muted/50 h-[72px]"
+                        onClick={() => handleIssueClick(issue)}
+                      >
+                        <TableCell className="align-middle">
+                          <Badge className={cn('gap-1', ISSUE_SEVERITY_DISPLAY[issue.severity].color)}>
+                            <SeverityIcon className="h-3 w-3" />
+                            {ISSUE_SEVERITY_DISPLAY[issue.severity].label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="align-middle">
+                          <div className="flex items-start gap-2">
+                            {issue.status === 'resolved' && (
+                              <div className="h-4 w-4 rounded-full bg-status-done/20 flex items-center justify-center shrink-0 mt-0.5">
+                                <Check className="h-3 w-3 text-status-done" />
+                              </div>
                             )}
+                            <div className="min-w-0">
+                              {getDisplayId(projectCode, 'I', issue.number) && (
+                                <span className="font-mono font-semibold text-[11px] text-blue-500 block">
+                                  {getDisplayId(projectCode, 'I', issue.number)}
+                                </span>
+                              )}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <p className="font-medium line-clamp-2 cursor-pointer">{issue.title}</p>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs">
+                                  {issue.title}
+                                </TooltipContent>
+                              </Tooltip>
+                              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                                {issue.description}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <CategoryIcon className="h-4 w-4" />
+                            {getCategoryLabel(issue)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn(getStatusBadge(issue.status).color)}>
+                            {getStatusBadge(issue.status).label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {blockingCount > 0 ? (
+                            <div className="flex items-center gap-1 text-sm text-destructive">
+                              <Link2 className="h-3 w-3" />
+                              {blockingCount} item{blockingCount > 1 ? 's' : ''}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {issue.assignees && issue.assignees.length > 0 ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <p className="font-medium line-clamp-2 cursor-pointer">{issue.title}</p>
+                                <div className="flex items-center gap-2 w-fit cursor-default">
+                                  <Avatar className="h-6 w-6">
+                                    <AvatarImage src={resolveFileUrl(issue.assignees[0].avatar) ?? issue.assignees[0].avatar} alt={issue.assignees[0].name} />
+                                    <AvatarFallback className="text-[10px]">
+                                      {issue.assignees[0].initials}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-sm">
+                                    {issue.assignees[0].name}
+                                    {issue.assignees.length > 1 && ` +${issue.assignees.length - 1}`}
+                                  </span>
+                                </div>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-xs">
-                                {issue.title}
+                              <TooltipContent side="top">
+                                {issue.assignees.map((a) => a.name).join(', ')}
                               </TooltipContent>
                             </Tooltip>
-                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                              {issue.description}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          <CategoryIcon className="h-4 w-4" />
-                          {getCategoryLabel(issue)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={cn(getStatusBadge(issue.status).color)}>
-                          {getStatusBadge(issue.status).label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {blockingCount > 0 ? (
-                          <div className="flex items-center gap-1 text-sm text-destructive">
-                            <Link2 className="h-3 w-3" />
-                            {blockingCount} item{blockingCount > 1 ? 's' : ''}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {issue.assignees && issue.assignees.length > 0 ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex items-center gap-2 w-fit cursor-default">
-                                <Avatar className="h-6 w-6">
-                                  <AvatarImage src={resolveFileUrl(issue.assignees[0].avatar) ?? issue.assignees[0].avatar} alt={issue.assignees[0].name} />
-                                  <AvatarFallback className="text-[10px]">
-                                    {issue.assignees[0].initials}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <span className="text-sm">
-                                  {issue.assignees[0].name}
-                                  {issue.assignees.length > 1 && ` +${issue.assignees.length - 1}`}
-                                </span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              {issue.assignees.map((a) => a.name).join(', ')}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">Unassigned</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(issue.reportedAt).toLocaleDateString()}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">Unassigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(issue.reportedAt).toLocaleDateString()}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
-      </div>
       )}
 
       {viewMode !== 'kanban' && !isMobile && issuesPaginationControls}
