@@ -109,6 +109,7 @@ const SECTIONS: Section[] = [
         description: 'Trace requirements through tasks, modules, and ECOs for full coverage.',
         logo: { kind: 'icon', icon: ClipboardList },
         color: '#2563EB',
+        feature: 'requirements',
       },
       {
         id: 'gate-reviews',

@@ -570,6 +570,11 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const { id, tab: tabParam, partId, reqKey, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
   const isSupportFeatureEnabled = useFeatureTogglesStore((s) => s.enabled.support);
+  // Requirements is both a project-configurable tab (Edit Project → Project
+  // Tabs, tabConfig below) AND a per-user opt-in feature (Integrations page) —
+  // it only shows when BOTH allow it, same "both must allow it" rule as any
+  // other project tab a user has personally opted out of.
+  const isRequirementsFeatureEnabled = useFeatureTogglesStore((s) => s.enabled.requirements);
   // Requirements' "New"/"Edit" editor isn't URL-driven (same reasoning as BOM's
   // "Add Part" sheet not having its own URL) — RequirementsView reports it up
   // via this callback so the tab-bar header can hide for it too, same as it
@@ -745,8 +750,9 @@ export default function ProjectDetail() {
   // Project-configurable tab order/visibility (set in Edit Project). Falls back
   // to the default order with everything visible when the project has no saved config.
   const visibleTabs = useMemo(
-    () => visibleOrderedTabDefinitions(resolveProjectTabConfig(project?.tabConfig)),
-    [project?.tabConfig]
+    () => visibleOrderedTabDefinitions(resolveProjectTabConfig(project?.tabConfig))
+      .filter((t) => t.id !== 'requirements' || isRequirementsFeatureEnabled),
+    [project?.tabConfig, isRequirementsFeatureEnabled]
   );
 
   // If the current section's tab has been hidden by the project's tab config,
