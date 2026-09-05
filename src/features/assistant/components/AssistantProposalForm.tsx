@@ -56,6 +56,7 @@ const MILESTONE_STATUS_OPTIONS = [
 
 interface FieldEditorProps {
   entityType: string;
+  actionKind?: 'create' | 'update' | 'delete' | 'mixed';
   projectId: string | null;
   fieldKey: string;
   value: unknown;
@@ -63,7 +64,7 @@ interface FieldEditorProps {
 }
 
 /** Renders the right control for one field key, shared by the full single-item form and the bulk-shared one-field editor — a field always looks and behaves the same way in both places. */
-function FieldEditor({ entityType, projectId, fieldKey, value, onChange }: FieldEditorProps) {
+function FieldEditor({ entityType, actionKind, projectId, fieldKey, value, onChange }: FieldEditorProps) {
   const membersQuery = useProjectMembers(projectId ?? undefined);
   const projectDetailQuery = useProjectDetail(projectId ?? undefined);
   const modulesQuery = useProjectModules(projectId ?? undefined);
@@ -85,7 +86,11 @@ function FieldEditor({ entityType, projectId, fieldKey, value, onChange }: Field
   // affected-parts / diff-rows / pipeline tables). title/description fall
   // through; targetDate/ownerId reuse the shared editors below.
   if (entityType === 'eco' && ECO_FIELD_KEYS.has(fieldKey)) {
-    return <EcoFieldEditor projectId={projectId} fieldKey={fieldKey} value={value} onChange={onChange} />;
+    // Affected parts are fixed once the ECO is created — editable only on a
+    // fresh create, never on an update (the server refuses an update that
+    // touches them; see propose_eco_change's touchesParts hard-block).
+    const partsLocked = fieldKey === 'parts' && actionKind === 'update';
+    return <EcoFieldEditor projectId={projectId} fieldKey={fieldKey} value={value} onChange={onChange} locked={partsLocked} />;
   }
 
   switch (fieldKey) {
@@ -236,6 +241,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 interface AssistantProposalFormProps {
   entityType: string;
+  actionKind?: 'create' | 'update' | 'delete' | 'mixed';
   /** Null for a personal (no-project) task — its form never includes an assignee/milestone/module field, so the project-scoped pickers below are simply never rendered for it. */
   projectId: string | null;
   formState: ProposalFormState;
@@ -243,7 +249,7 @@ interface AssistantProposalFormProps {
   onCancel: () => void;
 }
 
-export function AssistantProposalForm({ entityType, projectId, formState, onSubmit, onCancel }: AssistantProposalFormProps) {
+export function AssistantProposalForm({ entityType, actionKind, projectId, formState, onSubmit, onCancel }: AssistantProposalFormProps) {
   const rawInitial = formState.mode === 'single' ? (formState.fields ?? {}) : { [formState.sharedFields?.[0]?.field ?? '']: formState.sharedFields?.[0]?.value };
   // Milestones default to "Automatic" (null → computed from tasks) when the model doesn't propose
   // a status, which reads as a fake status option to the user — default the form to On Track instead.
@@ -305,7 +311,7 @@ export function AssistantProposalForm({ entityType, projectId, formState, onSubm
             {formState.mode === 'bulk-shared' ? (formState.sharedFields?.[0]?.label ?? key) : labelFor(key)}
             {formState.required.includes(key) && <span className="text-destructive"> *</span>}
           </Label>
-          <FieldEditor entityType={entityType} projectId={projectId} fieldKey={key} value={values[key]} onChange={(v) => setField(key, v)} />
+          <FieldEditor entityType={entityType} actionKind={actionKind} projectId={projectId} fieldKey={key} value={values[key]} onChange={(v) => setField(key, v)} />
         </div>
       ))}
       {error && <p className="text-xs text-destructive">{error}</p>}

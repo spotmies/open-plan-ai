@@ -45,6 +45,11 @@ interface AssistantProposalCardProps {
   isRevising?: boolean;
 }
 
+/** True when every item is a BOM sub-component add — narrows the generic "Create BOM line" headline to something that actually names the action. */
+function isSubcomponentAddOnly(items: ProposalItem[]): boolean {
+  return items.length > 0 && items.every((item) => item.kind === 'create' && item.variant === 'bom_subcomponent');
+}
+
 function actionVerb(actionKind: AssistantProposal['actionKind'], itemCount: number): string {
   if (actionKind === 'create') return itemCount === 1 ? 'Create' : `Create ${itemCount}`;
   if (actionKind === 'update') return itemCount === 1 ? 'Update' : `Update ${itemCount}`;
@@ -143,7 +148,9 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
   const resultItems = Array.isArray(proposal.result?.items) ? proposal.result.items : [];
   const visibleItems = showAll ? items : items.slice(0, VISIBLE_ITEMS_COLLAPSED);
   const hiddenCount = items.length - visibleItems.length;
-  const headline = `${actionVerb(preview.actionKind, preview.itemCount)} ${entityNoun(preview.entityType, preview.itemCount)}`;
+  const headline = isSubcomponentAddOnly(items)
+    ? (items.length === 1 ? 'Add sub-component' : `Add ${items.length} sub-components`)
+    : `${actionVerb(preview.actionKind, preview.itemCount)} ${entityNoun(preview.entityType, preview.itemCount)}`;
   const expired = isPending && new Date(proposal.expiresAt).getTime() <= Date.now();
   const terminal = TERMINAL_META[proposal.status];
 
@@ -197,6 +204,7 @@ export function AssistantProposalCard({ proposal, readOnly, onConfirm, onReject,
             <CardContent className="pt-0">
               <AssistantProposalForm
                 entityType={preview.entityType}
+                actionKind={preview.actionKind}
                 projectId={proposal.projectId}
                 formState={proposal.formState!}
                 onSubmit={handleFormSubmit}

@@ -573,6 +573,8 @@ export interface ProposalItemCreate {
   kind: 'create';
   title: string;
   fields: ProposalField[];
+  /** Narrows how the card labels this create — e.g. 'bom_subcomponent' for adding an existing catalog part under a parent assembly. Absent for the ordinary case. */
+  variant?: string;
 }
 
 /** A removal. Carries `fields` (identifying detail + what goes with it) rather than before/after changes — there is no "to" side. */

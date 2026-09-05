@@ -70,7 +70,7 @@ export const ECO_FIELD_LABELS: Record<string, string> = {
   affectedModules: 'Affected modules',
   diffRows: 'Field-level diff',
   attachments: 'Attachments (by URL)',
-  scheduleImpact: 'Schedule impact',
+  scheduleImpact: 'Impact level',
   unitCostDelta: 'Unit cost Δ ($/unit)',
   oneTimeCost: 'One-time cost ($)',
   requiresRecertification: 'Requires recertification',
