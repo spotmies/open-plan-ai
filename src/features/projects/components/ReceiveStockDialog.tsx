@@ -192,6 +192,7 @@ export function ReceiveStockDialog({ isOpen, onClose, orgId, parts, orders, onRe
     if (openOrdersForPart.length > 0 && !form.getValues('orderId')) {
       const defaultOrder = openOrdersForPart[0];
       form.setValue('orderId', defaultOrder.id);
+      form.setValue('quantity', defaultOrder.remainingQty);
       if (!lockedLocation) form.setValue('location', defaultOrder.location ?? form.getValues('location'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

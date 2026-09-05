@@ -656,7 +656,7 @@ export function FilePreviewDialog({
                   </div>
                 )
               ) : kind === 'office' && officeSubKind === 'word' ? (
-                <div className="relative w-full h-full overflow-auto bg-white">
+                <div className="relative w-full h-full overflow-auto bg-white text-black">
                   {officeLoading && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70">
                       <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />

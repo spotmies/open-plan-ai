@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { queryClient as rqClient } from '@/lib/queryClient';
 import { toast } from 'sonner';
 import {
   ArrowLeft, GitMerge, SquarePen, ChevronRight, Truck,
@@ -30,7 +31,7 @@ import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useAuth } from '@/contexts/AuthContext';
 import { BOMSendForReviewModal } from './BOMSendForReviewModal';
 import { BOMApprovalReviewCard } from './BOMApprovalReviewCard';
-import { uploadBomDocumentFile, addBomDocumentLink, deleteBomDocument, type BomAttachment } from '@/hooks/useBomDocuments';
+import { uploadBomDocumentFile, addBomDocumentLink, deleteBomDocument } from '@/hooks/useBomDocuments';
 import { useCurrency } from '@/hooks/useCurrency';
 import { resolveFileUrl } from '@/utils/fileUrl';
 import { useBomNotes, useAddBomNote, useUpdateBomNote, useDeleteBomNote } from '@/hooks/useBomNotes';
@@ -65,6 +66,14 @@ async function saveBomDocs(nodeId: string, payload: BOMPartPayload): Promise<{ p
   }
 
   await uploads;
+
+  // Attachments (photo or tech file) the user removed or replaced in this edit — delete
+  // them server-side so they don't linger as orphaned documents.
+  if (payload.docsRemovedIds?.length) {
+    await Promise.allSettled(payload.docsRemovedIds.map(id => deleteBomDocument(id)));
+  }
+  rqClient.invalidateQueries({ queryKey: ['bom-documents', nodeId] });
+
   return { photoUrl };
 }
 
@@ -990,12 +999,12 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
 
             {/* Info row */}
             <div className="mx-6 mb-5 px-4 py-3.5 bg-card border border-border rounded-xl grid gap-4"
-              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
               <Field label="Part Number" mono>{node.pn}</Field>
               <Field label="Part Name">{node.name}</Field>
               <Field label="MPN" mono>{node.mpn}</Field>
               <Field label="Manufacturer">{node.manufacturer}</Field>
-              <Field label="Supplier">{node.distributor}</Field>
+              <Field label="Supplier" mono>{node.distributor}</Field>
               <Field label="Quantity">{node.qty} {node.uom}</Field>
               {node.designators && <Field label="Designators" mono>{node.designators}</Field>}
               <Field label="Unit Price">{formatCurrency(node.price)}</Field>
@@ -1397,7 +1406,7 @@ export function BOMDetailScreen({ node: originalNode, rootNodes, orgId, projectI
                 )}
 
                 {/* Documents */}
-                <BOMDocuments nodeId={originalNode.id} />
+                <BOMDocuments nodeId={originalNode.id} photoUrl={originalNode.imageUrl} />
 
                 {/* Engineering Changes referencing this part — hidden when none
                     and not loading, to save vertical space */}

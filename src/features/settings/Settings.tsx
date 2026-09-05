@@ -1020,7 +1020,7 @@ const Settings = () => {
                   <Separator />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between h-6">
                         <Label htmlFor="full-name">Full Name</Label>
                         {!isEditingProfile && (
                           <Button
@@ -1050,16 +1050,18 @@ const Settings = () => {
                           }}
                         />
                       ) : (
-                        <p
+                        <Input
                           id="full-name"
-                          className="min-h-10 w-full break-words rounded-md border border-input bg-muted px-3 py-2 text-sm"
-                        >
-                          {profileForm.name || '—'}
-                        </p>
+                          value={profileForm.name || ''}
+                          readOnly
+                          className="bg-muted cursor-default"
+                        />
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
+                      <div className="flex items-center justify-between h-6">
+                        <Label htmlFor="email">Email</Label>
+                      </div>
                       <Input
                         id="email"
                         value={profile?.email || ''}

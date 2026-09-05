@@ -4,10 +4,13 @@ import {
   DayPicker,
   useDayPicker,
   useNavigation,
+  addToRange,
   type CaptionProps,
   type DayPickerProps,
   type ActiveModifiers,
   type SelectSingleEventHandler,
+  type SelectRangeEventHandler,
+  type DateRange,
 } from "react-day-picker";
 import {
   format,
@@ -233,7 +236,7 @@ function DualMonthSidebar() {
   const dayPicker = useDayPicker();
   const displayYear = getYear(currentMonth);
   const selectedMonthIndex = getMonth(currentMonth);
-  const { fromDate, toDate, fromYear, toYear, locale, mode, onSelect } = dayPicker;
+  const { fromDate, toDate, fromYear, toYear, locale, mode, onSelect, selected } = dayPicker;
 
   const minYear = fromYear ?? (fromDate ? getYear(fromDate) : undefined);
   const maxYear = toYear ?? (toDate ? getYear(toDate) : undefined);
@@ -254,9 +257,17 @@ function DualMonthSidebar() {
 
   const goToToday = (e: React.MouseEvent<HTMLButtonElement>) => {
     goToMonth(today);
-    if (mode === "single" && onSelect) {
+    if (!onSelect) return;
+    if (mode === "single") {
       const handler = onSelect as unknown as SelectSingleEventHandler;
       handler(today, today, {} as ActiveModifiers, e);
+    } else if (mode === "range") {
+      // Mirror clicking the "today" cell directly: extend/collapse the
+      // existing range the same way react-day-picker's own day click does,
+      // rather than leaving the current selection untouched.
+      const handler = onSelect as unknown as SelectRangeEventHandler;
+      const range = addToRange(today, selected as DateRange | undefined);
+      handler(range, today, {} as ActiveModifiers, e);
     }
   };
 

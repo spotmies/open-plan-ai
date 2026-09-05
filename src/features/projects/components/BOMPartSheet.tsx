@@ -83,6 +83,9 @@ export interface BOMPartPayload {
   doc3DModel?: DocValue[];
   docFootprint?: DocValue[];
   docCustom?: DocValue[];
+  // ids of previously-existing server attachments (photo or tech files) that were removed or
+  // replaced in this edit — the caller must delete these so they don't linger as orphaned documents
+  docsRemovedIds?: string[];
   customFields: CustomFieldEntry[];
   // edit-only version fields
   versionMode?: 'same' | 'new';
@@ -504,6 +507,9 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
   const [isAddingSection, setIsAddingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
   const [docsPopulated, setDocsPopulated] = useState(false);
+  // ids of every server attachment (photo + tech files) present when the form was opened —
+  // diffed against what's still referenced at save time to find attachments the user dropped.
+  const originalDocIdsRef = useRef<Set<string>>(new Set());
 
   const [customFields, setCustomFields] = useState<CustomFieldEntry[]>(Array.isArray(node?.customFields) ? node.customFields : []);
   const [versionMode, setVersionMode] = useState<'same' | 'new'>('same');
@@ -614,6 +620,8 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
   // Pre-populate Documents tab from existing server attachments (edit mode only)
   useEffect(() => {
     if (!open || !isEdit || !node?.id || docsLoading || docsPopulated) return;
+
+    originalDocIdsRef.current = new Set(existingDocs.map(d => d.id));
 
     // The product photo is whichever attachment backs the part's explicitly-set imageUrl —
     // not just any image the user happened to upload as a plain document.
@@ -812,6 +820,17 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
     if (!validate() || saving) return;
     setSaving(true);
     try {
+      // Any originally-existing attachment (photo or tech file) no longer referenced by the
+      // form — removed outright, or replaced with a new upload/link — must be deleted server-side.
+      const keptIds = new Set<string>();
+      if (docPhoto?.kind === 'existing') keptIds.add(docPhoto.id);
+      for (const section of techSections) {
+        for (const doc of section.value) {
+          if (doc.kind === 'existing') keptIds.add(doc.id);
+        }
+      }
+      const docsRemovedIds = [...originalDocIdsRef.current].filter(id => !keptIds.has(id));
+
       await onSave({
         mode,
         pn: isEdit ? (node?.pn ?? pn) : pn.trim().toUpperCase(),
@@ -841,6 +860,7 @@ export function BOMPartSheet({ mode, node, projectId, orgId, open, onClose, onSa
         doc3DModel: techSections.find(s => s.id === '3dmodel')?.value || [],
         docFootprint: techSections.find(s => s.id === 'footprint')?.value || [],
         docCustom: techSections.filter(s => !['datasheet', '3dmodel', 'footprint'].includes(s.id)).flatMap(s => s.value),
+        docsRemovedIds,
         versionMode: isEdit ? versionMode : undefined,
         newRevLabel: isEdit && versionMode === 'new' ? newRevLabel : undefined,
         changeNotes: isEdit ? changeNotes : undefined,

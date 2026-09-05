@@ -51,7 +51,7 @@ export function BOMApprovalReviewCard({ request, partLabel, onApprove, onReject,
     >
       <div className="flex items-center gap-2 flex-wrap mb-2">
         <ShieldCheck className="w-4 h-4 shrink-0" style={{ color: '#D97706' }} />
-        <span className="text-sm font-semibold text-foreground">Needs Your Review</span>
+        <span className="text-sm font-semibold text-foreground">Approval Required</span>
         {request.scope === 'subtree' && (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-muted-foreground bg-muted border border-border">
             <Boxes className="w-2.5 h-2.5" /> {partLabel} + sub-components

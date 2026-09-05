@@ -77,24 +77,28 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
   const includeResolved = statusFilter?.includes('resolved') ?? false;
   const includeDone = statusFilter?.includes('done') ?? false;
   const isCompletedTab = filter === 'completed';
+  // The "All" tab shows completed items alongside active ones, so it needs
+  // the full done/resolved/wont-fix history too, not just today's.
+  const isAllTab = filter === 'all';
   // Any of these selected means the full done/resolved/wont-fix history is
   // actually needed, not just today's — fetch it on demand for this case only.
   const { user, rawTasks, rawIssues, isLoading } = useMyDayRawData({
-    includeDone: includeDone || includeResolved || includeWontFix || isCompletedTab,
+    includeDone: includeDone || includeResolved || includeWontFix || isCompletedTab || isAllTab,
   });
 
   const data = useMemo((): MyDayItem[] => {
     if (!user?.id) return [];
 
     // All tasks from /tasks/me/all are already assigned to the current user (filtered server-side).
-    // Completed tasks are excluded by default (today/overdue/all) so a task marked done
-    // disappears from the list immediately, unless the user explicitly filters for "Done".
+    // Completed tasks are excluded by default for today/overdue (so a task marked done
+    // disappears from those tabs immediately) unless explicitly filtered for "Done",
+    // but the "all" tab always includes them alongside active items.
     const taskItems: MyDayItem[] = rawTasks
       .filter(task =>
         isCompletedTab
           ? task.status === 'done'
           : matchesFilter(getDueDateStatus(task.dueDate, task.startDate), filter) &&
-            (task.status !== 'done' || includeDone)
+            (task.status !== 'done' || includeDone || isAllTab)
       )
       .map(task => {
         const dueDateStatus = getDueDateStatus(task.dueDate, task.startDate);
@@ -121,16 +125,17 @@ export function useMyDayTasks(filter: MyDayFilter = 'all', statusFilter?: string
         } as MyDayItem;
       });
 
-    // Wont-fix and resolved issues are excluded by default so they don't linger in
-    // My Day, unless the user has explicitly filtered for that status — otherwise
-    // selecting "Won't Fix"/"Resolved" in the column filter could never show anything.
+    // Wont-fix and resolved issues are excluded by default on today/overdue so they don't
+    // linger there, unless explicitly filtered for that status (otherwise selecting
+    // "Won't Fix"/"Resolved" in the column filter could never show anything) — the
+    // "all" tab always includes them alongside active items.
     const issueItems: MyDayItem[] = rawIssues
       .filter(({ issue }) => {
         const isAssignedToUser = issue.assignees?.some(a => a.id === user.id) ?? false;
         if (!isAssignedToUser) return false;
         if (isCompletedTab) return issue.status === 'resolved' || issue.status === 'wont-fix';
-        if (issue.status === 'wont-fix' && !includeWontFix) return false;
-        if (issue.status === 'resolved' && !includeResolved) return false;
+        if (issue.status === 'wont-fix' && !includeWontFix && !isAllTab) return false;
+        if (issue.status === 'resolved' && !includeResolved && !isAllTab) return false;
         return matchesFilter(getDueDateStatus(issue.dueDate), filter);
       })
       .map(({ issue, projectName, projectCode }) => {

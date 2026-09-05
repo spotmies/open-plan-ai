@@ -43,7 +43,14 @@ export function NotificationsToastProvider() {
           type="button"
           onClick={() => {
             toast.dismiss(toastId);
-            if (notification.actionUrl) navigate(notification.actionUrl);
+            if (notification.actionUrl) {
+              // Captured at click time (not effect-registration time) since this
+              // provider is mounted once near the app root and doesn't re-render
+              // as the user navigates between pages.
+              navigate(notification.actionUrl, {
+                state: { backTo: window.location.pathname + window.location.search },
+              });
+            }
           }}
           className="flex w-full items-start gap-3 rounded-lg border border-border bg-background p-3 text-left shadow-lg transition-colors hover:bg-accent/50"
         >

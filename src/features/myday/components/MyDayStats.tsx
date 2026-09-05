@@ -40,7 +40,7 @@ export function MyDayStats({
   completedTodayCount,
 }: MyDayStatsProps) {
   return (
-    <div className="flex flex-wrap gap-3 mb-8">
+    <div className="flex flex-wrap gap-3">
       <StatCard label="Needs Attention" value={attentionCount} icon={AlertTriangle} iconColor="#DC2626" />
       <StatCard label="Ready to Work" value={readyCount} icon={PlayCircle} iconColor="#16A34A" />
       <StatCard label="Blocked" value={blockedCount} icon={Lock} iconColor="#64748B" />
