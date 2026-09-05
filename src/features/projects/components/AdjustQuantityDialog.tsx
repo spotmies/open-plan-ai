@@ -42,7 +42,7 @@ import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { cn } from '@/lib/utils';
 import { Boxes, Camera, Check, ChevronsUpDown, Clock, ImagePlus, Minus, Pencil, Plus, ShoppingCart, Upload, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useCreatePart, useUpdatePart } from '@/hooks/useParts';
+import { useCreatePart, useUpdatePart, usePartCatalogSearch } from '@/hooks/useParts';
 import { useLocations } from '@/hooks/useLocations';
 import { type ApiPartResponse, type BOMCategory, getCategoryMeta } from './bomData';
 import { LocationHierarchyPicker, LockedLocationField, CategoryCombobox, UnitCombobox, type StockLocation, type StockRecord } from './inventoryData';
@@ -171,6 +171,11 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
 
   const stockPartIds = useMemo(() => new Set(stock.map(r => r.partId)), [stock]);
 
+  // The org's part catalog is capped at MAX_PAGE_SIZE (100, alphabetical) in `parts` — once an
+  // org has more parts than that, a part sorting past the cap is invisible to the picker below
+  // unless it's found through a live server search instead. Empty query falls back to `parts`.
+  const { query: partSearch, setQuery: setPartSearch, results: searchedParts } = usePartCatalogSearch(orgId, parts);
+
   // Include every part, not just parts that already have a stock row — a part only referenced
   // from a BOM (never received) still needs to be selectable when starting a new transaction.
   // (The picker list below hides already-stocked parts; this full list still backs the
@@ -189,29 +194,19 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       }
     }
     const fromStock: PickerPart[] = Array.from(byPart.values());
-    const fromPartsOnly: PickerPart[] = parts
+    const fromPartsOnly: PickerPart[] = searchedParts
       .filter(p => !stockPartIds.has(p.id))
       .map(p => ({ partId: p.id, pn: p.partNumber, name: p.name, mpn: p.mpn, location: '', onHand: 0, leadTimeDays: p.latestRevision?.leadTimeDays ?? 0, demandQty: partDemand?.get(p.id) ?? 0, cat: p.category, projects: partProjects?.get(p.id) ?? [] }));
     return [...fromStock, ...fromPartsOnly];
-  }, [stock, parts, partProjects, partDemand, stockPartIds]);
+  }, [stock, searchedParts, partProjects, partDemand, stockPartIds]);
 
   // The picker only offers parts not yet in inventory — a part that already has a stock row
   // is adjusted from its own row ("Adjust quantity"), not re-added through "New transaction".
-  const selectablePickerParts = useMemo(
+  // Already scoped to the live search above, so no further text filtering is needed here.
+  const filteredPickerParts = useMemo(
     () => pickerParts.filter(r => !stockPartIds.has(r.partId)),
     [pickerParts, stockPartIds]
   );
-
-  const [partSearch, setPartSearch] = useState('');
-  const filteredPickerParts = useMemo(() => {
-    const q = partSearch.trim().toLowerCase();
-    if (!q) return selectablePickerParts;
-    return selectablePickerParts.filter(r =>
-      r.pn.toLowerCase().includes(q) ||
-      r.name.toLowerCase().includes(q) ||
-      (r.mpn ?? '').toLowerCase().includes(q)
-    );
-  }, [selectablePickerParts, partSearch]);
 
   // When a search turns up nothing, tell the user *why* if it's because the match is an
   // already-stocked part we deliberately hide, rather than a generic "No parts found".

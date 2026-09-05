@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils';
 import { Check, ChevronsUpDown, Clock, ShoppingCart, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
+import { usePartCatalogSearch } from '@/hooks/useParts';
 import { type ApiPartResponse, type BOMCategory } from './bomData';
 import { LocationHierarchyPicker, LockedLocationField } from './inventoryData';
 
@@ -100,6 +101,7 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
   const [partPickerOpen, setPartPickerOpen] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const { data: locations = [] } = useLocations(orgId);
+  const { query: partQuery, setQuery: setPartQuery, results: pickerParts } = usePartCatalogSearch(orgId, parts);
 
   const form = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
@@ -235,15 +237,19 @@ export function PlaceOrderDialog({ isOpen, onClose, orgId, parts, onPlaceOrder, 
                           </FormControl>
                         </PopoverTrigger>
                         <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[420px] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search parts, MPN, manufacturer..." />
+                          <Command shouldFilter={false}>
+                            <CommandInput
+                              placeholder="Search parts, MPN, manufacturer..."
+                              value={partQuery}
+                              onValueChange={setPartQuery}
+                            />
                             <CommandList>
                               <CommandEmpty>No parts found.</CommandEmpty>
                               <CommandGroup>
-                                {parts.map((p) => (
+                                {pickerParts.map((p) => (
                                   <CommandItem
                                     key={p.id}
-                                    value={`${p.partNumber} ${p.name} ${p.mpn ?? ''} ${p.manufacturer ?? ''}`}
+                                    value={p.id}
                                     onSelect={() => {
                                       setSelectedPart(p);
                                       form.setValue('partId', p.id, { shouldDirty: true, shouldValidate: true });
