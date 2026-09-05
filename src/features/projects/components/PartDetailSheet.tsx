@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Download, ShoppingCart, Pencil, ArrowLeftRight, ClipboardCheck, MapPin, ChevronLeft, ChevronRight, Clock,
+  Download, ShoppingCart, Pencil, ArrowLeftRight, ClipboardCheck, MapPin, ChevronRight, Clock,
   Zap, Cpu, Package, Box, Monitor, Shield, Layers, Tag, Unlock, ShieldAlert, type LucideIcon,
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -22,7 +21,7 @@ const CATEGORY_ICON_MAP: Record<string, React.ElementType> = { Zap, Cpu, Package
 
 const FIELD_TOOLTIPS: Record<string, string> = {
   'On Hand': 'Physical quantity currently in stock, including anything held in quarantine.',
-  'Allocated': 'Quantity already reserved against BOM demand for planned builds.',
+  'Allocated': 'Quantity reserved against a build via Allocate — committed but not yet issued.',
   'Available': 'On Hand minus Allocated minus Quarantine — what can actually be used right now.',
   'On Order': 'Quantity remaining on open purchase orders, not yet received. Want-to-order items aren’t counted until marked ordered.',
   'Quarantine': 'Held out of Available until released — pending inspection or testing.',
@@ -131,7 +130,7 @@ function Field({
 }: { label: string; mono?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <div className="mb-1 text-[10.5px] uppercase tracking-wider text-muted-foreground/70" title={hint}>{label}</div>
+      <div className="mb-1 text-[10.5px] uppercase tracking-wider text-muted-foreground" title={hint}>{label}</div>
       <div className={cn('truncate text-sm font-medium text-foreground', mono && 'font-mono')}>{children}</div>
     </div>
   );
@@ -170,6 +169,15 @@ export function PartDetailSheet({
   const [releaseQty, setReleaseQty] = useState('');
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
+  // Close on Escape — the panel is a plain in-page overlay now (not a Dialog), so it
+  // has to wire this up itself.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   const memberNameById = useMemo(() => {
     const map = new Map<string, string>();
     members.forEach(m => map.set(m.id, m.name));
@@ -201,7 +209,9 @@ export function PartDetailSheet({
       rows.push({ location: secondSite, label: 'Allocated', qty: record.allocated, color: '#2563EB' });
     }
     if (record.quarantineQty) rows.push({ location: 'Quarantine', label: 'Quarantine', qty: record.quarantineQty, color: '#D97706' });
-    if (rows.length === 0) rows.push({ location: record.location, label: 'On hand', qty: record.onHand, color: '#16A34A' });
+    if (rows.length === 0 && record.onHand > 0) {
+      rows.push({ location: record.location, label: 'On hand', qty: record.onHand, color: '#16A34A' });
+    }
     return rows;
   }, [record]);
 
@@ -219,7 +229,7 @@ export function PartDetailSheet({
     [partOrders]
   );
 
-  if (!record) return null;
+  if (!isOpen || !record) return null;
 
   const handleRelease = () => {
     const qty = Math.min(Number(releaseQty) || 0, record.quarantineQty ?? 0);
@@ -289,7 +299,16 @@ export function PartDetailSheet({
     </>
   );
 
-  const quarantineRelease = (record.quarantineQty ?? 0) > 0 ? (
+  // Stock quarantined only because it sits in a location named "Quarantine" can't be
+  // released by decrementing a column — it has to be transferred out to a normal location —
+  // so show a hint pointing at Transfer instead of the qty-release control.
+  const quarantineRelease = (record.quarantineQty ?? 0) > 0 && record.quarantineByLocation ? (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-amber-600">
+        <ShieldAlert className="h-3.5 w-3.5" /> {record.quarantineQty} held in the Quarantine location — use Transfer to move it to usable stock
+      </div>
+    </div>
+  ) : (record.quarantineQty ?? 0) > 0 ? (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
       <div className="flex items-center gap-1.5 text-xs font-medium text-amber-600">
         <ShieldAlert className="h-3.5 w-3.5" /> {record.quarantineQty} in quarantine
@@ -312,53 +331,51 @@ export function PartDetailSheet({
   ) : null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        hideClose
-        className={cn(
-          'p-0 overflow-hidden gap-0 flex flex-col',
-          'inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-[100dvh] max-w-none max-h-none rounded-none sm:rounded-none border-0 bg-background',
-        )}
+    <>
+      {/* In-page panel — fills the inventory content area, leaving the app sidebar and
+          header visible (mirrors how the BOM part detail opens inside its tab). The parent
+          container is `relative` so this `absolute inset-0` is scoped to that region. */}
+      <div
+        role="dialog"
+        aria-label={`${record.pn} — ${record.name}`}
+        className="absolute inset-0 z-30 flex flex-col overflow-hidden bg-background"
       >
-        <DialogTitle className="sr-only">{record.pn} — {record.name}</DialogTitle>
 
         {/* Breadcrumb */}
-        <div className="flex shrink-0 items-center gap-1.5 border-b px-4 py-2.5 text-xs text-muted-foreground sm:px-6">
-          <button
-            type="button"
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-6 pt-3 m-2 text-xs text-muted-foreground">
+          <span
+            className="cursor-pointer transition-colors hover:text-foreground"
             onClick={onClose}
-            className="flex items-center gap-1 rounded transition-colors hover:text-foreground"
-            aria-label="Back to inventory"
           >
-            <ChevronLeft className="h-3.5 w-3.5" /> Inventory
-          </button>
+            Inventory
+          </span>
           <ChevronRight className="h-3 w-3" />
-          <span className="truncate font-medium text-foreground">{record.pn}</span>
+          <span className="truncate font-mono font-medium text-foreground">{record.pn}</span>
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="mx-auto w-full max-w-6xl px-4 pb-10 sm:px-6">
+          <div className="w-full px-6 pb-8">
 
             {/* Part header */}
-            <div className="flex flex-wrap items-start justify-between gap-4 py-4">
-              <div className="flex min-w-0 gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-5 pb-4">
+              <div className="flex min-w-0 items-start gap-4">
                 {record.imageUrl ? (
-                  <img src={record.imageUrl} alt="" className="h-14 w-14 shrink-0 rounded-xl border object-cover" />
+                  <img src={record.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded-xl border object-cover" />
                 ) : (
                   <div
-                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl"
+                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl"
                     style={{ background: `${meta.tint}1a`, color: meta.tint }}
                   >
                     <CategoryIcon className="h-6 w-6" />
                   </div>
                 )}
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="mb-1 flex flex-wrap items-center gap-2.5">
                     <h1 className="truncate text-xl font-semibold text-foreground">{record.name}</h1>
                     <CoveragePill status={status} />
                   </div>
-                  <div className="mt-0.5 font-mono text-xs text-muted-foreground">{record.pn}</div>
-                  <div className="mt-1 inline-flex items-center gap-1.5 text-sm" style={{ color: meta.tint }}>
+                  <div className="mb-1 font-mono text-xs text-muted-foreground">{record.pn}</div>
+                  <div className="inline-flex items-center gap-1.5 text-sm" style={{ color: meta.tint }}>
                     <span className="inline-block h-2 w-2 rounded-sm" style={{ background: meta.tint }} />
                     {meta.label}
                   </div>
@@ -379,7 +396,7 @@ export function PartDetailSheet({
             {/* Facts strip */}
             <div
               className="mb-5 grid gap-4 rounded-xl border bg-card px-4 py-3.5"
-              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(116px, 1fr))' }}
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}
             >
               <Field label="On Hand" hint={FIELD_TOOLTIPS['On Hand']}>{record.onHand} {unit}</Field>
               <Field label="Allocated" hint={FIELD_TOOLTIPS['Allocated']}>{record.allocated}</Field>
@@ -401,7 +418,7 @@ export function PartDetailSheet({
             </div>
 
             {/* Two-column body */}
-            <div className="grid gap-4 lg:[grid-template-columns:minmax(0,1.6fr)_minmax(0,1fr)]">
+            <div className="grid gap-4 lg:[grid-template-columns:minmax(0,1.7fr)_minmax(0,1fr)]">
               <div className="flex min-w-0 flex-col gap-4">
 
           {(record.imageUrl || part?.description) && (
@@ -432,7 +449,9 @@ export function PartDetailSheet({
 
           <SectionCard title="Stock by location" count={stockRows.length} bodyClassName="p-3 space-y-2">
             {stockRows.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">No stock on hand.</p>
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                {record.onOrder > 0 ? 'No stock on hand yet — order not received.' : 'No stock on hand.'}
+              </p>
             ) : stockRows.map((row) => (
               <div
                 key={`${row.location}-${row.label}`}
@@ -584,9 +603,9 @@ export function PartDetailSheet({
             {partOrders.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">Nothing on order.</p>
             ) : partOrders.map((o) => (
-              <div key={o.id} className="rounded-lg border bg-background p-3 space-y-2 text-sm">
+              <div key={o.id} className="rounded-lg border bg-background p-3 text-sm">
                 {o.status === 'planned' && (
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="mb-2.5 flex items-center justify-between gap-2">
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
                       <Clock className="h-3 w-3" /> Want to order
                     </span>
@@ -595,64 +614,68 @@ export function PartDetailSheet({
                     </Button>
                   </div>
                 )}
-                <div className="flex items-center justify-between">
+                <div className="grid grid-cols-[max-content_1fr] items-baseline gap-x-4 gap-y-1.5">
                   <span className="text-muted-foreground">Remaining</span>
-                  <span className="font-semibold">{o.remainingQty} {unit}</span>
-                </div>
-                <div className="flex items-center justify-between">
+                  <span className="text-right font-semibold">{o.remainingQty} {unit}</span>
+
                   <span className="text-muted-foreground">Expected</span>
-                  <span className="font-medium">{formatShortDate(o.expectedDate)}</span>
+                  <span className="text-right font-medium">{formatShortDate(o.expectedDate)}</span>
+
+                  {o.leadTimeDays !== undefined && o.leadTimeDays !== null && o.leadTimeDays > 0 && (
+                    <>
+                      <span className="text-muted-foreground">Lead time</span>
+                      <span className="text-right font-medium">{formatLeadTime(o.leadTimeDays)}</span>
+                    </>
+                  )}
+                  {record.leadTimeDays > 0 && (
+                    <>
+                      <span className="text-muted-foreground">Part lead time</span>
+                      <span className="text-right font-medium">{formatLeadTime(record.leadTimeDays)}</span>
+                    </>
+                  )}
+                  {o.supplierRef && (
+                    <>
+                      <span className="text-muted-foreground">Supplier / PO</span>
+                      <span className="text-right font-medium">{o.supplierRef}</span>
+                    </>
+                  )}
+                  {o.lotNumber && (
+                    <>
+                      <span className="text-muted-foreground">Lot number</span>
+                      <span className="text-right font-medium">{o.lotNumber}</span>
+                    </>
+                  )}
+                  {o.serialNumber && (
+                    <>
+                      <span className="text-muted-foreground">Serial number</span>
+                      <span className="truncate text-right font-medium" title={o.serialNumber}>{o.serialNumber}</span>
+                    </>
+                  )}
                 </div>
-                {o.leadTimeDays !== undefined && o.leadTimeDays !== null && o.leadTimeDays > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Lead time</span>
-                    <span className="font-medium">{formatLeadTime(o.leadTimeDays)}</span>
-                  </div>
-                )}
-                {record.leadTimeDays > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Part lead time</span>
-                    <span className="font-medium">{formatLeadTime(record.leadTimeDays)}</span>
-                  </div>
-                )}
-                {o.supplierRef && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Supplier / PO</span>
-                    <span className="font-medium">{o.supplierRef}</span>
-                  </div>
-                )}
-                {o.lotNumber && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Lot number</span>
-                    <span className="font-medium">{o.lotNumber}</span>
-                  </div>
-                )}
-                {o.serialNumber && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Serial number</span>
-                    <span className="font-medium truncate max-w-[60%]" title={o.serialNumber}>{o.serialNumber}</span>
-                  </div>
-                )}
-                {o.note && (
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground shrink-0">Notes</span>
-                    <span className="font-medium text-right">{o.note}</span>
-                  </div>
-                )}
-                {o.description && (
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground shrink-0">Description</span>
-                    <span className="font-medium text-right">{o.description}</span>
-                  </div>
-                )}
-                {o.purpose && (
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground shrink-0">Purpose</span>
-                    <span className="font-medium text-right">{o.purpose}</span>
+                {(o.note || o.description || o.purpose) && (
+                  <div className="mt-3 space-y-2.5 border-t pt-3">
+                    {o.note && (
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Notes</p>
+                        <p className="whitespace-pre-wrap break-words">{o.note}</p>
+                      </div>
+                    )}
+                    {o.description && (
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Description</p>
+                        <p className="whitespace-pre-wrap break-words">{o.description}</p>
+                      </div>
+                    )}
+                    {o.purpose && (
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Purpose</p>
+                        <p className="whitespace-pre-wrap break-words">{o.purpose}</p>
+                      </div>
+                    )}
                   </div>
                 )}
                 {o.status === 'partially_received' && (
-                  <div className="text-xs text-muted-foreground">Partially received — {o.quantity - o.remainingQty} of {o.quantity} so far</div>
+                  <div className="mt-2 text-xs text-muted-foreground">Partially received — {o.quantity - o.remainingQty} of {o.quantity} so far</div>
                 )}
               </div>
             ))}
@@ -662,9 +685,9 @@ export function PartDetailSheet({
             </div>
           </div>
         </div>
-      </DialogContent>
+      </div>
 
       {lightboxSrc && <ImageViewerModal src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
-    </Dialog>
+    </>
   );
 }

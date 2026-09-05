@@ -15,7 +15,7 @@ export function renamePastedImageFile(file: File, index = 0): File {
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   const suffix = index > 0 ? `-${index + 1}` : '';
-  const name = `Pasted image ${stamp}${suffix}.${ext}`;
+  const name = `Image ${stamp}${suffix}.${ext}`;
 
   return new File([file], name, { type: file.type, lastModified: file.lastModified });
 }

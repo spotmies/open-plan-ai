@@ -19,9 +19,15 @@ export function ProjectPickerPopover({ projects, tab, label, className }: Projec
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
-  const visibleProjects = projects.filter((project) =>
-    visibleOrderedTabDefinitions(resolveProjectTabConfig(project.tabConfig)).some((t) => t.id === tab)
-  );
+  const visibleProjects = projects
+    .filter((project) =>
+      visibleOrderedTabDefinitions(resolveProjectTabConfig(project.tabConfig)).some((t) => t.id === tab)
+    )
+    .sort((a, b) => {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      if (a.pinned) return 0;
+      return a.name.localeCompare(b.name);
+    });
 
   function handleSelect(projectId: string) {
     setOpen(false);

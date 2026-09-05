@@ -23,7 +23,15 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
   const isSuccess = status === 'executed' || status === 'partially_executed';
   const isFailed = status === 'failed';
 
+  // A row is only ever blocked by a missing required field (or an explicit
+  // skip in chat) — everything else (unmatched catalog part, invalid level,
+  // in-file duplicate) is a note: the row still imports. Rows whose part
+  // number is already in this project's BOM are a separate bucket — skipped,
+  // but nothing the user needs to "fix".
+  const duplicateCount = preview.duplicateCount ?? preview.rows.filter((r) => r.alreadyInBom).length;
   const blockedCount = preview.itemCount - preview.cleanCount;
+  const missingFieldCount = blockedCount - duplicateCount;
+  const allAlreadyInBom = duplicateCount > 0 && duplicateCount === preview.itemCount;
   const advisoryCount = preview.rows.filter((r) => r.importable && r.issues.length > 0).length;
   const hasWarnings = advisoryCount > 0;
   const isMultiLevel = preview.rows.some((r) => r.level > 0);
@@ -46,10 +54,20 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
             <XCircle className="h-3 w-3" />
             Failed
           </Badge>
-        ) : blockedCount > 0 ? (
+        ) : allAlreadyInBom ? (
+          <Badge variant="outline" className="gap-1.5 text-muted-foreground py-1">
+            <CheckCircle2 className="h-3 w-3" />
+            Already in BOM
+          </Badge>
+        ) : missingFieldCount > 0 ? (
           <Badge variant="outline" className="gap-1.5 text-destructive border-destructive/40 py-1">
             <XCircle className="h-3 w-3" />
-            {blockedCount} blocked
+            {missingFieldCount} blocked
+          </Badge>
+        ) : duplicateCount > 0 ? (
+          <Badge variant="outline" className="gap-1.5 text-amber-600 border-amber-300 py-1">
+            <AlertCircle className="h-3 w-3" />
+            {duplicateCount} already in BOM
           </Badge>
         ) : advisoryCount > 0 ? (
           <Badge variant="outline" className="gap-1.5 text-amber-600 border-amber-300 py-1">
@@ -70,13 +88,17 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
             <div
               key={i}
               style={isMultiLevel ? { paddingLeft: `${12 + row.level * 16}px` } : undefined}
-              className={cn(compact ? 'p-3 text-sm flex flex-col gap-1' : 'p-3.5 text-sm flex flex-col gap-1.5', !row.importable && 'bg-destructive/5')}
+              className={cn(compact ? 'p-3 text-sm flex flex-col gap-1' : 'p-3.5 text-sm flex flex-col gap-1.5', row.alreadyInBom ? 'bg-muted/60' : !row.importable && 'bg-destructive/5')}
             >
               <div className="flex items-center justify-between gap-3">
                 <span className={cn('font-medium truncate', compact && 'text-[13px]')}>
                   {row.partNumber} — {row.name}
                 </span>
-                {row.existingPartId ? (
+                {row.alreadyInBom ? (
+                  <Badge variant="secondary" className={cn('shrink-0', compact && 'text-[11px] px-2 py-0.5')}>
+                    Already in BOM
+                  </Badge>
+                ) : row.existingPartId ? (
                   <Badge variant="secondary" className={cn('shrink-0', compact && 'text-[11px] px-2 py-0.5')}>
                     Existing part
                   </Badge>
@@ -90,15 +112,24 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
                 <span>Qty: {row.quantity}</span>
                 {row.unitPrice != null && <span>Unit Price: ${row.unitPrice.toFixed(2)}</span>}
                 {row.leadTimeWeeks != null && <span>Lead: {row.leadTimeWeeks}wk</span>}
+                {row.owner && <span>Owner: {row.owner}{!row.ownerResolved && ' (unmatched)'}</span>}
+                {row.imageUrl && (
+                  <span className="inline-flex items-center gap-1">
+                    <img src={row.imageUrl} alt="" className="h-4 w-4 rounded object-cover border" loading="lazy" />
+                    Photo
+                  </span>
+                )}
               </div>
               {row.issues.length > 0 && (
                 <div
                   className={cn(
                     compact ? 'text-[11px] flex items-start gap-1.5 pt-0.5' : 'text-xs flex items-start gap-1.5 pt-0.5',
-                    row.importable ? 'text-amber-600' : 'text-destructive',
+                    row.alreadyInBom ? 'text-muted-foreground' : row.importable ? 'text-amber-600' : 'text-destructive',
                   )}
                 >
-                  {row.importable ? (
+                  {row.alreadyInBom ? (
+                    <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />
+                  ) : row.importable ? (
                     <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
                   ) : (
                     <XCircle className="h-3 w-3 mt-0.5 shrink-0" />
@@ -138,13 +169,17 @@ export function ImportProposalCard({ preview, status, result, onCommit, committi
       {isPending && (
         <div className="flex items-center justify-between gap-3 pt-1 animate-fade-in">
           <span className={cn('text-xs text-muted-foreground leading-relaxed', compact && 'text-[11px]')}>
-            {blockedCount > 0
-              ? `${preview.cleanCount} will be imported now, ${blockedCount} blocked until fixed`
-              : hasWarnings
-                ? `Resolve the noted rows before importing all ${preview.itemCount} part${preview.itemCount === 1 ? '' : 's'}`
-                : `All ${preview.itemCount} will be imported`}
+            {allAlreadyInBom
+              ? `All ${preview.itemCount} part${preview.itemCount === 1 ? '' : 's'} in this file ${preview.itemCount === 1 ? 'is' : 'are'} already in this project's BOM — nothing to import.`
+              : missingFieldCount > 0
+                ? `${preview.cleanCount} will be imported now, ${missingFieldCount} blocked until fixed${duplicateCount > 0 ? `, ${duplicateCount} already in BOM` : ''}`
+                : duplicateCount > 0
+                  ? `${preview.cleanCount} will be imported now, ${duplicateCount} already in BOM and skipped`
+                  : hasWarnings
+                    ? `Resolve the noted rows before importing all ${preview.itemCount} part${preview.itemCount === 1 ? '' : 's'}`
+                    : `All ${preview.itemCount} will be imported`}
           </span>
-          {!hasWarnings && (
+          {!hasWarnings && !allAlreadyInBom && (
             <Button size="sm" onClick={onCommit} disabled={committing || preview.cleanCount === 0} className="shrink-0">
               {committing && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
               Import {preview.cleanCount} part{preview.cleanCount === 1 ? '' : 's'}

@@ -609,7 +609,7 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
   };
 
   return (
-    <div className="space-y-4">
+    <div className="h-full min-h-0 w-full flex flex-col flex-1 min-w-0">
       {/* Kanban Board */}
       <DragDropContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <Droppable droppableId="board" type="COLUMN" direction={isMobile ? 'vertical' : 'horizontal'}>
@@ -620,13 +620,13 @@ export function KanbanView({ tasks: initialTasks, allTasks, issues = [], assigna
                 boardScrollRef.current = node;
               }}
               {...provided.droppableProps}
-              className={isMobile ? 'w-full' : 'w-full overflow-x-auto pb-4'}
+              className={isMobile ? 'w-full flex-1 overflow-y-auto' : 'w-full h-full min-h-0 flex-1 flex flex-col overflow-x-auto pb-2'}
             >
               <div
                 className={
                   isMobile
                     ? 'flex flex-col gap-3 w-full'
-                    : 'inline-flex gap-4 min-w-full md:min-h-[calc(100vh-320px)]'
+                    : 'inline-flex gap-4 min-w-full h-full min-h-0 flex-1'
                 }
                 style={isMobile ? undefined : { width: 'max-content' }}
               >

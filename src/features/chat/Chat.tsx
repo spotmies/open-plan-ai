@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useKeyboardAwareHeight } from '@/hooks/useKeyboardAwareHeight';
 import { useAuth } from '@/contexts/AuthContext';
 import { ConversationList } from './components/ConversationList';
 import { MessageArea } from './components/MessageArea';
@@ -25,6 +26,7 @@ import { chatService } from '@/services/chat.service';
 import { toast } from 'sonner';
 import { ChatMessage, FavouriteMessage } from './types';
 import { logger } from '@/services/monitoring/logger';
+import { cn } from '@/lib/utils';
 
 
 export default function Chat() {
@@ -43,6 +45,7 @@ export default function Chat() {
   const { conversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const keyboardAwareHeight = useKeyboardAwareHeight(isMobile);
   const { user } = useAuth();
   const { activeConversationId, lastActiveConversationId, setActiveConversation, isDetailPanelOpen, isMessageSearchOpen } = useChatStore();
 
@@ -329,7 +332,10 @@ export default function Chat() {
 
   return (
     <>
-      <div className="flex h-full overflow-hidden relative">
+      <div
+        className={cn('flex overflow-hidden relative', keyboardAwareHeight === null && 'h-full')}
+        style={keyboardAwareHeight !== null ? { height: keyboardAwareHeight } : undefined}
+      >
         {showConversationList && (
           <div className="w-full md:w-[280px] shrink-0 overflow-hidden">
             <ConversationList

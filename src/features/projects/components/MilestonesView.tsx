@@ -165,7 +165,7 @@ export function MilestonesView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-h-[calc(100vh-260px)]">
       {/* Only a search yielding nothing gets the full-page takeover — a genuinely
           empty board (no milestones at all) instead falls through to the normal
           Kanban/timeline layout below, which already renders each column/section
@@ -173,7 +173,7 @@ export function MilestonesView({
           so the column headers and counts stay visible instead of the whole board
           disappearing behind a single generic card. */}
       {searchQuery.trim() && sortedMilestones.length === 0 ? (
-        <Card className="p-12 flex flex-col items-center justify-center text-center min-h-[calc(100vh-320px)]">
+        <Card className="p-12 flex flex-col items-center justify-center text-center min-h-[calc(100vh-260px)]">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
             <Flag className="h-8 w-8 text-muted-foreground" />
           </div>
@@ -384,9 +384,14 @@ export function MilestonesView({
         </div>
       ) : (
         /* Timeline View */
-        <Card className="p-3 sm:p-6">
+        <Card className="p-3 sm:p-6 min-h-[calc(100vh-260px)] flex flex-col">
           {sortedMilestones.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No milestones yet</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-center py-12 min-h-[calc(100vh-320px)]">
+              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                <Flag className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground font-medium">No milestones yet</p>
+            </div>
           ) : (
             <div className="relative">
               {/* Timeline line */}

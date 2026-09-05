@@ -28,6 +28,8 @@ export interface ImportRowPreview {
   dueDate: string | null;
   status: string | null;
   milestoneName: string | null;
+  /** Image URL from the source file, or null — attached as a linked image on the task on commit. */
+  imageUrl: string | null;
   issues: string[];
   /** false only when the row is missing its required title (or was explicitly skipped in chat) — every other issue is informational and still imports. */
   importable: boolean;

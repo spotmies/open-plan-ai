@@ -31,6 +31,8 @@ interface MyDayListViewProps {
   onTaskClick: (item: MyDayItem) => void;
   onStatusUpdate: (taskId: string, status: TaskStatus) => void;
   emptyMessage?: string;
+  /** Pixel offset for the sticky table header, matching the height of the sticky bar above it. */
+  stickyHeaderOffset?: number;
 }
 
 const statusColors: Record<string, string> = {
@@ -102,6 +104,7 @@ export function MyDayListView({
   onTaskClick,
   onStatusUpdate,
   emptyMessage = 'No tasks to display',
+  stickyHeaderOffset = 0,
 }: MyDayListViewProps) {
   const isMobile = useIsMobile();
   const [sortField, setSortField] = useState<SortField | null>(null);
@@ -249,8 +252,13 @@ export function MyDayListView({
     return () => observer.disconnect();
   }, [isMobile, allTasks.length, isLoadingMore]);
 
+  // Sticky positioning lives on each <th> rather than on <thead> itself —
+  // `position: sticky` on a table-header-group element is inconsistently
+  // supported/renders incorrectly when stacked under another sticky element
+  // (observed overlapping the stat cards above it), while sticky <th> cells
+  // are the well-supported cross-browser pattern for sticky table headers.
   const SortableHead = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
-    <TableHead className={className}>
+    <TableHead className={cn('sticky top-0 z-10 bg-background border-b shadow-xs', className)}>
       <button
         className="flex items-center gap-1 hover:text-foreground transition-colors"
         onClick={() => handleSort(field)}
@@ -355,24 +363,24 @@ export function MyDayListView({
   }
 
   return (
-    <div className="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
+    <div className="rounded-lg border bg-card h-full min-h-0 flex flex-col flex-1 overflow-hidden">
+      <Table className="min-h-full" containerClassName="flex-1 min-h-0 overflow-auto">
+        <TableHeader className="sticky top-0 z-10 bg-background shadow-xs">
+          <TableRow className="bg-background hover:bg-background">
             <SortableHead field="title" className="w-[300px]">Task</SortableHead>
             <SortableHead field="type" className="w-[60px]">Type</SortableHead>
             <SortableHead field="status">Status</SortableHead>
             <SortableHead field="priority">Priority</SortableHead>
             {/* <TableHead>Module</TableHead> */}
             <SortableHead field="project">Project</SortableHead>
-            <TableHead>Assigned By</TableHead>
+            <TableHead className="sticky top-0 z-10 bg-background border-b shadow-xs">Assigned By</TableHead>
             <SortableHead field="dueDate">Due Date</SortableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody className="h-full">
           {paginatedTasks.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+            <TableRow className="hover:bg-transparent h-full">
+              <TableCell colSpan={7} className="text-center py-20 align-middle text-muted-foreground font-medium h-full">
                 {emptyMessage}
               </TableCell>
             </TableRow>
@@ -501,7 +509,7 @@ export function MyDayListView({
       </Table>
 
       {paginatedTasks.length > 0 && totalPages > 1 && (
-        <div className="flex flex-col items-center gap-2 py-4 border-t">
+        <div className="flex flex-col items-center gap-2 py-3 border-t bg-background shrink-0">
           <p className="text-xs text-muted-foreground">
             Page {safeCurrentPage} of {totalPages} ({allTasks.length} items)
           </p>

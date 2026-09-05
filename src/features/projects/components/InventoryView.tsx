@@ -16,10 +16,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious,
 } from '@/components/ui/pagination';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useProjects } from '@/hooks/useProjects';
@@ -40,7 +40,7 @@ import {
 } from './bomData';
 import {
   buildFromDef, computeCoverage, availableOf, onOrderOf,
-  CoveragePill, CoverageBar,
+  CoveragePill,
   type StockRecord, type CoverageStatus, type BuildDef, type OrderRecord,
 } from './inventoryData';
 import { HoverZoomImage, PartThumb } from './BOMShared';
@@ -57,7 +57,7 @@ import type { NewBuildInput } from './NewBuildDialog';
 
 const STAT_TOOLTIPS: Record<string, string> = {
   'On Hand': 'Physical quantity currently in stock, including anything held in quarantine.',
-  'Allocated': 'Quantity already reserved against BOM demand for planned builds.',
+  'Allocated': 'Quantity reserved against a build via Allocate — committed but not yet issued.',
   'Available': 'On Hand minus Allocated minus Quarantine — what can actually be used right now.',
   'On Order': 'Quantity remaining on open purchase orders, not yet received.',
 };
@@ -196,9 +196,10 @@ export function InventoryView({ orgId }: InventoryViewProps) {
 
   // `onOrder` is derived from live order state rather than the static seeded field, so
   // Receive/Order actions are reflected immediately without touching stock rows directly.
-  // Note: `allocated` is intentionally left as-is here (always 0 from the backend, which never
-  // writes reservations) — `availableOf`/`computeCoverage` already subtract BOM demand via the
-  // `demandByPartId` param, so overriding `allocated` with that same demand would double-count it.
+  // Note: `allocated` is passed through untouched — it's the stock row's real pooled reservation
+  // (bumped by the Allocate action / build allocation), and the Allocated column + the part-detail
+  // sheet both render exactly this so the two never disagree. BOM demand is a separate signal and
+  // is surfaced via the Coverage pill, not by inflating `allocated`.
   //
   // A part that's never been received has no stock row at all — without a synthetic zero-on-hand
   // row here, placing its first order makes the order vanish from Inventory entirely (nothing to
@@ -468,17 +469,17 @@ export function InventoryView({ orgId }: InventoryViewProps) {
 
   // Cards view groups by category (unless a single category is already filtered), each
   // group preceded by a small "CATEGORY NAME · count" header — mirrors the design system's
-  // card grouping for Inventory. Grouped from the paginated slice, so cards view paginates
-  // the same as table view.
+  // card grouping for Inventory. Cards view shows the full filtered list (no pagination
+  // there — only the table view paginates).
   const cardGroups = useMemo(() => {
-    if (categoryFilter !== 'all') return [{ cat: categoryFilter as BOMCategory, items: paginatedStock }];
+    if (categoryFilter !== 'all') return [{ cat: categoryFilter as BOMCategory, items: filteredStock }];
     const byCat = new Map<BOMCategory, StockRecord[]>();
-    for (const r of paginatedStock) {
+    for (const r of filteredStock) {
       if (!byCat.has(r.cat)) byCat.set(r.cat, []);
       byCat.get(r.cat)!.push(r);
     }
     return allCategories.filter(cat => byCat.has(cat)).map(cat => ({ cat, items: byCat.get(cat)! }));
-  }, [paginatedStock, categoryFilter, allCategories]);
+  }, [filteredStock, categoryFilter, allCategories]);
 
   const coverageCounts = useMemo(() => {
     const counts: Record<CoverageStatus, number> = { ready: 0, 'covered-by-order': 0, short: 0, conflict: 0 };
@@ -607,7 +608,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   return (
-    <div className="h-full min-h-0 flex flex-col px-4 md:px-6 pt-4 pb-4">
+    <div className="relative h-full min-h-0 flex flex-col px-4 md:px-6 pt-4 pb-4">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col">
         {/* Toolbar/stat-cards/tabs plus, within the Stock tab, the search/filter/category-chip
             row are one `shrink-0` block outside the scrolling region below, so they stay
@@ -928,7 +929,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                                     <div className="text-[10px] text-muted-foreground uppercase tracking-wide">On Hand</div>
                                   </div>
                                   <div>
-                                    <div className="text-sm font-semibold">{demandByPartId.get(r.partId) ?? 0}</div>
+                                    <div className="text-sm font-semibold">{r.allocated}</div>
                                     <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Alloc</div>
                                   </div>
                                   <div>
@@ -1002,7 +1003,6 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                           <TableRow key={r.id} className="cursor-pointer" onClick={() => openDetail(r.partId)}>
                             <TableCell className="px-3 py-2 align-top">
                               <CoveragePill status={status} />
-                              <CoverageBar status={status} record={r} />
                             </TableCell>
                             <TableCell className="px-3 py-2">
                               <div className="flex items-center gap-2.5 min-w-0">
@@ -1023,7 +1023,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                               </div>
                             </TableCell>
                             <TableCell className="px-3 py-2 text-right">{r.onHand}</TableCell>
-                            <TableCell className="hidden sm:table-cell px-3 py-2 text-right">{demandByPartId.get(r.partId) ?? 0}</TableCell>
+                            <TableCell className="hidden sm:table-cell px-3 py-2 text-right">{r.allocated}</TableCell>
                             <TableCell className={cn('px-3 py-2 text-right font-semibold', available < 0 && 'text-destructive')}>
                               {available}
                             </TableCell>
@@ -1126,8 +1126,6 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                                     </div>
                                   </div>
 
-                                  <CoverageBar status={status} record={r} />
-
                                   <div className="grid grid-cols-4 gap-2 pt-2.5 border-t border-border">
                                     <div>
                                       <div className="text-[10px] text-muted-foreground uppercase tracking-wide"><HeaderTip label="On Hand" /></div>
@@ -1135,7 +1133,7 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                                     </div>
                                     <div>
                                       <div className="text-[10px] text-muted-foreground uppercase tracking-wide"><HeaderTip label="Allocated" /></div>
-                                      <div className="text-sm font-semibold">{demandByPartId.get(r.partId) ?? 0}</div>
+                                      <div className="text-sm font-semibold">{r.allocated}</div>
                                     </div>
                                     <div>
                                       <div className="text-[10px] text-muted-foreground uppercase tracking-wide"><HeaderTip label="Available" /></div>
@@ -1158,8 +1156,8 @@ export function InventoryView({ orgId }: InventoryViewProps) {
               )}
           </div>
 
-              {!isMobile && filteredStock.length > 0 && (
-                <div className="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
+              {!isMobile && viewMode === 'table' && filteredStock.length > 0 && (
+                <div className="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 text-xs text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <span>
                       Showing {Math.min((currentPage - 1) * pageSize + 1, filteredStock.length)}–{Math.min(currentPage * pageSize, filteredStock.length)} of {filteredStock.length}
@@ -1177,43 +1175,41 @@ export function InventoryView({ orgId }: InventoryViewProps) {
                     </Select>
                   </div>
 
-                  {totalPages > 1 && (
-                    <Pagination className="mx-0 w-auto">
-                      <PaginationContent>
-                        <PaginationItem>
-                          <PaginationPrevious
-                            href="#"
-                            onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.max(1, p - 1)); }}
-                            className={cn(currentPage === 1 && 'pointer-events-none opacity-50')}
-                          />
-                        </PaginationItem>
-                        {getPageNumbers().map((page, idx) =>
-                          page === 'ellipsis' ? (
-                            <PaginationItem key={`ellipsis-${idx}`}>
-                              <span className="flex h-9 w-9 items-center justify-center text-muted-foreground">…</span>
-                            </PaginationItem>
-                          ) : (
-                            <PaginationItem key={page}>
-                              <PaginationLink
-                                href="#"
-                                isActive={page === currentPage}
-                                onClick={(e) => { e.preventDefault(); setCurrentPage(page); }}
-                              >
-                                {page}
-                              </PaginationLink>
-                            </PaginationItem>
-                          ),
-                        )}
-                        <PaginationItem>
-                          <PaginationNext
-                            href="#"
-                            onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.min(totalPages, p + 1)); }}
-                            className={cn(currentPage === totalPages && 'pointer-events-none opacity-50')}
-                          />
-                        </PaginationItem>
-                      </PaginationContent>
-                    </Pagination>
-                  )}
+                  <Pagination className="mx-0 w-auto">
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          href="#"
+                          onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.max(1, p - 1)); }}
+                          className={cn(currentPage === 1 && 'pointer-events-none opacity-50')}
+                        />
+                      </PaginationItem>
+                      {getPageNumbers().map((page, idx) =>
+                        page === 'ellipsis' ? (
+                          <PaginationItem key={`ellipsis-${idx}`}>
+                            <span className="flex h-9 w-9 items-center justify-center text-muted-foreground">…</span>
+                          </PaginationItem>
+                        ) : (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              href="#"
+                              isActive={page === currentPage}
+                              onClick={(e) => { e.preventDefault(); setCurrentPage(page); }}
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ),
+                      )}
+                      <PaginationItem>
+                        <PaginationNext
+                          href="#"
+                          onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.min(totalPages, p + 1)); }}
+                          className={cn(currentPage === totalPages && 'pointer-events-none opacity-50')}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
                 </div>
               )}
           </div>

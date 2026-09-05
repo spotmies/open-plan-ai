@@ -3,6 +3,7 @@ import { LayoutGrid, List, X, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Task, TaskViewMode, TaskFilter, Milestone, Issue, ModuleType, TeamMember } from '@/types';
 import { KanbanView } from './KanbanView';
@@ -90,28 +91,40 @@ export function ViewControls({
 
       {/* View Toggle (Kanban/List has no distinct mobile layout — hidden below md) */}
       <div className="hidden md:flex items-center gap-0.5 bg-muted/50 p-1 rounded-lg shrink-0">
-        <Button
-          variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => onViewModeChange('kanban')}
-          className={cn(
-            "h-8 w-8 p-0",
-            viewMode === 'kanban' && "bg-background shadow-sm"
-          )}
-        >
-          <LayoutGrid className="h-4 w-4" />
-        </Button>
-        <Button
-          variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => onViewModeChange('list')}
-          className={cn(
-            "h-8 w-8 p-0",
-            viewMode === 'list' && "bg-background shadow-sm"
-          )}
-        >
-          <List className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => onViewModeChange('kanban')}
+              className={cn(
+                "h-8 w-8 p-0",
+                viewMode === 'kanban' && "bg-background shadow-sm"
+              )}
+              aria-label="Kanban view"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Kanban View</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => onViewModeChange('list')}
+              className={cn(
+                "h-8 w-8 p-0",
+                viewMode === 'list' && "bg-background shadow-sm"
+              )}
+              aria-label="List view"
+            >
+              <List className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">List View</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

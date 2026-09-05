@@ -360,10 +360,6 @@ function FileAttachment({
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  // A file can claim an image mime type and still be undecodable — a truncated
-  // upload, or one edited in a text editor. Hiding the <img> left an empty
-  // bubble with no filename, size or way to download it; fall back to the file
-  // card instead so the message still says what was sent.
   const [imageFailed, setImageFailed] = useState(false);
   const url = file.url ?? '';
   const fileType = getFileType(file.mimeType ?? '', file.fileName ?? '');
@@ -405,7 +401,7 @@ function FileAttachment({
             </div>
           )}
         </div>
-        {file.text && <p className="text-sm mt-1 break-words">{file.text}</p>}
+        {file.text && <p className="text-xs mt-1 break-words">{file.text}</p>}
         {lightboxOpen && url && (
           <ImageLightbox
             src={url}
@@ -418,9 +414,6 @@ function FileAttachment({
     );
   }
 
-  // PDF / DOC / other file card — small preview thumbnail above the filename,
-  // with a dedicated preview action beside the name (opens the file in a modal
-  // instead of triggering a raw browser download).
   const isPreviewable = fileType === 'pdf' || fileType === 'doc';
   const fileTypeLabel = sendFailed
     ? 'Failed to send'
@@ -433,37 +426,32 @@ function FileAttachment({
     <>
     <div
       className={cn(
-        'w-full max-w-full rounded-xl border overflow-hidden',
-        isOwn ? 'border-primary-foreground/20 bg-primary-foreground/5' : 'border-border bg-muted/30'
+        'w-full max-w-full rounded-xl border overflow-hidden transition-colors',
+        isOwn ? 'border-primary-foreground/20 bg-primary-foreground/10' : 'border-border bg-card'
       )}
     >
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={!url || isBrokenImage || isSending || sendFailed}
-        className={cn(
-          'flex w-full items-center justify-center h-16 transition-colors',
-          'hover:bg-accent/40 disabled:cursor-default',
-          !isBrokenImage && !sendFailed && 'disabled:opacity-50',
-          sendFailed ? 'bg-destructive/10 text-destructive' :
-            isBrokenImage ? 'bg-muted text-muted-foreground hover:bg-muted' :
-              fileType === 'pdf' ? 'bg-red-500/10 text-red-500' :
-                fileType === 'doc' ? 'bg-blue-500/10 text-blue-500' :
-                  'bg-muted text-muted-foreground'
-        )}
-        title={sendFailed ? 'Failed to send' : isSending ? 'Sending…' : isBrokenImage ? "This image can't be displayed" : isPreviewable ? `Open ${fileType.toUpperCase()} preview` : 'Open file'}
-      >
-        {isSending ? <Loader2 className="h-7 w-7 animate-spin" /> : <Icon className="h-7 w-7" />}
-      </button>
-      <div
-        className={cn(
-          'flex items-center gap-2 px-3 py-2 border-t',
-          isOwn ? 'border-primary-foreground/10' : 'border-border/60'
-        )}
-      >
+      <div className="flex items-center gap-2.5 p-2.5">
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={!url || isBrokenImage || isSending || sendFailed}
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+            'disabled:cursor-default',
+            !isBrokenImage && !sendFailed && 'disabled:opacity-50',
+            sendFailed ? 'bg-destructive/10 text-destructive' :
+              isBrokenImage ? 'bg-muted text-muted-foreground' :
+                fileType === 'pdf' ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' :
+                  fileType === 'doc' ? 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/20' :
+                    'bg-muted text-muted-foreground hover:bg-muted/80'
+          )}
+          title={sendFailed ? 'Failed to send' : isSending ? 'Sending…' : isBrokenImage ? "This image can't be displayed" : isPreviewable ? `Open ${fileType.toUpperCase()} preview` : 'Open file'}
+        >
+          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+        </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium truncate">{file.fileName}</p>
-          <p className="text-xs opacity-60 mt-0.5">
+          <p className="text-xs font-medium truncate leading-tight" title={file.fileName}>{file.fileName}</p>
+          <p className="text-[11px] opacity-60 mt-0.5 whitespace-nowrap">
             {file.fileSize ? formatFileSize(file.fileSize) : ''}
             {file.fileSize && fileTypeLabel ? ' · ' : ''}
             {fileTypeLabel}
@@ -471,8 +459,6 @@ function FileAttachment({
         </div>
         {url && !isSending && !sendFailed && (
           isBrokenImage ? (
-            // The bytes are still downloadable even when the browser can't
-            // decode them — let the recipient grab the original and check it.
             <a
               href={url}
               download={file.fileName}
@@ -480,19 +466,21 @@ function FileAttachment({
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               title="Download original file"
-              className="h-8 px-2.5 shrink-0 rounded-full flex items-center gap-1 opacity-80 hover:opacity-100 hover:bg-accent/70 transition-colors text-xs font-medium"
+              className="h-7 px-2 shrink-0 rounded-md flex items-center gap-1 opacity-80 hover:opacity-100 hover:bg-accent/70 transition-colors text-[11px] font-medium whitespace-nowrap"
             >
-              <Download className="h-3.5 w-3.5" />
-              Download
+              <Download className="h-3 w-3" />
             </a>
           ) : (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setPreviewOpen(true); }}
               title="Preview"
-              className="h-8 px-2.5 shrink-0 rounded-full flex items-center gap-1 opacity-80 hover:opacity-100 hover:bg-accent/70 transition-colors text-xs font-medium"
+              className={cn(
+                "h-7 px-2.5 shrink-0 rounded-md border flex items-center gap-1 opacity-90 hover:opacity-100 transition-colors text-[11px] font-semibold whitespace-nowrap shadow-xs",
+                isOwn ? "border-primary-foreground/30 bg-primary-foreground/15 text-primary-foreground hover:bg-primary-foreground/25" : "border-border/80 bg-background text-foreground hover:bg-muted"
+              )}
             >
-              <Eye className="h-3.5 w-3.5" />
+              <Eye className="h-3 w-3" />
               Preview
             </button>
           )
@@ -505,7 +493,7 @@ function FileAttachment({
         />
       )}
     </div>
-    {file.text && <p className="text-sm mt-1 break-words">{file.text}</p>}
+    {file.text && <p className="text-xs mt-1.5 break-words">{file.text}</p>}
     </>
   );
 }
@@ -680,15 +668,11 @@ export function MessageBubble({
     setIsMobileToolbarOpen(false);
   };
 
-  // When modifying a reaction via the pill picker, rely on backend replace logic
   const handleReactionReplace = async (emoji: string) => {
     onToggleReaction?.(message.id, emoji);
     setIsReactionPickerOpen(false);
   };
 
-  // Blue double-check only once every other member has read it; grey double-check
-  // covers "sent/delivered to all" (including partially-read) so partial reads don't
-  // falsely look fully-read. Falls back to "any read = blue" if the member count is unknown.
   const renderStatusIcon = () => {
     const otherReads = (readReceipts ?? []).filter((r) => r.userId !== currentUserId);
     const allRead = otherReads.length > 0 && (otherMembersCount === undefined || otherReads.length >= otherMembersCount);
@@ -704,12 +688,11 @@ export function MessageBubble({
     return <CheckCheck className="h-3 w-3 text-muted-foreground" aria-label="Sent" />;
   };
 
-  // Deleted message display
   if (isDeleted) {
     return (
       <div className={cn('flex gap-2 px-4', isOwn ? 'flex-row-reverse' : 'flex-row')}>
         {isGroupChat && <div className="w-8 shrink-0" />}
-        <div className={cn('flex flex-col max-w-[70%] md:max-w-[min(70%,calc(100%_-_15rem))] min-w-0', isOwn ? 'items-end' : 'items-start')}>
+        <div className={cn('flex flex-col max-w-[85%] sm:max-w-[80%] md:max-w-[540px] min-w-0', isOwn ? 'items-end' : 'items-start')}>
           <div className="rounded-2xl px-3 py-2 text-sm italic text-muted-foreground bg-muted/50 border border-dashed border-border">
             🚫 This message was deleted by {message.deletedByName || message.senderName}
           </div>
@@ -748,7 +731,7 @@ export function MessageBubble({
         </div>
       )}
 
-      <div className={cn('flex flex-col max-w-[70%] md:max-w-[min(70%,calc(100%_-_15rem))] min-w-0', isOwn ? 'items-end' : 'items-start')}>
+      <div className={cn('flex flex-col max-w-[85%] sm:max-w-[80%] md:max-w-[540px] min-w-0', isOwn ? 'items-end' : 'items-start')}>
         {showSenderInfo && !isOwn && isGroupChat && (
           <span className="text-xs text-muted-foreground font-medium mb-0.5 px-1">{message.senderName}</span>
         )}

@@ -17,6 +17,11 @@ export interface Activity {
 
 export type ActivityInsert = Omit<Activity, 'id' | 'createdAt' | 'user'>;
 
+export interface OrgActivitiesPage {
+  data: Activity[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+}
+
 export const activitiesService = {
   async getAll(orgId?: string): Promise<Activity[]> {
     if (orgId) return apiClient.get(ENDPOINTS.ORGANIZATIONS.ACTIVITIES(orgId));
@@ -34,6 +39,17 @@ export const activitiesService = {
     } catch {
       return [];
     }
+  },
+
+  // The activities endpoint supports real server-side pagination (?page=&limit=,
+  // capped at 100/page) — this is the only caller that actually sends those params
+  // and reads back the `meta` envelope, so it goes through `apiClient.raw` instead
+  // of the `apiClient.get` wrapper (which unwraps `data` and drops `meta`).
+  async getOrgActivitiesPage(orgId: string, page: number, limit: number): Promise<OrgActivitiesPage> {
+    const res = await apiClient.raw.get(ENDPOINTS.ORGANIZATIONS.ACTIVITIES(orgId), {
+      params: { page, limit },
+    });
+    return { data: res.data.data ?? [], meta: res.data.meta };
   },
 
   async create(_activity: ActivityInsert): Promise<Activity> {

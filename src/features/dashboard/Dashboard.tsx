@@ -10,6 +10,7 @@ import { NeedsAttentionCard } from './components/NeedsAttentionCard';
 import { useOrgDashboard, useOrgEcoAggregate, useOrgBomAggregate } from './hooks/useOrgAggregates';
 import { useAvailableHeight } from './hooks/useAvailableHeight';
 import { useRecentActivity } from '@/hooks/useDashboard';
+import { mapRawActivity } from './utils/mapActivity';
 import { useProjects } from '@/hooks/useProjects';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useProjectMembers } from '@/hooks/useProjectTeam';
@@ -121,33 +122,7 @@ export default function Dashboard() {
   };
 
   // Transform activities for ActivityFeed (Activity type)
-  const activityItems: Activity[] = (activities || []).map((activity: any) => {
-    const userName: string = activity.user?.name || 'Team Member';
-    const initials: string = userName
-      .split(' ')
-      .map((n: string) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2) || 'TM';
-    return {
-      id: activity.id,
-      type: activity.type,
-      title: (activity.description || activity.title || 'Activity').split(' ').slice(0, 3).join(' '),
-      description: activity.description || activity.title || '',
-      user: {
-        id: activity.user?.id || 'unknown',
-        name: userName,
-        email: '',
-        role: '',
-        initials,
-      },
-      projectId: activity.projectId,
-      projectName: '',
-      entityType: activity.entityType ?? null,
-      entityId: activity.entityId ?? null,
-      timestamp: activity.createdAt || new Date().toISOString(),
-    };
-  });
+  const activityItems: Activity[] = (activities || []).map(mapRawActivity);
 
   // Projects with an overdue, incomplete milestone are flagged "at risk" for the
   // Project Management RAG calc. This used to be derived client-side from the

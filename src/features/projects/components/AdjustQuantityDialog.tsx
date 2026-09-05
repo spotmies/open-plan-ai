@@ -138,6 +138,9 @@ interface AdjustQuantityDialogProps {
 
 const emptyNewPart = { partNumber: '', name: '', description: '', category: '' as BOMCategory | '', manufacturer: '', mpn: '', unit: 'EA' };
 
+/** Max images that can be attached to a "New transaction" / order. */
+const MAX_IMAGES = 10;
+
 export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onAdjust, onPlaceOrder, initialPartId, partProjects, partDemand, canonicalLocationByPartId }: AdjustQuantityDialogProps) {
   const isMobile = useIsMobile();
   const [selectedRecord, setSelectedRecord] = useState<PickerPart | null>(null);
@@ -157,6 +160,10 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Guards against a double-click / double Enter posting the transaction twice: the async
+  // form validation lets a second submit slip in before the dialog's close re-renders.
+  // Reset in resetAndClose() so a reopened dialog can submit again.
+  const isSubmittingRef = useRef(false);
 
   const createPart = useCreatePart(orgId);
   const updatePart = useUpdatePart();
@@ -297,7 +304,19 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialPartId, pickerParts]);
 
-  const isFormDirty = form.formState.isDirty || showAddPart || images.length > 0;
+  // Merely opening the "Add new part" panel isn't an unsaved change — only count it
+  // dirty once the user has actually typed something into one of its fields.
+  const isNewPartDirty =
+    showAddPart &&
+    (newPart.partNumber.trim() !== '' ||
+      newPart.name.trim() !== '' ||
+      newPart.description.trim() !== '' ||
+      newPart.category !== '' ||
+      newPart.manufacturer.trim() !== '' ||
+      newPart.mpn.trim() !== '' ||
+      newPart.unit !== 'EA');
+
+  const isFormDirty = form.formState.isDirty || isNewPartDirty || images.length > 0;
 
   const applyImageFiles = (files: File[]) => {
     const valid = files.filter((f) => f.type.startsWith('image/'));
@@ -305,9 +324,18 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
       toast.error(valid.length === 0 ? 'Please select an image file' : 'Some files were skipped — only images can be attached');
     }
     if (valid.length === 0) return;
-    setImages((prev) => [...prev, ...valid]);
+    const remaining = MAX_IMAGES - images.length;
+    if (remaining <= 0) {
+      toast.error(`You can attach up to ${MAX_IMAGES} images`);
+      return;
+    }
+    const accepted = valid.slice(0, remaining);
+    if (accepted.length < valid.length) {
+      toast.error(`Only ${MAX_IMAGES} images can be attached — some were skipped`);
+    }
+    setImages((prev) => [...prev, ...accepted]);
     setImagePreviewUrls((prev) => {
-      const next = [...prev, ...valid.map((f) => URL.createObjectURL(f))];
+      const next = [...prev, ...accepted.map((f) => URL.createObjectURL(f))];
       imagePreviewUrlsRef.current = next;
       return next;
     });
@@ -430,6 +458,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
     setCreatedPart(null);
     clearImages();
     handleCloseCamera();
+    isSubmittingRef.current = false;
     onClose();
   };
 
@@ -473,6 +502,11 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
   };
 
   const handleSubmit = async (data: AdjustFormData) => {
+    // A rapid second click resolves its own validation pass before resetAndClose() unmounts
+    // the form — without this guard both passes reach onAdjust and the delta is posted twice.
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+
     const part = selectedRecord
       ? { partId: selectedRecord.partId, pn: selectedRecord.pn, name: selectedRecord.name, cat: selectedRecord.cat }
       : createdPart
@@ -481,6 +515,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
 
     if (!part) {
       toast.error('Select a part to adjust');
+      isSubmittingRef.current = false;
       return;
     }
 
@@ -1156,8 +1191,14 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {imagePreviewUrls.length > 0 && (
-                        <div className="flex flex-wrap gap-3">
+                      {imagePreviewUrls.length > 0 ? (
+                        <>
+                        <div
+                          onDragOver={(e) => { e.preventDefault(); setIsDraggingImage(true); }}
+                          onDragLeave={() => setIsDraggingImage(false)}
+                          onDrop={handleImageDrop}
+                          className="flex flex-wrap gap-3"
+                        >
                           {imagePreviewUrls.map((url, i) => (
                             <div key={url} className="relative w-fit">
                               <img
@@ -1176,44 +1217,76 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
                               </Button>
                             </div>
                           ))}
+                          {imagePreviewUrls.length < MAX_IMAGES && (
+                            <label
+                              className={cn(
+                                'flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-md border border-dashed cursor-pointer text-muted-foreground transition-colors hover:bg-muted/40',
+                                isDraggingImage ? 'border-primary bg-primary/5' : 'border-input'
+                              )}
+                            >
+                              <Plus className="h-5 w-5" />
+                              <span className="text-[11px] font-medium">Add</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={handleImageSelect}
+                              />
+                            </label>
+                          )}
+                          {isMobile && imagePreviewUrls.length < MAX_IMAGES && (
+                            <button
+                              type="button"
+                              onClick={handleOpenCamera}
+                              className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-input cursor-pointer text-muted-foreground transition-colors hover:bg-muted/40"
+                            >
+                              <Camera className="h-5 w-5" />
+                              <span className="text-[11px] font-medium">Take photo</span>
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {imagePreviewUrls.length} / {MAX_IMAGES} images
+                        </p>
+                        </>
+                      ) : (
+                        <div
+                          onDragOver={(e) => { e.preventDefault(); setIsDraggingImage(true); }}
+                          onDragLeave={() => setIsDraggingImage(false)}
+                          onDrop={handleImageDrop}
+                          className={cn(
+                            'flex flex-col items-center justify-center gap-2 rounded-md border border-dashed text-center transition-colors px-4 py-6',
+                            isDraggingImage ? 'border-primary bg-primary/5' : 'border-input'
+                          )}
+                        >
+                          <ImagePlus className="h-5 w-5 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">Drag &amp; drop images here</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors">
+                              <Upload className="h-3.5 w-3.5" />
+                              Browse files
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={handleImageSelect}
+                              />
+                            </label>
+                            {isMobile && (
+                              <button
+                                type="button"
+                                onClick={handleOpenCamera}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                              >
+                                <Camera className="h-3.5 w-3.5" />
+                                Take photo
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
-                      <div
-                        onDragOver={(e) => { e.preventDefault(); setIsDraggingImage(true); }}
-                        onDragLeave={() => setIsDraggingImage(false)}
-                        onDrop={handleImageDrop}
-                        className={cn(
-                          'flex flex-col items-center justify-center gap-2 rounded-md border border-dashed text-center transition-colors',
-                          imagePreviewUrls.length > 0 ? 'px-4 py-4' : 'px-4 py-6',
-                          isDraggingImage ? 'border-primary bg-primary/5' : 'border-input'
-                        )}
-                      >
-                        <ImagePlus className="h-5 w-5 text-muted-foreground" />
-                        <p className="text-sm text-muted-foreground">
-                          {imagePreviewUrls.length > 0 ? 'Drag & drop to add more images' : 'Drag & drop images here'}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors">
-                            <Upload className="h-3.5 w-3.5" />
-                            Browse files
-                            <input
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              className="hidden"
-                              onChange={handleImageSelect}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={handleOpenCamera}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
-                          >
-                            <Camera className="h-3.5 w-3.5" />
-                            Take photo
-                          </button>
-                        </div>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -1227,7 +1300,7 @@ export function AdjustQuantityDialog({ isOpen, onClose, orgId, stock, parts, onA
               )}
               <div className="flex flex-row justify-end gap-2">
                 <Button type="button" variant="outline" className="flex-1" onClick={attemptClose}>Cancel</Button>
-                <Button type="submit" className="flex-1">
+                <Button type="submit" className="flex-1" disabled={form.formState.isSubmitting}>
                   {stockStatus === 'place_order'
                     ? (orderStatus === 'planned' ? 'Save planned order' : 'Place order')
                     : initialPartId ? 'Save adjustment' : 'Add to inventory'}
