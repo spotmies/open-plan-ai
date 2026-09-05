@@ -19,6 +19,7 @@ export interface ApiStockRecord {
   allocated: number;
   onOrder: number;
   location: string;
+  locationNodeId: string | null;
   leadTimeDays: number;
   lotNumber: string | null;
   serialNumber: string | null;
@@ -38,6 +39,7 @@ export interface ApiOrderRecord {
   supplierRef: string | null;
   unitCost: number | null;
   location: string;
+  locationNodeId: string | null;
   note: string | null;
   description: string | null;
   purpose: string | null;
@@ -55,6 +57,7 @@ export interface ApiStockTransaction {
   direction: 'add' | 'remove' | null;
   qty: number;
   location: string;
+  locationNodeId: string | null;
   reference: string | null;
   reasonCode: string | null;
   note: string | null;
@@ -149,6 +152,7 @@ export function fromApiStock(r: ApiStockRecord): StockRecord {
     allocated: r.allocated,
     onOrder: r.onOrder,
     location: r.location,
+    locationNodeId: r.locationNodeId ?? undefined,
     leadTimeDays: r.leadTimeDays,
     lotNumber: r.lotNumber ?? undefined,
     serialNumber: r.serialNumber ?? undefined,
@@ -171,6 +175,7 @@ export function fromApiOrder(r: ApiOrderRecord): OrderRecord {
     supplierRef: r.supplierRef ?? undefined,
     unitCost: r.unitCost ?? undefined,
     location: r.location,
+    locationNodeId: r.locationNodeId ?? undefined,
     note: r.note ?? undefined,
     description: r.description ?? undefined,
     purpose: r.purpose ?? undefined,
@@ -190,6 +195,7 @@ export function fromApiTransaction(r: ApiStockTransaction): StockTransaction {
     direction: r.direction ?? undefined,
     qty: r.qty,
     location: r.location,
+    locationNodeId: r.locationNodeId ?? undefined,
     // Normalise empty strings to undefined — older writes (and the Adjust dialog, which
     // has no reason-code field) persisted `reason_code = ''`, which then shadowed the
     // note/description in the Movements ledger because `?? ` only falls through on null.
@@ -246,6 +252,7 @@ export function fromApiBuildBomLine(r: ApiBuildBomLine): BuildBomLine {
 export interface ReceiveStockDto {
   partId: string;
   location: string;
+  locationNodeId?: string | null;
   quantity: number;
   reference?: string;
   quarantine: boolean;
@@ -258,6 +265,7 @@ export interface ReceiveStockDto {
 export interface AdjustQuantityDto {
   partId: string;
   location: string;
+  locationNodeId?: string | null;
   direction: 'add' | 'remove';
   /** 'set' overwrites on-hand with `quantity`; 'delta' (default) adds/removes it per `direction`. */
   mode?: 'delta' | 'set';
@@ -284,6 +292,7 @@ export interface TransferStockDto {
   partId: string;
   fromLocation: string;
   toLocation: string;
+  toLocationNodeId?: string | null;
   note?: string;
 }
 
@@ -300,6 +309,7 @@ export interface PlaceOrderDto {
   supplierRef?: string;
   unitCost?: number;
   location: string;
+  locationNodeId?: string | null;
   note?: string;
   description?: string;
   purpose?: string;

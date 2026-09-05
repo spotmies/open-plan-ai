@@ -7,11 +7,12 @@
 // that both real and (formerly) mock data flowed through unchanged.
 
 import { useState, useEffect, useMemo } from 'react';
-import { Lock, Plus } from 'lucide-react';
+import { Lock, Plus, Check, X as XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KNOWN_BOM_CATEGORIES, UOM_OPTIONS, getCategoryMeta, type BOMCategory } from './bomData';
+import { useLocations, useCreateLocation, groupLocationsByParent, type ApiLocation, type LocationKind } from '@/hooks/useLocations';
 
 export const STOCK_LOCATIONS = ['Lab Shelf A', 'Lab Shelf B', 'Incoming Dock', 'CM', 'Quarantine'] as const;
 // Locations are free-text and org-owned: LocationCombobox shows only the org's own
@@ -34,6 +35,7 @@ export interface StockRecord {
   allocated: number;
   onOrder: number;
   location: StockLocation;
+  locationNodeId?: string;
   leadTimeDays: number;
   lotNumber?: string;
   serialNumber?: string;
@@ -58,6 +60,7 @@ export interface OrderRecord {
   supplierRef?: string;
   unitCost?: number;
   location: string;
+  locationNodeId?: string;
   note?: string;
   description?: string;
   purpose?: string;
@@ -169,6 +172,147 @@ export function LockedLocationField({ location }: { location: string }) {
       <p className="text-xs text-muted-foreground">
         Pinned to this part&apos;s stock location — use Transfer to move it elsewhere.
       </p>
+    </div>
+  );
+}
+
+const LEVEL_LABEL: Record<LocationKind, string> = { warehouse: 'Warehouse', shelf: 'Shelf', box: 'Box' };
+const NEW_SENTINEL = '__new__';
+
+/** One cascading tier (Warehouse, Shelf, or Box) — a plain Select plus an
+ * inline "+ New <kind>" create affordance, so the hierarchy can be built up
+ * on the fly while picking rather than needing a separate management screen
+ * first. Selecting a level clears any deeper selection the caller is
+ * holding (handled by the parent, LocationHierarchyPicker). */
+function LocationLevelSelect({ kind, options, selectedId, onSelect, onCreate, creating, disabled }: {
+  kind: LocationKind; options: ApiLocation[]; selectedId: string | null;
+  onSelect: (id: string) => void; onCreate: (name: string) => void; creating: boolean; disabled?: boolean;
+}) {
+  const [addingNew, setAddingNew] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  if (addingNew) {
+    return (
+      <div className="flex gap-2">
+        <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={`New ${LEVEL_LABEL[kind].toLowerCase()} name...`} autoFocus
+          onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) { onCreate(newName.trim()); setAddingNew(false); setNewName(''); } }} />
+        <Button type="button" variant="outline" size="icon" disabled={!newName.trim() || creating}
+          onClick={() => { onCreate(newName.trim()); setAddingNew(false); setNewName(''); }}>
+          <Check className="h-3.5 w-3.5" />
+        </Button>
+        <Button type="button" variant="outline" size="icon" onClick={() => { setAddingNew(false); setNewName(''); }}>
+          <XIcon className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Select
+      disabled={disabled}
+      value={selectedId ?? ''}
+      onValueChange={(v) => {
+        if (v === NEW_SENTINEL) setTimeout(() => setAddingNew(true), 0);
+        else onSelect(v);
+      }}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder={disabled ? `Pick a ${LEVEL_LABEL[kind].toLowerCase()} above first` : `${LEVEL_LABEL[kind]}...`} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+        <SelectItem value={NEW_SENTINEL}><span className="inline-flex items-center gap-1"><Plus className="h-3 w-3" />New {LEVEL_LABEL[kind].toLowerCase()}...</span></SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Real Warehouse -> Shelf -> Box picker, replacing the old flat
+ * LocationCombobox. `value`/`onChange` stay the same shape (the resolved
+ * path text) so every existing call site's own form state needs no change —
+ * only the picker itself and the final submit handler (which resolves the
+ * matching node's id from `locations` for the mutation payload) changed. A
+ * selection commits at whichever level the user stops drilling into —
+ * picking just a warehouse is as valid as going all the way to a box. */
+export function LocationHierarchyPicker({ value, onChange, orgId, placeholder = 'Select a location...' }: {
+  value: string; onChange: (v: string) => void; orgId: string; placeholder?: string;
+}) {
+  const { data: locations = [] } = useLocations(orgId);
+  const createLocation = useCreateLocation(orgId);
+  const byId = useMemo(() => new Map(locations.map((l) => [l.id, l])), [locations]);
+  const byParent = useMemo(() => groupLocationsByParent(locations), [locations]);
+
+  // Free-text fallback for a value that doesn't match any real node yet
+  // (legacy data, or a path typed before the hierarchy existed) — shown
+  // read-only-ish via the warehouse level's own custom-entry escape hatch
+  // below, so nothing already-stored is ever silently blanked out.
+  const matchedNode = useMemo(() => locations.find((l) => l.path === value) ?? null, [locations, value]);
+
+  const [selection, setSelection] = useState<{ warehouseId: string | null; shelfId: string | null; boxId: string | null }>(
+    { warehouseId: null, shelfId: null, boxId: null },
+  );
+
+  // Re-sync internal selection whenever the external value resolves to a
+  // different (or newly-loaded) real node — e.g. opening the dialog for a
+  // part that already has a canonical location once `locations` has loaded.
+  useEffect(() => {
+    if (!matchedNode) return;
+    if (matchedNode.kind === 'warehouse' && selection.warehouseId === matchedNode.id) return;
+    if (matchedNode.kind === 'shelf' && selection.shelfId === matchedNode.id) return;
+    if (matchedNode.kind === 'box' && selection.boxId === matchedNode.id) return;
+
+    if (matchedNode.kind === 'warehouse') {
+      setSelection({ warehouseId: matchedNode.id, shelfId: null, boxId: null });
+    } else if (matchedNode.kind === 'shelf') {
+      setSelection({ warehouseId: matchedNode.parentId, shelfId: matchedNode.id, boxId: null });
+    } else {
+      const shelf = matchedNode.parentId ? byId.get(matchedNode.parentId) : undefined;
+      setSelection({ warehouseId: shelf?.parentId ?? null, shelfId: matchedNode.parentId, boxId: matchedNode.id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedNode]);
+
+  const commit = (next: typeof selection) => {
+    setSelection(next);
+    const node = next.boxId ? byId.get(next.boxId) : next.shelfId ? byId.get(next.shelfId) : next.warehouseId ? byId.get(next.warehouseId) : null;
+    onChange(node?.path ?? '');
+  };
+
+  const warehouses = byParent.get('') ?? [];
+  const shelves = selection.warehouseId ? (byParent.get(selection.warehouseId) ?? []) : [];
+  const boxes = selection.shelfId ? (byParent.get(selection.shelfId) ?? []) : [];
+
+  const createAt = (kind: LocationKind, parentId: string | null, name: string) => {
+    createLocation.mutate({ name, parentId, kind }, {
+      onSuccess: (created) => {
+        if (kind === 'warehouse') commit({ warehouseId: created.id, shelfId: null, boxId: null });
+        else if (kind === 'shelf') commit({ warehouseId: selection.warehouseId, shelfId: created.id, boxId: null });
+        else commit({ warehouseId: selection.warehouseId, shelfId: selection.shelfId, boxId: created.id });
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      {!matchedNode && value && (
+        <div className="flex items-center gap-2 rounded-md border border-dashed border-input bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <span className="truncate">Currently: {value} (not in the hierarchy yet — pick or create a real location below)</span>
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-2">
+        <LocationLevelSelect kind="warehouse" options={warehouses} selectedId={selection.warehouseId} creating={createLocation.isPending}
+          onSelect={(id) => commit({ warehouseId: id, shelfId: null, boxId: null })}
+          onCreate={(name) => createAt('warehouse', null, name)} />
+        <LocationLevelSelect kind="shelf" options={shelves} selectedId={selection.shelfId} disabled={!selection.warehouseId} creating={createLocation.isPending}
+          onSelect={(id) => commit({ ...selection, shelfId: id, boxId: null })}
+          onCreate={(name) => createAt('shelf', selection.warehouseId, name)} />
+        <LocationLevelSelect kind="box" options={boxes} selectedId={selection.boxId} disabled={!selection.shelfId} creating={createLocation.isPending}
+          onSelect={(id) => commit({ ...selection, boxId: id })}
+          onCreate={(name) => createAt('box', selection.shelfId, name)} />
+      </div>
+      {!warehouses.length && !value && (
+        <p className="text-xs text-muted-foreground">{placeholder} No locations yet — use &quot;New warehouse…&quot; to create the first one.</p>
+      )}
     </div>
   );
 }
@@ -384,6 +528,7 @@ export interface StockTransaction {
   direction?: 'add' | 'remove';   // adjust/issue only
   qty: number;
   location: StockLocation;
+  locationNodeId?: string;         // real Warehouse/Shelf/Box node, when this row resolves to one
   reference?: string;              // receive: PO / expected-receipt reference. transfer: destination location.
   reasonCode?: string;             // adjust/issue only
   note?: string;

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
-  ChevronRight, ChevronDown, SlidersHorizontal, Search,
+  ChevronRight, ChevronLeft, ChevronDown, ChevronUp, SlidersHorizontal, Search,
   Plus, Download, GitBranch, X, Hash,
   AlertTriangle, Check, ArrowUpDown, Cpu, Zap, Package, Package2,
   Monitor, Shield, Lock, Flag, Activity, FlaskConical, BookOpen,
@@ -8,17 +8,29 @@ import {
   ListChecks, Boxes, Share2, Network, Gauge, Target,
   ListTree, ArrowDownAZ, ShieldCheck, Unlink, PackageX, UserPlus,
   ChevronsDownUp, ChevronsUpDown, CheckCircle, Table2, GitMerge,
-  Maximize2, RefreshCw, Minus,
+  Maximize2, Minimize2, RefreshCw, Minus,
+  FolderTree, FunctionSquare, FolderCheck, FileText, Triangle, FolderKanban,
+  BookMarked, Cable, Ruler, BadgeCheck, Scale, Play, Circle,
+  ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
 import {
-  REQS, BY_KEY, REQ_ROOTS, REQ_TYPE, REQ_CATEGORY, REQ_STATUS,
-  REQ_VSTATUS, REQ_PRIORITY, REQ_GROUP, REQ_LINKTYPE, GAP_META, REQ_TEAM,
+  REQS, BY_KEY, REQ_ROOTS, REQ_TYPE, REQ_CATEGORY, REQ_STATUS, REQ_STATUS_FLOW,
+  REQ_VSTATUS, REQ_PRIORITY, REQ_GROUP, REQ_VMETHOD, REQ_LINKTYPE, GAP_META, REQ_TEAM,
   flattenTree, matchWithAncestors, descendants, ancestors, coverageBy, worstOffenders,
   reqStats, vDistribution, standardsRollup, gateReadiness, manufacturingReadiness,
+  rebuildRequirementsFromApi, rebuildTeamFromApi,
+  traceDown, traceUp, requirementsAllocatingPart, allAllocatedParts, qtyForPart,
   GATES, STANDARDS,
   type Requirement, type ReqType, type ReqCategory, type ReqStatus,
-  type ReqVStatus, type ReqPriority, type ReqGroup,
+  type ReqVStatus, type ReqPriority, type ReqGroup, type ReqVMethod,
+  type AllocatedPartStock,
 } from './requirementsData';
+import { useRequirementGroups, useRequirementTree, useRequirementLinks } from '@/hooks/useRequirements';
+import { useRequirementAllocations } from '@/hooks/useBom';
+import { useECOAffectedRequirements } from '@/hooks/useECOs';
+import { useVerificationSummary } from '@/hooks/useVerification';
+import { useInventoryStock, useInventoryBuilds } from '@/hooks/useInventory';
+import { useProjectMembers } from '@/hooks/useProjectTeam';
 import {
   ReqKeyTag, TypePill, CatPill, StatusBadge, VStatusBadge, PriorityPill,
   CoverageCell, OwnerAvatar, Donut, StatTile, CoverageBar, ScoreRing, softTint,
@@ -26,6 +38,11 @@ import {
 import RequirementDetailScreen from './RequirementDetailScreen';
 import RequirementEditor from './RequirementEditor';
 import RequirementImpact from './RequirementImpact';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // ── Group icons ────────────────────────────────────────────────────────────────
 const GROUP_ICONS: Record<ReqGroup, React.ElementType> = {
@@ -65,7 +82,86 @@ const hasActiveFilters = (f: FilterState): boolean =>
 type ViewTab = 'table' | 'map' | 'trace' | 'coverage' | 'readiness';
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function RequirementsView() {
+interface RequirementsViewProps {
+  projectId: string;
+  /** Org id — used only to fetch live Inventory stock for the "allocated to"
+   * traceability links (mirrors BOM's `orgId`). */
+  orgId: string;
+  /** Currently open requirement detail, controlled via the URL (mirrors BOM's `selectedId`). */
+  selectedKey?: string | null;
+  onSelectedKeyChange?: (key: string | null) => void;
+  /** Reports whether the full-page create/edit editor is open, so the host
+   * (ProjectDetail) can hide its own tab-bar header while it's up — the editor
+   * isn't URL-driven (same reasoning as BOM's "Add Part" sheet), so this is the
+   * only way the host knows. */
+  onEditorOpenChange?: (open: boolean) => void;
+  /** Fired when "Raise ECO" (from the Impact drawer) creates a real ECO —
+   * mirrors BOM's onEcoCreated so the host can navigate to it. */
+  onEcoCreated?: (ecoId: string) => void;
+}
+export default function RequirementsView({ projectId, orgId, selectedKey = null, onSelectedKeyChange, onEditorOpenChange, onEcoCreated }: RequirementsViewProps) {
+  // Live data — rebuilds the module-level REQS/BY_KEY index (requirementsData.ts)
+  // from the real backend in place, synchronously during render. Every helper
+  // and every other Requirements file reads that same shared index, so this is
+  // the only place that needs to know about the API.
+  const { data: apiGroups, isLoading: groupsLoading } = useRequirementGroups(projectId);
+  const { data: apiTree, isLoading: treeLoading, isError: treeError } = useRequirementTree(projectId);
+  const { data: apiLinks } = useRequirementLinks(projectId);
+  const { data: apiAllocations } = useRequirementAllocations(projectId);
+  const { data: apiEcoSuspects } = useECOAffectedRequirements(projectId);
+  const { data: apiVerificationSummary } = useVerificationSummary(projectId);
+  const { data: stockRows } = useInventoryStock(orgId);
+  // Inventory stock is org-wide (not project-scoped — see project_inventory
+  // memory), aggregated here across every location for the one figure a
+  // requirement's traceability chain actually needs: is this allocated part
+  // in stock, and how much of it is actually free. Mirrors Inventory's own
+  // `availableOf()` so the two features never disagree.
+  const stockByPartId = useMemo(() => {
+    const map = new Map<string, AllocatedPartStock>();
+    (stockRows ?? []).forEach(s => {
+      const prev = map.get(s.partId) ?? { onHand: 0, allocated: 0, available: 0 };
+      map.set(s.partId, {
+        onHand: prev.onHand + s.onHand,
+        allocated: prev.allocated + s.allocated,
+        available: prev.available + (s.onHand - s.allocated - (s.quarantineQty ?? 0)),
+      });
+    });
+    return map;
+  }, [stockRows]);
+  const { data: projectMembers } = useProjectMembers(projectId);
+  // Same idempotent-rebuild-on-every-render approach as REQS below — REQ_TEAM
+  // is a mutable singleton too. Guarded on `projectMembers` being loaded (not
+  // just non-empty) so a project with zero real members doesn't get wiped
+  // back to nothing before the first fetch settles.
+  if (projectMembers) {
+    rebuildTeamFromApi(projectMembers);
+  }
+  // REQS/BY_KEY/REQ_ROOTS are mutated in place, not replaced — plain object
+  // identity never changes, so nothing here can appear in a useMemo dependency
+  // array to signal "the data changed." Rebuilding unconditionally every render
+  // (cheap — O(requirement count), and idempotent for given inputs) keeps them
+  // in sync without a ref-based guard: a ref mutated as a render-time "already
+  // handled this" flag is unsafe under StrictMode's double render, which
+  // invokes the function twice per commit and silently drops a conditional
+  // setState made only on the first invocation. `dataVersion` (below) is used
+  // as the dependency for every memo that reads REQS-derived data — in this
+  // component and in CoverageDashboard/ReadinessView/TraceabilityView/
+  // RequirementsMapView.
+  if (apiTree) {
+    rebuildRequirementsFromApi(apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId, apiVerificationSummary);
+  }
+  // apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId and
+  // apiVerificationSummary are independent React Query-derived values, each
+  // stable (unchanged reference) until its own data actually changes —
+  // combined into one memoized value so every dependency array below only
+  // has one thing to list, and still only changes reference when any input
+  // really does.
+  const dataVersion = useMemo(
+    () => ({ apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId, apiVerificationSummary }),
+    [apiTree, apiLinks, apiAllocations, apiEcoSuspects, stockByPartId, apiVerificationSummary],
+  );
+  const groups = apiGroups ?? [];
+
   const [view, setView] = useState<ViewTab>('table');
   const [filters, setFilters] = useState<FilterState>(emptyFilters());
   const [sortField, setSortField] = useState<SortField>('tree');
@@ -77,12 +173,32 @@ export default function RequirementsView() {
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [detailKey, setDetailKey] = useState<string | null>(null);
+  const detailKey = selectedKey;
+  const setDetailKey = (key: string | null) => onSelectedKeyChange?.(key);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [impactKey, setImpactKey] = useState<string | null>(null);
 
-  const stats = useMemo(() => reqStats(), []);
+  // Editor is a local full-page swap, not URL-driven, so the host only learns
+  // about it through this callback — including resetting it on unmount, so
+  // navigating away mid-edit doesn't leave the host thinking it's still open.
+  useEffect(() => {
+    onEditorOpenChange?.(editorOpen);
+    return () => onEditorOpenChange?.(false);
+  }, [editorOpen, onEditorOpenChange]);
+
+  // The Impact drawer is opened from the detail screen but its own open state
+  // (impactKey) isn't tied to the URL the way detailKey is — so browser back
+  // (or any other URL-driven navigation away from the detail view) changes
+  // detailKey without touching impactKey, leaving the drawer floating open
+  // over whatever view comes back into view. Close it whenever detailKey
+  // changes (including closing to null) so it can never outlive the detail
+  // screen it was opened from.
+  useEffect(() => {
+    setImpactKey(null);
+  }, [detailKey]);
+
+  const stats = useMemo(() => reqStats(), [dataVersion]);
 
   const filterSet = useMemo((): Set<string> | null => {
     if (!hasActiveFilters(filters)) return null;
@@ -101,7 +217,7 @@ export default function RequirementsView() {
         !r.statement.toLowerCase().includes(txt)) return false;
       return true;
     });
-  }, [filters]);
+  }, [filters, dataVersion]);
 
   const rows = useMemo(() => {
     const filtersActive = hasActiveFilters(filters);
@@ -122,7 +238,7 @@ export default function RequirementsView() {
       });
     }
     return flattenTree(expanded, filterSet ?? undefined);
-  }, [expanded, filterSet, sortField, filters]);
+  }, [expanded, filterSet, sortField, filters, dataVersion]);
 
   // Expand / collapse all
   const expandAll = useCallback(() => setExpanded({}), []);
@@ -133,7 +249,7 @@ export default function RequirementsView() {
   }, []);
   const anyExpanded = useMemo(
     () => REQS.some(r => r.childKeys.length > 0 && expanded[r.key] !== false),
-    [expanded],
+    [expanded, dataVersion],
   );
 
   const toggleExpand = useCallback((key: string) =>
@@ -151,16 +267,25 @@ export default function RequirementsView() {
     setView('table');
   }, []);
 
-  const openDetail = useCallback((key: string) => setDetailKey(key), []);
+  const openDetail = useCallback((key: string) => onSelectedKeyChange?.(key), [onSelectedKeyChange]);
   const openEditor = useCallback((key?: string) => { setEditKey(key ?? null); setEditorOpen(true); }, []);
 
   if (detailKey) return (
-    <RequirementDetailScreen reqKey={detailKey} onClose={() => setDetailKey(null)}
-      onEdit={key => { setDetailKey(null); openEditor(key); }}
-      onImpact={key => setImpactKey(key)} onNavigate={openDetail} />
+    <>
+      <RequirementDetailScreen reqKey={detailKey} projectId={projectId} orgId={orgId} onClose={() => setDetailKey(null)}
+        onEdit={key => { setDetailKey(null); openEditor(key); }}
+        onImpact={key => setImpactKey(key)} onNavigate={openDetail} onEcoCreated={onEcoCreated} />
+      {/* Rendered here too (not just in the main-view return below) — the
+          Impact button lives on the detail screen, so without this the
+          drawer's state gets set on click but nothing appears until the
+          user navigates away to a return path that does render it. */}
+      {impactKey && (
+        <RequirementImpact reqKey={impactKey} projectId={projectId} onClose={() => setImpactKey(null)} onOpen={openDetail} onEcoCreated={onEcoCreated} />
+      )}
+    </>
   );
   if (editorOpen) return (
-    <RequirementEditor reqKey={editKey}
+    <RequirementEditor reqKey={editKey} projectId={projectId} groups={groups}
       onClose={() => { setEditorOpen(false); setEditKey(null); }}
       onSaved={() => { setEditorOpen(false); setEditKey(null); }} />
   );
@@ -168,79 +293,29 @@ export default function RequirementsView() {
   const showExpandToggle = view === 'table' && !hasActiveFilters(filters) && sortField === 'tree';
   const activeFilterCount = filterSet?.size ?? null;
 
+  if ((treeLoading || groupsLoading) && !apiTree) {
+    return (
+      <div className="flex items-center justify-center text-sm text-muted-foreground" style={{ height: 'calc(100vh - 140px)' }}>
+        Loading requirements…
+      </div>
+    );
+  }
+  if (treeError) {
+    return (
+      <div className="flex items-center justify-center text-sm text-destructive" style={{ height: 'calc(100vh - 140px)' }}>
+        Failed to load requirements.
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'hsl(var(--background))' }}>
+    <div className="flex flex-col px-6 overflow-hidden bg-background" style={{ height: 'calc(100vh - 140px)' }}>
 
-      {/* ── Toolbar ── */}
-      <div style={{ borderBottom: '1px solid hsl(var(--border))', background: 'hsl(var(--card))', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-
-        {/* Page header — title + project selector + rev badge + action buttons */}
-        <div style={{ padding: '12px 20px 10px', display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 10 }}>
-
-            {/* Left: title, project, rev */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-              <ListChecks size={20} color="#3B82F6" />
-              <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1, color: 'hsl(var(--foreground))' }}>Requirements</span>
-              <button style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px',
-                borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted))',
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}>
-                <Monitor size={12} color="hsl(var(--muted-foreground))" />
-                <span style={{ fontSize: 12.5, fontWeight: 500, color: 'hsl(var(--foreground))' }}>EV Charging Station</span>
-                <ChevronDown size={10} color="hsl(var(--muted-foreground))" />
-              </button>
-              <span style={{
-                height: 22, padding: '0 8px', borderRadius: 5,
-                border: '1px solid #3B82F6', color: '#3B82F6',
-                fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center',
-              }}>Rev C</span>
-            </div>
-
-            {/* Right: action buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
-              <button style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px',
-                borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-                color: 'hsl(var(--foreground))',
-              }}>
-                <Lock size={13} />
-                Live set
-                <ChevronDown size={10} color="hsl(var(--muted-foreground))" />
-              </button>
-              <button style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px',
-                borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-                color: 'hsl(var(--foreground))',
-              }}>
-                <Download size={13} />
-                Import
-              </button>
-              <button onClick={() => openEditor()} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px',
-                borderRadius: 7, border: 'none', background: '#3B82F6', color: '#fff',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600,
-              }}>
-                <Plus size={13} />
-                New Requirement
-              </button>
-            </div>
-          </div>
-
-          {/* Subtitle */}
-          <span style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))' }}>
-            Capture, decompose, and trace requirements from stakeholder need to verification.
-          </span>
-        </div>
-
-        {/* Separator */}
-        <div style={{ height: 1, background: 'hsl(var(--border))' }} />
+      {/* ── Fixed header zone (no scroll) ─────────────────────────── */}
+      <div className="shrink-0 py-4">
 
         {/* Stats tiles row */}
-        <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, padding: '10px 20px' }}>
+        <div className="flex items-stretch gap-2.5 md:gap-3 flex-wrap mb-3">
           <SummaryTile icon={ShieldCheck} label="Verified or validated" value={`${stats.verifiedPct}%`}
             tint="#16A34A" accent />
           <SummaryTile icon={Unlink} label="Orphans" value={stats.orphan} tint="#DC2626"
@@ -253,44 +328,33 @@ export default function RequirementsView() {
             gapKey="suspect" active={filters.gap === 'suspect'} onFilter={g => setFilters({ ...emptyFilters(), gap: g })} />
         </div>
 
-        {/* Separator */}
-        <div style={{ height: 1, background: 'hsl(var(--border))' }} />
-
-        {/* Tab bar + controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 20px' }}>
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 flex-wrap">
 
           <ViewTabs view={view} setView={setView} />
 
           {/* Expand / collapse all — table tree mode only */}
           {showExpandToggle && (
-            <button onClick={() => anyExpanded ? collapseAll() : expandAll()}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, height: 32, padding: '0 10px', borderRadius: 7,
-                border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-                color: 'hsl(var(--muted-foreground))', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-              }}>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[12.5px] text-muted-foreground"
+              onClick={() => anyExpanded ? collapseAll() : expandAll()}>
               {anyExpanded
-                ? <><ChevronsDownUp size={13} /> Collapse all</>
-                : <><ChevronsUpDown size={13} /> Expand all</>}
-            </button>
+                ? <><ChevronsDownUp className="w-3.5 h-3.5" /> Collapse all</>
+                : <><ChevronsUpDown className="w-3.5 h-3.5" /> Expand all</>}
+            </Button>
           )}
 
-          <div style={{ flex: 1 }} />
+          <div className="flex-1" />
 
           {/* Search */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <Search size={13} style={{ position: 'absolute', left: 9, color: 'hsl(var(--muted-foreground))', pointerEvents: 'none' }} />
+          <div className="flex items-center gap-2 bg-muted border border-border rounded-md px-2.5 py-1.5 w-64">
+            <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <input value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })}
-              placeholder="Search key, title, or statement..."
-              style={{
-                paddingLeft: 30, paddingRight: filters.search ? 28 : 10, height: 32, borderRadius: 7,
-                border: '1px solid hsl(var(--border))', background: 'hsl(var(--background))',
-                color: 'hsl(var(--foreground))', fontSize: 13, width: 260, fontFamily: 'inherit', outline: 'none',
-              }} />
+              placeholder="Search key, title, or statement…"
+              className="bg-transparent border-none outline-none text-foreground text-sm w-full placeholder:text-muted-foreground" />
             {filters.search && (
               <button onClick={() => setFilters({ ...filters, search: '' })}
-                style={{ position: 'absolute', right: 7, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                <X size={12} color="hsl(var(--muted-foreground))" />
+                className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -301,23 +365,34 @@ export default function RequirementsView() {
           {/* Filters — table + map views */}
           {(view === 'table' || view === 'map') && (
             <button onClick={() => setFilterDrawerOpen(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, height: 32, padding: '0 12px', borderRadius: 7,
-                border: `1px solid ${activeFilterCount ? 'hsl(var(--foreground))' : 'hsl(var(--border))'}`,
-                background: activeFilterCount ? 'hsl(var(--muted))' : 'hsl(var(--card))',
-                color: activeFilterCount ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
-              }}>
-              <SlidersHorizontal size={13} />
-              Filters {activeFilterCount ? `(${activeFilterCount})` : ''}
+              className={cn('inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium border cursor-pointer transition-colors',
+                activeFilterCount ? 'bg-primary/10 text-primary border-primary/30' : 'bg-card text-foreground border-border hover:bg-muted')}>
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Filters
+              {activeFilterCount ? (
+                <span className="min-w-4 h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              ) : null}
             </button>
           )}
+
+          <div className="w-px h-5 bg-border" />
+
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[12.5px]">
+            <Download className="w-3.5 h-3.5" />
+            Import
+          </Button>
+          <Button size="sm" className="h-8 gap-1.5 text-[12.5px]" onClick={() => openEditor()}>
+            <Plus className="w-3.5 h-3.5" />
+            New Requirement
+          </Button>
         </div>
 
         {/* Active filter chips */}
         {hasActiveFilters(filters) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '0 20px 10px' }}>
-            <span style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))' }}>Active:</span>
+          <div className="flex items-center gap-1.5 flex-wrap pt-2.5">
+            <span className="text-[11.5px] text-muted-foreground">Active:</span>
             {filters.type.map(t => <FilterChip key={t} label={REQ_TYPE[t].short} onRemove={() => setFilters({ ...filters, type: filters.type.filter(x => x !== t) })} />)}
             {filters.category.map(c => <FilterChip key={c} label={REQ_CATEGORY[c].label} onRemove={() => setFilters({ ...filters, category: filters.category.filter(x => x !== c) })} />)}
             {filters.status.map(s => <FilterChip key={s} label={REQ_STATUS[s].label} onRemove={() => setFilters({ ...filters, status: filters.status.filter(x => x !== s) })} />)}
@@ -328,7 +403,7 @@ export default function RequirementsView() {
                 onRemove={() => setFilters({ ...filters, gap: null })} />
             )}
             <button onClick={() => setFilters(emptyFilters())}
-              style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', border: 'none', background: 'transparent', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+              className="text-[11.5px] text-muted-foreground hover:text-foreground underline transition-colors">
               Clear all
             </button>
           </div>
@@ -336,19 +411,23 @@ export default function RequirementsView() {
       </div>
 
       {/* ── Body ── */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {view === 'table' && (
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0 border-t border-border">
+        {view === 'table' ? (
           <ReqTable rows={rows} expanded={expanded} selected={selected}
             filtersActive={hasActiveFilters(filters)}
             toggleExpand={toggleExpand} toggleSelect={toggleSelect}
             allSelected={allSelected} toggleAll={toggleAll}
             onOpen={openDetail} onEdit={k => openEditor(k)} onImpact={k => setImpactKey(k)}
             onClearFilters={() => setFilters(emptyFilters())} />
+        ) : view === 'map' ? (
+          <RequirementsMapView onOpen={openDetail} dataVersion={dataVersion} />
+        ) : view === 'trace' ? (
+          <TraceabilityView onOpen={openDetail} onDrill={drillToTable} dataVersion={dataVersion} />
+        ) : view === 'coverage' ? (
+          <CoverageDashboard stats={stats} onDrill={drillToTable} onOpen={openDetail} dataVersion={dataVersion} />
+        ) : (
+          <ReadinessView dataVersion={dataVersion} projectId={projectId} orgId={orgId} />
         )}
-        {view === 'map' && <RequirementsMapView onOpen={openDetail} />}
-        {view === 'trace' && <TraceabilityView onOpen={openDetail} onDrill={drillToTable} />}
-        {view === 'coverage' && <CoverageDashboard stats={stats} onDrill={drillToTable} onOpen={openDetail} />}
-        {view === 'readiness' && <ReadinessView />}
       </div>
 
       {/* ── Bulk bar ── */}
@@ -363,7 +442,7 @@ export default function RequirementsView() {
 
       {/* ── Impact drawer ── */}
       {impactKey && (
-        <RequirementImpact reqKey={impactKey} onClose={() => setImpactKey(null)} onOpen={openDetail} />
+        <RequirementImpact reqKey={impactKey} projectId={projectId} onClose={() => setImpactKey(null)} onOpen={openDetail} onEcoCreated={onEcoCreated} />
       )}
     </div>
   );
@@ -375,35 +454,29 @@ function SummaryTile({ icon: Ic, label, value, tint, gapKey, active, accent, onF
     icon: React.ElementType; label: string; value: string | number; tint: string;
     gapKey?: string; active?: boolean; accent?: boolean; onFilter?: (k: string | null) => void
   }) {
-  const [hov, setHov] = useState(false);
   const clickable = !!gapKey && !!onFilter;
   return (
     <button
       onClick={() => clickable && onFilter!(active ? null : gapKey!)}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      className={cn(
+        'flex-1 min-w-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border bg-card transition-colors',
+        clickable ? 'cursor-pointer hover:bg-muted' : 'cursor-default',
+      )}
       style={{
-        flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9, padding: '8px 13px', borderRadius: 9,
-        background: active ? softTint(tint, 0.10) : hov && clickable ? 'hsl(var(--muted))' : 'hsl(var(--card))',
-        border: `1px solid ${active ? softTint(tint, 0.35) : 'hsl(var(--border))'}`,
-        cursor: clickable ? 'pointer' : 'default', fontFamily: 'inherit',
-        transition: 'border-color .12s, background .12s'
+        background: active ? softTint(tint, 0.10) : undefined,
+        borderColor: active ? softTint(tint, 0.35) : undefined,
       }}>
-      <span style={{
-        width: 30, height: 30, borderRadius: 8, background: softTint(tint, 0.12),
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-      }}>
-        <Ic size={15} color={tint} />
+      <span
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+        style={{ background: softTint(tint, 0.12) }}>
+        <Ic className="w-4 h-4" style={{ color: tint }} />
       </span>
-      <span style={{ textAlign: 'left', minWidth: 0 }}>
-        <span style={{
-          display: 'block', fontSize: 19, fontWeight: 700,
-          color: accent ? tint : 'hsl(var(--foreground))', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums'
-        }}>
+      <span className="text-left min-w-0">
+        <span className="block text-lg font-bold leading-tight tabular-nums truncate"
+          style={{ color: accent ? tint : undefined }}>
           {value}
         </span>
-        <span style={{ display: 'block', fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {label}
-        </span>
+        <span className="block text-[11px] text-muted-foreground truncate">{label}</span>
       </span>
     </button>
   );
@@ -419,24 +492,17 @@ const VIEW_TABS: { key: ViewTab; icon: React.ElementType; label: string }[] = [
 ];
 function ViewTabs({ view, setView }: { view: ViewTab; setView: (v: ViewTab) => void }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', background: 'hsl(var(--muted))',
-      border: '1px solid hsl(var(--border))', borderRadius: 8, padding: 3, gap: 2
-    }}>
+    <div className="flex items-center bg-muted border border-border rounded-lg p-0.5 gap-0.5">
       {VIEW_TABS.map(v => {
         const Ic = v.icon;
         const active = view === v.key;
         return (
           <button key={v.key} onClick={() => setView(v.key)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', border: 'none',
-              fontFamily: 'inherit', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: active ? 600 : 400,
-              background: active ? 'hsl(var(--card))' : 'transparent',
-              boxShadow: active ? '0 1px 2px rgba(20,24,31,0.10)' : 'none',
-              color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-              transition: 'background .12s, color .12s'
-            }}>
-            <Ic size={13} />{v.label}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border-none cursor-pointer transition-colors',
+              active ? 'bg-card text-foreground shadow-sm' : 'bg-transparent text-muted-foreground hover:text-foreground',
+            )}>
+            <Ic className="w-3.5 h-3.5" />{v.label}
           </button>
         );
       })}
@@ -444,74 +510,44 @@ function ViewTabs({ view, setView }: { view: ViewTab; setView: (v: ViewTab) => v
   );
 }
 
-// ── Sort dropdown (reference style, not <select>) ─────────────────────────────
+// ── Sort dropdown ──────────────────────────────────────────────────────────────
 function SortDropdown({ sortField, setSortField }: { sortField: SortField; setSortField: (s: SortField) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const current = SORT_OPTS.find(o => o.id === sortField) ?? SORT_OPTS[0];
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 5, height: 32, padding: '0 10px', borderRadius: 7,
-          border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
-          color: 'hsl(var(--foreground))', fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500
-        }}>
-        <current.icon size={13} />
-        {current.label}
-        <ChevronDown size={11} style={{ marginLeft: 2, color: 'hsl(var(--muted-foreground))' }} />
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', right: 0, width: 186,
-          background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 9,
-          boxShadow: '0 8px 28px rgba(0,0,0,0.14)', zIndex: 30, overflow: 'hidden', padding: 4
-        }}>
-          {SORT_OPTS.map(o => {
-            const OIc = o.icon;
-            const active = sortField === o.id;
-            return (
-              <button key={o.id} onClick={() => { setSortField(o.id); setOpen(false); }}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
-                  border: 'none', fontFamily: 'inherit', cursor: 'pointer', fontSize: 12.5, borderRadius: 6,
-                  background: active ? 'hsl(var(--muted))' : 'transparent',
-                  color: 'hsl(var(--foreground))',
-                  fontWeight: active ? 600 : 400, textAlign: 'left'
-                }}>
-                <OIc size={13} color={active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'} />
-                {o.label}
-                {active && <Check size={12} color="hsl(var(--foreground))" style={{ marginLeft: 'auto' }} />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-card text-foreground text-[12.5px] font-medium cursor-pointer hover:bg-muted transition-colors">
+          <current.icon className="w-3.5 h-3.5" />
+          {current.label}
+          <ChevronDown className="w-2.5 h-2.5 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {SORT_OPTS.map(o => {
+          const OIc = o.icon;
+          const active = sortField === o.id;
+          return (
+            <DropdownMenuItem key={o.id} onClick={() => setSortField(o.id)}
+              className={cn('flex items-center gap-2', active && 'bg-muted')}>
+              <OIc className={cn('w-3.5 h-3.5', active ? 'text-foreground' : 'text-muted-foreground')} />
+              <span className="flex-1">{o.label}</span>
+              {active && <Check className="w-3.5 h-3.5" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 // ── Filter chip ────────────────────────────────────────────────────────────────
 function FilterChip({ label, onRemove, tint }: { label: string; onRemove: () => void; tint?: string }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px 2px 9px', borderRadius: 9999,
-      background: tint ? softTint(tint, 0.10) : 'hsl(var(--card))', border: '1px solid hsl(var(--border))',
-      fontSize: 11.5, color: tint ?? 'hsl(var(--foreground))'
-    }}>
+    <span className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full border border-border bg-card text-[11.5px]"
+      style={{ background: tint ? softTint(tint, 0.10) : undefined, color: tint }}>
       {label}
-      <button onClick={onRemove} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex' }}>
-        <X size={10} />
+      <button onClick={onRemove} className="border-none bg-transparent cursor-pointer p-0 flex items-center opacity-70 hover:opacity-100">
+        <X className="w-2.5 h-2.5" />
       </button>
     </span>
   );
@@ -769,9 +805,12 @@ function FilterDrawer({ filters, setFilters, onClose }: { filters: FilterState; 
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 80 }} />
+      {/* z-index above the Map view's fullscreen mode (1000) and floating
+          toolbar/minimap (up to 210) — see the matching note in
+          RequirementImpact.tsx. */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 2000 }} />
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '94vw', zIndex: 81,
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 340, maxWidth: '94vw', zIndex: 2001,
         background: 'hsl(var(--card))', borderLeft: '1px solid hsl(var(--border))',
         display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(0,0,0,0.15)'
       }}>
@@ -881,13 +920,13 @@ function DrawerChip({ label, tint, active, onClick }: { label: string; tint: str
 }
 
 // ── Coverage dashboard ─────────────────────────────────────────────────────────
-function CoverageDashboard({ stats, onDrill, onOpen }:
-  { stats: ReturnType<typeof reqStats>; onDrill: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void; onOpen: (k: string) => void }) {
-  const vd = useMemo(() => vDistribution(), []);
+function CoverageDashboard({ stats, onDrill, onOpen, dataVersion }:
+  { stats: ReturnType<typeof reqStats>; onDrill: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void; onOpen: (k: string) => void; dataVersion: unknown }) {
+  const vd = useMemo(() => vDistribution(), [dataVersion]);
   const TYPE_ORDER: ReqType[] = ['stakeholder-need', 'stakeholder-req', 'system-req', 'subsystem-req', 'component-req'];
-  const byTier = useMemo(() => coverageBy(r => r.type, TYPE_ORDER), []);
-  const byGroup = useMemo(() => coverageBy(r => r.group).sort((a, b) => b.total - a.total), []);
-  const worst = useMemo(() => worstOffenders(7), []);
+  const byTier = useMemo(() => coverageBy(r => r.type, TYPE_ORDER), [dataVersion]);
+  const byGroup = useMemo(() => coverageBy(r => r.group).sort((a, b) => b.total - a.total), [dataVersion]);
+  const worst = useMemo(() => worstOffenders(7), [dataVersion]);
 
   const vSegments = [
     { value: vd.passed, tint: REQ_VSTATUS.passed.tint, label: 'Passed' },
@@ -1023,10 +1062,27 @@ function CoverageDashboard({ stats, onDrill, onOpen }:
 }
 
 // ── Readiness view ─────────────────────────────────────────────────────────────
-function ReadinessView() {
-  const gate = useMemo(() => gateReadiness(), []);
-  const mfr = useMemo(() => manufacturingReadiness(), []);
-  const stds = useMemo(() => standardsRollup(), []);
+function ReadinessView({ dataVersion, projectId, orgId }: { dataVersion: unknown; projectId: string; orgId: string }) {
+  const gate = useMemo(() => gateReadiness(), [dataVersion]);
+  const stds = useMemo(() => standardsRollup(), [dataVersion]);
+
+  // Manufacturing readiness by build — plan §F: "roll up from real
+  // build-level pass/fail instead of requirement-level guesses." Empty
+  // buildId means the project-wide rollup (unchanged default behavior).
+  const [buildId, setBuildId] = useState('');
+  const { data: allBuilds } = useInventoryBuilds(orgId);
+  const projectBuilds = useMemo(
+    () => (allBuilds ?? []).filter(b => b.projectId === projectId),
+    [allBuilds, projectId],
+  );
+  const { data: buildSummary } = useVerificationSummary(projectId, buildId || undefined);
+  const buildVstatusMap = useMemo(() => {
+    if (!buildId || !buildSummary) return undefined;
+    const m = new Map<string, ReqVStatus>();
+    buildSummary.forEach(s => m.set(s.requirementId, s.vstatus));
+    return m;
+  }, [buildId, buildSummary]);
+  const mfr = useMemo(() => manufacturingReadiness(buildVstatusMap), [dataVersion, buildVstatusMap]);
 
   const statusColor = (s: string) => s === 'compliant' || s === 'ready' ? '#16A34A' : s === 'in-progress' || s === 'at-risk' ? '#D97706' : '#DC2626';
   const statusLabel = (s: string) => s === 'compliant' ? 'Compliant' : s === 'in-progress' ? 'In Progress' : s === 'ready' ? 'Ready' : s === 'at-risk' ? 'At Risk' : 'Blocked';
@@ -1111,6 +1167,14 @@ function ReadinessView() {
           <div style={{ padding: '13px 16px', borderBottom: '1px solid hsl(var(--border))', display: 'flex', alignItems: 'center', gap: 9 }}>
             <Activity size={15} color="hsl(var(--muted-foreground))" />
             <span style={{ fontSize: 13.5, fontWeight: 600, color: 'hsl(var(--foreground))' }}>Manufacturing readiness by subsystem</span>
+            <div style={{ flex: 1 }} />
+            {projectBuilds.length > 0 && (
+              <select value={buildId} onChange={e => setBuildId(e.target.value)} title="Scope readiness to one physical build's test results, instead of the project-wide rollup"
+                style={{ height: 28, borderRadius: 6, border: '1px solid hsl(var(--border))', background: 'hsl(var(--background))', color: 'hsl(var(--foreground))', fontFamily: 'inherit', fontSize: 12, padding: '0 8px' }}>
+                <option value="">All builds (project-wide)</option>
+                {projectBuilds.map(b => <option key={b.id} value={b.id}>{b.name} ({b.type})</option>)}
+              </select>
+            )}
           </div>
           <div style={{ padding: 16 }}>
             {mfr.map(m => (
@@ -1218,8 +1282,8 @@ function MatrixCell({ state, title }: { state: 'ok' | 'warn' | 'bad' | 'na'; tit
 }
 
 // ── Traceability view ──────────────────────────────────────────────────────────
-function TraceabilityView({ onOpen }: { onOpen: (k: string) => void; onDrill?: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void }) {
-  const [mode, setMode] = useState<'matrix' | 'graph'>('matrix');
+function TraceabilityView({ onOpen, dataVersion }: { onOpen: (k: string) => void; onDrill?: (g: keyof typeof GAP_META | null, extra?: Partial<FilterState>) => void; dataVersion: unknown }) {
+  const [mode, setMode] = useState<'matrix' | 'graph' | 'proof'>('matrix');
   return (
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '10px 24px', borderTop: '1px solid hsl(var(--border))', background: 'hsl(var(--background))', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1227,6 +1291,7 @@ function TraceabilityView({ onOpen }: { onOpen: (k: string) => void; onDrill?: (
           {([
             { id: 'matrix', Icon: Table2,  label: 'Coverage matrix' },
             { id: 'graph',  Icon: Network, label: 'Dependency graph' },
+            { id: 'proof',  Icon: Cable,   label: 'Full trace' },
           ] as const).map(({ id, Icon, label }) => {
             const on = mode === id;
             return (
@@ -1247,20 +1312,256 @@ function TraceabilityView({ onOpen }: { onOpen: (k: string) => void; onDrill?: (
         <span style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
           {mode === 'matrix'
             ? 'Requirement × coverage-dimension grid — green = covered, amber = partial, red = gap.'
-            : 'Decomposition graph bridging requirements to allocated BOM parts. Hover to trace a path.'}
+            : mode === 'graph'
+            ? 'Decomposition graph bridging requirements to allocated BOM parts. Hover to trace a path.'
+            : 'Full multi-hop chain — tree + depends_on, in either direction — from a stakeholder need down to hardware, or from a part back up to why it exists.'}
         </span>
       </div>
-      {mode === 'matrix' ? <TraceMatrix onOpen={onOpen} /> : <DependencyGraph onOpen={onOpen} />}
+      {mode === 'matrix' ? <TraceMatrix onOpen={onOpen} dataVersion={dataVersion} />
+        : mode === 'graph' ? <DependencyGraph onOpen={onOpen} dataVersion={dataVersion} />
+        : <FullTraceView onOpen={onOpen} dataVersion={dataVersion} />}
     </div>
   );
 }
 
-function TraceMatrix({ onOpen }: { onOpen: (k: string) => void }) {
+// Picks any requirement as the trace anchor, or any allocated BOM part — the
+// part path is the literal "start at a component, see why it exists" query
+// (plan §B/§10); picking a requirement runs both directions from it at once,
+// answering §9 (forward, multi-hop through tree + depends_on) and the
+// "final proof" query (§32: does this chain actually reach real hardware).
+function FullTraceView({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
+  const [anchor, setAnchor] = useState<'req' | 'part'>('req');
+  const [focusKey, setFocusKey] = useState<string>('');
+  const [focusPart, setFocusPart] = useState<string>('');
+  const [pickOpen, setPickOpen] = useState(false);
+
+  const reqOptions = useMemo(() => REQS, [dataVersion]);
+  const partOptions = useMemo(() => allAllocatedParts(), [dataVersion]);
+
+  const effectiveFocus = focusKey && BY_KEY[focusKey] ? focusKey : reqOptions[0]?.key ?? '';
+  const fr = BY_KEY[effectiveFocus];
+
+  const { down, up } = useMemo(() => {
+    if (!fr) return { down: null, up: null };
+    return { down: traceDown(fr.key), up: traceUp(fr.key) };
+  }, [fr, dataVersion]);
+
+  const partAllocators = useMemo(
+    () => (focusPart ? requirementsAllocatingPart(focusPart) : []),
+    [focusPart, dataVersion],
+  );
+
+  if (anchor === 'req' && (!fr || !down || !up)) {
+    return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'hsl(var(--muted-foreground))', fontSize: 13 }}>No requirements yet.</div>;
+  }
+
+  // Exclude the focus itself from the rendered root list even though traceUp()
+  // correctly includes it when it has no parent — the focus card below already
+  // shows it; a self-referential "root" row would just duplicate that.
+  const isFocusRoot = fr ? (up?.roots ?? []).includes(fr.key) : false;
+  const rootReqs = (up?.roots ?? []).filter(k => k !== effectiveFocus).map(k => BY_KEY[k]).filter((r): r is Requirement => !!r);
+  const midReqs = (up?.reqs ?? []).filter(k => !(up?.roots ?? []).includes(k)).map(k => BY_KEY[k]).filter((r): r is Requirement => !!r);
+  const downReqs = (down?.reqs ?? []).map(k => BY_KEY[k]).filter((r): r is Requirement => !!r);
+  const proofOk = (rootReqs.length > 0 || isFocusRoot) && (down?.parts.length ?? 0) > 0;
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', borderTop: '1px solid hsl(var(--border))', background: 'hsl(var(--background))' }}>
+      {/* Anchor bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 24px', borderBottom: '1px solid hsl(var(--border))', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', background: 'hsl(var(--muted))', border: '1px solid hsl(var(--border))', borderRadius: 7, padding: 2, gap: 2 }}>
+          {([{ id: 'req' as const, label: 'Requirement' }, { id: 'part' as const, label: 'BOM part' }]).map(({ id, label }) => (
+            <button key={id} onClick={() => { setAnchor(id); setPickOpen(false); }} style={{
+              padding: '4px 10px', borderRadius: 5, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              fontFamily: 'inherit', border: 'none',
+              background: anchor === id ? 'hsl(var(--card))' : 'transparent',
+              color: anchor === id ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {anchor === 'req' ? (
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPickOpen(o => !o)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, height: 32, padding: '0 12px',
+              borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: '#3B82F6' }}>{fr?.key}</span>
+              <span style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fr?.title}</span>
+              <ChevronsUpDown size={13} color="hsl(var(--muted-foreground))" />
+            </button>
+            {pickOpen && (
+              <>
+                <div onClick={() => setPickOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div style={{ position: 'absolute', left: 0, top: 36, width: 340, maxHeight: 360, overflowY: 'auto', zIndex: 50, background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 9, boxShadow: '0 12px 32px rgba(20,24,31,0.16)', padding: 5 }}>
+                  {reqOptions.map(r => (
+                    <button key={r.key} onClick={() => { setFocusKey(r.key); setPickOpen(false); }} style={{
+                      display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '7px 9px',
+                      borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                      background: r.key === effectiveFocus ? softTint('#3B82F6', 0.08) : 'transparent',
+                    }}
+                    onMouseEnter={e => { if (r.key !== effectiveFocus) (e.currentTarget as HTMLElement).style.background = 'hsl(var(--muted))'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = r.key === effectiveFocus ? softTint('#3B82F6', 0.08) : 'transparent'; }}>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#3B82F6', width: 72, flexShrink: 0 }}>{r.key}</span>
+                      <span style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPickOpen(o => !o)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, height: 32, padding: '0 12px',
+              borderRadius: 7, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              <Package size={13} color="#D97706" />
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: '#D97706' }}>{focusPart || 'Pick a part…'}</span>
+              <ChevronsUpDown size={13} color="hsl(var(--muted-foreground))" />
+            </button>
+            {pickOpen && (
+              <>
+                <div onClick={() => setPickOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div style={{ position: 'absolute', left: 0, top: 36, width: 260, maxHeight: 360, overflowY: 'auto', zIndex: 50, background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 9, boxShadow: '0 12px 32px rgba(20,24,31,0.16)', padding: 5 }}>
+                  {partOptions.length === 0 && <div style={{ padding: '10px 9px', fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>No allocated parts yet.</div>}
+                  {partOptions.map(p => (
+                    <button key={p} onClick={() => { setFocusPart(p); setPickOpen(false); }} style={{
+                      display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '7px 9px',
+                      borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                      background: p === focusPart ? softTint('#D97706', 0.08) : 'transparent',
+                    }}
+                    onMouseEnter={e => { if (p !== focusPart) (e.currentTarget as HTMLElement).style.background = 'hsl(var(--muted))'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = p === focusPart ? softTint('#D97706', 0.08) : 'transparent'; }}>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#D97706' }}>{p}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={{ flex: 1 }} />
+        {anchor === 'req' && (
+          <span style={{ fontSize: 11.5, color: proofOk ? '#16A34A' : 'hsl(var(--muted-foreground))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {proofOk ? <CheckCircle size={13} color="#16A34A" /> : <AlertTriangle size={13} />}
+            {proofOk ? 'Full chain: need → hardware' : 'Chain incomplete — no root need or no hardware allocated'}
+          </span>
+        )}
+      </div>
+
+      {anchor === 'part' ? (
+        <div style={{ padding: 24 }}>
+          {!focusPart ? (
+            <div style={{ color: 'hsl(var(--muted-foreground))', fontSize: 13 }}>Pick a BOM part above to see why it exists.</div>
+          ) : partAllocators.length === 0 ? (
+            <div style={{ color: 'hsl(var(--muted-foreground))', fontSize: 13 }}>Not allocated to any requirement.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: '#D97706' }}>{focusPart}</span> is allocated to {partAllocators.length} requirement{partAllocators.length === 1 ? '' : 's'}:
+              </div>
+              {partAllocators.map(k => BY_KEY[k]).filter((r): r is Requirement => !!r).map(r => (
+                <div key={r.key} onClick={() => { setAnchor('req'); setFocusKey(r.key); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 9, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'hsl(var(--muted))')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'hsl(var(--card))')}>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#3B82F6', width: 78, flexShrink: 0 }}>{r.key}</span>
+                  <TypePill type={r.type} />
+                  <span style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                  <span style={{ fontSize: 11, color: '#3B82F6', fontWeight: 600, flexShrink: 0 }}>View full trace →</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 22 }}>
+          <TraceSection title="Traces up to" icon={ArrowUpRight} tint="#3B82F6"
+            emptyLabel="This is already a root — no parent, no incoming dependency.">
+            {rootReqs.map(r => <TraceReqRow key={r.key} r={r} tag="root" onOpen={onOpen} onFocus={setFocusKey} />)}
+            {midReqs.map(r => <TraceReqRow key={r.key} r={r} onOpen={onOpen} onFocus={setFocusKey} />)}
+          </TraceSection>
+
+          {/* Focus card */}
+          {fr && (
+            <div onClick={() => onOpen(fr.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 10, border: '2px solid #3B82F6', background: softTint('#3B82F6', 0.08), cursor: 'pointer' }}>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5, fontWeight: 700, color: '#3B82F6' }}>{fr.key}</span>
+              <TypePill type={fr.type} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fr.title}</span>
+              {fr.target && <span style={{ fontSize: 11.5, fontWeight: 600, color: '#3B82F6', flexShrink: 0 }}>target: {fr.target.value}{fr.target.unit}</span>}
+              {isFocusRoot && <span style={{ fontSize: 10, fontWeight: 700, color: '#16A34A', background: softTint('#16A34A', 0.12), padding: '2px 7px', borderRadius: 5, flexShrink: 0 }}>ROOT</span>}
+              <StatusBadge status={fr.status} />
+            </div>
+          )}
+
+          <TraceSection title="Traces down to" icon={ArrowDownRight} tint="#D97706"
+            emptyLabel="Nothing derives from or depends on this yet, and no BOM parts are allocated.">
+            {downReqs.map(r => <TraceReqRow key={r.key} r={r} onOpen={onOpen} onFocus={setFocusKey} />)}
+            {(down?.parts ?? []).map(p => <TracePartRow key={p} partNumber={p} qty={qtyForPart(p)} onFocusPart={(pn) => { setAnchor('part'); setFocusPart(pn); }} />)}
+          </TraceSection>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TraceSection({ title, icon: Icon, tint, emptyLabel, children }:
+  { title: string; icon: React.ElementType; tint: string; emptyLabel: string; children: React.ReactNode }) {
+  const hasChildren = React.Children.count(children) > 0;
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ width: 24, height: 24, borderRadius: 6, background: softTint(tint, 0.12), display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={13} color={tint} />
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))' }}>{title}</span>
+      </div>
+      {hasChildren
+        ? <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 8, borderLeft: `2px solid ${softTint(tint, 0.25)}` }}>{children}</div>
+        : <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', paddingLeft: 8 }}>{emptyLabel}</div>}
+    </div>
+  );
+}
+
+function TraceReqRow({ r, tag, onOpen, onFocus }: { r: Requirement; tag?: string; onOpen: (k: string) => void; onFocus: (k: string) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }}>
+      <span onClick={() => onOpen(r.key)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#3B82F6', width: 78, flexShrink: 0, cursor: 'pointer' }}>{r.key}</span>
+      <TypePill type={r.type} />
+      <span onClick={() => onOpen(r.key)} style={{ fontSize: 12.5, color: 'hsl(var(--foreground))', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{r.title}</span>
+      {tag === 'root' && r.target && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>{r.target.value}{r.target.unit}</span>}
+      {tag === 'root' && <span style={{ fontSize: 10, fontWeight: 700, color: '#16A34A', background: softTint('#16A34A', 0.12), padding: '2px 7px', borderRadius: 5, flexShrink: 0 }}>ROOT</span>}
+      <button onClick={() => onFocus(r.key)} title="Trace from here" style={{ width: 22, height: 22, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'hsl(var(--muted))')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+        <Cable size={12} color="hsl(var(--muted-foreground))" />
+      </button>
+    </div>
+  );
+}
+
+function TracePartRow({ partNumber, qty, onFocusPart }: { partNumber: string; qty?: AllocatedPartStock; onFocusPart: (p: string) => void }) {
+  return (
+    <div onClick={() => onFocusPart(partNumber)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderRadius: 8, border: `1px solid ${softTint('#D97706', 0.3)}`, background: softTint('#D97706', 0.03), cursor: 'pointer' }}>
+      <Package size={13} color="#D97706" style={{ flexShrink: 0 }} />
+      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 600, color: '#D97706', flex: 1 }}>{partNumber}</span>
+      {qty && (
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: qty.available <= 0 ? '#DC2626' : 'hsl(var(--muted-foreground))', flexShrink: 0 }}>
+          {qty.available <= 0 ? 'out of stock' : `${qty.available} available`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TraceMatrix({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
   const groups = useMemo(() =>
     (Object.keys(REQ_GROUP) as ReqGroup[])
       .map(g => ({ g, rows: REQS.filter(r => r.group === g) }))
       .filter(x => x.rows.length > 0),
-  []);
+  [dataVersion]);
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -1268,7 +1569,7 @@ function TraceMatrix({ onOpen }: { onOpen: (k: string) => void }) {
     const rel = REQS.filter(r => cellState(r, col.key) !== 'na');
     const ok  = rel.filter(r => cellState(r, col.key) === 'ok').length;
     return rel.length ? Math.round((ok / rel.length) * 100) : 0;
-  }), []);
+  }), [dataVersion]);
 
   const NAME_W = 320, COL_W = 92;
 
@@ -1358,8 +1659,8 @@ function TraceMatrix({ onOpen }: { onOpen: (k: string) => void }) {
   );
 }
 
-function DependencyGraph({ onOpen }: { onOpen: (k: string) => void }) {
-  const FOCUS_OPTS = useMemo(() => REQS.filter(r => r.type === 'system-req' || r.type === 'stakeholder-req'), []);
+function DependencyGraph({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
+  const FOCUS_OPTS = useMemo(() => REQS.filter(r => r.type === 'system-req' || r.type === 'stakeholder-req'), [dataVersion]);
   const [focus, setFocus] = useState('SYS-001');
   const [hover, setHover] = useState<string | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
@@ -1412,7 +1713,7 @@ function DependencyGraph({ onOpen }: { onOpen: (k: string) => void }) {
     });
 
     return { nodes: Object.keys(pos).map(k => ({ key: k, ...pos[k] })), edges: edgeList, svgW, svgH };
-  }, [focus, fr]);
+  }, [focus, fr, dataVersion]);
 
   const edgePath = (e: GraphEdge) => {
     const a = nodes.find(n => n.key === e.from), b = nodes.find(n => n.key === e.to);
@@ -1534,108 +1835,286 @@ function DependencyGraph({ onOpen }: { onOpen: (k: string) => void }) {
   );
 }
 
-// ── Mind-map view ──────────────────────────────────────────────────────────────
-function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
-  const NW = 244, NH = 108, HGAP = 110, VGAP = 20;
+// ── Map view — multi-lens node graph ────────────────────────────────────────
+// A view selector reshapes the same requirement model into different
+// container-grouped layouts (Systems, Requirement Groups, Functions, Tests,
+// Analysis, Risks & Safety, Interfaces, Requirement Hierarchy, Test Planning,
+// Test Execution, Library). Containers collapse to an "N items" summary and
+// expand to a tidy left→right tree of member cards with per-card collapse
+// handles. Pan, wheel-zoom, fit-on-open, drag containers, minimap.
+const MAP_NW = 234, MAP_NH = 112, MAP_HGAP = 58, MAP_VGAP = 20, MAP_PAD = 22, MAP_HEADER = 34;
+const MAP_SPINE_W = 214, MAP_SPINE_H = 100, MAP_SPINE_GAP = 132, MAP_CGAP = 46;
+const MAP_COL_W = 340, MAP_COL_H = 70, MAP_GRID_GAP = 26, MAP_GRID_COLS = 5;
 
-  type TreeNode = Requirement & { _x: number; _y: number; children: TreeNode[] };
+interface MapNode {
+  id: string; kind: 'req' | 'test'; r: Requirement; isRoot?: boolean; contId?: string;
+  children: MapNode[]; _x: number; _y: number; ax: number; ay: number;
+}
+interface MapContainer {
+  id: string; title: string; icon: React.ElementType; count: number; keys: string[];
+  open: boolean; owner?: string; cards: MapNode[]; edges: MapEdge[];
+  x: number; y: number; w: number; h: number;
+}
+interface MapEdge { x1: number; y1: number; x2: number; y2: number; col: string; dash?: boolean; }
+interface MapViewDef {
+  id: string; label: string; icon: React.ElementType; tint: string;
+  engine: 'groups' | 'tree' | 'grid';
+  group?: 'module' | 'tier' | 'category' | 'vmethod' | 'status' | 'vstatus';
+  showTests?: boolean; filter?: 'tested' | 'planned' | 'interface' | 'risk';
+}
 
-  const nodes = useMemo<TreeNode[]>(() => {
-    const build = (key: string): TreeNode => {
-      const r = BY_KEY[key];
-      const node: TreeNode = { ...r, _x: 0, _y: 0, children: [] };
-      if (r.childKeys.length) node.children = r.childKeys.map(build);
-      return node;
-    };
-    return REQ_ROOTS.map(build);
-  }, []);
+const CAT_ICONS: Record<ReqCategory, React.ElementType> = {
+  functional: Boxes, performance: Gauge, interface: Cable, constraint: Ruler, quality: BadgeCheck, regulatory: Scale,
+};
+const VMETHOD_ICONS: Record<string, React.ElementType> = {
+  test: FlaskConical, analysis: Activity, inspection: Search, demonstration: Play,
+};
+const TIER_META: Record<string, { label: string; icon: React.ElementType }> = {
+  stakeholder: { label: 'Stakeholder Requirements', icon: Flag },
+  system: { label: 'System Requirements', icon: Boxes },
+  subsystem: { label: 'Subsystem Requirements', icon: Layers },
+  component: { label: 'Component Requirements', icon: Package },
+};
+
+const MAP_VIEWS: MapViewDef[] = [
+  { id: 'systems',    label: 'Systems',              icon: Boxes,          tint: '#D97706', engine: 'groups', group: 'module' },
+  { id: 'groups',     label: 'Requirement Groups',   icon: FolderTree,     tint: '#2563EB', engine: 'groups', group: 'tier' },
+  { id: 'functions',  label: 'Functions',            icon: FunctionSquare, tint: '#9333EA', engine: 'groups', group: 'category', showTests: true },
+  { id: 'tests',      label: 'Tests',                icon: FolderCheck,    tint: '#16A34A', engine: 'groups', group: 'vmethod', filter: 'tested', showTests: true },
+  { id: 'analysis',   label: 'Analysis',             icon: FileText,       tint: '#646B76', engine: 'groups', group: 'status' },
+  { id: 'risks',      label: 'Risks & Safety',       icon: Triangle,       tint: '#DC2626', engine: 'groups', group: 'module', filter: 'risk' },
+  { id: 'interfaces', label: 'Interfaces',           icon: Boxes,          tint: '#0EA5E9', engine: 'groups', group: 'module', filter: 'interface' },
+  { id: 'hierarchy',  label: 'Requirement Hierarchy',icon: ListTree,       tint: '#2563EB', engine: 'tree' },
+  { id: 'testplan',   label: 'Test Planning',        icon: FolderKanban,   tint: '#84CC16', engine: 'groups', group: 'vmethod', filter: 'planned', showTests: true },
+  { id: 'testexec',   label: 'Test Execution',       icon: FolderCheck,    tint: '#DB2777', engine: 'groups', group: 'vstatus', filter: 'tested', showTests: true },
+  { id: 'library',    label: 'Library View',         icon: BookMarked,     tint: '#646B76', engine: 'grid' },
+];
+
+function RequirementsMapView({ onOpen, dataVersion }: { onOpen: (k: string) => void; dataVersion: unknown }) {
+  const [viewId, setViewId] = useState('systems');
+  const view = MAP_VIEWS.find(v => v.id === viewId) ?? MAP_VIEWS[0];
+  const ViewIcon = view.icon;
+
+  const [openContainers, setOpenContainers] = useState<Set<string>>(new Set());
+  const [openCards, setOpenCards] = useState<Set<string>>(new Set());
+  const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({});
+  const [zoom, setZoom] = useState(0.72);
+  const [pan, setPan] = useState({ x: 60, y: 40 });
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [dragC, setDragC] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  type DragState = { type: 'node'; id: string; startX: number; startY: number; ox: number; oy: number; zoom: number; moved: boolean }
-                 | { type: 'pan'; startX: number; startY: number; ox: number; oy: number; moved: boolean };
-  const dragRef = useRef<DragState | null>(null);
+  type MapDragState =
+    | { type: 'cont'; id: string; startX: number; startY: number; ox: number; oy: number; zoom: number; moved: boolean }
+    | { type: 'pan'; startX: number; startY: number; px: number; py: number; moved: boolean };
+  const dragRef = useRef<MapDragState | null>(null);
+  const didFit = useRef(false);
 
-  const [zoom, setZoom] = useState(0.8);
-  const [pan, setPan] = useState({ x: 56, y: 40 });
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(() => {
-    try { return JSON.parse(localStorage.getItem('req_map_pos') || '{}'); } catch { return {}; }
-  });
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try {
-      const saved = localStorage.getItem('req_map_collapsed');
-      if (saved) return JSON.parse(saved);
-    } catch { /**/ }
-    const init: Record<string, boolean> = {};
-    const walk = (list: TreeNode[], depth: number) => list.forEach(n => {
-      if (n.children.length) { if (depth >= 2) init[n.key] = true; walk(n.children, depth + 1); }
+  const posKey = (id: string) => `req_map_off_${id}`;
+
+  // Reset per-view interaction state whenever the lens changes
+  useEffect(() => {
+    let off: Record<string, { x: number; y: number }> = {};
+    try { off = JSON.parse(localStorage.getItem(posKey(viewId)) || '{}'); } catch { /* */ }
+    setOffsets(off);
+    setOpenContainers(new Set());
+    setOpenCards(view.engine === 'tree' ? new Set(REQ_ROOTS) : new Set());
+    didFit.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewId]);
+
+  const bucketize = useCallback((v: MapViewDef): { id: string; title: string; icon: React.ElementType; keys: string[] }[] => {
+    const memberFilter: (r: Requirement) => boolean =
+      v.filter === 'tested' ? (r => r.vstatus !== 'not-verified')
+      : v.filter === 'planned' ? (r => r.vstatus === 'not-verified' || r.vstatus === 'in-progress')
+      : v.filter === 'interface' ? (r => r.category === 'interface')
+      : v.filter === 'risk' ? (r => r.group === 'SAF' || r.category === 'regulatory' || r.priority === 'critical')
+      : () => true;
+
+    const tierOf = (t: ReqType) => (t === 'stakeholder-need' || t === 'stakeholder-req') ? 'stakeholder' : t.replace('-req', '');
+
+    const accessor: (r: Requirement) => string | null =
+      v.group === 'module' ? (r => r.group)
+      : v.group === 'tier' ? (r => tierOf(r.type))
+      : v.group === 'category' ? (r => r.category)
+      : v.group === 'vmethod' ? (r => r.vmethod)
+      : v.group === 'status' ? (r => r.status)
+      : v.group === 'vstatus' ? (r => r.vstatus)
+      : () => null;
+
+    type Meta = { order: string[]; label: (k: string) => string; icon: (k: string) => React.ElementType };
+    const meta: Meta =
+      v.group === 'module' ? { order: Object.keys(REQ_GROUP), label: k => REQ_GROUP[k as ReqGroup].label, icon: k => GROUP_ICONS[k as ReqGroup] }
+      : v.group === 'tier' ? { order: ['stakeholder', 'system', 'subsystem', 'component'], label: k => TIER_META[k].label, icon: k => TIER_META[k].icon }
+      : v.group === 'category' ? { order: Object.keys(REQ_CATEGORY), label: k => REQ_CATEGORY[k as ReqCategory].label, icon: k => CAT_ICONS[k as ReqCategory] }
+      : v.group === 'vmethod' ? { order: Object.keys(REQ_VMETHOD), label: k => REQ_VMETHOD[k as ReqVMethod].label + ' Tests', icon: k => VMETHOD_ICONS[k] }
+      : v.group === 'status' ? { order: REQ_STATUS_FLOW, label: k => REQ_STATUS[k as ReqStatus].label, icon: () => Circle }
+      : { order: ['passed', 'failed', 'in-progress', 'not-verified', 'waived'], label: k => REQ_VSTATUS[k as ReqVStatus].label, icon: () => ClipboardCheck };
+
+    const map: Record<string, string[]> = {};
+    REQS.forEach(r => {
+      if (!memberFilter(r)) return;
+      const b = accessor(r);
+      if (b == null) return;
+      (map[b] ??= []).push(r.key);
     });
-    walk(nodes, 0);
-    return init;
+    return meta.order.filter(k => map[k]?.length).map(k => ({ id: k, title: meta.label(k), icon: meta.icon(k), keys: map[k] }));
+  }, [dataVersion]);
+
+  const buildTree = useCallback((keys: string[], v: MapViewDef): MapNode[] => {
+    const set = new Set(keys);
+    const testOK = (r: Requirement) => !!v.showTests && r.vstatus !== 'not-verified';
+    const make = (key: string): MapNode => {
+      const r = BY_KEY[key];
+      const kids: MapNode[] = (r.childKeys || []).filter(k => set.has(k)).map(make);
+      if (testOK(r)) kids.unshift({ id: 'TC:' + key, kind: 'test', r, children: [], _x: 0, _y: 0, ax: 0, ay: 0 });
+      return { id: key, kind: 'req', r, isRoot: false, children: kids, _x: 0, _y: 0, ax: 0, ay: 0 };
+    };
+    const roots = keys.filter(k => { const p = BY_KEY[k].parent; return !p || !set.has(p); }).map(make);
+    roots.forEach(n => { n.isRoot = true; });
+    return roots;
+  }, [dataVersion]);
+
+  const dominantOwner = (keys: string[]) => {
+    const tally: Record<string, number> = {};
+    keys.forEach(k => { const o = BY_KEY[k].owner; tally[o] = (tally[o] || 0) + 1; });
+    return Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
+  };
+
+  const edgeBetween = (a: MapNode, b: MapNode, col: string): MapEdge => ({
+    x1: a.ax + MAP_NW, y1: a.ay + MAP_NH / 2, x2: b.ax, y2: b.ay + MAP_NH / 2, col,
+    dash: b.kind === 'req' && b.r.coverage.suspect,
   });
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
+  const tintOfNode = (n: MapNode) => n.kind === 'test' ? '#16A34A' : REQ_STATUS[n.r.status].tint;
 
-  useEffect(() => { localStorage.setItem('req_map_collapsed', JSON.stringify(collapsed)); }, [collapsed]);
+  // ── layout: produces absolute geometry for spine, containers, cards, edges ──
+  const L = useMemo(() => {
+    const off = (id: string) => offsets[id] ?? { x: 0, y: 0 };
 
-  // Tidy left-to-right layout — mutates _x/_y on nodes in place
-  const layoutVersion = useMemo(() => {
-    let leafY = 0;
-    const place = (node: TreeNode, depth: number): number => {
-      node._x = depth * (NW + HGAP);
-      const kids = node.children.length && !collapsed[node.key] ? node.children : null;
-      if (!kids) { node._y = leafY; leafY += NH + VGAP; return node._y + NH / 2; }
-      const centers = kids.map(k => place(k, depth + 1));
-      const center = (centers[0] + centers[centers.length - 1]) / 2;
-      node._y = center - NH / 2;
-      return center;
+    if (view.engine === 'grid') {
+      const cards: MapNode[] = REQS.map((r, i) => {
+        const col = i % MAP_GRID_COLS, row = Math.floor(i / MAP_GRID_COLS);
+        return { id: r.key, kind: 'req' as const, r, children: [], _x: 0, _y: 0, ax: col * (MAP_NW + MAP_GRID_GAP), ay: row * (MAP_NH + MAP_GRID_GAP) };
+      });
+      const rows = Math.ceil(REQS.length / MAP_GRID_COLS);
+      return { mode: 'grid' as const, cards, containers: [] as MapContainer[], edges: [] as MapEdge[], spine: null,
+        bounds: { w: MAP_GRID_COLS * (MAP_NW + MAP_GRID_GAP), h: rows * (MAP_NH + MAP_GRID_GAP) } };
+    }
+
+    if (view.engine === 'tree') {
+      const build = (key: string): MapNode => {
+        const r = BY_KEY[key];
+        return { id: key, kind: 'req' as const, r, children: (r.childKeys || []).map(build), _x: 0, _y: 0, ax: 0, ay: 0 };
+      };
+      const roots = REQ_ROOTS.map(build);
+      let leafY = 0;
+      const place = (n: MapNode, d: number): number => {
+        n._x = d * (MAP_NW + MAP_HGAP);
+        const kids = openCards.has(n.id) ? n.children : [];
+        if (!kids.length) { n._y = leafY; leafY += MAP_NH + MAP_VGAP; return n._y + MAP_NH / 2; }
+        const cs = kids.map(k => place(k, d + 1));
+        n._y = (cs[0] + cs[cs.length - 1]) / 2 - MAP_NH / 2;
+        return n._y + MAP_NH / 2;
+      };
+      roots.forEach(r => place(r, 0));
+      const cards: MapNode[] = [], edges: MapEdge[] = [];
+      const walk = (n: MapNode) => {
+        n.ax = n._x; n.ay = n._y; cards.push(n);
+        if (openCards.has(n.id)) n.children.forEach(c => { walk(c); edges.push(edgeBetween(n, c, tintOfNode(c))); });
+      };
+      roots.forEach(walk);
+      const b = cards.reduce((a, n) => ({ w: Math.max(a.w, n.ax + MAP_NW), h: Math.max(a.h, n.ay + MAP_NH) }), { w: 400, h: 200 });
+      return { mode: 'tree' as const, cards, containers: [] as MapContainer[], edges, spine: null, bounds: b };
+    }
+
+    // groups engine
+    const groups = bucketize(view);
+    const containers: MapContainer[] = [];
+    let cy = 0;
+    const colX = MAP_SPINE_W + MAP_SPINE_GAP;
+    groups.forEach(g => {
+      const o = off('C:' + g.id);
+      const open = openContainers.has(g.id);
+      const cont: MapContainer = {
+        id: g.id, title: g.title, icon: g.icon, count: g.keys.length, owner: dominantOwner(g.keys),
+        keys: g.keys, open, cards: [], edges: [], x: 0, y: 0, w: 0, h: 0,
+      };
+      if (!open) {
+        cont.x = colX + o.x; cont.y = cy + o.y; cont.w = MAP_COL_W; cont.h = MAP_COL_H;
+        cy += MAP_COL_H + MAP_HEADER + MAP_CGAP;
+      } else {
+        const roots = buildTree(g.keys, view);
+        let leafY = 0;
+        const place = (n: MapNode, d: number): number => {
+          n._x = d * (MAP_NW + MAP_HGAP);
+          const kids = (n.kind === 'req' && openCards.has(n.id)) ? n.children : [];
+          if (!kids.length) { n._y = leafY; leafY += MAP_NH + MAP_VGAP; return n._y + MAP_NH / 2; }
+          const cs = kids.map(k => place(k, d + 1));
+          n._y = (cs[0] + cs[cs.length - 1]) / 2 - MAP_NH / 2;
+          return n._y + MAP_NH / 2;
+        };
+        roots.forEach(r => place(r, 0));
+        let cw = 0, ch = 0;
+        const collect = (n: MapNode) => {
+          cw = Math.max(cw, n._x + MAP_NW); ch = Math.max(ch, n._y + MAP_NH);
+          if (n.kind === 'req' && openCards.has(n.id)) n.children.forEach(collect);
+        };
+        roots.forEach(collect);
+        cont.w = cw + MAP_PAD * 2; cont.h = ch + MAP_PAD * 2;
+        cont.x = colX + o.x; cont.y = cy + o.y;
+        const ox = cont.x + MAP_PAD, oy = cont.y + MAP_PAD;
+        const walk = (n: MapNode) => {
+          n.ax = ox + n._x; n.ay = oy + n._y; n.contId = g.id; cont.cards.push(n);
+          if (n.kind === 'req' && openCards.has(n.id)) n.children.forEach(c => { walk(c); cont.edges.push(edgeBetween(n, c, tintOfNode(c))); });
+        };
+        roots.forEach(walk);
+        cy += cont.h + MAP_HEADER + MAP_CGAP;
+      }
+      containers.push(cont);
+    });
+    const stackH = Math.max(cy - MAP_CGAP, MAP_SPINE_H);
+    const so = off('SPINE');
+    const spine = {
+      x: 0 + so.x, y: (stackH - MAP_SPINE_H) / 2 + so.y, w: MAP_SPINE_W, h: MAP_SPINE_H,
+      title: view.label, count: groups.reduce((s, g) => s + g.keys.length, 0),
     };
-    nodes.forEach(r => place(r, 0));
-    return Date.now();
-  }, [collapsed, nodes]);
+    const spineEdges: MapEdge[] = containers.map(c => ({
+      x1: spine.x + spine.w, y1: spine.y + spine.h / 2, x2: c.x, y2: c.y + c.h / 2, col: view.tint,
+    }));
+    const cards: MapNode[] = [];
+    containers.forEach(c => c.cards.forEach(n => cards.push(n)));
+    const allEdges = spineEdges.concat(...containers.map(c => c.edges));
+    const bx = Math.max(colX + MAP_COL_W, ...containers.map(c => c.x + c.w), spine.x + spine.w);
+    const by = Math.max(stackH, spine.y + spine.h, ...containers.map(c => c.y + c.h));
+    return { mode: 'groups' as const, spine, containers, cards, edges: allEdges, bounds: { w: bx, h: by } };
+  }, [view, openContainers, openCards, offsets, bucketize, buildTree]);
 
-  // Flat visible nodes + edges derived from tree walk
-  const { visible, edges } = useMemo(() => {
-    const visible: TreeNode[] = [], edges: [TreeNode, TreeNode][] = [];
-    const walk = (node: TreeNode) => {
-      visible.push(node);
-      if (!collapsed[node.key]) node.children.forEach(c => { edges.push([node, c]); walk(c); });
-    };
-    nodes.forEach(walk);
-    return { visible, edges };
-  }, [collapsed, nodes, layoutVersion]);
-
-  const eff = (n: TreeNode) => positions[n.key] ?? { x: n._x, y: n._y };
-  const bounds = visible.reduce((b, n) => {
-    const p = eff(n);
-    return { w: Math.max(b.w, p.x + NW), h: Math.max(b.h, p.y + NH) };
-  }, { w: 600, h: 400 });
-
-  // Global mouse handlers for node drag + canvas pan
+  // ── drag containers / pan canvas ────────────────────────────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current; if (!d) return;
-      if (d.type === 'node') {
+      if (d.type === 'cont') {
         const dx = (e.clientX - d.startX) / d.zoom, dy = (e.clientY - d.startY) / d.zoom;
         if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) > 4) d.moved = true;
-        setPositions(p => ({ ...p, [d.id]: { x: d.ox + dx, y: d.oy + dy } }));
+        setOffsets(o => ({ ...o, [d.id]: { x: d.ox + dx, y: d.oy + dy } }));
       } else {
         d.moved = true;
-        setPan({ x: d.ox + (e.clientX - d.startX), y: d.oy + (e.clientY - d.startY) });
+        setPan({ x: d.px + (e.clientX - d.startX), y: d.py + (e.clientY - d.startY) });
       }
     };
     const onUp = () => {
       const d = dragRef.current; if (!d) return;
-      if (d.type === 'node') {
-        setDragId(null);
-        if (!d.moved) onOpen(d.id);
-        else setPositions(p => { localStorage.setItem('req_map_pos', JSON.stringify(p)); return p; });
+      if (d.type === 'cont') {
+        setDragC(null);
+        setOffsets(o => { localStorage.setItem(posKey(viewId), JSON.stringify(o)); return o; });
       }
       dragRef.current = null;
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [onOpen]);
+  }, [viewId]);
 
   // Wheel zoom toward cursor
   useEffect(() => {
@@ -1645,7 +2124,7 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
       const rect = el.getBoundingClientRect();
       const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
       setZoom(z => {
-        const nz = Math.min(2, Math.max(0.3, z * (e.deltaY < 0 ? 1.12 : 0.89)));
+        const nz = Math.min(2, Math.max(0.25, z * (e.deltaY < 0 ? 1.12 : 0.89)));
         setPan(p => ({ x: cx - ((cx - p.x) / z) * nz, y: cy - ((cy - p.y) / z) * nz }));
         return nz;
       });
@@ -1654,20 +2133,26 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  const startNodeDrag = (e: React.MouseEvent, n: TreeNode) => {
+  const startContDrag = (e: React.MouseEvent, id: string) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    const p = eff(n);
-    dragRef.current = { type: 'node', id: n.key, startX: e.clientX, startY: e.clientY, ox: p.x, oy: p.y, zoom, moved: false };
-    setDragId(n.key);
+    const o = offsets['C:' + id] ?? { x: 0, y: 0 };
+    dragRef.current = { type: 'cont', id: 'C:' + id, startX: e.clientX, startY: e.clientY, ox: o.x, oy: o.y, zoom, moved: false };
+    setDragC(id);
+  };
+  const startSpineDrag = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const o = offsets['SPINE'] ?? { x: 0, y: 0 };
+    dragRef.current = { type: 'cont', id: 'SPINE', startX: e.clientX, startY: e.clientY, ox: o.x, oy: o.y, zoom, moved: false };
   };
   const startPan = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    dragRef.current = { type: 'pan', startX: e.clientX, startY: e.clientY, ox: pan.x, oy: pan.y, moved: false };
+    dragRef.current = { type: 'pan', startX: e.clientX, startY: e.clientY, px: pan.x, py: pan.y, moved: false };
   };
 
   const zoomBy = (f: number) => setZoom(z => {
-    const nz = Math.min(2, Math.max(0.3, z * f));
+    const nz = Math.min(2, Math.max(0.25, z * f));
     const el = containerRef.current;
     if (el) {
       const r = el.getBoundingClientRect();
@@ -1680,20 +2165,35 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
   const fit = useCallback(() => {
     const el = containerRef.current; if (!el) return;
     const r = el.getBoundingClientRect();
-    const nz = Math.min(2, Math.max(0.3, Math.min((r.width - 100) / bounds.w, (r.height - 100) / bounds.h)));
+    const nz = Math.min(1.1, Math.max(0.25, Math.min((r.width - 90) / L.bounds.w, (r.height - 90) / L.bounds.h)));
     setZoom(nz);
-    setPan({ x: (r.width - bounds.w * nz) / 2, y: (r.height - bounds.h * nz) / 2 });
-  }, [bounds]);
+    setPan({ x: (r.width - L.bounds.w * nz) / 2, y: (r.height - L.bounds.h * nz) / 2 });
+  }, [L.bounds]);
 
-  const resetLayout = () => { setPositions({}); localStorage.removeItem('req_map_pos'); };
+  const resetLayout = () => { setOffsets({}); localStorage.removeItem(posKey(viewId)); };
+  const toggleFullscreen = () => setFullscreen(f => !f);
 
-  // Auto-fit on first open when no custom positions exist
-  const didFit = useRef(false);
   useEffect(() => {
-    if (didFit.current || Object.keys(positions).length) { didFit.current = true; return; }
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    const t = setTimeout(fit, 60);
+    return () => { window.removeEventListener('keydown', onKey); clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
+
+  useEffect(() => {
+    if (didFit.current) return;
     const t = setTimeout(() => { fit(); didFit.current = true; }, 60);
     return () => clearTimeout(t);
-  }, [fit]);
+  }, [viewId, L.bounds.w, L.bounds.h, fit]);
+
+  const toggleContainer = (id: string) => setOpenContainers(s => {
+    const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  const toggleCard = (id: string) => setOpenCards(s => {
+    const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
 
   const ctrlBtn: React.CSSProperties = {
     width: 30, height: 30, borderRadius: 7,
@@ -1702,151 +2202,292 @@ function RequirementsMapView({ onOpen }: { onOpen: (k: string) => void }) {
     color: 'hsl(var(--muted-foreground))', padding: 0,
   };
 
-  const LEGEND: { s: ReqStatus; label: string }[] = [
-    { s: 'draft', label: 'Draft' },
-    { s: 'approved', label: 'Approved' },
-    { s: 'verified', label: 'Verified' },
-    { s: 'validated', label: 'Validated' },
-  ];
+  const ReqCard = (n: MapNode) => {
+    const r = n.r, st = REQ_STATUS[r.status];
+    const isH = hovered === n.id, obsolete = r.status === 'obsolete';
+    const soft = softTint(st.tint, 0.5);
+    const hasKids = n.children.length > 0, isOpen = openCards.has(n.id);
+    return (
+      <div key={n.id}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={() => onOpen(r.key)}
+        onMouseEnter={() => setHovered(n.id)}
+        onMouseLeave={() => setHovered(null)}
+        style={{
+          position: 'absolute', left: n.ax, top: n.ay, width: MAP_NW, minHeight: MAP_NH,
+          background: 'hsl(var(--card))', border: `1px solid ${isH ? soft : 'hsl(var(--border))'}`,
+          borderLeft: `3px solid ${st.tint}`, borderRadius: 10,
+          boxShadow: isH ? '0 6px 16px rgba(20,24,31,0.12)' : '0 1px 3px rgba(20,24,31,0.07)',
+          cursor: 'pointer', zIndex: isH ? 50 : 12, transition: 'box-shadow .12s, border-color .12s',
+          display: 'flex', flexDirection: 'column',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '9px 11px 0' }}>
+          <TypePill type={r.type} />
+          <ReqKeyTag reqKey={r.key} />
+        </div>
+        <div style={{ padding: '5px 11px 0', flex: 1 }}>
+          <div style={{
+            fontSize: 12.5, fontWeight: 600, color: obsolete ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
+            lineHeight: 1.28, textDecoration: obsolete ? 'line-through' : 'none',
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>{r.title}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 11px 9px' }}>
+          <StatusBadge status={r.status} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {(r.coverage.orphan || r.coverage.untested || r.coverage.unimplemented) && <AlertTriangle size={13} color="#D97706" />}
+            <VStatusBadge vstatus={r.vstatus} />
+          </span>
+        </div>
+        {hasKids && (
+          <button
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); toggleCard(n.id); }}
+            title={isOpen ? 'Collapse' : 'Expand'}
+            style={{
+              position: 'absolute', left: MAP_NW - 12, top: MAP_NH / 2 - 12, width: 24, height: 24,
+              borderRadius: '50%', background: 'hsl(var(--card))', border: `1px solid ${soft}`,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: st.tint, zIndex: 30, padding: 0,
+            }}>
+            {isOpen ? <ChevronLeft size={13} color={st.tint} /> : <ChevronRight size={13} color={st.tint} />}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const TestCard = (n: MapNode) => {
+    const r = n.r, tint = '#16A34A', isH = hovered === n.id;
+    return (
+      <div key={n.id}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={() => onOpen(r.key)}
+        onMouseEnter={() => setHovered(n.id)}
+        onMouseLeave={() => setHovered(null)}
+        style={{
+          position: 'absolute', left: n.ax, top: n.ay, width: MAP_NW, minHeight: MAP_NH,
+          background: 'hsl(var(--card))', border: `1px solid ${isH ? softTint(tint, 0.5) : 'hsl(var(--border))'}`,
+          borderLeft: `3px solid ${tint}`, borderRadius: 10,
+          boxShadow: isH ? '0 6px 16px rgba(20,24,31,0.12)' : '0 1px 3px rgba(20,24,31,0.07)',
+          cursor: 'pointer', zIndex: isH ? 50 : 12, transition: 'box-shadow .12s, border-color .12s',
+          display: 'flex', flexDirection: 'column',
+        }}>
+        <div style={{ padding: '9px 11px 0' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 5,
+            fontSize: 11, fontWeight: 600, background: softTint(tint, 0.10), color: tint, border: `1px solid ${softTint(tint, 0.22)}`,
+          }}>
+            <FlaskConical size={11} color={tint} /> Test Case
+          </span>
+        </div>
+        <div style={{ padding: '5px 11px 0', flex: 1 }}>
+          <div style={{
+            fontSize: 12.5, fontWeight: 600, color: 'hsl(var(--foreground))', lineHeight: 1.28,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>{r.title} test</div>
+        </div>
+        <div style={{ padding: '7px 11px 9px' }}><VStatusBadge vstatus={r.vstatus} /></div>
+      </div>
+    );
+  };
 
   return (
     <div
       ref={containerRef}
       onMouseDown={startPan}
       style={{
-        flex: 1, position: 'relative', overflow: 'hidden',
-        background: 'hsl(var(--background))', cursor: 'grab',
+        ...(fullscreen ? { position: 'fixed' as const, inset: 0, zIndex: 1000 } : { flex: 1, position: 'relative' as const }),
+        overflow: 'hidden', background: 'hsl(var(--background))', cursor: 'grab',
         backgroundImage: `radial-gradient(hsl(var(--border)) 1px, transparent 1px)`,
         backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
         backgroundPosition: `${pan.x}px ${pan.y}px`,
       }}
     >
+      {/* View selector — top left */}
+      <div style={{ position: 'absolute', top: 14, left: 16, zIndex: 210 }} onMouseDown={e => e.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button style={{
+              display: 'inline-flex', alignItems: 'center', gap: 9, height: 36, padding: '0 12px',
+              borderRadius: 8, background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))',
+              cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 1px 3px rgba(20,24,31,0.07)',
+            }}>
+              <ViewIcon size={15} color={view.tint} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))' }}>{view.label}</span>
+              <ChevronDown size={14} color="hsl(var(--muted-foreground))" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground px-2 py-1.5">Views</div>
+            {MAP_VIEWS.map(v => {
+              const Ic = v.icon, on = v.id === viewId;
+              return (
+                <DropdownMenuItem key={v.id} onClick={() => setViewId(v.id)} className="flex items-center gap-2.5"
+                  style={{ background: on ? softTint(v.tint, 0.09) : undefined }}>
+                  <Ic size={15} color={v.tint} />
+                  <span className="flex-1" style={{ color: on ? 'hsl(var(--foreground))' : undefined }}>{v.label}</span>
+                  {on && <Check size={14} color={v.tint} />}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {/* Transformed canvas */}
       <div style={{ position: 'absolute', top: 0, left: 0, transformOrigin: '0 0', transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
 
         {/* Edges */}
-        <svg width={bounds.w + 40} height={bounds.h + 40}
+        <svg width={L.bounds.w + 60} height={L.bounds.h + 60}
           style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none' }}>
-          {edges.map(([a, b]) => {
-            const pa = eff(a), pb = eff(b);
-            const x1 = pa.x + NW, y1 = pa.y + NH / 2, x2 = pb.x, y2 = pb.y + NH / 2;
-            const dx = Math.max(40, (x2 - x1) / 2);
-            const suspect = b.coverage.suspect;
-            const col = suspect ? '#DC2626' : REQ_STATUS[b.status].tint;
+          {L.edges.map((ed, i) => {
+            const dx = Math.max(38, (ed.x2 - ed.x1) / 2);
             return (
-              <path key={a.key + '>' + b.key}
-                d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                fill="none" stroke={col} strokeWidth={1.6} strokeOpacity={0.4}
-                strokeDasharray={suspect ? '4 3' : undefined} />
+              <path key={i} d={`M ${ed.x1} ${ed.y1} C ${ed.x1 + dx} ${ed.y1}, ${ed.x2 - dx} ${ed.y2}, ${ed.x2} ${ed.y2}`}
+                fill="none" stroke={ed.col} strokeWidth={1.6} strokeOpacity={0.42}
+                strokeDasharray={ed.dash ? '4 3' : undefined} />
             );
           })}
         </svg>
 
-        {/* Nodes */}
-        {visible.map(n => {
-          const p = eff(n);
-          const st = REQ_STATUS[n.status];
-          const isH = hovered === n.key, isDrag = dragId === n.key;
-          const hasKids = n.children.length > 0;
-          const isCol = !!collapsed[n.key];
-          const borderSoft = softTint(st.tint, 0.45);
-
-          return (
-            <div key={n.key}
-              onMouseDown={e => startNodeDrag(e, n)}
-              onMouseEnter={() => setHovered(n.key)}
-              onMouseLeave={() => setHovered(null)}
-              style={{
-                position: 'absolute', left: p.x, top: p.y, width: NW, minHeight: NH,
-                background: 'hsl(var(--card))',
-                border: `1px solid ${isH || isDrag ? borderSoft : 'hsl(var(--border))'}`,
-                borderLeft: `3px solid ${st.tint}`,
-                borderRadius: 11,
-                boxShadow: isDrag
-                  ? '0 12px 28px rgba(20,24,31,0.18)'
-                  : isH ? '0 6px 16px rgba(20,24,31,0.12)' : '0 1px 3px rgba(20,24,31,0.07)',
-                cursor: isDrag ? 'grabbing' : 'grab',
-                zIndex: isDrag ? 100 : isH ? 50 : 10,
-                transition: isDrag ? 'none' : 'box-shadow .12s, border-color .12s',
-                userSelect: 'none', display: 'flex', flexDirection: 'column',
-              }}>
-
-              {/* Header: type pill + key */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px 0' }}>
-                <TypePill type={n.type} />
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}>
-                  {n.key}
-                </span>
-              </div>
-
-              {/* Title */}
-              <div style={{ padding: '6px 12px 0', flex: 1 }}>
-                <div style={{
-                  fontSize: 12.5, fontWeight: 600, color: 'hsl(var(--foreground))', lineHeight: 1.28,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                }}>{n.title}</div>
-              </div>
-
-              {/* Footer: status + coverage warning + vstatus */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '8px 12px 10px' }}>
-                <StatusBadge status={n.status} />
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                  {(n.coverage.orphan || n.coverage.untested || n.coverage.unimplemented) && (
-                    <AlertTriangle size={13} color="#D97706" />
-                  )}
-                  <VStatusBadge vstatus={n.vstatus} />
-                </span>
-              </div>
-
-              {/* Collapse/expand handle on right edge */}
-              {hasKids && (
-                <button
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => { e.stopPropagation(); setCollapsed(c => ({ ...c, [n.key]: !c[n.key] })); }}
-                  title={isCol ? 'Expand branch' : 'Collapse branch'}
-                  style={{
-                    position: 'absolute', right: -12, top: NH / 2 - 12, width: 24, height: 24,
-                    borderRadius: '50%', background: 'hsl(var(--card))', border: `1px solid ${borderSoft}`,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: st.tint, zIndex: 20, padding: 0,
-                  }}>
-                  {isCol
-                    ? <span style={{ fontSize: 10, fontWeight: 700, color: st.tint }}>{n.children.length}</span>
-                    : <Minus size={13} color={st.tint} />}
-                </button>
-              )}
+        {/* Spine root node (groups mode) */}
+        {L.spine && (
+          <div onMouseDown={startSpineDrag}
+            style={{
+              position: 'absolute', left: L.spine.x, top: L.spine.y, width: L.spine.w, minHeight: L.spine.h,
+              background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderTop: `3px solid ${view.tint}`,
+              borderRadius: 12, boxShadow: '0 2px 8px rgba(20,24,31,0.08)', padding: '14px 16px',
+              display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, cursor: 'grab', zIndex: 15,
+            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span style={{ width: 30, height: 30, borderRadius: 8, background: softTint(view.tint, 0.12), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ViewIcon size={16} color={view.tint} />
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'hsl(var(--foreground))', lineHeight: 1.2 }}>{L.spine.title}</span>
             </div>
+            <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>{L.spine.count} requirements · {L.containers.length} groups</div>
+          </div>
+        )}
+
+        {/* Container shells (groups mode) */}
+        {L.mode === 'groups' && L.containers.map(c => {
+          const tint = view.tint, isDrag = dragC === c.id, soft = softTint(tint, 0.35);
+          const Ic = c.icon;
+          return (
+            <React.Fragment key={c.id}>
+              <div onMouseDown={e => startContDrag(e, c.id)}
+                style={{ position: 'absolute', left: c.x, top: c.y - MAP_HEADER + 4, width: c.w, height: MAP_HEADER, display: 'flex', alignItems: 'center', gap: 8, cursor: 'grab', zIndex: 14 }}>
+                <Ic size={15} color={tint} />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: 'hsl(var(--foreground))' }}>{c.title}</span>
+                <span style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', fontVariantNumeric: 'tabular-nums' }}>{c.count}</span>
+                <span style={{ flex: 1 }} />
+                {c.owner && <OwnerAvatar ownerId={c.owner} size={22} />}
+              </div>
+              <div onMouseDown={e => startContDrag(e, c.id)}
+                style={{
+                  position: 'absolute', left: c.x, top: c.y, width: c.w, height: c.h, borderRadius: 14,
+                  background: softTint(tint, 0.05), border: `1.5px solid ${isDrag ? soft : softTint(tint, 0.28)}`,
+                  boxShadow: isDrag ? '0 14px 30px rgba(20,24,31,0.16)' : 'none', cursor: 'grab', zIndex: 8,
+                  transition: 'background .1s, box-shadow .1s',
+                  display: c.open ? 'block' : 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                {!c.open && <span style={{ fontSize: 15, fontWeight: 600, color: tint }}>{c.count} item{c.count !== 1 ? 's' : ''}</span>}
+                <button onMouseDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); toggleContainer(c.id); }}
+                  title={c.open ? 'Collapse group' : 'Expand group'}
+                  style={{
+                    position: 'absolute', left: c.w / 2 - 13, bottom: -13, width: 26, height: 26, borderRadius: '50%',
+                    background: 'hsl(var(--card))', border: `1px solid ${soft}`, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 16, padding: 0,
+                  }}>
+                  {c.open ? <ChevronUp size={14} color={tint} /> : <ChevronDown size={14} color={tint} />}
+                </button>
+              </div>
+            </React.Fragment>
           );
         })}
+
+        {/* Cards */}
+        {L.cards.map(n => n.kind === 'test' ? TestCard(n) : ReqCard(n))}
       </div>
 
       {/* Floating controls — top right */}
-      <div style={{ position: 'absolute', top: 14, right: 16, display: 'flex', flexDirection: 'column', gap: 6, zIndex: 200 }}>
+      <div style={{ position: 'absolute', top: 14, right: 16, display: 'flex', flexDirection: 'column', gap: 6, zIndex: 200 }} onMouseDown={e => e.stopPropagation()}>
         <button onClick={() => zoomBy(1.15)} title="Zoom in" style={ctrlBtn}><Plus size={15} /></button>
         <div style={{ textAlign: 'center', fontSize: 10.5, color: 'hsl(var(--muted-foreground))', fontVariantNumeric: 'tabular-nums' }}>
           {Math.round(zoom * 100)}%
         </div>
         <button onClick={() => zoomBy(0.87)} title="Zoom out" style={ctrlBtn}><Minus size={15} /></button>
-        <button onClick={fit} title="Fit to screen" style={ctrlBtn}><Maximize2 size={14} /></button>
-        <button onClick={resetLayout} title="Reset node positions" style={ctrlBtn}><RefreshCw size={13} /></button>
+        <button onClick={toggleFullscreen} title={fullscreen ? 'Exit full screen' : 'Full screen'} style={ctrlBtn}>
+          {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+        <button onClick={resetLayout} title="Reset arrangement" style={ctrlBtn}><RefreshCw size={13} /></button>
       </div>
 
-      {/* Legend overlay — bottom left */}
+      {/* Minimap — bottom left */}
+      <ReqMapMinimap L={L} pan={pan} zoom={zoom} tint={view.tint} containerRef={containerRef} setPan={setPan} />
+
+      {/* Legend / hint — next to minimap */}
       <div style={{
-        position: 'absolute', bottom: 14, left: 16,
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '7px 12px', background: 'hsl(var(--card))',
-        border: '1px solid hsl(var(--border))', borderRadius: 8, zIndex: 200,
+        position: 'absolute', bottom: 14, left: 204, display: 'flex', alignItems: 'center', gap: 14,
+        padding: '7px 12px', background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, zIndex: 200,
       }}>
-        {LEGEND.map(({ s, label }) => (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: REQ_STATUS[s].tint, display: 'inline-block', flexShrink: 0 }} />
-            <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>{label}</span>
-          </div>
-        ))}
-        <div style={{ width: 1, height: 14, background: 'hsl(var(--border))' }} />
-        <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Drag nodes · scroll to zoom · click to open</span>
+        {L.mode === 'groups'
+          ? <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}><b style={{ color: view.tint }}>{view.label}</b> · click a group to expand · drag groups to arrange</span>
+          : <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Scroll to zoom · drag to pan · click a card to open</span>}
       </div>
+    </div>
+  );
+}
+
+// ── Minimap — bottom-left overview + viewport rect, click to recenter ──────────
+function ReqMapMinimap({ L, pan, zoom, tint, containerRef, setPan }: {
+  L: { bounds: { w: number; h: number }; spine: { x: number; y: number; w: number; h: number } | null; containers: MapContainer[]; cards: MapNode[] };
+  pan: { x: number; y: number }; zoom: number; tint: string;
+  containerRef: React.RefObject<HTMLDivElement>; setPan: (p: { x: number; y: number }) => void;
+}) {
+  const MW = 176, MH = 116, PADm = 8;
+  const bw = Math.max(L.bounds.w, 100), bh = Math.max(L.bounds.h, 100);
+  const s = Math.min((MW - PADm * 2) / bw, (MH - PADm * 2) / bh);
+  const el = containerRef.current;
+  const rect = el ? el.getBoundingClientRect() : { width: 800, height: 520 };
+  const vx = -pan.x / zoom, vy = -pan.y / zoom, vw = rect.width / zoom, vh = rect.height / zoom;
+  const map = (x: number, y: number) => ({ x: PADm + x * s, y: PADm + y * s });
+
+  const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!el) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const cxContent = (e.clientX - r.left - PADm) / s, cyContent = (e.clientY - r.top - PADm) / s;
+    setPan({ x: rect.width / 2 - cxContent * zoom, y: rect.height / 2 - cyContent * zoom });
+  };
+
+  return (
+    <div onMouseDown={e => e.stopPropagation()} onClick={onClick}
+      style={{
+        position: 'absolute', bottom: 14, left: 16, width: MW, height: MH,
+        background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 10,
+        boxShadow: '0 4px 14px rgba(20,24,31,0.10)', overflow: 'hidden', cursor: 'pointer', zIndex: 200,
+      }}>
+      <svg width={MW} height={MH}>
+        {L.spine && (() => {
+          const p = map(L.spine!.x, L.spine!.y);
+          return <rect x={p.x} y={p.y} width={L.spine!.w * s} height={L.spine!.h * s} rx={2} fill={softTint(tint, 0.35)} stroke={tint} strokeWidth={0.6} />;
+        })()}
+        {L.containers.length
+          ? L.containers.map(c => {
+              const p = map(c.x, c.y);
+              return <rect key={c.id} x={p.x} y={p.y} width={Math.max(3, c.w * s)} height={Math.max(3, c.h * s)} rx={2} fill={softTint(tint, 0.18)} stroke={softTint(tint, 0.5)} strokeWidth={0.6} />;
+            })
+          : L.cards.map(n => {
+              const p = map(n.ax, n.ay);
+              return <rect key={n.id} x={p.x} y={p.y} width={Math.max(2, 234 * s)} height={Math.max(2, 92 * s)} rx={1} fill={softTint(tint, 0.22)} />;
+            })}
+        {(() => {
+          const p = map(vx, vy);
+          return <rect x={p.x} y={p.y} width={vw * s} height={vh * s} fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth={1.2} rx={2} />;
+        })()}
+      </svg>
     </div>
   );
 }

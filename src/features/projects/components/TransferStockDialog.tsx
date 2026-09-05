@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { ArrowLeftRight, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocations } from '@/hooks/useLocations';
-import { LocationCombobox, type StockRecord } from './inventoryData';
+import { LocationHierarchyPicker, type StockRecord } from './inventoryData';
 
 const transferSchema = z
   .object({
@@ -39,6 +39,7 @@ export interface TransferStockInput {
   partId: string;
   fromLocation: string;
   toLocation: string;
+  toLocationNodeId?: string | null;
   note?: string;
 }
 
@@ -52,7 +53,7 @@ interface TransferStockDialogProps {
 
 export function TransferStockDialog({ isOpen, onClose, orgId, record, onTransfer }: TransferStockDialogProps) {
   const isMobile = useIsMobile();
-  const { data: knownLocations = [] } = useLocations(orgId);
+  const { data: locations = [] } = useLocations(orgId);
 
   const form = useForm<TransferFormData>({
     resolver: zodResolver(transferSchema),
@@ -81,6 +82,7 @@ export function TransferStockDialog({ isOpen, onClose, orgId, record, onTransfer
       partId: record.partId,
       fromLocation: record.location,
       toLocation: data.toLocation,
+      toLocationNodeId: locations.find((l) => l.path === data.toLocation)?.id ?? null,
       note: data.note?.trim() || undefined,
     });
     onClose();
@@ -139,7 +141,7 @@ export function TransferStockDialog({ isOpen, onClose, orgId, record, onTransfer
                         Destination location <span className="text-destructive" aria-hidden="true">*</span>
                       </FormLabel>
                       <FormControl>
-                        <LocationCombobox value={field.value} onChange={field.onChange} knownLocations={knownLocations} />
+                        <LocationHierarchyPicker value={field.value} onChange={field.onChange} orgId={orgId} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

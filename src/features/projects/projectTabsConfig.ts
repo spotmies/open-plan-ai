@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Layers, GitMerge, ListTodo, Boxes, Flag, AlertTriangle } from 'lucide-react';
+import { Layers, GitMerge, ListTodo, Boxes, Flag, AlertTriangle, ListChecks } from 'lucide-react';
 import type { ProjectTabConfig, ProjectTabId } from '@/types';
 
 export interface ProjectTabDefinition {
@@ -11,6 +11,7 @@ export interface ProjectTabDefinition {
 
 export const PROJECT_TAB_DEFINITIONS: Record<ProjectTabId, ProjectTabDefinition> = {
   bom: { id: 'bom', label: 'BOM', title: 'Bill of Materials', icon: Layers },
+  requirements: { id: 'requirements', label: 'Requirements', title: 'Requirements', icon: ListChecks },
   'eng-changes': { id: 'eng-changes', label: 'Eng. Changes', title: 'Engineering Changes', icon: GitMerge },
   tasks: { id: 'tasks', label: 'Tasks', title: 'Tasks', icon: ListTodo },
   modules: { id: 'modules', label: 'Modules', title: 'Modules', icon: Boxes },
@@ -20,6 +21,7 @@ export const PROJECT_TAB_DEFINITIONS: Record<ProjectTabId, ProjectTabDefinition>
 
 export const DEFAULT_PROJECT_TAB_ORDER: ProjectTabId[] = [
   'bom',
+  'requirements',
   'eng-changes',
   'tasks',
   'modules',

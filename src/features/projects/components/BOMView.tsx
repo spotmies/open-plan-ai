@@ -1587,7 +1587,10 @@ export function BOMView({
     try {
       const { photoUrl } = await saveBomDocs(node.id, payload);
       if (photoUrl) await updatePart.mutateAsync({ partId: part.id, dto: { imageUrl: photoUrl } });
-      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId })));
+      // Link any requirements added in the Traceability tab
+      await Promise.all(payload.req.map(requirementId => addRequirement.mutateAsync({ nodeId: node.id, requirementId, rationale: payload.reqRationales[requirementId] ?? null })));
+      toast.success('Part added to BOM');
+      if (onAddClose) onAddClose();
     } catch (err) {
       toast.error('Part saved, but documents or requirement links failed — click Save to retry', {
         description: err instanceof Error ? err.message : undefined,

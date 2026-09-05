@@ -568,35 +568,47 @@ export default function ProjectDetail() {
   const { currentOrganization } = useOrganization();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { id, tab: tabParam, partId, reqKey, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
   const location = useLocation();
-  const { id, tab: tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId } = useParams();
   // When a deep-linked entity modal (e.g. /issues/:issueId) is opened from an
   // external entry point like Notifications, the linker passes `backTo` in
   // location.state so closing the modal returns there instead of dropping the
   // user onto the project's default tab for that entity.
   const deepLinkBackTo = (location.state as { backTo?: string } | null)?.backTo;
   const isSupportFeatureEnabled = useFeatureTogglesStore((s) => s.enabled.support);
+  // Requirements is both a project-configurable tab (Edit Project → Project
+  // Tabs, tabConfig below) AND a per-user opt-in feature (Integrations page) —
+  // it only shows when BOTH allow it, same "both must allow it" rule as any
+  // other project tab a user has personally opted out of.
+  const isRequirementsFeatureEnabled = useFeatureTogglesStore((s) => s.enabled.requirements);
+  // Requirements' "New"/"Edit" editor isn't URL-driven (same reasoning as BOM's
+  // "Add Part" sheet not having its own URL) — RequirementsView reports it up
+  // via this callback so the tab-bar header can hide for it too, same as it
+  // does for partId/ecoId/reqKey below.
+  const [isRequirementsEditorOpen, setIsRequirementsEditorOpen] = useState(false);
 
-  // The /bom/:partId, /eng-changes/:ecoId, /tasks/:taskId, /modules/:moduleId,
-  // /milestones/:milestoneId, and /issues/:issueId routes encode the section as a
-  // literal path segment rather than the generic :tab param, so infer it from which
-  // item id is present.
-  const ALL_SECTIONS: ProjectSection[] = ['bom', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
+  // The /bom/:partId, /requirements/:reqKey, /eng-changes/:ecoId, /tasks/:taskId,
+  // /modules/:moduleId, /milestones/:milestoneId, and /issues/:issueId routes
+  // encode the section as a literal path segment rather than the generic :tab
+  // param, so infer it from which item id is present.
+  const ALL_SECTIONS: ProjectSection[] = ['bom', 'requirements', 'eng-changes', 'tasks', 'modules', 'milestones', 'issues', 'gate-reviews', 'risk'];
   const section: ProjectSection = partId
     ? 'bom'
-    : ecoId
-      ? 'eng-changes'
-      : taskId
-        ? 'tasks'
-        : moduleId
-          ? 'modules'
-          : milestoneId
-            ? 'milestones'
-            : issueId
-              ? 'issues'
-              : ALL_SECTIONS.includes(tabParam as ProjectSection)
-                ? (tabParam as ProjectSection)
-                : 'bom';
+    : reqKey
+      ? 'requirements'
+      : ecoId
+        ? 'eng-changes'
+        : taskId
+          ? 'tasks'
+          : moduleId
+            ? 'modules'
+            : milestoneId
+              ? 'milestones'
+              : issueId
+                ? 'issues'
+                : ALL_SECTIONS.includes(tabParam as ProjectSection)
+                  ? (tabParam as ProjectSection)
+                  : 'bom';
 
   // Board column definitions are only rendered on their own tab (Tasks status
   // filter / Issues status filter) — gating avoids fetching them on every tab
@@ -744,19 +756,20 @@ export default function ProjectDetail() {
   // Project-configurable tab order/visibility (set in Edit Project). Falls back
   // to the default order with everything visible when the project has no saved config.
   const visibleTabs = useMemo(
-    () => visibleOrderedTabDefinitions(resolveProjectTabConfig(project?.tabConfig)),
-    [project?.tabConfig]
+    () => visibleOrderedTabDefinitions(resolveProjectTabConfig(project?.tabConfig))
+      .filter((t) => t.id !== 'requirements' || isRequirementsFeatureEnabled),
+    [project?.tabConfig, isRequirementsFeatureEnabled]
   );
 
   // If the current section's tab has been hidden by the project's tab config,
   // fall back to the first visible tab instead of rendering an unreachable section.
   useEffect(() => {
-    if (!project || !tabParam || partId || ecoId || taskId || moduleId || milestoneId || issueId) return;
+    if (!project || !tabParam || partId || reqKey || ecoId || taskId || moduleId || milestoneId || issueId) return;
     if (visibleTabs.length === 0) return;
     if (!visibleTabs.some((t) => t.id === tabParam)) {
       navigate(`/projects/${id}/${visibleTabs[0].id}`, { replace: true });
     }
-  }, [project, tabParam, partId, ecoId, taskId, moduleId, milestoneId, issueId, visibleTabs, navigate, id]);
+  }, [project, tabParam, partId, reqKey, ecoId, taskId, moduleId, milestoneId, issueId, visibleTabs, navigate, id]);
 
   // Calculate active filter count - moved before early returns
   const activeFilterCount = useMemo(() => {
@@ -1489,51 +1502,52 @@ export default function ProjectDetail() {
 
         {/* Section Tabs - Entity-based navigation */}
         <Tabs value={section} onValueChange={(v) => navigate(`/projects/${id}/${v}`)} className="w-full">
-          {/* Nothing inside this bar renders once a part/ECO detail or mobile module
-              detail is open (both conditional blocks below check the same three
-              flags) — so gate the sticky wrapper itself too. Otherwise it still
-              occupies its padding+border as an empty strip pinned at top:0,
-              overlapping whatever scrolls underneath it (e.g. BOMDetailScreen's
-              own header, which scrolls in its own inner container). */}
-          {!partId && !ecoId && !isMobileModuleDetailOpen && (
-            <div ref={setStickyHeaderEl} className="sticky top-0 z-20 bg-background -mx-4 px-4 pt-2.5 pb-2.5 border-b md:pt-0 md:mx-0 md:px-0 md:pb-2.5 will-change-transform">
-              {!partId && !ecoId && !isMobileModuleDetailOpen && (
-                <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
-                  {/* Left Side: Tabs */}
-                  <div className="flex-1 md:flex-none w-full md:w-auto py-1 min-w-0 md:mr-auto overflow-x-auto hide-scrollbar">
-                    <TabsList
-                      className={`bg-muted/50 grid ${TAB_GRID_COLS_CLASS[visibleTabs.length] || 'grid-cols-6'} min-w-[300px] md:min-w-0 w-full h-11 md:w-auto md:flex md:shrink-0`}
-                    >
-                      {visibleTabs.map(({ id: tabId, label, title, icon: Icon }) => {
-                        const badge = tabBadges[tabId];
-                        return (
-                          <TabsTrigger
-                            key={tabId}
-                            value={tabId}
-                            className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
-                            title={title}
-                            onTouchStart={() => handleTabLongPressStart(tabId)}
-                            onTouchEnd={handleTabLongPressEnd}
-                            onTouchCancel={handleTabLongPressEnd}
-                            onTouchMove={handleTabLongPressEnd}
-                          >
-                            <Icon className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
-                            {!isMobile && <span className="truncate">{label}</span>}
-                            {!isMobile && badge && (
-                              <Badge variant={badge.variant} className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
-                                {badge.count}
-                              </Badge>
-                            )}
-                            {isMobile && longPressedTab === tabId && (
-                              <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
-                                {label}
-                              </span>
-                            )}
-                          </TabsTrigger>
-                        );
-                      })}
-                    </TabsList>
-                  </div>
+          {/* Nothing inside this bar renders once a part/requirement/ECO detail,
+              the requirements editor, or mobile module detail is open (both
+              conditional blocks below check the same flags) — so gate the sticky
+              wrapper itself too. Otherwise it still occupies its padding+border as
+              an empty strip pinned at top:0, overlapping whatever scrolls
+              underneath it (e.g. BOMDetailScreen's own header, which scrolls in
+              its own inner container). */}
+          {!partId && !reqKey && !isRequirementsEditorOpen && !ecoId && !isMobileModuleDetailOpen && (
+          <div ref={setStickyHeaderEl} className="sticky top-0 z-20 bg-background -mx-4 px-4 pt-2.5 pb-2.5 border-b md:pt-0 md:mx-0 md:px-0 md:pb-2.5 will-change-transform">
+            {!partId && !reqKey && !isRequirementsEditorOpen && !ecoId && !isMobileModuleDetailOpen && (
+              <div className="flex flex-row md:items-center justify-between gap-2 w-full pb-1">
+                {/* Left Side: Tabs */}
+                <div className="flex-1 md:flex-none w-full md:w-auto py-1 min-w-0 md:mr-auto overflow-x-auto hide-scrollbar">
+                  <TabsList
+                    className={`bg-muted/50 grid ${TAB_GRID_COLS_CLASS[visibleTabs.length] || 'grid-cols-6'} min-w-[300px] md:min-w-0 w-full h-11 md:w-auto md:flex md:shrink-0`}
+                  >
+                    {visibleTabs.map(({ id: tabId, label, title, icon: Icon }) => {
+                      const badge = tabBadges[tabId];
+                      return (
+                        <TabsTrigger
+                          key={tabId}
+                          value={tabId}
+                          className="relative gap-1 sm:gap-2 px-2 justify-center min-w-0"
+                          title={title}
+                          onTouchStart={() => handleTabLongPressStart(tabId)}
+                          onTouchEnd={handleTabLongPressEnd}
+                          onTouchCancel={handleTabLongPressEnd}
+                          onTouchMove={handleTabLongPressEnd}
+                        >
+                          <Icon className="h-5 w-5 md:h-4 md:w-4 shrink-0" />
+                          {!isMobile && <span className="truncate">{label}</span>}
+                          {!isMobile && badge && (
+                            <Badge variant={badge.variant} className="ml-1 h-5 px-1.5 text-[10px] shrink-0">
+                              {badge.count}
+                            </Badge>
+                          )}
+                          {isMobile && longPressedTab === tabId && (
+                            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[10px] font-medium text-popover-foreground shadow-md">
+                              {label}
+                            </span>
+                          )}
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </div>
 
                   {/* Right Side: Team + Chat + Add Button */}
                   <div className="flex items-center gap-2 shrink-0 justify-end md:w-auto">
@@ -1976,8 +1990,17 @@ export default function ProjectDetail() {
               onEcoCreated={(ecoId) => navigate(`/projects/${id}/eng-changes/${ecoId}`)}
             />
           </TabsContent>
-          <TabsContent value="requirements" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">
-            <RequirementsView />
+          <TabsContent value="requirements" className="mt-0 -mx-4 md:-mx-6 -mb-6 flex flex-col">
+            <RequirementsView
+              projectId={project.id}
+              orgId={currentOrganization?.id ?? ''}
+              selectedKey={reqKey ?? null}
+              onSelectedKeyChange={(newKey) =>
+                navigate(`/projects/${id}/requirements${newKey ? `/${newKey}` : ''}`)
+              }
+              onEditorOpenChange={setIsRequirementsEditorOpen}
+              onEcoCreated={(ecoId) => navigate(`/projects/${id}/eng-changes/${ecoId}`)}
+            />
           </TabsContent>
           <TabsContent value="eng-changes" className="mt-6 -mx-4 md:-mx-6 -mb-6 flex flex-col">
             <ECOView
