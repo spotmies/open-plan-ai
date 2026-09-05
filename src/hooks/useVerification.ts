@@ -38,6 +38,22 @@ export interface ApiTestCase {
   executionCount: number;
 }
 
+export type ApiVerificationMode = 'single' | 'pipeline';
+export type ApiPipelineDecision = 'pending' | 'active' | 'approved' | 'rejected';
+
+export interface ApiPipelineStep {
+  id: string;
+  requirementId: string;
+  position: number;
+  approverUserId: string;
+  approverName: string | null;
+  decision: ApiPipelineDecision;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  decidedByName: string | null;
+  note: string | null;
+}
+
 export interface ApiRequirementVerification {
   requirementId: string;
   vstatus: ApiRequirementVerificationStatus;
@@ -46,6 +62,8 @@ export interface ApiRequirementVerification {
   verifiedByName: string | null;
   verifiedAt: string | null;
   verificationNote: string | null;
+  verificationMode: ApiVerificationMode;
+  pipeline: ApiPipelineStep[] | null;
 }
 
 // Project-wide rollup — mirrors useECOs.ts's ApiAffectedRequirementLink and
@@ -180,6 +198,87 @@ export function useConfirmVerified(projectId: string, requirementId: string) {
   return useMutation({
     mutationFn: (note?: string) =>
       apiClient.post<ApiRequirementVerification>(ENDPOINTS.VERIFICATION.CONFIRM_VERIFIED(requirementId), {
+        note,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.verification.byRequirement(requirementId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.verification.summary(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.requirements.tree(projectId) });
+    },
+  });
+}
+
+// ─── Sign-off (pipeline mode) ───────────────────────────────────────────────────
+// A per-project alternative to the single-owner confirm above — see the
+// backend's test-verification.service.ts for the full state machine (mirrors
+// the ECO approval pipeline closely).
+
+export interface ApiVerificationModeResponse {
+  mode: ApiVerificationMode;
+}
+
+export interface ApiPipelineTemplate {
+  approvers: { id: string; name: string }[];
+}
+
+export function useVerificationMode(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['verification-mode', projectId ?? ''],
+    queryFn: () => apiClient.get<ApiVerificationModeResponse>(ENDPOINTS.VERIFICATION.MODE(projectId!)),
+    enabled: !!projectId,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSetVerificationMode(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (mode: ApiVerificationMode) =>
+      apiClient.patch<ApiVerificationModeResponse>(ENDPOINTS.VERIFICATION.MODE(projectId), { mode }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['verification-mode', projectId] });
+    },
+  });
+}
+
+export function usePipelineTemplate(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['verification-pipeline-template', projectId ?? ''],
+    queryFn: () => apiClient.get<ApiPipelineTemplate>(ENDPOINTS.VERIFICATION.PIPELINE_TEMPLATE(projectId!)),
+    enabled: !!projectId,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSetPipelineTemplate(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (approverUserIds: string[]) =>
+      apiClient.put<ApiPipelineTemplate>(ENDPOINTS.VERIFICATION.PIPELINE_TEMPLATE(projectId), { approverUserIds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['verification-pipeline-template', projectId] });
+    },
+  });
+}
+
+export function useSubmitForVerification(projectId: string, requirementId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient.post<ApiRequirementVerification>(ENDPOINTS.VERIFICATION.SUBMIT_FOR_VERIFICATION(requirementId), {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.verification.byRequirement(requirementId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.verification.summary(projectId) });
+    },
+  });
+}
+
+export function useDecidePipelineStep(projectId: string, requirementId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stepId, decision, note }: { stepId: string; decision: 'approved' | 'rejected'; note?: string }) =>
+      apiClient.post<ApiRequirementVerification>(ENDPOINTS.VERIFICATION.PIPELINE_STEP_DECISION(stepId), {
+        decision,
         note,
       }),
     onSuccess: () => {

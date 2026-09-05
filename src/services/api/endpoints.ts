@@ -307,6 +307,10 @@ export const ENDPOINTS = {
     DELETE_TEST_CASE: (testCaseId: string) => `/test-cases/${testCaseId}`,
     EXECUTIONS:       (testCaseId: string) => `/test-cases/${testCaseId}/executions`,
     RECORD_EXECUTION: (testCaseId: string) => `/test-cases/${testCaseId}/executions`,
+    MODE:             (projectId: string) => `/projects/${projectId}/verification-mode`,
+    PIPELINE_TEMPLATE:(projectId: string) => `/projects/${projectId}/verification-pipeline-template`,
+    SUBMIT_FOR_VERIFICATION: (requirementId: string) => `/requirements/${requirementId}/submit-for-verification`,
+    PIPELINE_STEP_DECISION:  (stepId: string) => `/requirement-pipeline-steps/${stepId}/decision`,
   },
   // Engineering Changes (ECO)
   ECOS: {

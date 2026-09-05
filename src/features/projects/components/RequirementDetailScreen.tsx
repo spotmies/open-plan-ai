@@ -22,9 +22,11 @@ import {
 } from '@/hooks/useRequirements';
 import {
   useRequirementVerification, useCreateTestCase, useRecordExecution, useConfirmVerified,
-  useDeleteTestCase, useTestCaseExecutions,
-  type ApiTestCase, type ApiVerificationMethod, type ApiTestExecutionResult,
+  useDeleteTestCase, useTestCaseExecutions, useSubmitForVerification, useDecidePipelineStep,
+  type ApiTestCase, type ApiVerificationMethod, type ApiTestExecutionResult, type ApiPipelineStep,
 } from '@/hooks/useVerification';
+import { useAuth } from '@/modules/auth';
+import { useProjectMembers } from '@/hooks/useProjectTeam';
 import { RequirementECOSheet, type TestFailureTrigger } from './RequirementECOSheet';
 import { useInventoryBuilds } from '@/hooks/useInventory';
 import {
@@ -444,6 +446,10 @@ function VerifyTab({ r, projectId, orgId, onEcoCreated }: { r: Requirement; proj
   const deleteTestCase = useDeleteTestCase(projectId, r._id ?? '');
   const confirmVerified = useConfirmVerified(projectId, r._id ?? '');
   const recordExecution = useRecordExecution(projectId, r._id ?? '');
+  const submitForVerification = useSubmitForVerification(projectId, r._id ?? '');
+  const decidePipelineStep = useDecidePipelineStep(projectId, r._id ?? '');
+  const { user } = useAuth();
+  const { data: projectMembers = [] } = useProjectMembers(projectId);
   // Inventory builds are org-wide, not project-scoped (see project_inventory
   // memory) — filtered down to this requirement's project client-side, same
   // pattern as the stock join used elsewhere in Requirements.
@@ -470,6 +476,19 @@ function VerifyTab({ r, projectId, orgId, onEcoCreated }: { r: Requirement; proj
     && testCases.every(tc => tc.latestExecution)
     && !testCases.some(tc => tc.latestExecution?.result === 'fail');
 
+  const pipelineMode = verification?.verificationMode === 'pipeline';
+  const pipeline = verification?.pipeline ?? null;
+  const activeStep = pipeline?.find(s => s.decision === 'active') ?? null;
+  const rejectedStep = pipeline?.find(s => s.decision === 'rejected') ?? null;
+  const myRole = projectMembers.find(m => m.id === user?.id)?.role?.toLowerCase();
+  const canOverride = myRole === 'maintainer' || myRole === 'admin';
+  const canDecideActiveStep = !!activeStep && (activeStep.approverUserId === user?.id || canOverride);
+  // Never submitted yet, or blocked on a rejection with nothing currently
+  // active — both cases need a (re)submit action. A live active step means a
+  // submission is already in flight, so no submit button then.
+  const canSubmitForVerification = pipelineMode && canConfirm
+    && (!pipeline || pipeline.length === 0 || (!!rejectedStep && !activeStep));
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       {/* stat cards */}
@@ -489,10 +508,35 @@ function VerifyTab({ r, projectId, orgId, onEcoCreated }: { r: Requirement; proj
         </div>
       )}
 
+      {pipelineMode && pipeline && pipeline.length > 0 && (
+        <PipelineStatusPanel
+          steps={pipeline}
+          canDecideActiveStep={canDecideActiveStep}
+          pending={decidePipelineStep.isPending}
+          onDecide={(stepId, decision, note) => {
+            decidePipelineStep.mutate({ stepId, decision, note }, {
+              onSuccess: () => toast.success(decision === 'approved' ? 'Step approved' : 'Sign-off rejected'),
+              onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to record decision'),
+            });
+          }}
+        />
+      )}
+
       <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
-        {canConfirm && (
+        {canConfirm && !pipelineMode && (
           <button onClick={() => setConfirmOpen(true)} style={{ display:'inline-flex', alignItems:'center', gap:6, height:30, padding:'0 12px', borderRadius:7, border:'none', background:'#16A34A', color:'#fff', cursor:'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
             <Check size={13}/>Confirm verified
+          </button>
+        )}
+        {canSubmitForVerification && (
+          <button
+            onClick={() => submitForVerification.mutate(undefined, {
+              onSuccess: () => toast.success(rejectedStep ? 'Resubmitted for sign-off' : 'Submitted for sign-off'),
+              onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to submit for verification'),
+            })}
+            disabled={submitForVerification.isPending}
+            style={{ display:'inline-flex', alignItems:'center', gap:6, height:30, padding:'0 12px', borderRadius:7, border:'none', background: submitForVerification.isPending ? 'hsl(var(--muted-foreground))' : '#16A34A', color:'#fff', cursor: submitForVerification.isPending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:600 }}>
+            <Send size={13}/>{rejectedStep ? 'Resubmit for verification' : 'Submit for verification'}
           </button>
         )}
         <button onClick={() => setAddOpen(true)} style={{ display:'inline-flex', alignItems:'center', gap:6, height:30, padding:'0 12px', borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:12.5, fontWeight:500 }}>
@@ -682,6 +726,68 @@ function ExecutionEvidence({ executionId, onPreview }: { executionId: string; on
       style={{ display:'inline-flex', alignItems:'center', gap:3, flexShrink:0, border:'none', background:'transparent', cursor:'pointer', color:'hsl(var(--muted-foreground))', fontFamily:'inherit', fontSize:11 }}>
       <Paperclip size={11}/>{attachments.length}
     </button>
+  );
+}
+
+// Pipeline sign-off mode (plan §C) — mirrors the ECO approval pipeline's
+// visual language (ordered steps, one active at a time) rather than
+// inventing a new one.
+function PipelineStatusPanel({ steps, canDecideActiveStep, pending, onDecide }: {
+  steps: ApiPipelineStep[];
+  canDecideActiveStep: boolean;
+  pending: boolean;
+  onDecide: (stepId: string, decision: 'approved' | 'rejected', note?: string) => void;
+}) {
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const tintFor = (d: ApiPipelineStep['decision']) =>
+    d === 'approved' ? '#16A34A' : d === 'rejected' ? '#DC2626' : d === 'active' ? '#D97706' : '#94A3B8';
+
+  return (
+    <div style={{ background:'hsl(var(--card))', border:'1px solid hsl(var(--border))', borderRadius:12, padding:'12px 14px', display:'flex', flexDirection:'column', gap:8 }}>
+      <div style={{ fontSize:12.5, fontWeight:600, color:'hsl(var(--foreground))' }}>Sign-off pipeline</div>
+      {steps.map((s, i) => {
+        const tint = tintFor(s.decision);
+        return (
+          <div key={s.id} style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <span style={{ width:20, height:20, borderRadius:9999, display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:10.5, fontWeight:700, color:tint, background:softTint(tint,0.14), flexShrink:0 }}>{i + 1}</span>
+              <span style={{ fontSize:12.5, color:'hsl(var(--foreground))', flex:1 }}>{s.approverName ?? '—'}</span>
+              <span style={{ fontSize:10.5, fontWeight:700, textTransform:'uppercase', letterSpacing:0.3, color:tint }}>{s.decision}</span>
+            </div>
+            {s.note && (
+              <div style={{ marginLeft:30, fontSize:11.5, color:'hsl(var(--muted-foreground))' }}>{s.note}</div>
+            )}
+            {s.decision === 'active' && canDecideActiveStep && (
+              rejectingId === s.id ? (
+                <div style={{ marginLeft:30, display:'flex', flexDirection:'column', gap:6 }}>
+                  <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} placeholder="Reason for rejection (optional)" rows={2}
+                    style={{ borderRadius:7, border:'1px solid hsl(var(--border))', background:'hsl(var(--background))', color:'hsl(var(--foreground))', fontFamily:'inherit', fontSize:12, padding:8, resize:'vertical' }}/>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <button onClick={() => { setRejectingId(null); setRejectNote(''); }} style={{ height:26, padding:'0 10px', borderRadius:6, border:'1px solid hsl(var(--border))', background:'hsl(var(--card))', color:'hsl(var(--foreground))', cursor:'pointer', fontFamily:'inherit', fontSize:11.5 }}>Cancel</button>
+                    <button onClick={() => { onDecide(s.id, 'rejected', rejectNote.trim() || undefined); setRejectingId(null); setRejectNote(''); }} disabled={pending}
+                      style={{ height:26, padding:'0 10px', borderRadius:6, border:'none', background:'#DC2626', color:'#fff', cursor: pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:11.5, fontWeight:600 }}>
+                      Confirm rejection
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginLeft:30, display:'flex', gap:6 }}>
+                  <button onClick={() => onDecide(s.id, 'approved')} disabled={pending}
+                    style={{ height:26, padding:'0 10px', borderRadius:6, border:'none', background:'#16A34A', color:'#fff', cursor: pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:11.5, fontWeight:600 }}>
+                    Approve
+                  </button>
+                  <button onClick={() => setRejectingId(s.id)} disabled={pending}
+                    style={{ height:26, padding:'0 10px', borderRadius:6, border:'1px solid #DC2626', background:softTint('#DC2626',0.08), color:'#DC2626', cursor: pending ? 'default' : 'pointer', fontFamily:'inherit', fontSize:11.5, fontWeight:600 }}>
+                    Reject
+                  </button>
+                </div>
+              )
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
